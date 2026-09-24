@@ -47,7 +47,7 @@ export const slider = (
   return h('label', { class: 'setting' }, h('span', { class: 'setting-label' }, label), input, out);
 };
 
-const select = <T extends string>(
+export const select = <T extends string>(
   label: string,
   options: [T, string][],
   value: T,
@@ -63,7 +63,11 @@ const select = <T extends string>(
   return h('label', { class: 'setting' }, h('span', { class: 'setting-label' }, label), s);
 };
 
-const toggle = (label: string, value: boolean, onChange: (v: boolean) => void): HTMLElement => {
+export const toggle = (
+  label: string,
+  value: boolean,
+  onChange: (v: boolean) => void,
+): HTMLElement => {
   const c = h('input', { type: 'checkbox' });
   c.checked = value;
   c.addEventListener('change', () => onChange(c.checked));

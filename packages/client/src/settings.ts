@@ -96,12 +96,16 @@ export const loadSettings = (): Settings => {
   if (!raw) return structuredClone(DEFAULT_SETTINGS);
   try {
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
+    const s: Settings = {
       ...structuredClone(DEFAULT_SETTINGS),
       ...parsed,
       crosshair: { ...DEFAULT_SETTINGS.crosshair, ...(parsed.crosshair ?? {}) },
       keybinds: { ...DEFAULT_KEYBINDS, ...(parsed.keybinds ?? {}) },
     };
+    // fairness: brightness can't be pushed past the cap by editing storage
+    s.brightness = Math.min(1.2, Math.max(0.8, Number(s.brightness) || 1));
+    s.renderScale = Math.min(1, Math.max(0.5, Number(s.renderScale) || 1));
+    return s;
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
   }

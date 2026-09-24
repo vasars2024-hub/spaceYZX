@@ -23,3 +23,16 @@
 - Pure JS/WASM only for anything the server ships (it is packaged as a single-file exe with Node
   SEA). No native modules. Pin exact versions (`.npmrc` has `save-exact`).
 - TypeScript is pinned to 6.0.x because typescript-eslint does not support TS 7 yet.
+
+## Where things are
+
+- Match rules (Controller & Tower, rounds): `packages/shared/src/rules/match.ts`; server plug-in
+  `packages/server/src/game/rules/match.ts` (anti-grief lives there too).
+- Maps: `packages/shared/src/level/maps/` (`kestrel.ts` is the competitive map; keep it
+  mirror-symmetric — `map.test.ts` checks it, and bots must be able to walk every route).
+- Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
+  `packages/server/src/game/room.ts`, lag compensation `lagcomp.ts`, LOS culling `visibility.ts`.
+- Accounts/ranked/matchmaking: `packages/server/src/services/` (SQLite via `node:sqlite`).
+- Host app + dashboard: `packages/server/src/host/`; exe build `tools/host/build-exe.ts`.
+- Reports/benchmarks: `npm run balance`, `npm run matches`, `npm run load`, `npm run size`.
+- Bump `PROTOCOL_VERSION` (`packages/shared/src/version.ts`) whenever the wire format changes.

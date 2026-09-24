@@ -967,3 +967,30 @@ td.loss {
 .toast.fade {
   opacity: 0;
 }
+
+/* ---------------- settings ---------------- */
+.tabs {
+  margin-bottom: 12px;
+}
+table.binds {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.binds td {
+  padding: 3px 6px;
+}
+table.binds .btn.tiny {
+  min-width: 120px;
+}
+.btn.listening {
+  border-color: #ffd24a;
+  color: #ffd24a;
+}
+.crosshair-preview {
+  position: relative;
+  height: 110px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #2b3446, #6a5238 50%, #9ec3e6);
+}

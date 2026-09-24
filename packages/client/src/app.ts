@@ -8,12 +8,13 @@ import type { Session } from './game/session';
 import { LocalSession } from './game/local-session';
 import { AudioEngine } from './audio';
 import { TuningPanel, loadTuning } from './ui/tuning';
-import { h, button, quickSettings, controlsTable } from './ui/menus';
+import { h, button, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
 import { DynamicResolution, FrameStats, QUALITY, setParticleDensity } from './render/perf';
 import { createPracticeSession } from './game/practice';
+import { createRangeSession } from './game/range';
 import {
   createPractice,
   updatePractice,
@@ -24,6 +25,7 @@ import {
 } from '@space-yz/shared';
 import { NetSession } from './net/net-session';
 import { onlineMenu, RoomPanel, netPanel } from './ui/online';
+import { settingsScreen } from './ui/settings-screen';
 import { rankedPanel, leaderboardScreen, profileScreen, type ClientProfile } from './ui/ranked';
 
 export const params = new URLSearchParams(location.search);
@@ -57,6 +59,15 @@ export class App {
     this.input = new InputManager(canvas, this.settings);
     this.audio.unlockOnFirstGesture(window);
     this.applyVolumes();
+    // menu sounds for every button (one listener for the whole UI)
+    ui.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest?.('button')) this.audio.play('uiClick');
+    });
+    ui.addEventListener('mouseover', (e) => {
+      const b = (e.target as HTMLElement).closest?.('button');
+      if (b && !b.contains(e.relatedTarget as Node | null))
+        this.audio.play('uiHover', { volume: 0.4 });
+    });
     this.input.onLockChange = (locked) => {
       if (!this.client) return;
       if (!locked && !AUTOTEST) this.pause(true);
@@ -167,6 +178,7 @@ export class App {
     return [
       ['Play online', () => this.showOnline()],
       ['Practice vs bots', () => this.showPracticeMenu()],
+      ['Practice range', () => this.startRange()],
       ['Movement playground', () => this.startPlayground()],
       [
         'Leaderboards',
@@ -180,19 +192,7 @@ export class App {
   }
 
   showSettings(back: () => void): void {
-    this.setScreen(
-      h(
-        'div',
-        { class: 'screen interactive' },
-        h('h2', {}, 'Settings'),
-        h(
-          'div',
-          { class: 'panel' },
-          quickSettings(this.settings, () => this.onSettingsChanged()),
-        ),
-        button('Back', back, 'btn secondary'),
-      ),
-    );
+    this.setScreen(settingsScreen(this.settings, () => this.onSettingsChanged(), back));
   }
 
   showControls(back: () => void): void {
@@ -211,6 +211,7 @@ export class App {
     saveSettings(this.settings);
     this.applyVolumes();
     this.applyRenderScale();
+    this.input.rebuildBindings();
     this.client?.hud.applyCrosshair();
   }
 
@@ -539,7 +540,12 @@ export class App {
     this.matchFeature = match;
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
-      frame: () => this.roomPanel?.update(),
+      frame: () => {
+        this.roomPanel?.update();
+        client.hud.netText = this.settings.showNetStats
+          ? `${Math.round(core.rttMs)} ms${core.inputDelay ? ` (+${core.inputDelay} delay)` : ''}`
+          : '';
+      },
       dispose: () => {
         this.roomPanel?.dispose();
         this.roomPanel = null;
@@ -584,6 +590,26 @@ export class App {
       w.__spaceyz.bench = result;
       console.log('BENCH', JSON.stringify(result));
     }, seconds * 1000);
+  }
+
+  startRange(): void {
+    const { session, stats } = createRangeSession(loadTuning());
+    const combat = new CombatFeature();
+    const client = this.startGame(session, [combat]);
+    combat.hud.showStats = true;
+    combat.statsText = () => {
+      const r = stats.report([1]);
+      const me = stats.players.get(1);
+      return [
+        'PRACTICE RANGE',
+        `Boomerang hits ${r.boomerangHitPct.toFixed(0)}% · Laser hits ${r.laserHitPct.toFixed(0)}%`,
+        `Dummies down: ${me?.kills ?? 0}`,
+        'Static · strafing · jumping dummies at 10–55 m',
+      ].join('\n');
+    };
+    client.hud.setHint(
+      'Practice range · LMB throw (hold to aim, A/D to curve) · RMB wind-up · R recall · Q grenade · Esc menu',
+    );
   }
 
   startPlayground(): void {

@@ -54,7 +54,7 @@ export class GameClient {
     this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
     this.levelMeshes = buildLevelMeshes(
       def,
-      deps.settings.brightness,
+      Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
       QUALITY[deps.settings.quality]?.dust ?? true,
     );
     this.scene.add(this.levelMeshes.group);

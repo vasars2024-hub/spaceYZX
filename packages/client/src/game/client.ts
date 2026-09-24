@@ -40,6 +40,8 @@ export class GameClient {
   private features: ClientFeature[] = [];
   private currentFov = 100;
   shake = 0;
+  /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
+  overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
   constructor(
     public deps: GameClientDeps,
@@ -120,7 +122,14 @@ export class GameClient {
       if (events.length) f.events?.(this, events);
       f.frame?.(this, dt);
     }
-    this.deps.renderer.render(this.scene, this.camera);
+    const r = this.deps.renderer;
+    r.render(this.scene, this.camera);
+    if (this.overlay) {
+      r.autoClear = false;
+      r.clearDepth();
+      r.render(this.overlay.scene, this.overlay.camera);
+      r.autoClear = true;
+    }
   }
 
   private audioFrame(events: SimEvent[], speed: number, move: number): void {

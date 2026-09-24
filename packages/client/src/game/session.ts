@@ -10,6 +10,7 @@ import type {
   WorldState,
   BoomerangState,
   GrenadeState,
+  SimContext,
 } from '@space-yz/shared';
 
 export interface TickInput {
@@ -42,6 +43,8 @@ export interface Session {
   readonly level: Level;
   readonly config: GameConfig;
   readonly localId: number;
+  /** Simulation context (level + config) used for prediction and previews. */
+  readonly ctx: SimContext;
   /** interpolation factor between the previous and current tick, for rendering */
   readonly alpha: number;
   /** Advance by real frame time; `sample` is called once per simulated tick. */

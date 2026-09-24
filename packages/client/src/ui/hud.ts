@@ -72,8 +72,10 @@ export class Hud {
     this.crosshair.classList.toggle('outlined', c.outline);
   }
 
-  setHint(text: string): void {
+  setHint(text: string, seconds = 12): void {
     this.hintEl.textContent = text;
+    this.hintEl.classList.remove('faded');
+    window.setTimeout(() => this.hintEl.classList.add('faded'), seconds * 1000);
   }
 
   /** Called every rendered frame. */

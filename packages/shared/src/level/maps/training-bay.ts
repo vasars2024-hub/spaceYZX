@@ -46,8 +46,8 @@ export const buildTrainingBay = (): LevelDef => {
     [0, -1],
     [1, 1],
   ] as const) {
-    for (const z of [-15, -6, 6, 15]) {
-      spawns.push({ pos: v3(sx * 30, 0, z), yawDeg: sx < 0 ? -90 : 90, team });
+    for (const z of [-10, -3.5, 3.5, 10]) {
+      spawns.push({ pos: v3(sx * 31, 0, z), yawDeg: sx < 0 ? -90 : 90, team });
     }
   }
 

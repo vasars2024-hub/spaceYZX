@@ -10,6 +10,9 @@ import { AudioEngine } from './audio';
 import { TuningPanel, loadTuning } from './ui/tuning';
 import { h, button, quickSettings, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
+import { CombatFeature } from './game/combat-feature';
+import { createPracticeSession } from './game/practice';
+import { createPractice, updatePractice, type BotSkill } from '@space-yz/shared';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -134,6 +137,7 @@ export class App {
   /** Title menu entries; later milestones register more modes here. */
   menuEntries(): [string, () => void, string?][] {
     return [
+      ['Practice vs bots', () => this.showPracticeMenu()],
       ['Movement playground', () => this.startPlayground()],
       ['Settings', () => this.showSettings(() => this.showTitle()), 'btn secondary'],
       ['Controls', () => this.showControls(() => this.showTitle()), 'btn secondary'],
@@ -224,9 +228,95 @@ export class App {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
+  showPracticeMenu(): void {
+    let size = 1;
+    let skill: BotSkill['name'] = 'normal';
+    const sizeRow = h('div', { class: 'choice-row' });
+    const skillRow = h('div', { class: 'choice-row' });
+    const renderRows = () => {
+      sizeRow.replaceChildren(
+        ...[1, 2, 3, 5].map((n) =>
+          button(
+            `${n}v${n}`,
+            () => {
+              size = n;
+              renderRows();
+            },
+            `btn small ${size === n ? '' : 'secondary'}`,
+          ),
+        ),
+      );
+      skillRow.replaceChildren(
+        ...(['easy', 'normal', 'hard'] as const).map((k) =>
+          button(
+            k,
+            () => {
+              skill = k;
+              renderRows();
+            },
+            `btn small ${skill === k ? '' : 'secondary'}`,
+          ),
+        ),
+      );
+    };
+    renderRows();
+    this.setScreen(
+      h(
+        'div',
+        { class: 'screen interactive' },
+        h('h2', {}, 'Practice vs bots'),
+        h(
+          'div',
+          { class: 'panel practice-panel' },
+          h('div', { class: 'label' }, 'Team size'),
+          sizeRow,
+          h('div', { class: 'label' }, 'Bot difficulty'),
+          skillRow,
+        ),
+        h(
+          'div',
+          { class: 'menu' },
+          button('Start', () => this.startPractice(size, skill)),
+          button('Back', () => this.showTitle(), 'btn secondary'),
+        ),
+      ),
+    );
+  }
+
+  startPractice(size: number, skill: BotSkill['name']): void {
+    const { session, stats } = createPracticeSession({ size, skill, config: loadTuning() });
+    const combat = new CombatFeature();
+    const client = this.startGame(session, [combat]);
+    combat.statsText = () => {
+      const r = stats.report([1]);
+      const all = stats.report();
+      return [
+        'YOUR STATS',
+        `Boomerang hit ${r.boomerangHitPct.toFixed(0)}%  Laser hit ${r.laserHitPct.toFixed(0)}%`,
+        `Deflects ${r.deflectPct.toFixed(0)}% of incoming`,
+        `K/D ${stats.players.get(1)?.kills ?? 0}/${stats.players.get(1)?.deaths ?? 0}`,
+        'ALL PLAYERS',
+        `Avg fight ${all.avgFightSec.toFixed(1)} s · off-screen deaths ${all.offscreenDeathPct.toFixed(0)}%`,
+        `Kills: ${Object.entries(all.killsByKind)
+          .map(([k, v]) => k + ' ' + v)
+          .join(', ')}`,
+      ].join('\n');
+    };
+    this.tuning?.gui.add(combat.hud, 'showStats').name('Show combat stats');
+    client.hud.setHint(
+      '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
+    );
+  }
+
   startPlayground(): void {
-    const session = new LocalSession({ levelDef: buildTestShip(), config: loadTuning() });
-    const client = this.startGame(session);
+    const practice = createPractice(1.5);
+    const session = new LocalSession({
+      levelDef: buildTestShip(),
+      config: loadTuning(),
+      afterStep: (world, ctx) => void updatePractice(practice, world, ctx),
+    });
+    const combat = new CombatFeature();
+    const client = this.startGame(session, [combat]);
     client.hud.setHint(
       '` tuning panel · Esc menu · try the ramp, rail, zero-G bay (right) and wall corridor (left)',
     );

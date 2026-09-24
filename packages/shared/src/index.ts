@@ -26,3 +26,4 @@ export * from './sim/gravity';
 export * from './sim/movement';
 export * from './sim/world';
 export * from './sim/hash';
+export * from './net/codec';

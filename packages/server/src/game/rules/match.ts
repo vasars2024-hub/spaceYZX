@@ -122,6 +122,10 @@ export class MatchRules implements Rules {
     };
   }
 
+  revealed(): readonly number[] {
+    return this.ms.revealed;
+  }
+
   onJoin(room: Room, m: Member): void {
     const p = room.world.players.find((q) => q.id === m.id);
     if (p) benchPlayer(this.ms, p);

@@ -22,7 +22,7 @@ export const button = (label: string, onClick: () => void, cls = 'btn'): HTMLBut
   return b;
 };
 
-const slider = (
+export const slider = (
   label: string,
   min: number,
   max: number,

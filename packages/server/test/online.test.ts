@@ -41,6 +41,9 @@ describe('online 1v1 over WebSocket', () => {
     await until(() => b.core.state === 'room');
     const room = server.hub.rooms.get(code)!;
     expect(room.humans.length).toBe(2);
+    // this test checks interpolation, so let both always see each other (culling has its own test)
+    expect(room.vision.enabled).toBe(true);
+    room.vision.enabled = false;
     await until(() => !!a.core.localPredicted() && !!b.core.localPredicted());
     const startA = { ...a.core.localPredicted()!.pos };
     await wait(3000);

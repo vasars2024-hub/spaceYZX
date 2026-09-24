@@ -35,9 +35,10 @@ export interface HubServices {
   onMatchEnd?(room: Room, result: MatchResult): void;
   /** A player reported another player. */
   onReport?(conn: Conn, player: number, reason: string, room: Room): void;
-  lagComp?: (
-    room: Room,
-  ) => ReturnType<NonNullable<ConstructorParameters<typeof Room>[0]['lagComp']>>;
+  /** lag compensation (default on) */
+  lagComp?: boolean;
+  /** ping equalization: low-ping players get up to this much input delay (ms, 0 = off) */
+  equalizeMaxMs?: number;
   config?: () => GameConfig;
   log?: (msg: string) => void;
 }
@@ -203,7 +204,7 @@ export class GameHub {
       map: opts.map,
       ranked: opts.ranked,
       config: opts.config ?? this.services.config?.() ?? defaultConfig(),
-      lagComp: this.services.lagComp,
+      lagComp: this.services.lagComp ?? true,
     });
     const rules: Rules =
       this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
@@ -289,7 +290,35 @@ export class GameHub {
     const s = Math.round(performance.now());
     const ping = JSON.stringify({ t: 'sping', s });
     for (const c of this.conns) c.sendRaw(ping);
-    for (const room of this.rooms.values()) if (room.humans.length) this.broadcastRoom(room);
+    for (const room of this.rooms.values()) {
+      if (!room.humans.length) continue;
+      this.broadcastRoom(room);
+      this.equalize(room);
+    }
+  }
+
+  /**
+   * Ping equalization: players with a much lower ping than the slowest human in the room get
+   * a small input delay (capped, default 30 ms) so fights feel fairer. Changes need 3 agreeing
+   * evaluations in a row so the delay doesn't flap.
+   */
+  equalize(room: Room): void {
+    const maxMs = this.services.equalizeMaxMs ?? 30;
+    const humans = room.humans.filter((m) => m.conn && m.conn.rttMs > 0);
+    const worst = Math.min(200, Math.max(0, ...humans.map((m) => m.conn!.rttMs)));
+    const tickMs = 1000 / 60;
+    for (const m of humans) {
+      const extraMs = humans.length < 2 ? 0 : Math.min(maxMs, (worst - m.conn!.rttMs) / 2);
+      const want = Math.max(0, Math.floor(extraMs / tickMs));
+      if (want === m.equalizeTicks) {
+        m.equalizeVotes = 0;
+        continue;
+      }
+      if (++m.equalizeVotes < 3) continue;
+      m.equalizeVotes = 0;
+      m.equalizeTicks = want;
+      m.conn!.sendJson({ t: 'netcfg', inputDelay: want });
+    }
   }
 
   kick(conn: Conn, reason: string, banMinutes = 0): void {

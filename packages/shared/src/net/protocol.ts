@@ -67,6 +67,8 @@ export type ServerMsg =
   | { t: 'error'; msg: string }
   | { t: 'pong'; c: number; s?: number }
   | { t: 'sping'; s: number }
+  /** Ping equalization: extra input delay (ticks) this client should apply. */
+  | { t: 'netcfg'; inputDelay: number }
   | { t: 'kicked'; reason: string }
   | { t: 'queue'; mode: GameMode | null; waiting: number; searchSec: number }
   | { t: 'chat'; from: string; text: string };
@@ -124,6 +126,8 @@ export const encodeInput = (p: InputPacket): Uint8Array => {
     w.writeFloat32(i.view.y);
     w.writeFloat32(i.view.z);
     w.writeFloat32(i.view.w);
+    // view lag in quarter ticks (0..63.75 ticks)
+    w.writeBits(Math.max(0, Math.min(255, Math.round((i.viewLag ?? 0) * 4))), 8);
   }
   return w.finish();
 };
@@ -141,9 +145,10 @@ export const decodeInput = (bytes: Uint8Array): InputPacket => {
     const y = r.readFloat32();
     const z = r.readFloat32();
     const wq = r.readFloat32();
+    const viewLag = r.readBits(8) / 4;
     const l = Math.hypot(x, y, z, wq);
     if (!Number.isFinite(l) || l < 0.5 || l > 1.5) throw new CodecError('invalid', 'bad view');
-    inputs.push({ tick, buttons, view: { x, y, z, w: wq } });
+    inputs.push({ tick, buttons, view: { x, y, z, w: wq }, viewLag });
   }
   return { ack, inputs };
 };

@@ -22,7 +22,7 @@ import {
   type SocketLike,
 } from '@space-yz/shared';
 import { NetSession } from './net/net-session';
-import { onlineMenu, RoomPanel } from './ui/online';
+import { onlineMenu, RoomPanel, netPanel } from './ui/online';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -332,9 +332,9 @@ export class App {
       config: loadTuning(),
     });
     const combat = new CombatFeature();
-    const features: ClientFeature[] = [combat];
-    if (kind === 'match') features.push((this.matchFeature = new MatchFeature()));
-    const client = this.startGame(session, features);
+    const match = kind === 'match' ? new MatchFeature() : null;
+    const client = this.startGame(session, match ? [combat, match] : [combat]);
+    this.matchFeature = match;
     combat.statsText = () => {
       const r = stats.report([1]);
       const all = stats.report();
@@ -455,16 +455,16 @@ export class App {
   private reHello(core: NetCore): void {
     core.error = null;
     if (this.settings.nickname && this.settings.nickname !== core.name) {
-      core.name = this.settings.nickname;
-      core.sendJson({ t: 'hello', v: 1, name: core.name, token: core.token });
+      core.rename(this.settings.nickname);
     }
   }
 
   startOnline(core: NetCore): void {
     const session = new NetSession(core);
     const combat = new CombatFeature();
-    this.matchFeature = new MatchFeature();
-    const client = this.startGame(session, [combat, this.matchFeature], { tuning: false });
+    const match = new MatchFeature();
+    const client = this.startGame(session, [combat, match], { tuning: false });
+    this.matchFeature = match;
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
       frame: () => this.roomPanel?.update(),
@@ -543,6 +543,7 @@ export class App {
         h('h2', {}, this.isOffline() ? 'Paused' : 'Menu'),
         board,
         menu,
+        s instanceof NetSession ? netPanel(s.core, this.netSim) : null,
       ),
     );
   }

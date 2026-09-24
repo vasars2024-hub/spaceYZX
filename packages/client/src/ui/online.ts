@@ -1,7 +1,7 @@
 // Online menus: nickname, create a private room (mode/map/bots) or join one by code.
 import type { GameMode, NetCore } from '@space-yz/shared';
 import { MAPS } from '@space-yz/shared';
-import { h, button } from './menus';
+import { h, button, slider } from './menus';
 
 export interface OnlineMenuHandlers {
   getName(): string;
@@ -162,3 +162,68 @@ export class RoomPanel {
     this.el.remove();
   }
 }
+
+/** Network simulator (dev) + live connection stats, shown in the in-game menu online. */
+export const netPanel = (
+  core: NetCore,
+  sim: { delayMs: number; jitterMs: number; lossPct: number },
+): HTMLElement => {
+  const stats = h('div', { class: 'net-stats' });
+  let bytes = core.bytesIn;
+  let snaps = core.snapshotsIn;
+  let corr = core.corrections;
+  let t0 = performance.now();
+  const refresh = () => {
+    const now = performance.now();
+    const dt = Math.max(0.001, (now - t0) / 1000);
+    stats.textContent =
+      `Ping ${Math.round(core.rttMs)} ms · jitter ${Math.round(core.jitterMs)} ms · ` +
+      `input delay ${core.inputDelay} tick(s) · interpolation ${core.interpTicks.toFixed(1)} ticks\n` +
+      `Download ${((core.bytesIn - bytes) / 1024 / dt).toFixed(1)} KB/s · ` +
+      `${Math.round((core.snapshotsIn - snaps) / dt)} snapshots/s · ` +
+      `${((core.corrections - corr) / dt).toFixed(1)} corrections/s · lead ${core.lastLead} ticks`;
+    bytes = core.bytesIn;
+    snaps = core.snapshotsIn;
+    corr = core.corrections;
+    t0 = now;
+  };
+  refresh();
+  const timer = window.setInterval(() => {
+    if (!stats.isConnected) window.clearInterval(timer);
+    else refresh();
+  }, 1000);
+  return h(
+    'details',
+    { class: 'panel net-panel' },
+    h('summary', {}, 'Network (stats & simulator)'),
+    stats,
+    h('div', { class: 'label' }, 'Simulate a worse connection (only affects you):'),
+    slider(
+      'Extra ping',
+      0,
+      300,
+      10,
+      sim.delayMs,
+      (v) => `${v} ms`,
+      (v) => (sim.delayMs = v),
+    ),
+    slider(
+      'Jitter',
+      0,
+      60,
+      2,
+      sim.jitterMs,
+      (v) => `±${v} ms`,
+      (v) => (sim.jitterMs = v),
+    ),
+    slider(
+      'Packet loss',
+      0,
+      10,
+      0.5,
+      sim.lossPct,
+      (v) => `${v}%`,
+      (v) => (sim.lossPct = v),
+    ),
+  );
+};

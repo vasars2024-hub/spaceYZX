@@ -847,3 +847,19 @@ table.controls td.key {
 .mr .sb {
   text-align: left;
 }
+
+.net-panel {
+  margin-top: 12px;
+  max-width: 560px;
+  text-align: left;
+}
+.net-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.net-stats {
+  white-space: pre-wrap;
+  font-size: 12px;
+  margin: 8px 0;
+  opacity: 0.9;
+}

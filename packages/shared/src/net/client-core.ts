@@ -114,6 +114,12 @@ export class NetCore {
   targetLead = 2;
   private lastJump = -1e9;
   private lastUpdateAt = 0;
+  /** Ping equalization: sampled inputs are applied this many ticks later (server-assigned). */
+  inputDelay = 0;
+  private delayQueue: { buttons: number; view: { x: number; y: number; z: number; w: number } }[] =
+    [];
+  /** FIFO ordering for the network simulator (TCP never reorders). */
+  private simLast = { in: 0, out: 0 };
   interpTicks: number;
   // prediction
   predWorld: WorldState | null = null;
@@ -143,8 +149,11 @@ export class NetCore {
     const ws = this.opts.createSocket(this.opts.url);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
-    ws.onopen = () =>
+    ws.onopen = () => {
       this.sendJson({ t: 'hello', v: PROTOCOL_VERSION, name: this.name, token: this.token });
+      // measure the round trip right away: the clock sync on joining a room needs it
+      this.pingServer();
+    };
     ws.onmessage = (ev) => this.delayed(() => this.onData(ev.data), true);
     ws.onclose = () => {
       this.state = 'closed';
@@ -167,8 +176,18 @@ export class NetCore {
     let d = sim.delayMs / 2 + (pseudo() - 0.5) * 2 * sim.jitterMs;
     // TCP never drops: a "lost" packet is retransmitted about one RTT later (head-of-line stall)
     if (pseudo() * 100 < sim.lossPct) d += Math.max(40, sim.delayMs);
-    void incoming;
-    this.opts.schedule(fn, Math.max(0, d));
+    // ...and never reorders: nothing arrives before what was sent earlier
+    const now = this.opts.now();
+    const key = incoming ? 'in' : 'out';
+    const at = Math.max(now + Math.max(0, d), this.simLast[key]);
+    this.simLast[key] = at;
+    this.opts.schedule(fn, at - now);
+  }
+
+  /** Change nickname (the server answers with a new welcome). */
+  rename(name: string): void {
+    this.name = name;
+    this.sendJson({ t: 'hello', v: PROTOCOL_VERSION, name, token: this.token });
   }
 
   sendJson(msg: ClientMsg): void {
@@ -207,6 +226,8 @@ export class NetCore {
     this.latest = null;
     this.pending = [];
     this.lastAck = 0;
+    this.inputDelay = 0;
+    this.delayQueue = [];
   }
 
   private onData(data: unknown): void {
@@ -255,6 +276,9 @@ export class NetCore {
         this.state = 'room';
         break;
       }
+      case 'netcfg':
+        this.inputDelay = Math.max(0, Math.min(3, Math.floor(msg.inputDelay)));
+        break;
       case 'room':
         this.roster = msg.players;
         this.hostId = msg.hostId;
@@ -295,6 +319,11 @@ export class NetCore {
     const off = snap.tick - now / (TICK_DT * 1000);
     this.offsets.push({ t: now, off });
     while (this.offsets.length && now - this.offsets[0].t > 2000) this.offsets.shift();
+    // interpolation delay follows network jitter (slowly), unless fixed by the caller
+    if (this.opts.interpTicks === undefined) {
+      const want = Math.max(3, Math.min(8, 3 + Math.ceil(this.jitterMs / (TICK_DT * 1000))));
+      this.interpTicks += Math.max(-0.02, Math.min(0.02, want - this.interpTicks));
+    }
     // lead feedback -> time dilation
     this.lastLead = snap.lead;
     const err = this.targetLead + Math.ceil(this.jitterMs / (TICK_DT * 1000)) - snap.lead;
@@ -392,11 +421,15 @@ export class NetCore {
     while (Math.floor(this.clientTick) > this.lastSentTick && steps < 30) {
       steps++;
       this.lastSentTick++;
-      const raw = sample();
+      this.delayQueue.push(sample());
+      while (this.delayQueue.length > this.inputDelay + 1) this.delayQueue.shift();
+      const raw = this.delayQueue[0];
       const input: PlayerInput = {
         tick: this.lastSentTick,
         buttons: raw.buttons,
         view: netView(raw.view),
+        // others are drawn at serverNow - interpTicks: tell the server for lag compensation
+        viewLag: Math.max(0, this.lastSentTick - (this.serverNow() - this.interpTicks)),
       };
       this.pending.push(input);
       if (this.pending.length > 240) this.pending.shift();

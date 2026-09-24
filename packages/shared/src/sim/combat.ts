@@ -457,7 +457,9 @@ const fireLaser = (
   }
   for (const g of world.grenades) {
     if (g.phase !== 0) continue;
-    const cp = closestPointSeg(g.pos, eye, madd(eye, dir, best));
+    // server: shoot the grenade where the shooter saw it
+    const gp = ctx.rewindPos?.(p.id, 'grenade', g.id) ?? g.pos;
+    const cp = closestPointSeg(gp, eye, madd(eye, dir, best));
     if (cp.distSq <= c.grenadeHitRadius * c.grenadeHitRadius) {
       best = cp.t * best;
       target = { kind: 'grenade', g };
@@ -697,10 +699,17 @@ export const updateCombat = (
     const cosCone = Math.cos(c.deflectConeDeg * DEG);
     for (const b of world.boomerangs) {
       if (!isFlying(b) || b.controller === p.id) continue;
-      const d = sub(b.pos, eye);
-      const dist = len(d);
-      if (dist > c.slashRange + c.boomerangRadius || dist < 1e-6) continue;
-      if (dot(scale(d, 1 / dist), fwd) < cosCone) continue;
+      // deflectable where it is now, or (server) where the slasher saw it
+      const inCone = (pos: Vec3): boolean => {
+        const d = sub(pos, eye);
+        const dist = len(d);
+        if (dist > c.slashRange + c.boomerangRadius || dist < 1e-6) return false;
+        return dot(scale(d, 1 / dist), fwd) >= cosCone;
+      };
+      if (!inCone(b.pos)) {
+        const seen = ctx.rewindPos?.(p.id, 'boomerang', b.id);
+        if (!seen || !inCone(seen)) continue;
+      }
       if (b.phase === Phase.Recall) {
         dropAt(b, madd(feetPos(p, ctx.config.movement), p.up, 0.2));
       } else {

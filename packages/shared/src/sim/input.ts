@@ -25,6 +25,11 @@ export interface PlayerInput {
   buttons: number;
   /** World-space view orientation (camera looks down local -Z). */
   view: Quat;
+  /**
+   * Network only: how many ticks behind `tick` the other players were drawn when this input
+   * was made (interpolation + latency). The server rewinds hitboxes by this (lag compensation).
+   */
+  viewLag?: number;
 }
 
 export const emptyInput = (tick = 0): PlayerInput => ({ tick, buttons: 0, view: qIdentity() });

@@ -31,6 +31,8 @@ import {
   TICK_DT,
 } from '@space-yz/shared';
 import type { Conn } from './conn';
+import { LagHistory } from './lagcomp';
+import { TeamVision } from './visibility';
 
 export interface Member {
   id: number;
@@ -54,6 +56,10 @@ export interface Member {
   equalizeTicks: number;
   joinedTick: number;
   sentExtra: string;
+  /** (fractional) tick of the world this player was looking at with their latest input */
+  viewTick: number;
+  /** ping equalization: consecutive evaluations wanting a different delay (hysteresis) */
+  equalizeVotes: number;
 }
 
 /** Game rules plug-in (practice respawns, rounds & objective, …). */
@@ -67,6 +73,8 @@ export interface Rules {
   onLeave?(room: Room, m: Member): void;
   /** Can this player's inputs move/act right now? (spawn lock etc.) */
   finished?(room: Room): boolean;
+  /** Players everyone may see through walls right now (never culled). */
+  revealed?(room: Room): readonly number[];
 }
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -85,8 +93,10 @@ export interface RoomOptions {
   /** exact private state is sent every N snapshots (reconciliation rate) */
   privateEvery?: number;
   maxPlayers?: number;
-  /** server-side lag compensation (M6) */
-  lagComp?: (room: Room) => SimContext['rewindHitboxes'];
+  /** server-side lag compensation (default on) */
+  lagComp?: boolean;
+  /** don't send enemies a team can't see (default on) */
+  losCulling?: boolean;
 }
 
 export class Room {
@@ -112,6 +122,11 @@ export class Room {
   onEvents: ((events: SimEvent[]) => void) | null = null;
   /** bytes sent (for bandwidth stats) */
   bytesOut = 0;
+  readonly history = new LagHistory();
+  readonly vision = new TeamVision();
+  /** lag compensation stats: rewinds served, and how far back in total (ticks) */
+  rewinds = 0;
+  rewindTicksSum = 0;
 
   constructor(opts: RoomOptions) {
     this.code = opts.code;
@@ -125,7 +140,29 @@ export class Room {
     this.snapshotEvery = opts.snapshotEvery ?? 1;
     this.privateEvery = opts.privateEvery ?? 3;
     this.maxPlayers = opts.maxPlayers ?? (opts.mode === '1v1' ? 2 : opts.mode === '2v2' ? 4 : 10);
-    if (opts.lagComp) this.ctx.rewindHitboxes = opts.lagComp(this);
+    if (opts.lagComp !== false) {
+      this.ctx.rewindHitboxes = (id) => {
+        const tick = this.rewindTick(id);
+        if (tick === null) return null;
+        this.rewinds++;
+        this.rewindTicksSum += this.world.tick - tick;
+        return this.history.hitboxesAt(tick);
+      };
+      this.ctx.rewindPos = (id, kind, objId) => {
+        const tick = this.rewindTick(id);
+        return tick === null ? null : this.history.posAt(kind, objId, tick);
+      };
+    }
+    this.vision.enabled = opts.losCulling !== false;
+  }
+
+  /** The (clamped) tick a human player was seeing, or null for bots / no rewind needed. */
+  private rewindTick(id: number): number | null {
+    const m = this.members.get(id);
+    if (!m?.conn) return null;
+    const now = this.world.tick;
+    const tick = this.history.clampTick(m.viewTick, now);
+    return tick >= now - 0.01 ? null : tick;
   }
 
   get humans(): Member[] {
@@ -181,6 +218,8 @@ export class Room {
       equalizeTicks: 0,
       joinedTick: this.world.tick,
       sentExtra: '',
+      viewTick: this.world.tick,
+      equalizeVotes: 0,
     };
     this.members.set(id, m);
     if (conn && !this.hostId) this.hostId = id;
@@ -217,7 +256,12 @@ export class Room {
         continue; // too late: the server already simulated that tick
       }
       if (inp.tick > next + 120 || m.inputs.size > 180) continue; // client clock off: ignore
-      m.inputs.set(inp.tick, { tick: inp.tick, buttons: inp.buttons, view: netView(inp.view) });
+      m.inputs.set(inp.tick, {
+        tick: inp.tick,
+        buttons: inp.buttons,
+        view: netView(inp.view),
+        viewLag: Math.max(0, Math.min(64, inp.viewLag ?? 0)),
+      });
     }
   }
 
@@ -236,14 +280,19 @@ export class Room {
       if (inp) {
         m.last = inp;
         m.lastProcessed = t;
-      } else if (m.last) {
-        m.missedTicks++;
+        m.viewTick = t - (inp.viewLag ?? 0);
+      } else {
+        if (m.last) m.missedTicks++;
+        m.viewTick += 1;
       }
       for (const k of m.inputs.keys()) if (k <= t) m.inputs.delete(k);
       if (m.last) inputs[m.id] = { tick: t, buttons: m.last.buttons, view: m.last.view };
     }
     step(this.world, inputs, this.ctx);
     this.rules?.afterStep(this);
+    this.history.record(this.world, this.ctx.config);
+    if (this.vision.enabled && this.humans.length)
+      this.vision.update(this.world, this.ctx, this.rules?.revealed?.(this) ?? []);
     if (this.world.events.length) {
       this.pendingEvents.push(...this.world.events);
       this.onEvents?.(this.world.events);
@@ -263,6 +312,14 @@ export class Room {
       const baseline = m.ack && m.history.has(m.ack) ? m.history.get(m.ack)! : null;
       const seq = m.nextSeq++;
       const own = this.world.players.find((p) => p.id === m.id) ?? null;
+      // line-of-sight culling: leave out enemies this player's team can't see
+      let players = pub.players;
+      if (this.vision.enabled) {
+        players = new Map();
+        for (const [id, np] of pub.players)
+          if (this.vision.visible(m.team, id, np.team as 0 | 1, this.world.tick))
+            players.set(id, np);
+      }
       const ownB = this.world.boomerangs.find((b) => b.owner === m.id) ?? null;
       const sendExtra = rulesJson !== '' && (rulesJson !== m.sentExtra || seq % 60 === 0);
       if (sendExtra) m.sentExtra = rulesJson;
@@ -273,7 +330,7 @@ export class Room {
           ackInput: m.lastProcessed,
           lead: m.leads.length ? Math.min(...m.leads) : 0,
           baseline: baseline ? m.ack : 0,
-          players: pub.players,
+          players,
           boomerangs: pub.boomerangs,
           grenades: this.world.grenades,
           zones,
@@ -283,7 +340,7 @@ export class Room {
         },
         baseline,
       );
-      m.history.set(seq, { players: pub.players, boomerangs: pub.boomerangs });
+      m.history.set(seq, { players, boomerangs: pub.boomerangs });
       if (m.history.size > 90) m.history.delete(seq - 90);
       m.conn.sendBinary(bytes);
       this.bytesOut += bytes.length;

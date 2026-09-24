@@ -2,6 +2,7 @@
 import type { LevelDef } from '../types';
 import { buildTestShip } from './test-ship';
 import { buildTrainingBay } from './training-bay';
+import { buildKestrel } from './kestrel';
 
 export interface MapInfo {
   id: string;
@@ -12,6 +13,7 @@ export interface MapInfo {
 
 export const MAPS: MapInfo[] = [
   { id: 'training-bay', name: 'Training Bay', build: buildTrainingBay, competitive: false },
+  { id: 'kestrel', name: 'Kestrel', build: buildKestrel, competitive: true },
   { id: 'proving-grounds', name: 'Proving Grounds', build: buildTestShip, competitive: false },
 ];
 

@@ -17,6 +17,7 @@ import { Conn } from './conn';
 import { Room, makeRoomCode, type Rules } from './room';
 import { Clock } from './clock';
 import { PracticeRules } from './rules/practice';
+import { MatchRules, type MatchResult } from './rules/match';
 
 export interface HubServices {
   /** Authenticate / create an account from a hello message; returns display name + token. */
@@ -31,6 +32,8 @@ export interface HubServices {
   queue?(hub: GameHub, conn: Conn, mode: GameMode | null): void;
   onDisconnect?(hub: GameHub, conn: Conn): void;
   /** Called for every finished match (M8 records results). */
+  onMatchEnd?(room: Room, result: MatchResult): void;
+  /** A player reported another player. */
   onReport?(conn: Conn, player: number, reason: string, room: Room): void;
   lagComp?: (
     room: Room,
@@ -157,6 +160,15 @@ export class GameHub {
       case 'leaveRoom':
         this.leaveRoom(conn);
         return;
+      case 'startMatch': {
+        const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
+        if (!room || room.hostId !== conn.playerId || room.ranked) return;
+        if (room.rules instanceof MatchRules) {
+          const err = room.rules.requestStart(room);
+          if (err) conn.sendJson({ t: 'error', msg: err });
+        }
+        return;
+      }
       case 'queue':
       case 'unqueue':
         this.services.queue?.(this, conn, msg.t === 'queue' ? msg.mode : null);
@@ -193,8 +205,18 @@ export class GameHub {
       config: opts.config ?? this.services.config?.() ?? defaultConfig(),
       lagComp: this.services.lagComp,
     });
-    room.rules = this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ?? new PracticeRules();
-    room.rules.setup?.(room);
+    const rules: Rules =
+      this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
+      (opts.mode === 'practice' ? new PracticeRules() : new MatchRules(opts.mode));
+    room.rules = rules;
+    if (room.rules instanceof MatchRules)
+      room.rules.onResult = (r, result) => {
+        this.log(
+          `Room ${r.code}: match over — ${result.winner === null ? 'draw' : `team ${result.winner === 0 ? 'cyan' : 'orange'} wins`} ${result.scores[0]}-${result.scores[1]} (${result.reason})`,
+        );
+        this.services.onMatchEnd?.(r, result);
+      };
+    rules.setup?.(room);
     room.onChanged = () => this.broadcastRoom(room);
     for (let i = 0; i < (opts.bots ?? 0); i++)
       room.addMember(`Bot ${i + 1}`, null, { botSkill: opts.botSkill });

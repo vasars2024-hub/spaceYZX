@@ -15,6 +15,7 @@ export * from './level/collision';
 export * from './level/builder';
 export * from './level/maps/test-ship';
 export * from './level/maps/training-bay';
+export * from './level/maps/kestrel';
 export * from './level/maps/index';
 
 export * from './sim/input';
@@ -32,5 +33,6 @@ export * from './net/codec';
 export * from './bots/brain';
 export * from './stats/tracker';
 export * from './modes/practice';
+export * from './rules/match';
 export * from './net/protocol';
 export * from './net/client-core';

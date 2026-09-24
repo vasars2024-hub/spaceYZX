@@ -61,7 +61,7 @@ export interface TowerDef {
 
 export interface WaypointDef {
   pos: Vec3;
-  links: number[];
+  links: number[]; // outgoing links (usually both ways; drops into gravity areas are one-way)
 }
 
 export interface LevelDef {

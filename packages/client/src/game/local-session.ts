@@ -9,6 +9,7 @@ import type {
   Vec3,
   WorldState,
   SimContext,
+  MatchState,
 } from '@space-yz/shared';
 import {
   buildLevel,
@@ -21,9 +22,11 @@ import {
   clone,
   normalize,
   respawnPlayer,
+  matchView,
+  startMatch,
   TICK_DT,
 } from '@space-yz/shared';
-import type { RenderPlayer, Session, TickInput } from './session';
+import type { MatchInfo, RenderPlayer, Session, TickInput } from './session';
 
 export interface LocalSessionOptions {
   levelDef: LevelDef;
@@ -34,6 +37,8 @@ export interface LocalSessionOptions {
   afterStep?: (world: WorldState, ctx: SimContext) => void;
   setup?: (world: WorldState, ctx: SimContext) => void;
   names?: Record<number, string>;
+  /** Offline match vs bots: rules state updated by `afterStep`. */
+  match?: MatchState;
 }
 
 interface Snap {
@@ -122,6 +127,11 @@ export class LocalSession implements Session {
 
   others(): RenderPlayer[] {
     const names = this.names();
+    const m = this.opts.match;
+    const carriers = new Set<number>(
+      m ? m.controllers.map((c) => c.carrier).filter((id): id is number => id !== null) : [],
+    );
+    const revealed = new Set<number>(m?.revealed ?? []);
     return this.w.players
       .filter((p) => p.id !== this.localId)
       .map((p) => ({
@@ -140,9 +150,33 @@ export class LocalSession implements Session {
         aiming: p.aiming,
         laserWarn: p.laserWarn,
         slashTicks: p.slashTicks,
-        carrier: false,
-        revealed: false,
+        carrier: carriers.has(p.id),
+        revealed: revealed.has(p.id),
       }));
+  }
+
+  match(): MatchInfo | null {
+    const ms = this.opts.match;
+    if (!ms) return null;
+    return {
+      ...matchView(ms),
+      startAt: 0,
+      stats: this.w.players.map((p) => ({
+        id: p.id,
+        kills: p.kills,
+        deaths: p.deaths,
+        teamKills: p.teamKills,
+        damage: Math.round(p.damageDealt),
+      })),
+    };
+  }
+
+  tickNow(): number {
+    return this.w.tick;
+  }
+
+  restartMatch(): void {
+    if (this.opts.match) startMatch(this.opts.match, this.w, this.ctx);
   }
 
   boomerangs() {

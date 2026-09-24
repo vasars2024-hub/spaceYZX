@@ -11,7 +11,14 @@ import type {
   BoomerangState,
   GrenadeState,
   SimContext,
+  MatchView,
 } from '@space-yz/shared';
+
+/** Match state as the client sees it (rules view + per-player stats). */
+export interface MatchInfo extends MatchView {
+  startAt: number;
+  stats: { id: number; kills: number; deaths: number; teamKills: number; damage: number }[];
+}
 
 export interface TickInput {
   buttons: number;
@@ -64,6 +71,18 @@ export interface Session {
   /** Events produced since the last drain. */
   drainEvents(): SimEvent[];
   names(): Record<number, string>;
+  /** Rounds & objective state (null in practice / playground). */
+  match?(): MatchInfo | null;
+  /** Current authoritative tick (for timers). */
+  tickNow?(): number;
+  /** Can this player start the match early? */
+  canStart?(): boolean;
+  startMatch?(): void;
+  /** Offline: play again after the results screen. */
+  restartMatch?(): void;
+  report?(playerId: number, reason: string): void;
+  /** Round-trip ping per player id (online). */
+  pings?(): Record<number, number>;
   teleport?(areaIndex: number): void;
   respawn?(): void;
   dispose(): void;

@@ -30,7 +30,7 @@ describe('online 1v1 over WebSocket', () => {
     const a = startHeadlessBot({
       url,
       name: 'Alpha',
-      onReady: (core) => core.createRoom('1v1', 'training-bay'),
+      onReady: (core) => core.createRoom('practice', 'training-bay'),
     });
     bots.push(a);
     await until(() => a.core.state === 'room');
@@ -58,6 +58,36 @@ describe('online 1v1 over WebSocket', () => {
     // inputs arrive in time (lead stays positive most of the time)
     const ma = room.members.get(a.core.localId)!;
     expect(ma.lateInputs).toBeLessThan(40);
+  }, 20000);
+
+  it('a full 1v1 room starts a match and streams its state to both players', async () => {
+    const url = `ws://127.0.0.1:${server.port}/ws`;
+    const a = startHeadlessBot({
+      url,
+      name: 'Delta',
+      onReady: (core) => core.createRoom('1v1', 'kestrel'),
+    });
+    bots.push(a);
+    await until(() => a.core.state === 'room');
+    const phase = (x: unknown) => (x as { phase?: string } | null)?.phase;
+    await until(() => phase(a.core.extra) === 'warmup');
+    const b = startHeadlessBot({
+      url,
+      name: 'Echo',
+      onReady: (core) => core.joinRoom(a.core.code),
+    });
+    bots.push(b);
+    // 3 s start delay, then the 5 s spawn lock
+    await until(
+      () => phase(a.core.extra) === 'spawnLock' && phase(b.core.extra) === 'spawnLock',
+      6000,
+    );
+    const view = a.core.extra as { round: number; carriers: number[]; scores: number[] };
+    expect(view.round).toBe(1);
+    expect(view.carriers.sort()).toEqual([a.core.localId, b.core.localId].sort());
+    // players are frozen during the spawn lock (the exact private state says so)
+    await until(() => !!a.core.localPredicted()?.frozen);
+    await until(() => phase(a.core.extra) === 'live', 7000);
   }, 20000);
 
   it('rejects wrong room codes and out-of-date clients politely', async () => {

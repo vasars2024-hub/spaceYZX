@@ -68,4 +68,13 @@ export type SimEvent =
       pos: Vec3;
       src: Vec3;
       throwId: number; // groups multi-kills from one throw/recall (0 if n/a)
-    };
+    }
+  // match rules
+  | { type: 'roundStart'; round: number; suddenDeath: boolean }
+  | { type: 'roundLive'; round: number }
+  | { type: 'roundEnd'; round: number; winner: 0 | 1 | null; reason: string }
+  | { type: 'matchEnd'; winner: 0 | 1 | null; reason: string }
+  | { type: 'controllerDrop'; team: 0 | 1; pos: Vec3 }
+  | { type: 'controllerPickup'; team: 0 | 1; player: number }
+  | { type: 'controllerReturn'; team: 0 | 1 }
+  | { type: 'towerTouch'; team: 0 | 1; player: number };

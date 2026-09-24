@@ -383,7 +383,7 @@ table.controls td.key {
 .hud-hint {
   position: absolute;
   left: 50%;
-  top: 12px;
+  top: 84px;
   transform: translateX(-50%);
   font-size: 12px;
   color: rgba(180, 200, 230, 0.8);
@@ -665,7 +665,7 @@ table.controls td.key {
 .room-panel {
   position: absolute;
   left: 50%;
-  top: 34px;
+  bottom: 8px;
   transform: translateX(-50%);
   font-size: 12px;
   white-space: pre;
@@ -680,4 +680,170 @@ table.controls td.key {
   .online-cols {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------- match UI ---------------- */
+.match-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.match-bar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #e8f1ff;
+  text-shadow: 0 1px 3px #000;
+}
+.mb-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: rgba(4, 8, 16, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px 16px;
+}
+.mb-score {
+  font-size: 28px;
+  font-weight: 800;
+  min-width: 28px;
+}
+.mb-center {
+  font-size: 20px;
+  font-weight: 700;
+  min-width: 150px;
+  letter-spacing: 0.06em;
+}
+.mb-center.urgent {
+  color: #ff5b5b;
+}
+.mb-sub {
+  font-size: 12px;
+  margin-top: 3px;
+  opacity: 0.85;
+}
+.match-banner-wrap {
+  position: absolute;
+  top: 26%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  text-shadow: 0 2px 8px #000;
+}
+.match-banner {
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  transition: opacity 0.3s;
+}
+.match-banner-sub {
+  font-size: 16px;
+  color: #d8e6ff;
+  transition: opacity 0.3s;
+}
+.match-markers .mk {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px #000,
+    0 0 6px #000;
+}
+.mk-enemy {
+  font-size: 20px !important;
+}
+.mk-ally {
+  opacity: 0.85;
+}
+.scoreboard,
+.match-results {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(4, 8, 16, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 14px 18px;
+  color: #e8f1ff;
+  min-width: min(760px, 94vw);
+}
+.sb-cols {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.sb-team {
+  flex: 1;
+  min-width: 300px;
+}
+.sb-title {
+  font-weight: 800;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+.sb table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.sb th {
+  text-align: left;
+  opacity: 0.6;
+  font-weight: 600;
+}
+.sb td,
+.sb th {
+  padding: 3px 6px;
+}
+.sb tr.me td {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sb-rounds {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.sb-round {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #000;
+  display: grid;
+  place-items: center;
+}
+.mr {
+  text-align: center;
+}
+.mr-title {
+  font-size: 52px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+.mr-score {
+  font-size: 32px;
+  font-weight: 800;
+}
+.mr-reason,
+.mr-next {
+  opacity: 0.8;
+  margin: 6px 0 12px;
+}
+.btn.tiny {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.pause-board {
+  max-width: 94vw;
+  margin: 10px 0;
+}
+.mr .sb {
+  text-align: left;
 }

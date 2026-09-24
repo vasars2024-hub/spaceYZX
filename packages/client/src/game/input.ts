@@ -69,8 +69,11 @@ export class InputManager {
   }
 
   /** Fires for non-movement actions (scoreboard, tuning…) on key-down. */
-  onAction(fn: ActionListener): void {
+  onAction(fn: ActionListener): () => void {
     this.listeners.push(fn);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== fn);
+    };
   }
 
   private press(code: string): void {

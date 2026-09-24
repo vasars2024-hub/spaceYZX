@@ -10,6 +10,12 @@ import {
   StatsTracker,
   createPractice,
   updatePractice,
+  createMatch,
+  startMatch,
+  updateMatch,
+  botObjectives,
+  mapDef,
+  type MatchState,
 } from '@space-yz/shared';
 import { LocalSession } from './local-session';
 
@@ -30,13 +36,20 @@ export interface PracticeOptions {
   skill: BotSkill['name'];
   levelDef?: LevelDef;
   config: GameConfig;
+  /** 'match': rounds + Controller & Tower on Kestrel; 'deathmatch': respawning practice. */
+  kind?: 'match' | 'deathmatch';
 }
 
 export const createPracticeSession = (
   opts: PracticeOptions,
 ): { session: LocalSession; stats: StatsTracker } => {
-  const levelDef = opts.levelDef ?? buildTrainingBay();
+  const isMatch = opts.kind === 'match';
+  const levelDef = opts.levelDef ?? (isMatch ? mapDef('kestrel') : buildTrainingBay());
   const mems: BotMemory[] = [];
+  const match: MatchState | undefined = isMatch
+    ? createMatch(opts.size <= 1 ? '1v1' : opts.size === 2 ? '2v2' : '5v5')
+    : undefined;
+  let restartAt = 0;
   const stats = new StatsTracker();
   const practice = createPractice(2.5);
   const names: Record<number, string> = {};
@@ -45,6 +58,7 @@ export const createPracticeSession = (
     config: opts.config,
     seed: 1 + Math.floor(Math.random() * 1e6),
     names,
+    match,
     setup: (world, ctx) => {
       let id = 2;
       let n = 0;
@@ -63,6 +77,7 @@ export const createPracticeSession = (
       const me = world.players.find((p) => p.id === 1)!;
       const s0 = levelDef.spawns.find((s) => s.team === 0) ?? levelDef.spawns[0];
       Object.assign(me, createPlayer(1, 0, s0.pos, s0.yawDeg, ctx.config));
+      if (match) startMatch(match, world, ctx);
     },
     extraInputs: (world, ctx) => {
       const inputs: Record<number, PlayerInput> = {};
@@ -74,6 +89,20 @@ export const createPracticeSession = (
     },
     afterStep: (world, ctx) => {
       stats.observe(world);
+      if (match) {
+        updateMatch(match, world, ctx);
+        const obj = botObjectives(match, world, ctx);
+        for (const mem of mems) mem.objective = obj[mem.id] ?? null;
+        // offline: the next match starts a few seconds after the results
+        if (match.phase === 'warmup') {
+          if (!restartAt) restartAt = world.tick + 180;
+          else if (world.tick >= restartAt) {
+            restartAt = 0;
+            startMatch(match, world, ctx);
+          }
+        }
+        return;
+      }
       for (const id of updatePractice(practice, world, ctx)) stats.onRespawn(id);
     },
   });

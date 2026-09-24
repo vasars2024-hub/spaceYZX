@@ -41,6 +41,7 @@ export type ClientMsg =
   | { t: 'createRoom'; mode: GameMode; map?: string; bots?: number; botSkill?: string }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
+  | { t: 'startMatch' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }
   | { t: 'queue'; mode: GameMode }

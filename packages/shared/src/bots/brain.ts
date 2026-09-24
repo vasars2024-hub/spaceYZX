@@ -25,6 +25,7 @@ import type { RngState } from '../math/rng';
 import { rngFromSeed, rngFloat, rngInt } from '../math/rng';
 import { lineOfSight, raycast } from '../level/collision';
 import type { SimContext } from '../sim/context';
+import type { WaypointDef } from '../level/types';
 import type { PlayerInput } from '../sim/input';
 import { Btn } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
@@ -119,8 +120,10 @@ export interface BotMemory {
   jumpCooldown: number;
   /** optional objective: where the bot wants to go when it has no target */
   objective: Vec3 | null;
-  /** optional path waypoints (M7) */
+  /** current waypoint route */
   path: Vec3[];
+  pathGoal: Vec3 | null;
+  pathUntil: number;
 }
 
 export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotMemory => ({
@@ -146,6 +149,8 @@ export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotM
   jumpCooldown: 0,
   objective: null,
   path: [],
+  pathGoal: null,
+  pathUntil: 0,
 });
 
 const range = (rng: RngState, [a, b]: [number, number]): number =>
@@ -186,6 +191,102 @@ const pickGoal = (ctx: SimContext, mem: BotMemory): Vec3 => {
     ...def.spawns.map((s) => s.pos),
   ];
   return clone(pts[rngInt(mem.rng, pts.length)] ?? v3());
+};
+
+/** Can a walker at `p` (body up `up`) head straight for `q`? Needs a clear line and, unless
+ * floating, no big climb/drop along its up axis. */
+const walkable = (level: SimContext['level'], p: Vec3, q: Vec3, up: Vec3 | null): boolean =>
+  (up === null || Math.abs(dot(sub(q, p), up)) < 2.5) && lineOfSight(level, p, q);
+
+const nearestWaypoint = (
+  wps: WaypointDef[],
+  p: Vec3,
+  level: SimContext['level'],
+  up: Vec3 | null,
+): number => {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < wps.length; i++) {
+    const d = lenSq(sub(wps[i].pos, p));
+    if (d < bestD && (d < 4 || walkable(level, p, wps[i].pos, up))) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best < 0) {
+    for (let i = 0; i < wps.length; i++) {
+      const d = lenSq(sub(wps[i].pos, p));
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+  }
+  return best;
+};
+
+/** Shortest waypoint route (Dijkstra; graphs are small). */
+export const waypointRoute = (wps: WaypointDef[], from: number, to: number): number[] => {
+  const n = wps.length;
+  const dist = new Array<number>(n).fill(Infinity);
+  const prev = new Array<number>(n).fill(-1);
+  const done = new Array<boolean>(n).fill(false);
+  dist[from] = 0;
+  for (;;) {
+    let u = -1;
+    for (let i = 0; i < n; i++)
+      if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0 || u === to) break;
+    done[u] = true;
+    for (const v of wps[u].links) {
+      const d = dist[u] + len(sub(wps[u].pos, wps[v].pos));
+      if (d < dist[v]) {
+        dist[v] = d;
+        prev[v] = u;
+      }
+    }
+  }
+  if (dist[to] === Infinity) return [];
+  const out: number[] = [];
+  for (let v = to; v >= 0; v = prev[v]) out.unshift(v);
+  return out;
+};
+
+/** Next point to walk toward on the way to `goal` (via the map's waypoint graph if any). */
+const navigate = (
+  ctx: SimContext,
+  mem: BotMemory,
+  self: PlayerState,
+  goal: Vec3,
+  tick: number,
+): Vec3 => {
+  const pos = self.pos;
+  const up = self.move === Move.Float ? null : self.up;
+  const wps = ctx.level.def.waypoints;
+  if (!wps || wps.length < 2 || walkable(ctx.level, pos, goal, up)) {
+    mem.path = [];
+    return goal;
+  }
+  const stale =
+    mem.path.length === 0 ||
+    tick >= mem.pathUntil ||
+    !mem.pathGoal ||
+    lenSq(sub(mem.pathGoal, goal)) > 16;
+  if (stale) {
+    const a = nearestWaypoint(wps, pos, ctx.level, up);
+    const b = nearestWaypoint(wps, goal, ctx.level, null);
+    mem.path = a >= 0 && b >= 0 ? waypointRoute(wps, a, b).map((i) => clone(wps[i].pos)) : [];
+    mem.path.push(clone(goal));
+    mem.pathGoal = clone(goal);
+    mem.pathUntil = tick + 180;
+  }
+  // skip waypoints we already reached, or can shortcut past
+  while (mem.path.length > 1) {
+    const d = sub(mem.path[0], pos);
+    if (lenSq(d) < 6.25 || walkable(ctx.level, pos, mem.path[1], up)) mem.path.shift();
+    else break;
+  }
+  return mem.path[0] ?? goal;
 };
 
 export const botThink = (
@@ -268,6 +369,7 @@ export const botThink = (
   }
 
   // ---------------- movement ----------------
+  let navPoint: Vec3 | null = null;
   let moveDir: Vec3;
   const planarTo = (p: Vec3) => projectOnPlane(sub(p, self.pos), up);
   if (target && (targetVisible || tick - mem.targetSeenTick < 120)) {
@@ -287,12 +389,13 @@ export const botThink = (
   } else {
     // wander / objective
     const goal = mem.objective ?? mem.goal;
-    if (!goal || tick > mem.goalUntil || len(planarTo(goal)) < 3) {
+    if (!mem.objective && (!goal || tick > mem.goalUntil || len(planarTo(goal)) < 3)) {
       mem.goal = pickGoal(ctx, mem);
       mem.goalUntil = tick + 600;
     }
     const g = mem.objective ?? mem.goal!;
-    moveDir = normalize(planarTo(g));
+    navPoint = navigate(ctx, mem, self, g, tick);
+    moveDir = normalize(planarTo(navPoint));
   }
 
   // obstacle avoidance: probe ahead at chest height, steer around walls
@@ -351,6 +454,18 @@ export const botThink = (
     aimDir = moveDir;
   }
   if (aimDir) view = turnView(self.view, aimDir, up, s.turnDegPerTick);
+  // zero-G: look straight at the next point (in 3D) and push off / thrust toward it
+  const floatNav = self.move === Move.Float && navPoint !== null && !(target && engaged);
+  if (floatNav) {
+    const d3 = sub(navPoint!, self.pos);
+    view = turnView(self.view, d3, up, s.turnDegPerTick);
+    const aligned = angleBetween(qForward(view), d3) < 0.3;
+    const toward = dot(self.vel, normalize(d3));
+    if (aligned && toward < 5 && mem.jumpCooldown === 0) {
+      buttons |= Btn.Jump;
+      mem.jumpCooldown = 20;
+    }
+  }
   const aimErrNow = aimDir ? angleBetween(qForward(view), aimDir) : Math.PI;
 
   // ---------------- dodging ----------------
@@ -365,7 +480,8 @@ export const botThink = (
   }
   if (mem.jumpCooldown > 0) mem.jumpCooldown--;
 
-  buttons |= moveButtons(view, up, moveDir);
+  if (floatNav) buttons |= Btn.Forward;
+  else buttons |= moveButtons(view, up, moveDir);
 
   // slide-hop: slide when fast, jump out of the slide
   const planarSpeed = len(projectOnPlane(self.vel, up));

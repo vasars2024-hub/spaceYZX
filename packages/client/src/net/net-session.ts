@@ -12,7 +12,7 @@ import type {
   GrenadeState,
 } from '@space-yz/shared';
 import { lerp, add, normalize, netToBoomerang, Phase } from '@space-yz/shared';
-import type { RenderPlayer, Session, TickInput } from '../game/session';
+import type { MatchInfo, RenderPlayer, Session, TickInput } from '../game/session';
 
 export class NetSession implements Session {
   alpha = 0;
@@ -97,6 +97,33 @@ export class NetSession implements Session {
   revealed(): Set<number> {
     const x = this.core.extra as { revealed?: number[] } | null;
     return new Set(x?.revealed ?? []);
+  }
+
+  match(): MatchInfo | null {
+    const x = this.core.extra as (MatchInfo & { rules?: string }) | null;
+    return x && x.rules === 'match' ? x : null;
+  }
+
+  tickNow(): number {
+    return this.core.serverNow();
+  }
+
+  canStart(): boolean {
+    return !this.core.ranked && this.core.hostId === this.localId;
+  }
+
+  startMatch(): void {
+    this.core.sendJson({ t: 'startMatch' });
+  }
+
+  report(playerId: number, reason: string): void {
+    this.core.sendJson({ t: 'report', player: playerId, reason });
+  }
+
+  pings(): Record<number, number> {
+    const out: Record<number, number> = {};
+    for (const p of this.core.roster) out[p.id] = p.ping;
+    return out;
   }
 
   boomerangs(): BoomerangState[] {

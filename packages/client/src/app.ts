@@ -11,6 +11,7 @@ import { TuningPanel, loadTuning } from './ui/tuning';
 import { h, button, quickSettings, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
+import { MatchFeature } from './game/match-feature';
 import { createPracticeSession } from './game/practice';
 import {
   createPractice,
@@ -231,8 +232,11 @@ export class App {
     return client;
   }
 
+  matchFeature: MatchFeature | null = null;
+
   stopGame(): void {
     this.client?.dispose();
+    this.matchFeature = null;
     this.client = null;
     this.tuning?.dispose();
     this.tuning = null;
@@ -243,9 +247,28 @@ export class App {
   showPracticeMenu(): void {
     let size = 1;
     let skill: BotSkill['name'] = 'normal';
+    let kind: 'match' | 'deathmatch' = 'match';
+    const kindRow = h('div', { class: 'choice-row' });
     const sizeRow = h('div', { class: 'choice-row' });
     const skillRow = h('div', { class: 'choice-row' });
     const renderRows = () => {
+      kindRow.replaceChildren(
+        ...(
+          [
+            ['match', 'Match (Kestrel)'],
+            ['deathmatch', 'Free fight (Training Bay)'],
+          ] as const
+        ).map(([k, label]) =>
+          button(
+            label,
+            () => {
+              kind = k;
+              renderRows();
+            },
+            `btn small ${kind === k ? '' : 'secondary'}`,
+          ),
+        ),
+      );
       sizeRow.replaceChildren(
         ...[1, 2, 3, 5].map((n) =>
           button(
@@ -280,6 +303,8 @@ export class App {
         h(
           'div',
           { class: 'panel practice-panel' },
+          h('div', { class: 'label' }, 'Mode'),
+          kindRow,
           h('div', { class: 'label' }, 'Team size'),
           sizeRow,
           h('div', { class: 'label' }, 'Bot difficulty'),
@@ -288,17 +313,28 @@ export class App {
         h(
           'div',
           { class: 'menu' },
-          button('Start', () => this.startPractice(size, skill)),
+          button('Start', () => this.startPractice(size, skill, kind)),
           button('Back', () => this.showTitle(), 'btn secondary'),
         ),
       ),
     );
   }
 
-  startPractice(size: number, skill: BotSkill['name']): void {
-    const { session, stats } = createPracticeSession({ size, skill, config: loadTuning() });
+  startPractice(
+    size: number,
+    skill: BotSkill['name'],
+    kind: 'match' | 'deathmatch' = 'deathmatch',
+  ): void {
+    const { session, stats } = createPracticeSession({
+      size,
+      skill,
+      kind,
+      config: loadTuning(),
+    });
     const combat = new CombatFeature();
-    const client = this.startGame(session, [combat]);
+    const features: ClientFeature[] = [combat];
+    if (kind === 'match') features.push((this.matchFeature = new MatchFeature()));
+    const client = this.startGame(session, features);
     combat.statsText = () => {
       const r = stats.report([1]);
       const all = stats.report();
@@ -427,7 +463,8 @@ export class App {
   startOnline(core: NetCore): void {
     const session = new NetSession(core);
     const combat = new CombatFeature();
-    const client = this.startGame(session, [combat], { tuning: false });
+    this.matchFeature = new MatchFeature();
+    const client = this.startGame(session, [combat, this.matchFeature], { tuning: false });
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
       frame: () => this.roomPanel?.update(),
@@ -462,6 +499,7 @@ export class App {
       return;
     }
     const s = this.client.session;
+    const match = s.match?.() ?? null;
     const menu = h(
       'div',
       { class: 'menu' },
@@ -477,6 +515,12 @@ export class App {
             'btn secondary',
           )
         : null,
+      match?.phase === 'warmup' && s.canStart?.()
+        ? button('Start match now', () => {
+            s.startMatch?.();
+            this.pause(false);
+          })
+        : null,
       button('Settings', () => this.showSettings(() => this.pause(true)), 'btn secondary'),
       button('Controls', () => this.showControls(() => this.pause(true)), 'btn secondary'),
       button(
@@ -488,7 +532,19 @@ export class App {
         'btn orange',
       ),
     );
-    this.setScreen(h('div', { class: 'screen interactive pause' }, h('h2', {}, 'Paused'), menu));
+    const board =
+      match && this.matchFeature
+        ? h('div', { class: 'pause-board' }, this.matchFeature.scoreboard(s, match, true))
+        : null;
+    this.setScreen(
+      h(
+        'div',
+        { class: 'screen interactive pause' },
+        h('h2', {}, this.isOffline() ? 'Paused' : 'Menu'),
+        board,
+        menu,
+      ),
+    );
   }
 
   isOffline(): boolean {

@@ -57,6 +57,7 @@ export type SimEvent =
       head: boolean;
       kind: KillKind;
       pos: Vec3;
+      src: Vec3; // where the damage came from (for direction indicators / off-screen stats)
     }
   | {
       type: 'kill';
@@ -65,5 +66,6 @@ export type SimEvent =
       kind: KillKind;
       teamKill: boolean;
       pos: Vec3;
+      src: Vec3;
       throwId: number; // groups multi-kills from one throw/recall (0 if n/a)
     };

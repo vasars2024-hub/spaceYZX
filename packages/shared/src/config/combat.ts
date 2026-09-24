@@ -18,7 +18,8 @@ export const COMBAT_DEFAULTS = {
   quickCurveDegPerSec: 140,
   returnTurnDegPerSec: 540,
   returnSpeed: 45,
-  boomerangGravityScale: 0.35,
+  boomerangGravityScale: 0.15, // in normal gravity: a slight, readable drop
+  boomerangZoneGravityScale: 0.5, // inside special gravity zones: strong bend (the feature)
   catchRadius: 1.3,
   pickupRadius: 1.2,
   maxFlightSec: 4,

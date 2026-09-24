@@ -167,6 +167,8 @@ export const step = (
   world.events = [];
   world.tick++;
   updateGravityPads(ctx, world);
+  const prevButtons: Record<number, number> = {};
+  for (const p of world.players) prevButtons[p.id] = p.prevButtons;
   for (const p of world.players) {
     const input = inputs[p.id] ?? { tick: world.tick, buttons: 0, view: p.view };
     if (!p.alive) {
@@ -184,5 +186,5 @@ export const step = (
       respawnPlayer(world, p, s.pos, s.yawDeg, ctx.config);
     }
   }
-  updateCombat(world, ctx, inputs);
+  updateCombat(world, ctx, inputs, prevButtons);
 };

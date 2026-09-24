@@ -40,6 +40,11 @@ export class LevelBuilder {
     width: number,
     opts: Opts = {},
   ): this {
+    if (to < from) {
+      // always build from low coordinate to high so the slab offset is on the right side
+      [from, to] = [to, from];
+      [yFrom, yTo] = [yTo, yFrom];
+    }
     const thick = 0.6;
     const run = to - from;
     const rise = yTo - yFrom;

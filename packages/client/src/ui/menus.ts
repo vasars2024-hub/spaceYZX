@@ -117,6 +117,36 @@ export const quickSettings = (s: Settings, onChange: () => void): HTMLElement =>
         apply();
       },
     ),
+    select<Settings['quality']>(
+      'Graphics quality (antialiasing changes after a page reload)',
+      [
+        ['potato', 'Potato (old laptops)'],
+        ['low', 'Low'],
+        ['medium', 'Medium'],
+        ['high', 'High'],
+      ],
+      s.quality,
+      (v) => {
+        s.quality = v;
+        apply();
+      },
+    ),
+    slider(
+      'Resolution',
+      0.5,
+      1,
+      0.05,
+      s.renderScale,
+      (v) => `${Math.round(v * 100)}%`,
+      (v) => {
+        s.renderScale = v;
+        apply();
+      },
+    ),
+    toggle('Lower resolution automatically when slow', s.dynamicResolution, (v) => {
+      s.dynamicResolution = v;
+      apply();
+    }),
     slider(
       'Master volume',
       0,

@@ -35,6 +35,8 @@ export class Hud {
   fps = 0;
   /** extra line under the FPS (net stats) */
   netText = '';
+  /** current dynamic render scale (shown next to the FPS when below 100%) */
+  renderScale = 1;
 
   constructor(
     parent: HTMLElement,
@@ -138,7 +140,7 @@ export class Hud {
       ];
       this.countersEl.textContent = lines.join('\n');
       this.fpsEl.textContent = this.settings.showFps
-        ? `${Math.round(this.fps)} FPS${this.netText ? '\n' + this.netText : ''}`
+        ? `${Math.round(this.fps)} FPS${this.renderScale < 0.999 ? ` · ${Math.round(this.renderScale * 100)}%` : ''}${this.netText ? '\n' + this.netText : ''}`
         : this.netText;
       this.drawGraph(m);
     }

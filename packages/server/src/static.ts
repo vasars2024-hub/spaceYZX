@@ -1,6 +1,7 @@
 // Minimal static file serving for the built client (no framework).
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const MIME: Record<string, string> = {
@@ -60,6 +61,21 @@ export const diskAssets = (root: string): AssetSource => ({
   describe: () => root,
 });
 
+const COMPRESSIBLE = /\.(html|js|mjs|css|json|svg|txt|webmanifest)$/i;
+/** gzip results, keyed by path + size (files are immutable in the build) */
+const gzCache = new Map<string, Buffer>();
+
+const gzipped = (file: string, body: Buffer): Buffer => {
+  const key = `${file}:${body.length}`;
+  let gz = gzCache.get(key);
+  if (!gz) {
+    gz = gzipSync(body, { level: 9 });
+    if (gzCache.size > 200) gzCache.clear();
+    gzCache.set(key, gz);
+  }
+  return gz;
+};
+
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
@@ -89,10 +105,15 @@ export const serveStatic = async (
     return;
   }
   const hashed = /\/assets\//.test(file);
+  // compress text files for slow connections (small first download)
+  const acceptsGzip = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+  const gz = acceptsGzip && COMPRESSIBLE.test(file) && body.length > 1024;
+  if (gz) body = gzipped(file, body);
   res.writeHead(200, {
     'Content-Type': mimeFor(file),
     'Content-Length': body.length,
     'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
+    ...(gz ? { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : {}),
     ...SECURITY_HEADERS,
   });
   if (req.method === 'HEAD') res.end();

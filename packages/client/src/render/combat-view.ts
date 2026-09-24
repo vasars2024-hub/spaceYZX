@@ -1,5 +1,6 @@
 // Visuals for combat: Boomerangs (+ glowing trails), grenades, public lines (Wind-up aim,
 // Laser warning, recall telegraph), laser beams, throw preview and hit/kill effects.
+import { particleDensity } from './perf';
 import * as THREE from 'three';
 import type {
   BoomerangState,
@@ -196,7 +197,8 @@ class Fragments {
     scale: number,
     gravity: Vec3,
   ): void {
-    for (let i = 0; i < count; i++) {
+    const n = Math.max(1, Math.round(count * particleDensity));
+    for (let i = 0; i < n; i++) {
       if (this.list.length >= this.cap) this.list.shift();
       const d = new THREE.Vector3(
         Math.random() - 0.5,

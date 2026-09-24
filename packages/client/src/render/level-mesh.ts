@@ -145,7 +145,7 @@ export interface LevelMeshes {
   dispose(): void;
 }
 
-export const buildLevelMeshes = (def: LevelDef, brightness = 1): LevelMeshes => {
+export const buildLevelMeshes = (def: LevelDef, brightness = 1, dust = true): LevelMeshes => {
   const solid = new GeoBuilder();
   const trims = new GeoBuilder();
   const tmp = new THREE.Color();
@@ -192,7 +192,7 @@ export const buildLevelMeshes = (def: LevelDef, brightness = 1): LevelMeshes => 
   trimMesh.matrixAutoUpdate = false;
   group.add(solidMesh, trimMesh);
 
-  const extras = buildExtras(def);
+  const extras = buildExtras(def, dust);
   group.add(extras.group);
 
   return {
@@ -299,7 +299,7 @@ const addTrims = (g: GeoBuilder, b: BoxDef, color: THREE.Color, _tmp: THREE.Colo
 };
 
 /** Rails, gravity-zone hints. */
-const buildExtras = (def: LevelDef): { group: THREE.Group; dispose(): void } => {
+const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispose(): void } => {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
 
@@ -347,7 +347,7 @@ const buildExtras = (def: LevelDef): { group: THREE.Group; dispose(): void } => 
     lines.position.copy(center);
     group.add(lines);
 
-    if (zeroG) {
+    if (zeroG && dust) {
       // drifting dust motes
       const count = Math.min(400, Math.floor((size.x * size.y * size.z) / 40));
       const pts = new Float32Array(count * 3);
@@ -368,7 +368,7 @@ const buildExtras = (def: LevelDef): { group: THREE.Group; dispose(): void } => 
       const motes = new THREE.Points(geo, mat);
       motes.userData.spin = true;
       group.add(motes);
-    } else {
+    } else if (!zeroG) {
       const dir = new THREE.Vector3(g.x, g.y, g.z).normalize();
       const mat = new THREE.MeshBasicMaterial({
         color,

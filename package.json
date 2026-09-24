@@ -24,7 +24,10 @@
     "typecheck": "tsc -p packages/shared && tsc -p packages/client && tsc -p packages/server && tsc -p tools",
     "check": "npm run lint && npm run typecheck && npm run test",
     "balance": "tsx tools/balance/run.ts",
-    "matches": "tsx tools/balance/matches.ts"
+    "matches": "tsx tools/balance/matches.ts",
+    "size": "tsx tools/perf/bundle-size.ts",
+    "load": "tsx tools/perf/server-load.ts",
+    "bench": "node tools/perf/browser-bench.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

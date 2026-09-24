@@ -386,7 +386,7 @@ export const encodeSnapshot = (s: SnapshotData, base: SnapshotBaseline | null): 
       w.writeBits(id, 8);
       const b = bm?.get(id);
       w.writeBool(!!b);
-      schema.encode(w, obj, b);
+      schema.encode(w, obj, b, true); // server snapshot objects are immutable
     }
   };
   writeMap(s.players, PLAYER_SCHEMA, base?.players);

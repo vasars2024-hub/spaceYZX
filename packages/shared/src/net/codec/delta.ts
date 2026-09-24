@@ -401,8 +401,10 @@ export interface Schema<T> {
   /**
    * Write `obj`: all fields when `baseline` is undefined, otherwise the changed-field mask and the
    * changed fields. Returns the changed mask (all fields set for a full encode; 0 = unchanged).
+   * `memo`: the objects are never mutated after this call, so their quantized form may be
+   * cached (big win when the same objects are encoded for many recipients).
    */
-  encode(w: BitWriter, obj: T, baseline?: T): number;
+  encode(w: BitWriter, obj: T, baseline?: T, memo?: boolean): number;
   /** Read an object written by encode() with the same (or an equal quantized) baseline. */
   decode(r: BitReader, baseline?: T): T;
   /** What the receiver would decode: every field quantized. */
@@ -471,6 +473,14 @@ export const defineSchema = <const F extends readonly FieldDef[]>(
   type T = SchemaObject<F>;
   const get = (o: T, i: number): unknown => (o as Record<string, unknown>)[fields[i].name];
   const quantAll = (o: T): number[][] => codecs.map((c, i) => c.quant(get(o, i)));
+  // Snapshot objects are immutable once built, and the same object is encoded for every
+  // recipient (and again as their baseline): remember its quantized form.
+  const memo = new WeakMap<object, number[][]>();
+  const quantMemo = (o: T): number[][] => {
+    let q = memo.get(o as object);
+    if (!q) memo.set(o as object, (q = quantAll(o)));
+    return q;
+  };
   const build = (qs: readonly (readonly number[])[]): T => {
     const out: Record<string, unknown> = {};
     for (let i = 0; i < n; i++) out[fields[i].name] = codecs[i].deq(qs[i]);
@@ -479,13 +489,14 @@ export const defineSchema = <const F extends readonly FieldDef[]>(
 
   return {
     fields,
-    encode(w, obj, baseline) {
-      const qs = quantAll(obj);
+    encode(w, obj, baseline, memo = false) {
+      const q = memo ? quantMemo : quantAll;
+      const qs = q(obj);
       if (baseline === undefined) {
         for (let i = 0; i < n; i++) writeAbs(w, codecs[i], qs[i]);
         return n === 32 ? 0xffffffff : 2 ** n - 1;
       }
-      const qb = quantAll(baseline);
+      const qb = q(baseline);
       let mask = 0;
       for (let i = 0; i < n; i++) if (!tuplesEqual(qs[i], qb[i])) mask = (mask | (1 << i)) >>> 0;
       writeChangedMask(w, mask, n);

@@ -12,6 +12,7 @@ import { h, button, quickSettings, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
+import { DynamicResolution, FrameStats, QUALITY, setParticleDensity } from './render/perf';
 import { createPracticeSession } from './game/practice';
 import {
   createPractice,
@@ -48,9 +49,10 @@ export class App {
   ) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: this.settings.quality !== 'potato' && this.settings.quality !== 'low',
+      antialias: (QUALITY[this.settings.quality] ?? QUALITY.medium).antialias,
       powerPreference: 'high-performance',
     });
+    this.dynRes = new DynamicResolution(this.renderer, this.settings);
     this.applyRenderScale();
     this.input = new InputManager(canvas, this.settings);
     this.audio.unlockOnFirstGesture(window);
@@ -68,14 +70,21 @@ export class App {
     this.buildTitleScene();
     const join = params.get('join');
     if (join) this.showOnline(join.toUpperCase().slice(0, 6));
+    else if (params.has('bench')) this.runBench(Number(params.get('bench')) || 20);
     else this.showTitle();
     this.server.connect();
     this.renderer.setAnimationLoop(() => this.loop());
   }
 
+  dynRes: DynamicResolution;
+  /** frame times while playing (benchmark, perf harness) */
+  frameStats = new FrameStats();
+  /** time spent in our own frame code (sim + scene updates + render submission) */
+  cpuStats = new FrameStats();
+
   applyRenderScale(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    this.renderer.setPixelRatio(dpr * this.settings.renderScale);
+    this.dynRes.reset();
+    setParticleDensity((QUALITY[this.settings.quality] ?? QUALITY.medium).particles);
   }
 
   applyVolumes(): void {
@@ -95,10 +104,16 @@ export class App {
 
   private loop(): void {
     const now = performance.now();
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const ms = now - this.last;
+    const dt = Math.min(0.1, ms / 1000);
     this.last = now;
     if (this.client) {
+      this.dynRes.frame(ms);
+      this.frameStats.add(ms);
+      this.client.hud.renderScale = this.dynRes.scale / Math.max(0.01, this.settings.renderScale);
+      const c0 = performance.now();
       this.client.frame(dt);
+      this.cpuStats.add(performance.now() - c0);
     } else {
       this.titleTime += dt;
       const t = this.titleTime * 0.05;
@@ -531,6 +546,44 @@ export class App {
       },
     });
     client.hud.setHint(`Room ${core.code} — share the code or the invite link · Esc menu`);
+  }
+
+  /**
+   * Benchmark: an offline 5v5 bot match on Kestrel for N seconds, then frame-time stats and
+   * draw calls. Used by tools/perf/browser-bench.mjs (CPU throttling + software rendering).
+   */
+  runBench(seconds: number): void {
+    const w = window as unknown as { __spaceyz: Record<string, unknown> };
+    this.startPractice(5, 'normal', 'match');
+    const t0 = performance.now();
+    let calls = 0;
+    let triangles = 0;
+    let frames = 0;
+    const sample = window.setInterval(() => {
+      calls += this.renderer.info.render.calls;
+      triangles += this.renderer.info.render.triangles;
+      frames++;
+    }, 250);
+    window.setTimeout(() => {
+      this.frameStats.reset(); // skip loading hitches
+      this.cpuStats.reset();
+    }, 3000);
+    window.setTimeout(() => {
+      window.clearInterval(sample);
+      const s = this.frameStats.summary();
+      const result = {
+        ...s,
+        cpuMs: this.cpuStats.summary().avgMs,
+        seconds,
+        drawCalls: Math.round(calls / Math.max(1, frames)),
+        triangles: Math.round(triangles / Math.max(1, frames)),
+        renderScale: this.dynRes.scale,
+        quality: this.settings.quality,
+        wallMs: Math.round(performance.now() - t0),
+      };
+      w.__spaceyz.bench = result;
+      console.log('BENCH', JSON.stringify(result));
+    }, seconds * 1000);
   }
 
   startPlayground(): void {

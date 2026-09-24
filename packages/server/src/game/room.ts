@@ -124,6 +124,9 @@ export class Room {
   onEvents: ((events: SimEvent[]) => void) | null = null;
   /** bytes sent (for bandwidth stats) */
   bytesOut = 0;
+  /** CPU time spent in tick() (ms) and ticks run, for the capacity estimate */
+  tickMs = 0;
+  ticksRun = 0;
   readonly history = new LagHistory();
   readonly vision = new TeamVision();
   /** lag compensation stats: rewinds served, and how far back in total (ticks) */
@@ -271,6 +274,13 @@ export class Room {
   /** One authoritative 60 Hz step. */
   tick(): void {
     if (this.closed) return;
+    const t0 = performance.now();
+    this.tickInner();
+    this.tickMs += performance.now() - t0;
+    this.ticksRun++;
+  }
+
+  private tickInner(): void {
     const t = this.world.tick + 1;
     const inputs: Record<number, PlayerInput> = {};
     for (const m of this.members.values()) {

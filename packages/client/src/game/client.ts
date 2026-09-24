@@ -6,6 +6,7 @@ import type { Session } from './session';
 import { FpsCamera } from './camera';
 import type { InputManager } from './input';
 import { buildLevelMeshes, type LevelMeshes } from '../render/level-mesh';
+import { QUALITY } from '../render/perf';
 import { Hud } from '../ui/hud';
 import type { Settings } from '../settings';
 import { cameraRotationRate } from '../settings';
@@ -51,7 +52,11 @@ export class GameClient {
     const fog = def.fog ?? { color: 0x070b14, near: 30, far: 160 };
     this.scene.background = new THREE.Color(fog.color);
     this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
-    this.levelMeshes = buildLevelMeshes(def, deps.settings.brightness);
+    this.levelMeshes = buildLevelMeshes(
+      def,
+      deps.settings.brightness,
+      QUALITY[deps.settings.quality]?.dust ?? true,
+    );
     this.scene.add(this.levelMeshes.group);
     this.scene.add(this.camera);
     const p = session.local();
@@ -123,6 +128,8 @@ export class GameClient {
       f.frame?.(this, dt);
     }
     const r = this.deps.renderer;
+    r.info.autoReset = false; // count both passes (world + viewmodel) per frame
+    r.info.reset();
     r.render(this.scene, this.camera);
     if (this.overlay) {
       r.autoClear = false;

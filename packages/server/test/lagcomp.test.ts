@@ -134,26 +134,26 @@ describe('line-of-sight culling', () => {
     const e = addPlayer(world, createPlayer(2, 1, v3(80, 0, 30), 90, config)); // orange base, north
     const vis = new TeamVision();
     world.tick = 3;
-    vis.update(world, ctx, []);
+    vis.updateAll(world, ctx, []);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(false);
     expect(vis.visible(1, a.id, 0, world.tick)).toBe(false);
     expect(vis.visible(0, a.id, 0, world.tick)).toBe(true); // teammates always
     // revealed: always sent
     world.tick = 6;
-    vis.update(world, ctx, [e.id]);
+    vis.updateAll(world, ctx, [e.id]);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
     // in the open main hall, in line: visible
     e.pos = v3(20, 0.9, 0);
     world.tick = 30;
-    vis.update(world, ctx, []);
+    vis.updateAll(world, ctx, []);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
     // gone again behind walls: stays visible briefly (sticky), then hidden
     e.pos = v3(80, 0.9, 30);
     world.tick = 33;
-    vis.update(world, ctx, []);
+    vis.updateAll(world, ctx, []);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
     world.tick = 60;
-    vis.update(world, ctx, []);
+    vis.updateAll(world, ctx, []);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(false);
   });
 });

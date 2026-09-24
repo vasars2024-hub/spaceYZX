@@ -863,3 +863,107 @@ table.controls td.key {
   margin: 8px 0;
   opacity: 0.9;
 }
+
+/* ---------------- ranked ---------------- */
+.rank-list {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 10px;
+}
+.rank-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+}
+.rank-row.global {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 4px;
+  font-weight: 700;
+}
+.rank-mode {
+  opacity: 0.7;
+}
+.rank-rating {
+  opacity: 0.8;
+  font-size: 12px;
+}
+.tier {
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.tier.galaxy {
+  text-shadow: 0 0 8px currentColor;
+}
+.queue-status {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 8px;
+}
+.queue-status.active {
+  color: #7dffb0;
+  opacity: 1;
+}
+.queue-status.error {
+  color: #ff8080;
+  opacity: 1;
+}
+.wide-panel {
+  min-width: min(720px, 94vw);
+  max-height: 70vh;
+  overflow: auto;
+}
+.leaderboard table,
+table.recent {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.leaderboard td,
+.leaderboard th,
+table.recent td {
+  padding: 4px 8px;
+  text-align: left;
+}
+.leaderboard tr.me td {
+  background: rgba(25, 227, 255, 0.12);
+}
+td.win {
+  color: #7dffb0;
+}
+td.loss {
+  color: #ff8080;
+}
+.profile-name {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.login-code {
+  width: min(360px, 60vw);
+  font-size: 14px;
+  padding: 8px 10px;
+}
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 50;
+  pointer-events: none;
+}
+.toast {
+  background: rgba(4, 8, 16, 0.9);
+  border: 1px solid rgba(25, 227, 255, 0.4);
+  color: #e8f1ff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  max-width: min(360px, 80vw);
+  transition: opacity 0.5s;
+}
+.toast.fade {
+  opacity: 0;
+}

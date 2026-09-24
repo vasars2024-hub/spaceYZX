@@ -87,6 +87,16 @@ export class NetCore {
   token: string | undefined;
   account: unknown = null;
   error: string | null = null;
+  /** messages from the server to show the player (drained by the UI) */
+  notices: string[] = [];
+  /** ranked queue status */
+  queue: { mode: GameMode | null; waitSec: number; searching: number; error?: string } = {
+    mode: null,
+    waitSec: 0,
+    searching: 0,
+  };
+  /** why the server took us out of the last room (null = we left ourselves) */
+  roomLeftReason: string | null = null;
   // room
   code = '';
   mode: GameMode = 'practice';
@@ -203,6 +213,11 @@ export class NetCore {
     }, false);
   }
 
+  /** Join (mode) or leave (null) the ranked queue. */
+  queueRanked(mode: GameMode | null): void {
+    this.sendJson(mode ? { t: 'queue', mode } : { t: 'unqueue' });
+  }
+
   createRoom(mode: GameMode, map?: string, bots = 0, botSkill = 'normal'): void {
     this.sendJson({ t: 'createRoom', mode, map, bots, botSkill });
   }
@@ -262,6 +277,8 @@ export class NetCore {
         break;
       case 'roomJoined': {
         this.resetRoom();
+        this.roomLeftReason = null;
+        this.queue = { mode: null, waitSec: 0, searching: 0 };
         this.code = msg.code;
         this.mode = msg.mode;
         this.map = msg.map;
@@ -276,6 +293,26 @@ export class NetCore {
         this.state = 'room';
         break;
       }
+      case 'notice':
+        this.notices.push(msg.msg);
+        if (this.notices.length > 20) this.notices.shift();
+        break;
+      case 'profile':
+        this.account = msg.data;
+        break;
+      case 'queue':
+        this.queue = {
+          mode: msg.mode,
+          waitSec: msg.waitSec,
+          searching: msg.searching,
+          error: msg.error,
+        };
+        break;
+      case 'roomLeft':
+        this.resetRoom();
+        this.roomLeftReason = msg.reason;
+        this.state = 'lobby';
+        break;
       case 'netcfg':
         this.inputDelay = Math.max(0, Math.min(3, Math.floor(msg.inputDelay)));
         break;

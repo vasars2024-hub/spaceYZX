@@ -471,6 +471,17 @@ export const playerLeft = (ms: MatchState, world: WorldState, id: number): void 
   }
 };
 
+/** A team gave up (everyone left a ranked match): the other team wins now. */
+export const forfeitMatch = (
+  ms: MatchState,
+  world: WorldState,
+  ctx: SimContext,
+  winner: 0 | 1,
+): void => {
+  if (ms.phase === 'warmup' || ms.phase === 'matchEnd') return;
+  endMatch(ms, world, ctx, winner, 'forfeit');
+};
+
 /** After the results screen: back to warmup (everyone respawns, free play). */
 export const resetToWarmup = (ms: MatchState, world: WorldState, ctx: SimContext): void => {
   ms.phase = 'warmup';

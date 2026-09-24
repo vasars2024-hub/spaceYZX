@@ -23,6 +23,7 @@ import {
 } from '@space-yz/shared';
 import { NetSession } from './net/net-session';
 import { onlineMenu, RoomPanel, netPanel } from './ui/online';
+import { rankedPanel, leaderboardScreen, profileScreen, type ClientProfile } from './ui/ranked';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -152,6 +153,12 @@ export class App {
       ['Play online', () => this.showOnline()],
       ['Practice vs bots', () => this.showPracticeMenu()],
       ['Movement playground', () => this.startPlayground()],
+      [
+        'Leaderboards',
+        () => this.setScreen(leaderboardScreen(() => this.showTitle(), this.myAccountId())),
+        'btn secondary',
+      ],
+      ['Profile', () => this.showProfile(), 'btn secondary'],
       ['Settings', () => this.showSettings(() => this.showTitle()), 'btn secondary'],
       ['Controls', () => this.showControls(() => this.showTitle()), 'btn secondary'],
     ];
@@ -392,7 +399,52 @@ export class App {
     }
   }
 
+  private myAccountId(): number | null {
+    return (this.net?.account as ClientProfile | null)?.id ?? null;
+  }
+
+  showProfile(): void {
+    const core = this.ensureNet();
+    this.setScreen(
+      profileScreen(
+        core,
+        () => this.showTitle(),
+        (code) => {
+          try {
+            localStorage.setItem('spaceyz.token', code);
+          } catch {
+            /* ignore */
+          }
+          core.close();
+          this.net = null;
+          this.showProfile();
+        },
+      ),
+    );
+  }
+
+  /** Short messages from the server (warnings, rating changes), shown on any screen. */
+  private toastBox: HTMLDivElement | null = null;
+  private toast(msg: string): void {
+    if (!this.toastBox) {
+      this.toastBox = h('div', { class: 'toasts' });
+      document.body.append(this.toastBox);
+    }
+    const t = h('div', { class: 'toast' }, msg);
+    this.toastBox.append(t);
+    window.setTimeout(() => t.classList.add('fade'), 5000);
+    window.setTimeout(() => t.remove(), 5600);
+  }
+
   private onNetMessage(core: NetCore, msg: { t: string }): void {
+    if (msg.t === 'notice') {
+      for (const n of core.notices.splice(0)) this.toast(n);
+    }
+    if (msg.t === 'roomLeft') {
+      if (this.client?.session instanceof NetSession) this.stopGame();
+      this.toast(core.roomLeftReason ?? 'You left the room.');
+      this.showOnline();
+    }
     if (msg.t === 'welcome') {
       const token = core.token;
       if (token)
@@ -425,6 +477,7 @@ export class App {
           setName: (n) => {
             this.settings.nickname = n.slice(0, 16);
             saveSettings(this.settings);
+            if (core.state === 'lobby') this.reHello(core);
           },
           create: (mode: GameMode, map: string, bots: number, skill: string) => {
             this.reHello(core);
@@ -434,7 +487,11 @@ export class App {
             this.reHello(core);
             core.joinRoom(code);
           },
-          back: () => this.showTitle(),
+          back: () => {
+            core.queueRanked(null);
+            this.showTitle();
+          },
+          columns: [rankedPanel(core, () => this.reHello(core))],
           status: () =>
             core.error
               ? { text: core.error, ok: false }

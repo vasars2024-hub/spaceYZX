@@ -9,6 +9,7 @@ import {
   applyBotObjectives,
   benchPlayer,
   playerLeft,
+  forfeitMatch,
 } from '@space-yz/shared';
 import type { Member, Room, Rules } from '../room';
 
@@ -35,6 +36,18 @@ export interface MatchResult {
 
 const START_DELAY_SEC = 3;
 
+/** Anti-grief thresholds (per match). A warning comes first, then a kick. */
+export const GRIEF = {
+  teamKillsWarn: 2,
+  teamKillsKick: 3,
+  carrierDamageWarn: 150,
+  carrierDamageKick: 300,
+  afkWarnSec: 40,
+  afkKickSec: 75,
+};
+
+export type GriefAction = 'warn' | 'kick';
+
 export class MatchRules implements Rules {
   readonly name = 'match';
   ms: MatchState;
@@ -42,6 +55,11 @@ export class MatchRules implements Rules {
   startAt = 0;
   leavers: { accountId: number | null; team: 0 | 1 }[] = [];
   onResult: ((room: Room, result: MatchResult) => void) | null = null;
+  /** anti-grief: a human misbehaved (warn once, then kick) */
+  onGrief: ((room: Room, m: Member, action: GriefAction, reason: string) => void) | null = null;
+  /** ranked rooms: the results screen is over (the room should close) */
+  onFinished: ((room: Room) => void) | null = null;
+  private grief = new Map<number, { teamKills: number; warned: Set<string> }>();
 
   constructor(readonly mode: RankedMode) {
     this.ms = createMatch(mode);
@@ -70,12 +88,15 @@ export class MatchRules implements Rules {
       if (this.startAt && world.tick >= this.startAt) {
         this.startAt = 0;
         this.leavers = [];
+        this.grief.clear();
         startMatch(ms, world, ctx);
       }
     }
     const wasEnd = ms.phase === 'matchEnd';
     updateMatch(ms, world, ctx);
     if (!wasEnd && ms.phase === 'matchEnd') this.onResult?.(room, this.result(room));
+    if (wasEnd && ms.phase === 'warmup' && room.ranked) this.onFinished?.(room);
+    if (ms.phase !== 'warmup' && ms.phase !== 'matchEnd') this.checkGrief(room);
     // bots pursue the objective
     applyBotObjectives(
       ms,
@@ -83,6 +104,47 @@ export class MatchRules implements Rules {
       ctx,
       [...room.members.values()].flatMap((m) => (m.bot ? [m.bot] : [])),
     );
+  }
+
+  private checkGrief(room: Room): void {
+    const { world } = room;
+    const g = (id: number) => {
+      let e = this.grief.get(id);
+      if (!e) this.grief.set(id, (e = { teamKills: 0, warned: new Set() }));
+      return e;
+    };
+    const act = (m: Member, key: string, kick: boolean, reason: string) => {
+      const e = g(m.id);
+      if (kick) this.onGrief?.(room, m, 'kick', reason);
+      else if (!e.warned.has(key)) {
+        e.warned.add(key);
+        this.onGrief?.(room, m, 'warn', reason);
+      }
+    };
+    for (const ev of world.events) {
+      if (ev.type !== 'kill' || !ev.teamKill || ev.attacker === ev.victim) continue;
+      const m = room.members.get(ev.attacker);
+      if (!m?.conn) continue;
+      const e = g(m.id);
+      e.teamKills++;
+      if (e.teamKills >= GRIEF.teamKillsKick) act(m, 'tk', true, 'Kicked for team killing.');
+      else if (e.teamKills >= GRIEF.teamKillsWarn)
+        act(m, 'tk', false, 'Warning: stop killing your teammates or you will be kicked.');
+    }
+    for (const m of [...room.members.values()]) {
+      if (!m.conn) continue;
+      const dmg = this.ms.carrierDamageByMate[m.id] ?? 0;
+      if (dmg >= GRIEF.carrierDamageKick)
+        act(m, 'carrier', true, 'Kicked for attacking your own Controller carrier.');
+      else if (dmg >= GRIEF.carrierDamageWarn)
+        act(m, 'carrier', false, 'Warning: stop attacking your own Controller carrier.');
+      if (this.ms.phase !== 'live') continue;
+      const idle = (world.tick - Math.max(m.activeTick, this.ms.roundStart)) / 60;
+      if (idle >= GRIEF.afkKickSec) act(m, 'afk', true, 'Kicked for being away (AFK).');
+      else if (idle >= GRIEF.afkWarnSec)
+        act(m, 'afk', false, 'Are you still there? Move or you will be kicked.');
+      else g(m.id).warned.delete('afk');
+    }
   }
 
   result(room: Room): MatchResult {
@@ -141,5 +203,18 @@ export class MatchRules implements Rules {
     if (live && m.conn) this.leavers.push({ accountId: m.accountId, team: m.team });
     // not enough players any more: cancel a pending start
     if (this.ms.phase === 'warmup' && !this.full(room)) this.startAt = 0;
+    // ranked: a team with no players left forfeits (checked after the member is gone)
+    if (live && room.ranked) {
+      const left = [...room.members.values()].filter((x) => x.id !== m.id && x.conn);
+      const teamsLeft = [0, 1].map((t) => left.filter((x) => x.team === t).length);
+      if (teamsLeft[m.team] === 0 && teamsLeft[1 - m.team] > 0) {
+        const wasEnd = this.ms.phase === 'matchEnd';
+        forfeitMatch(this.ms, room.world, room.ctx, (1 - m.team) as 0 | 1);
+        if (!wasEnd && this.ms.phase === 'matchEnd') {
+          // the leaver is still in the world during onLeave: report after they are removed
+          queueMicrotask(() => this.onResult?.(room, this.result(room)));
+        }
+      }
+    }
   }
 }

@@ -42,6 +42,7 @@ export type ClientMsg =
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
   | { t: 'startMatch' }
+  | { t: 'profile' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }
   | { t: 'queue'; mode: GameMode }
@@ -67,10 +68,17 @@ export type ServerMsg =
   | { t: 'error'; msg: string }
   | { t: 'pong'; c: number; s?: number }
   | { t: 'sping'; s: number }
+  /** A message to show the player (warnings, rating changes…). */
+  | { t: 'notice'; msg: string }
+  /** The server took you out of your room (match over, kicked for griefing…). */
+  | { t: 'roomLeft'; reason: string }
+  /** Ranked queue status (mode null = not queued). */
+  | { t: 'queue'; mode: GameMode | null; waitSec: number; searching: number; error?: string }
+  /** Your account profile (ratings, ranks, recent matches). */
+  | { t: 'profile'; data: unknown }
   /** Ping equalization: extra input delay (ticks) this client should apply. */
   | { t: 'netcfg'; inputDelay: number }
   | { t: 'kicked'; reason: string }
-  | { t: 'queue'; mode: GameMode | null; waiting: number; searchSec: number }
   | { t: 'chat'; from: string; text: string };
 
 export const parseJson = <T>(data: unknown, maxLen = 8192): T | null => {

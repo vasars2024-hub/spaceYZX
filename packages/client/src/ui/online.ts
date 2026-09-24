@@ -11,6 +11,8 @@ export interface OnlineMenuHandlers {
   back(): void;
   status(): { text: string; ok: boolean | null };
   extra?: HTMLElement[];
+  /** extra columns (ranked queue) */
+  columns?: HTMLElement[];
 }
 
 export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElement => {
@@ -131,6 +133,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
           ),
           ...(hd.extra ?? []),
         ),
+        ...(hd.columns ?? []),
       ),
       status,
     ),

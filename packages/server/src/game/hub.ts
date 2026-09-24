@@ -33,6 +33,10 @@ export interface HubServices {
   onDisconnect?(hub: GameHub, conn: Conn): void;
   /** Called for every finished match (M8 records results). */
   onMatchEnd?(room: Room, result: MatchResult): void;
+  /** Anti-grief: a warning was given / a player was kicked (ranked bans live here). */
+  onGrief?(conn: Conn, action: 'warn' | 'kick', reason: string, room: Room): void;
+  /** The player's profile (ratings, ranks) for the client. */
+  profile?(conn: Conn): unknown;
   /** A player reported another player. */
   onReport?(conn: Conn, player: number, reason: string, room: Room): void;
   /** lag compensation (default on) */
@@ -161,6 +165,9 @@ export class GameHub {
       case 'leaveRoom':
         this.leaveRoom(conn);
         return;
+      case 'profile':
+        conn.sendJson({ t: 'profile', data: this.services.profile?.(conn) ?? null });
+        return;
       case 'startMatch': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
         if (!room || room.hostId !== conn.playerId || room.ranked) return;
@@ -210,14 +217,28 @@ export class GameHub {
       this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
       (opts.mode === 'practice' ? new PracticeRules() : new MatchRules(opts.mode));
     room.rules = rules;
-    if (room.rules instanceof MatchRules)
-      room.rules.onResult = (r, result) => {
+    if (rules instanceof MatchRules) {
+      rules.onGrief = (r, m, action, reason) => {
+        const conn = m.conn;
+        if (!conn) return;
+        this.log(`Room ${r.code}: ${action} ${m.name} — ${reason}`);
+        this.services.onGrief?.(conn, action, reason, r);
+        if (action === 'warn') conn.sendJson({ t: 'notice', msg: reason });
+        else this.removeFromRoom(conn, reason);
+      };
+      rules.onFinished = (r) => {
+        for (const m of r.humans) if (m.conn) this.removeFromRoom(m.conn, 'Match over');
+        if (this.rooms.has(r.code)) this.closeRoom(r);
+      };
+    }
+    if (rules instanceof MatchRules)
+      rules.onResult = (r, result) => {
         this.log(
           `Room ${r.code}: match over — ${result.winner === null ? 'draw' : `team ${result.winner === 0 ? 'cyan' : 'orange'} wins`} ${result.scores[0]}-${result.scores[1]} (${result.reason})`,
         );
         this.services.onMatchEnd?.(r, result);
       };
-    rules.setup?.(room);
+    (rules as Rules).setup?.(room);
     room.onChanged = () => this.broadcastRoom(room);
     for (let i = 0; i < (opts.bots ?? 0); i++)
       room.addMember(`Bot ${i + 1}`, null, { botSkill: opts.botSkill });
@@ -243,6 +264,13 @@ export class GameHub {
       ranked: room.ranked,
     });
     this.broadcastRoom(room);
+  }
+
+  /** Take a player out of their room from the server side and tell them why. */
+  removeFromRoom(conn: Conn, reason: string): void {
+    if (!conn.roomCode) return;
+    this.leaveRoom(conn);
+    conn.sendJson({ t: 'roomLeft', reason });
   }
 
   leaveRoom(conn: Conn): void {

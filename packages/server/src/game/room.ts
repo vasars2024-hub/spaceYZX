@@ -60,6 +60,8 @@ export interface Member {
   viewTick: number;
   /** ping equalization: consecutive evaluations wanting a different delay (hysteresis) */
   equalizeVotes: number;
+  /** last tick this player pressed anything or moved the mouse (AFK detection) */
+  activeTick: number;
 }
 
 /** Game rules plug-in (practice respawns, rounds & objective, …). */
@@ -220,6 +222,7 @@ export class Room {
       sentExtra: '',
       viewTick: this.world.tick,
       equalizeVotes: 0,
+      activeTick: this.world.tick,
     };
     this.members.set(id, m);
     if (conn && !this.hostId) this.hostId = id;
@@ -278,6 +281,14 @@ export class Room {
       }
       const inp = m.inputs.get(t);
       if (inp) {
+        const v = m.last?.view;
+        if (
+          inp.buttons !== 0 ||
+          !v ||
+          Math.abs(v.x - inp.view.x) + Math.abs(v.y - inp.view.y) + Math.abs(v.z - inp.view.z) >
+            1e-4
+        )
+          m.activeTick = t;
         m.last = inp;
         m.lastProcessed = t;
         m.viewTick = t - (inp.viewLag ?? 0);

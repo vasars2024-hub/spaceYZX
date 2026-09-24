@@ -1,0 +1,48 @@
+name: Host app
+
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: host-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: SpaceYZ-Host (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # attach the .exe to a Release on version tags
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build the host app
+        run: npm run build:host
+        env:
+          SPACEYZ_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('dev-{0}', github.run_number) }}
+      - name: Smoke test (start, check HTTP + WebSocket, exit)
+        run: ./build/host/SpaceYZ-Host${{ runner.os == 'Windows' && '.exe' || '' }} --smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpaceYZ-Host-${{ runner.os }}
+          path: build/host/SpaceYZ-Host*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/host/SpaceYZ-Host*

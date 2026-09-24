@@ -25,6 +25,9 @@ export interface GameServer {
 
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
+export const isLoopback = (ip: string): boolean =>
+  ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');
+
 export const startGameServer = (opts: GameServerOptions): Promise<GameServer> => {
   const log = opts.log ?? ((m: string) => console.log(m));
   const hub = new GameHub({ log, ...opts.services });
@@ -62,8 +65,11 @@ export const startGameServer = (opts: GameServerOptions): Promise<GameServer> =>
   });
 
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
-    const fwd = String(req.headers['cf-connecting-ip'] ?? '');
-    const ip = fwd || req.socket.remoteAddress || 'unknown';
+    const remote = req.socket.remoteAddress || 'unknown';
+    // Behind the Cloudflare tunnel every player arrives from cloudflared on this PC; only then
+    // is its header (the player's real address) trusted. Direct players can't fake it.
+    const fwd = isLoopback(remote) ? String(req.headers['cf-connecting-ip'] ?? '') : '';
+    const ip = fwd || remote;
     hub.accept(ws, ip);
   });
 

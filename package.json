@@ -27,7 +27,9 @@
     "matches": "tsx tools/balance/matches.ts",
     "size": "tsx tools/perf/bundle-size.ts",
     "load": "tsx tools/perf/server-load.ts",
-    "bench": "node tools/perf/browser-bench.mjs"
+    "bench": "node tools/perf/browser-bench.mjs",
+    "host": "tsx packages/server/src/host/host-main.ts",
+    "build:host": "npm run build && tsx tools/host/build-exe.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

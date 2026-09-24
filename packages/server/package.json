@@ -9,9 +9,12 @@
   },
   "dependencies": {
     "@space-yz/shared": "0.1.0",
+    "qrcode-generator": "2.0.4",
     "ws": "8.21.3"
   },
   "devDependencies": {
-    "@types/ws": "8.18.1"
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "postject": "1.0.0-alpha.6"
   }
 }

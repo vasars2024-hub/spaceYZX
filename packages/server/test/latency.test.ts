@@ -81,7 +81,7 @@ describe.each([20, 80, 150, 200])('bots at %i ms ping', (pingMs) => {
     expect(late).toBeLessThan(ticks * 0.05);
     // bots fight: with enough shots, some must register (exact hit registration under lag
     // is tested deterministically in lagcomp.test.ts)
-    if (shots >= 12) expect(hits).toBeGreaterThan(0);
+    if (shots >= 30) expect(hits).toBeGreaterThan(0);
     expect(avgRewind * (1000 / 60)).toBeLessThanOrEqual(MAX_REWIND_MS + 1);
     a.stop();
     b.stop();

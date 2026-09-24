@@ -1,0 +1,144 @@
+// Online session: your player is predicted (instant), others are interpolated ~4 ticks behind.
+import type {
+  GameConfig,
+  Level,
+  NetCore,
+  PlayerState,
+  SimContext,
+  SimEvent,
+  Vec3,
+  WorldState,
+  BoomerangState,
+  GrenadeState,
+} from '@space-yz/shared';
+import { lerp, add, normalize, netToBoomerang, Phase } from '@space-yz/shared';
+import type { RenderPlayer, Session, TickInput } from '../game/session';
+
+export class NetSession implements Session {
+  alpha = 0;
+  constructor(public core: NetCore) {}
+
+  get level(): Level {
+    return this.core.level!;
+  }
+  get config(): GameConfig {
+    return this.core.config;
+  }
+  get localId(): number {
+    return this.core.localId;
+  }
+  get ctx(): SimContext {
+    return this.core.ctx!;
+  }
+
+  update(frameDt: number, sample: () => TickInput): void {
+    this.alpha = this.core.update(frameDt, sample);
+  }
+
+  local(): PlayerState | undefined {
+    return this.core.localPredicted();
+  }
+
+  localEye(): Vec3 | undefined {
+    const a = this.core.prevLocal;
+    const b = this.core.curLocal;
+    if (!b) return this.local()?.pos;
+    const e = a ? lerp(a.eye, b.eye, this.alpha) : b.eye;
+    return add(e, this.core.correction);
+  }
+
+  localUp(): Vec3 | undefined {
+    const a = this.core.prevLocal;
+    const b = this.core.curLocal;
+    if (!b) return this.local()?.up;
+    return a ? normalize(lerp(a.up, b.up, this.alpha), b.up) : b.up;
+  }
+
+  others(): RenderPlayer[] {
+    const snap = this.core.latest;
+    if (!snap) return [];
+    const names = this.names();
+    const carriers = this.carriers();
+    const revealed = this.revealed();
+    const out: RenderPlayer[] = [];
+    for (const [id] of snap.players) {
+      if (id === this.localId) continue;
+      const ip = this.core.interpolated(id);
+      if (!ip) continue;
+      const np = ip.np;
+      out.push({
+        id,
+        team: np.team as 0 | 1,
+        name: names[id] ?? `Player ${id}`,
+        pos: ip.pos,
+        up: ip.up,
+        view: np.view,
+        vel: np.vel,
+        crouched: np.crouched,
+        alive: np.alive,
+        move: np.move,
+        hp: np.hp,
+        windup: np.windup,
+        aiming: np.aiming,
+        laserWarn: np.laserWarn,
+        slashTicks: np.slashTicks,
+        carrier: carriers.has(id),
+        revealed: revealed.has(id),
+      });
+    }
+    return out;
+  }
+
+  /** Rules state helpers (M5 fills `extra` with match info). */
+  carriers(): Set<number> {
+    const x = this.core.extra as { carriers?: number[] } | null;
+    return new Set(x?.carriers ?? []);
+  }
+  revealed(): Set<number> {
+    const x = this.core.extra as { revealed?: number[] } | null;
+    return new Set(x?.revealed ?? []);
+  }
+
+  boomerangs(): BoomerangState[] {
+    const snap = this.core.latest;
+    const out: BoomerangState[] = [];
+    const mine = this.core.predWorld?.boomerangs.find((b) => b.owner === this.localId);
+    if (mine) out.push(mine);
+    if (!snap) return out;
+    for (const [owner, nb] of snap.boomerangs) {
+      if (owner === this.localId) continue;
+      const b = netToBoomerang(owner, nb);
+      const p = this.core.interpolatedBoomerang(owner);
+      if (p && b.phase !== Phase.Held) b.pos = p;
+      if (b.phase === Phase.Held) {
+        // held Boomerangs follow their owner's rendered hand
+        const ip = this.core.interpolated(owner);
+        if (ip) b.pos = ip.pos;
+      }
+      out.push(b);
+    }
+    return out;
+  }
+
+  grenades(): GrenadeState[] {
+    return this.core.latest?.grenades ?? [];
+  }
+
+  world(): WorldState {
+    return this.core.predWorld!;
+  }
+
+  drainEvents(): SimEvent[] {
+    return this.core.drainEvents();
+  }
+
+  names(): Record<number, string> {
+    const out: Record<number, string> = {};
+    for (const p of this.core.roster) out[p.id] = p.name;
+    return out;
+  }
+
+  dispose(): void {
+    this.core.leaveRoom();
+  }
+}

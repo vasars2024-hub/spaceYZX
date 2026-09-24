@@ -629,3 +629,55 @@ table.controls td.key {
   padding: 8px 10px;
   border-radius: 4px;
 }
+
+/* ---------- online ---------- */
+.online-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(760px, 94vw);
+}
+.online-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.online-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.online-col .label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.online-col .setting {
+  grid-template-columns: 1fr 150px;
+}
+.code-input {
+  font-size: 28px !important;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.room-panel {
+  position: absolute;
+  left: 50%;
+  top: 34px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  white-space: pre;
+  text-align: center;
+  color: #cfe3ff;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 4px 10px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+@media (max-width: 700px) {
+  .online-cols {
+    grid-template-columns: 1fr;
+  }
+}

@@ -188,3 +188,26 @@ export const step = (
   }
   updateCombat(world, ctx, inputs, prevButtons);
 };
+
+/**
+ * Client-side prediction step: advances only the local player (movement + their own
+ * Boomerang/grenades). Other entities stay as the server last described them.
+ */
+export const stepPredict = (
+  world: WorldState,
+  localId: number,
+  input: PlayerInput,
+  ctx: SimContext,
+): void => {
+  world.events = [];
+  world.tick = input.tick;
+  const p = world.players.find((pp) => pp.id === localId);
+  if (!p) return;
+  const prev = { [localId]: p.prevButtons };
+  if (p.alive) updateMovement(world, ctx, p, input);
+  else {
+    p.prevButtons = input.buttons;
+    p.view = input.view;
+  }
+  updateCombat(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, { only: localId });
+};

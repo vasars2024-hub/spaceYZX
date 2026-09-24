@@ -11,6 +11,8 @@ export interface SimContext {
    * current positions are used (offline / client prediction).
    */
   rewindHitboxes?: (shooterId: number) => Hitbox[] | null;
+  /** Client prediction: emit hit events but never change health (the server decides). */
+  noDamage?: boolean;
 }
 
 export const secToTicks = (sec: number, dt: number): number => Math.max(0, Math.round(sec / dt));

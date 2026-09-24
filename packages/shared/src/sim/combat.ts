@@ -50,6 +50,19 @@ export const applyDamage = (
   throwId = 0,
 ): void => {
   if (!victim.alive || victim.frozen || damage <= 0) return;
+  if (ctx.noDamage) {
+    world.events.push({
+      type: 'hit',
+      attacker: attackerId,
+      victim: victim.id,
+      damage,
+      head,
+      kind,
+      pos,
+      src,
+    });
+    return;
+  }
   const attacker = world.players.find((p) => p.id === attackerId);
   victim.hp -= damage;
   victim.lastHurtTick = world.tick;
@@ -92,7 +105,6 @@ export const applyDamage = (
       throwId,
     });
   }
-  void ctx;
 };
 
 const cancelWindup = (world: WorldState, p: PlayerState): void => {
@@ -366,10 +378,11 @@ const activateGrenade = (world: WorldState, g: GrenadeState, shot: boolean): voi
   world.events.push({ type: 'grenadeActivate', grenade: g.id, pos: clone(g.pos), shot });
 };
 
-const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[]): void => {
+const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?: number): void => {
   const c = ctx.config.combat;
   const dt = ctx.dt;
   for (const g of world.grenades) {
+    if (only !== undefined && g.owner !== only) continue;
     g.t++;
     if (g.phase === 0) {
       g.vel = madd(g.vel, gravityAt(ctx, world, g.pos), dt);
@@ -478,18 +491,26 @@ const fireLaser = (
 // ---------------------------------------------------------------------------------------------
 // Main combat step
 
+export interface CombatOptions {
+  /** Prediction: only this player's actions, Boomerang and grenades are simulated. */
+  only?: number;
+}
+
 export const updateCombat = (
   world: WorldState,
   ctx: SimContext,
   inputs: Record<number, PlayerInput>,
   prevButtons: Record<number, number> = {},
+  opts: CombatOptions = {},
 ): void => {
+  const only = opts.only;
   const c = ctx.config.combat;
   const dt = ctx.dt;
   const liveHitboxes = world.players.filter((p) => p.alive).map((p) => hitboxOf(p, ctx.config));
 
   // ---- per-player actions ----
   for (const p of world.players) {
+    if (only !== undefined && p.id !== only) continue;
     const input = inputs[p.id];
     const buttons = input?.buttons ?? 0;
     const prev = prevButtons[p.id] ?? 0;
@@ -669,6 +690,7 @@ export const updateCombat = (
 
   // ---- deflects: active slashes meeting incoming Boomerangs / grenades ----
   for (const p of world.players) {
+    if (only !== undefined && p.id !== only) continue;
     if (!p.alive || p.slashTicks <= 0) continue;
     const eye = eyePos(p, ctx.config.movement);
     const fwd = qForward(p.view);
@@ -705,6 +727,7 @@ export const updateCombat = (
   // ---- Boomerang flight ----
   const segs = new Map<number, [Vec3, Vec3]>();
   for (const b of world.boomerangs) {
+    if (only !== undefined && b.owner !== only) continue;
     const owner = world.players.find((q) => q.id === b.owner);
     if (b.phase === Phase.Held) {
       if (owner) b.pos = handPos(owner, ctx);
@@ -837,7 +860,8 @@ export const updateCombat = (
   }
 
   // ---- clashes: two flying Boomerangs of different owners that meet both drop ----
-  const flying = world.boomerangs.filter((b) => segs.has(b.id) && isFlying(b));
+  const flying =
+    only !== undefined ? [] : world.boomerangs.filter((b) => segs.has(b.id) && isFlying(b));
   for (let i = 0; i < flying.length; i++)
     for (let j = i + 1; j < flying.length; j++) {
       const a = flying[i];
@@ -860,7 +884,7 @@ export const updateCombat = (
       }
     }
 
-  updateGrenades(world, ctx, liveHitboxes);
+  updateGrenades(world, ctx, liveHitboxes, only);
 
   // unused helpers kept for tooling
   void closestSegSeg;

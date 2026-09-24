@@ -1,9 +1,6 @@
 // Public entry of @space-yz/shared.
-export const GAME_NAME = 'Space YZ';
-export const PROTOCOL_VERSION = 1;
-export const DEFAULT_PORT = 7777;
-export const TICK_RATE = 60;
-export const TICK_DT = 1 / TICK_RATE;
+export * from './version';
+export * from './sim/constants';
 
 export * from './math/vec3';
 export * from './math/quat';
@@ -18,6 +15,7 @@ export * from './level/collision';
 export * from './level/builder';
 export * from './level/maps/test-ship';
 export * from './level/maps/training-bay';
+export * from './level/maps/index';
 
 export * from './sim/input';
 export * from './sim/state';
@@ -34,3 +32,5 @@ export * from './net/codec';
 export * from './bots/brain';
 export * from './stats/tracker';
 export * from './modes/practice';
+export * from './net/protocol';
+export * from './net/client-core';

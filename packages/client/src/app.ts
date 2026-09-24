@@ -12,7 +12,16 @@ import { h, button, quickSettings, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { createPracticeSession } from './game/practice';
-import { createPractice, updatePractice, type BotSkill } from '@space-yz/shared';
+import {
+  createPractice,
+  updatePractice,
+  NetCore,
+  type BotSkill,
+  type GameMode,
+  type SocketLike,
+} from '@space-yz/shared';
+import { NetSession } from './net/net-session';
+import { onlineMenu, RoomPanel } from './ui/online';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -55,7 +64,9 @@ export class App {
     window.addEventListener('resize', () => this.resize());
     this.resize();
     this.buildTitleScene();
-    this.showTitle();
+    const join = params.get('join');
+    if (join) this.showOnline(join.toUpperCase().slice(0, 6));
+    else this.showTitle();
     this.server.connect();
     this.renderer.setAnimationLoop(() => this.loop());
   }
@@ -137,6 +148,7 @@ export class App {
   /** Title menu entries; later milestones register more modes here. */
   menuEntries(): [string, () => void, string?][] {
     return [
+      ['Play online', () => this.showOnline()],
       ['Practice vs bots', () => this.showPracticeMenu()],
       ['Movement playground', () => this.startPlayground()],
       ['Settings', () => this.showSettings(() => this.showTitle()), 'btn secondary'],
@@ -306,6 +318,125 @@ export class App {
     client.hud.setHint(
       '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
     );
+  }
+
+  net: NetCore | null = null;
+  private netPing = 0;
+  private roomPanel: RoomPanel | null = null;
+
+  /** Connect (once) to the game server this page came from. */
+  ensureNet(): NetCore {
+    if (this.net && this.net.state !== 'closed') return this.net;
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const core = new NetCore({
+      url: `${proto}://${location.host}/ws`,
+      name: this.settings.nickname || 'Pilot',
+      token: this.accountToken(),
+      now: () => performance.now(),
+      createSocket: (u) => new WebSocket(u) as unknown as SocketLike,
+      sim: this.netSim,
+      schedule: (fn, ms) => void window.setTimeout(fn, ms),
+    });
+    core.onMessage = (msg) => this.onNetMessage(core, msg);
+    core.connect();
+    window.clearInterval(this.netPing);
+    this.netPing = window.setInterval(() => core.pingServer(), 1000);
+    this.net = core;
+    return core;
+  }
+
+  /** Dev network simulator settings (M6 panel edits this live). */
+  netSim = { delayMs: 0, jitterMs: 0, lossPct: 0 };
+
+  accountToken(): string | undefined {
+    try {
+      return localStorage.getItem('spaceyz.token') ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private onNetMessage(core: NetCore, msg: { t: string }): void {
+    if (msg.t === 'welcome') {
+      const token = core.token;
+      if (token)
+        try {
+          localStorage.setItem('spaceyz.token', token);
+        } catch {
+          /* ignore */
+        }
+    }
+    if (msg.t === 'roomJoined') {
+      // wait for the first exact snapshot, then start rendering
+      const wait = () => {
+        if (core.state !== 'room') return;
+        if (!core.predWorld) {
+          window.setTimeout(wait, 30);
+          return;
+        }
+        this.startOnline(core);
+      };
+      wait();
+    }
+  }
+
+  showOnline(prefill = ''): void {
+    const core = this.ensureNet();
+    this.setScreen(
+      onlineMenu(
+        {
+          getName: () => this.settings.nickname,
+          setName: (n) => {
+            this.settings.nickname = n.slice(0, 16);
+            saveSettings(this.settings);
+          },
+          create: (mode: GameMode, map: string, bots: number, skill: string) => {
+            this.reHello(core);
+            core.createRoom(mode, map, bots, skill);
+          },
+          join: (code: string) => {
+            this.reHello(core);
+            core.joinRoom(code);
+          },
+          back: () => this.showTitle(),
+          status: () =>
+            core.error
+              ? { text: core.error, ok: false }
+              : core.state === 'lobby'
+                ? { text: `Connected as ${core.name} · ${Math.round(core.rttMs)} ms`, ok: true }
+                : core.state === 'room'
+                  ? { text: `Joining room ${core.code}…`, ok: true }
+                  : core.state === 'closed'
+                    ? { text: 'Not connected — is the server running?', ok: false }
+                    : { text: 'Connecting…', ok: null },
+        },
+        prefill,
+      ),
+    );
+  }
+
+  /** Re-send hello if the nickname changed so the server uses it. */
+  private reHello(core: NetCore): void {
+    core.error = null;
+    if (this.settings.nickname && this.settings.nickname !== core.name) {
+      core.name = this.settings.nickname;
+      core.sendJson({ t: 'hello', v: 1, name: core.name, token: core.token });
+    }
+  }
+
+  startOnline(core: NetCore): void {
+    const session = new NetSession(core);
+    const combat = new CombatFeature();
+    const client = this.startGame(session, [combat], { tuning: false });
+    this.roomPanel = new RoomPanel(this.ui, core);
+    client.addFeature({
+      frame: () => this.roomPanel?.update(),
+      dispose: () => {
+        this.roomPanel?.dispose();
+        this.roomPanel = null;
+      },
+    });
+    client.hud.setHint(`Room ${core.code} — share the code or the invite link · Esc menu`);
   }
 
   startPlayground(): void {

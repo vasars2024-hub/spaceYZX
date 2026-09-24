@@ -8,6 +8,10 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@space-yz/shared": "0.1.0"
+    "@space-yz/shared": "0.1.0",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
   }
 }

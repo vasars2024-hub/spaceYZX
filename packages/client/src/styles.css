@@ -1,0 +1,174 @@
+:root {
+  --team-a: #19e3ff;
+  --team-b: #ff8a1f;
+  --bg: #05070d;
+  --panel: rgba(8, 12, 22, 0.82);
+  --panel-border: rgba(120, 200, 255, 0.25);
+  --text: #e8f1ff;
+  --muted: #8aa0bd;
+  --danger: #ff4a5e;
+  --ok: #3dff9a;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  user-select: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui .interactive,
+#ui button,
+#ui input,
+#ui select,
+#ui a {
+  pointer-events: auto;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(ellipse at center, rgba(5, 7, 13, 0.25), rgba(5, 7, 13, 0.85));
+}
+
+.title {
+  font-size: clamp(42px, 8vw, 96px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  margin: 0;
+  background: linear-gradient(90deg, var(--team-a), #ffffff 50%, var(--team-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 40px rgba(25, 227, 255, 0.25);
+}
+
+.subtitle {
+  color: var(--muted);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 13px;
+  margin-top: -10px;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 280px;
+}
+
+.btn {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 12px 22px;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(25, 227, 255, 0.16), rgba(25, 227, 255, 0.06));
+  border: 1px solid rgba(25, 227, 255, 0.5);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    transform 0.06s;
+}
+
+.btn:hover {
+  background: linear-gradient(180deg, rgba(25, 227, 255, 0.32), rgba(25, 227, 255, 0.12));
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.secondary {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn.orange {
+  background: linear-gradient(180deg, rgba(255, 138, 31, 0.25), rgba(255, 138, 31, 0.08));
+  border-color: rgba(255, 138, 31, 0.6);
+}
+
+.status {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.status .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--muted);
+}
+
+.status .dot.ok {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.status .dot.bad {
+  background: var(--danger);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  backdrop-filter: blur(6px);
+}
+
+.hidden {
+  display: none !important;
+}
+
+input[type='text'],
+input[type='number'],
+select {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  padding: 8px 10px;
+}

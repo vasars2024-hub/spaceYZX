@@ -1,0 +1,49 @@
+// `npm start` / `npm run dev` entry point.
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { DEFAULT_PORT, GAME_NAME } from '@space-yz/shared';
+import { startGameServer } from './app';
+import { diskAssets } from './static';
+import { findFreePort, lanAddresses, openBrowser } from './net-info';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.resolve(here, '../../client/dist');
+const dev = process.argv.includes('--dev');
+
+const main = async (): Promise<void> => {
+  const wanted = Number(process.env.PORT) || DEFAULT_PORT;
+  const port = await findFreePort(wanted);
+  const assets = !dev && existsSync(clientDist) ? diskAssets(clientDist) : null;
+  const server = await startGameServer({ port, assets });
+
+  const local = `http://localhost:${server.port}`;
+  console.log(`\n  ${GAME_NAME} server is running.\n`);
+  if (dev) {
+    console.log(
+      `  Dev mode: open the Vite link (http://localhost:5173). Game server on port ${port}.`,
+    );
+  } else {
+    console.log(`  Play on this PC:        ${local}`);
+    for (const ip of lanAddresses())
+      console.log(`  Friends on your Wi-Fi:  http://${ip}:${server.port}`);
+    if (port !== wanted)
+      console.log(`  (Port ${wanted} was busy, so port ${port} is used instead.)`);
+    console.log('\n  Press Ctrl+C to stop.\n');
+    openBrowser(local);
+  }
+
+  const shutdown = (): void => {
+    console.log('\n  Stopping server...');
+    server.close().then(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  process.on('SIGHUP', shutdown);
+};
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

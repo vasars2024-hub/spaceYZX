@@ -8,3 +8,4 @@ export const TICK_DT = 1 / TICK_RATE;
 export * from './math/vec3';
 export * from './math/quat';
 export * from './math/rng';
+export * from './rating';

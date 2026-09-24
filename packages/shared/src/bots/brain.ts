@@ -120,6 +120,8 @@ export interface BotMemory {
   jumpCooldown: number;
   /** optional objective: where the bot wants to go when it has no target */
   objective: Vec3 | null;
+  /** head for the objective even while fighting (Controller carriers) */
+  objectiveFirst: boolean;
   /** current waypoint route */
   path: Vec3[];
   pathGoal: Vec3 | null;
@@ -148,6 +150,7 @@ export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotM
   deflecting: 0,
   jumpCooldown: 0,
   objective: null,
+  objectiveFirst: false,
   path: [],
   pathGoal: null,
   pathUntil: 0,
@@ -372,7 +375,17 @@ export const botThink = (
   let navPoint: Vec3 | null = null;
   let moveDir: Vec3;
   const planarTo = (p: Vec3) => projectOnPlane(sub(p, self.pos), up);
-  if (target && (targetVisible || tick - mem.targetSeenTick < 120)) {
+  if (mem.objective && mem.objectiveFirst) {
+    // carrying the Controller: keep running for the Tower, fight on the move
+    navPoint = navigate(ctx, mem, self, mem.objective, tick);
+    moveDir = normalize(planarTo(navPoint));
+    if (target && targetVisible && tick >= mem.strafeUntil) {
+      mem.strafeDir = rngFloat(rng) < 0.5 ? 1 : -1;
+      mem.strafeUntil = tick + 25 + rngInt(rng, 60);
+    }
+    if (target && targetVisible)
+      moveDir = add(moveDir, scale(normalize(cross(up, moveDir)), mem.strafeDir * 0.35));
+  } else if (target && (targetVisible || tick - mem.targetSeenTick < 120)) {
     const to = planarTo(target.pos);
     const dist = len(to);
     const toN = normalize(to);

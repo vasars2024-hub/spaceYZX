@@ -6,7 +6,7 @@ import {
   startMatch,
   updateMatch,
   matchView,
-  botObjectives,
+  applyBotObjectives,
   benchPlayer,
   playerLeft,
 } from '@space-yz/shared';
@@ -77,8 +77,12 @@ export class MatchRules implements Rules {
     updateMatch(ms, world, ctx);
     if (!wasEnd && ms.phase === 'matchEnd') this.onResult?.(room, this.result(room));
     // bots pursue the objective
-    const obj = botObjectives(ms, world, ctx);
-    for (const m of room.members.values()) if (m.bot) m.bot.objective = obj[m.id] ?? null;
+    applyBotObjectives(
+      ms,
+      world,
+      ctx,
+      [...room.members.values()].flatMap((m) => (m.bot ? [m.bot] : [])),
+    );
   }
 
   result(room: Room): MatchResult {

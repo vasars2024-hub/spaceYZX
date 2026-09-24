@@ -79,4 +79,6 @@ export interface LevelDef {
   waypoints?: WaypointDef[];
   areas?: { name: string; pos: Vec3; yawDeg: number }[]; // dev teleports
   fog?: { color: number; near: number; far: number };
+  /** Tint each half of a mirrored map (x < 0 / x > 0) toward its team color (0..1 amount). */
+  sideTint?: { neg: number; pos: number; amount: number };
 }

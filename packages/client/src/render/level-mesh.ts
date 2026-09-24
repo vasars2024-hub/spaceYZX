@@ -150,9 +150,16 @@ export const buildLevelMeshes = (def: LevelDef, brightness = 1): LevelMeshes => 
   const trims = new GeoBuilder();
   const tmp = new THREE.Color();
 
+  const tintNeg = def.sideTint ? new THREE.Color(def.sideTint.neg) : null;
+  const tintPos = def.sideTint ? new THREE.Color(def.sideTint.pos) : null;
   def.boxes.forEach((b, bi) => {
     if (b.noRender) return;
     const base = new THREE.Color(b.color ?? MATERIAL_COLORS[b.mat ?? 'hull']);
+    if (def.sideTint && b.mat !== 'trim' && b.mat !== 'teamA' && b.mat !== 'teamB') {
+      // fade from neutral in the middle to the team color on each half
+      const k = Math.min(1, Math.abs(b.c.x) / 30) * def.sideTint.amount;
+      if (k > 0) base.lerp(b.c.x < 0 ? tintNeg! : tintPos!, k);
+    }
     const isTrim = b.mat === 'trim';
     FACES.forEach((f, fi) => {
       const n = b.q ? qRotate(b.q, f.n) : f.n;

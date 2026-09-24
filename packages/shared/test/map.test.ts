@@ -15,7 +15,7 @@ import {
   createMatch,
   startMatch,
   updateMatch,
-  botObjectives,
+  applyBotObjectives,
   botThink,
   createBotMemory,
   BOT_SKILLS,
@@ -145,7 +145,7 @@ describe('Kestrel map', () => {
     startMatch(ms, world, ctx);
     if (start) world.players[0].pos = { ...start };
     for (let t = 0; t < 60 * 45 && ms.phase !== 'roundEnd'; t++) {
-      mem.objective = botObjectives(ms, world, ctx)[1] ?? null;
+      applyBotObjectives(ms, world, ctx, [mem]);
       step(world, { 1: botThink(world, ctx, world.players[0], mem) }, ctx);
       updateMatch(ms, world, ctx);
     }

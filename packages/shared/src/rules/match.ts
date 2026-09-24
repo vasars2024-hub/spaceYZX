@@ -9,6 +9,7 @@ import type { TowerDef } from '../level/types';
 import { respawnPlayer } from '../sim/world';
 import { MODE_RULES, type ModeRules } from '../config/rules';
 import type { RankedMode } from '../rating/global';
+import type { BotMemory } from '../bots/brain';
 
 export type MatchPhase = 'warmup' | 'spawnLock' | 'live' | 'roundEnd' | 'matchEnd';
 export type RoundEndReason = 'tower' | 'elimination' | 'time' | 'draw';
@@ -480,5 +481,19 @@ export const resetToWarmup = (ms: MatchState, world: WorldState, ctx: SimContext
     const spawns = ctx.level.def.spawns.filter((s) => s.team === p.team || s.team === undefined);
     const s = rngShuffle(world.rng, spawns)[0] ?? ctx.level.def.spawns[0];
     respawnPlayer(world, p, s.pos, s.yawDeg, ctx.config);
+  }
+};
+
+/** Point every bot at its objective; Controller carriers push it even while fighting. */
+export const applyBotObjectives = (
+  ms: MatchState,
+  world: WorldState,
+  ctx: SimContext,
+  mems: Iterable<BotMemory>,
+): void => {
+  const obj = botObjectives(ms, world, ctx);
+  for (const mem of mems) {
+    mem.objective = obj[mem.id] ?? null;
+    mem.objectiveFirst = ms.phase === 'live' && ms.controllers.some((c) => c.carrier === mem.id);
   }
 };

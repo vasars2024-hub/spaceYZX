@@ -249,6 +249,8 @@ export const buildKestrel = (): LevelDef => {
     });
   }
 
+  decorate(b, spawns);
+
   // ---------------- bot waypoint graph ----------------
   const names: string[] = [];
   const wps: WaypointDef[] = [];
@@ -341,5 +343,84 @@ export const buildKestrel = (): LevelDef => {
       { name: 'Engine corridor', pos: v3(-60, 0, -34), yawDeg: -90 },
     ],
     fog: { color: 0x070b14, near: 45, far: 170 },
+    sideTint: { neg: 0x1d6a80, pos: 0x86501f, amount: 0.16 },
   });
+};
+
+/**
+ * Visual detail only (no collision): ceiling light strips, wall ribs, floor guide lines,
+ * team banners, engine vents and pipes, shaft light rings, spawn pads, base windows.
+ * Every piece is placed as a mirror pair so the map stays symmetric.
+ */
+const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
+  const K = KESTREL;
+  const S = K.south;
+  const SH = K.shaft;
+  const H = K.height;
+  const deco = (
+    min: Vec3,
+    max: Vec3,
+    mat: Material,
+    extra: { color?: number; trim?: number } = {},
+  ) => b.box(min, max, { mat, noCollide: true, ...extra });
+  const LIGHT = 0x9fc4e8;
+  for (const s of [-1, 1] as const) {
+    const X = (x: number) => s * x;
+    const tc = s < 0 ? CYAN : ORANGE;
+    const teamMat: Material = s < 0 ? 'teamA' : 'teamB';
+    // main hall: ceiling light strips
+    for (let x = 6; x < 66; x += 12)
+      for (const z of [-4, 4])
+        deco(v3(X(x), H - 0.12, z - 0.25), v3(X(x + 8), H - 0.02, z + 0.25), 'trim', {
+          color: LIGHT,
+        });
+    // main hall: wall ribs every 8 m
+    for (let x = 4; x < 70; x += 8)
+      for (const z of [-1, 1]) {
+        const zi = z * K.hallHalfZ;
+        deco(v3(X(x) - 0.3, 0, zi - z * 0.35), v3(X(x) + 0.3, H, zi), 'pillar');
+      }
+    // main hall: team guide lines on the floor, leading home
+    for (const z of [-10.6, 10.6])
+      deco(v3(X(12), 0.005, z - 0.08), v3(X(66), 0.02, z + 0.08), 'trim', { color: tc });
+    // team banner above each base door (hall side)
+    deco(v3(X(K.baseInner - 1.15), 10.5, -6), v3(X(K.baseInner - 1), 14.5, 6), teamMat, {
+      trim: tc,
+    });
+    // engine corridor: glowing vents along the outer wall and pipes along the inner one
+    for (let x = 18; x < 70; x += 6)
+      deco(v3(X(x), 10.4, S.z0 + 0.02), v3(X(x + 3), 11.2, S.z0 + 0.12), 'trim', {
+        color: 0xff5a3c,
+      });
+    deco(v3(X(1), S.h - 1.2, S.z1 - 0.6), v3(X(70), S.h - 0.6, S.z1 - 0.05), 'engine');
+    deco(v3(X(1), 0.3, S.z1 - 0.6), v3(X(70), 0.8, S.z1 - 0.05), 'engine');
+    // shaft: light rings on the two long walls
+    for (const y of [-6, 6, 18])
+      deco(v3(X(0.5), y, SH.z1 - 0.12), v3(X(SH.x), y + 0.3, SH.z1 - 0.02), 'trim', {
+        color: WHITE,
+      });
+    for (const y of [-6, 6, 18])
+      deco(v3(X(SH.x - 0.12), y, SH.z0), v3(X(SH.x - 0.02), y + 0.3, K.north.z0 - 0.5), 'trim', {
+        color: WHITE,
+      });
+    // bases: window strip on the back wall and a lit floor ring around the Tower
+    deco(v3(X(K.halfX - 0.35), 8, -30), v3(X(K.halfX - 0.3), 12, 30), 'glass', {
+      color: 0x1a3550,
+      trim: tc,
+    });
+    deco(v3(X(K.towerX - 2.6), 0.005, -2.6), v3(X(K.towerX + 2.6), 0.02, 2.6), 'trim', {
+      color: tc,
+    });
+    deco(v3(X(K.towerX - 2.45), 0.006, -2.45), v3(X(K.towerX + 2.45), 0.025, 2.45), 'floor');
+  }
+  // spawn pads
+  for (const sp of spawns)
+    deco(
+      v3(sp.pos.x - 0.6, 0.004, sp.pos.z - 0.6),
+      v3(sp.pos.x + 0.6, 0.016, sp.pos.z + 0.6),
+      'trim',
+      {
+        color: sp.team === 0 ? 0x0f5c6b : 0x6b3e10,
+      },
+    );
 };

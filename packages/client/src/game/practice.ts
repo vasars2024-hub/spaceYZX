@@ -13,7 +13,7 @@ import {
   createMatch,
   startMatch,
   updateMatch,
-  botObjectives,
+  applyBotObjectives,
   mapDef,
   type MatchState,
 } from '@space-yz/shared';
@@ -91,8 +91,7 @@ export const createPracticeSession = (
       stats.observe(world);
       if (match) {
         updateMatch(match, world, ctx);
-        const obj = botObjectives(match, world, ctx);
-        for (const mem of mems) mem.objective = obj[mem.id] ?? null;
+        applyBotObjectives(match, world, ctx, mems);
         // offline: the next match starts a few seconds after the results
         if (match.phase === 'warmup') {
           if (!restartAt) restartAt = world.tick + 180;

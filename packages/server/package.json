@@ -1,0 +1,13 @@
+{
+  "name": "@space-yz/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/main.ts --dev",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@space-yz/shared": "0.1.0"
+  }
+}

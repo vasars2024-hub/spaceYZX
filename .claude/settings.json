@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm view *)",
+      "Bash(npm ls *)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run format:check)",
+      "Bash(npm test)",
+      "Bash(npm run check)",
+      "mcp__Claude_Code_Remote__read_documentation"
+    ]
+  }
+}

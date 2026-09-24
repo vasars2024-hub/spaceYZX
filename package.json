@@ -1,0 +1,27 @@
+{
+  "name": "space-yz",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Space YZ — a free, fast, first-person gravity arena shooter for Chrome.",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/client",
+    "packages/server"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "npm run build && npm run start -w @space-yz/server",
+    "dev": "concurrently -k -n server,client -c cyan,magenta \"npm run dev -w @space-yz/server\" \"npm run dev -w @space-yz/client\"",
+    "build": "npm run build -w @space-yz/client",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/client && tsc -p packages/server",
+    "check": "npm run lint && npm run typecheck && npm run test"
+  }
+}

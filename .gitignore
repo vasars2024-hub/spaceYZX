@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+data/
+*.log
+.DS_Store
+Thumbs.db
+.vite/
+.claude/settings.local.json
+test-results/
+screenshots/
+SpaceYZ-Host*
+*.blob

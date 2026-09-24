@@ -382,8 +382,12 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
   const c = ctx.config.combat;
   const dt = ctx.dt;
   for (const g of world.grenades) {
-    if (only !== undefined && g.owner !== only) continue;
-    g.t++;
+    // Prediction: other players' grenades are simulated by the server (their state comes from
+    // snapshots), but an active one still pulls *us* — predict that pull so it doesn't cause
+    // corrections every snapshot.
+    const foreign = only !== undefined && g.owner !== only;
+    if (foreign && g.phase !== 1) continue;
+    if (!foreign) g.t++;
     if (g.phase === 0) {
       g.vel = madd(g.vel, gravityAt(ctx, world, g.pos), dt);
       const speed = len(g.vel);
@@ -406,7 +410,7 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
     } else if (g.phase === 1) {
       // pull players toward the center
       for (const p of world.players) {
-        if (!p.alive) continue;
+        if (!p.alive || (foreign && p.id !== only)) continue;
         const d = sub(g.pos, p.pos);
         const dist = len(d);
         if (dist > c.grenadePullRadius || dist < 0.3) continue;
@@ -414,7 +418,7 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
         const k = 1 - dist / c.grenadePullRadius;
         p.vel = madd(p.vel, normalize(d), c.grenadePullAccel * (0.4 + 0.6 * k) * dt);
       }
-      if (g.t >= ticks(c.grenadePullSec, dt)) {
+      if (!foreign && g.t >= ticks(c.grenadePullSec, dt)) {
         g.phase = 2;
         world.events.push({ type: 'grenadePop', grenade: g.id, pos: clone(g.pos) });
         for (const p of world.players) {

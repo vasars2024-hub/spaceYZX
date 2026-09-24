@@ -392,3 +392,33 @@ describe('Clashes, Laser, Grenade', () => {
     expect(mate.hp).toBeLessThan(100);
   });
 });
+
+describe('prediction of other players’ grenades', () => {
+  it('an active enemy grenade pulls the predicted player exactly like the server', async () => {
+    const {
+      stepPredict,
+      step,
+      cloneWorld,
+      addPlayer,
+      createPlayer,
+      v3: vec,
+    } = await import('../src/index');
+    const sim = makeSim(flatLevel(), vec(0, 0, 0));
+    addPlayer(sim.world, createPlayer(2, 1, vec(20, 0, 0), 0, sim.config));
+    settle(sim);
+    sim.world.grenades.push({ id: 999, owner: 2, pos: vec(4, 1, 0), vel: vec(), phase: 1, t: 10 });
+    const server = cloneWorld(sim.world);
+    const client = cloneWorld(sim.world);
+    for (let i = 0; i < 20; i++) {
+      const tick = server.tick + 1;
+      const input = { tick, buttons: 0, view: view(0) };
+      step(server, { 1: input }, sim.ctx);
+      stepPredict(client, 1, input, sim.ctx);
+    }
+    const ps = server.players.find((p) => p.id === 1)!;
+    const pc = client.players.find((p) => p.id === 1)!;
+    expect(ps.pos.x).toBeGreaterThan(0.2); // it really pulls
+    expect(pc.pos).toEqual(ps.pos);
+    expect(pc.vel).toEqual(ps.vel);
+  });
+});

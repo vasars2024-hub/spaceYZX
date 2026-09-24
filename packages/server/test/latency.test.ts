@@ -53,10 +53,12 @@ describe.each([20, 80, 150, 200])('bots at %i ms ping', (pingMs) => {
     await wait(1500); // clock sync settles
     let hits = 0;
     let shots = 0;
+    let pulls = 0;
     room.onEvents = (ev) => {
       for (const e of ev) {
         if (e.type === 'hit') hits++;
         if (e.type === 'laserFire' || e.type === 'throw') shots++;
+        if (e.type === 'grenadeActivate') pulls++;
       }
     };
     const t0 = room.world.tick;
@@ -69,14 +71,14 @@ describe.each([20, 80, 150, 200])('bots at %i ms ping', (pingMs) => {
     const late = lateNow() - late0;
     const avgRewind = room.rewinds ? room.rewindTicksSum / room.rewinds : 0;
     process.stderr.write(
-      `ping ${pingMs} ms: ${ticks} ticks, corrections ${corrections}, late inputs ${late}, shots ${shots}, hits ${hits}, ` +
+      `ping ${pingMs} ms: ${ticks} ticks, corrections ${corrections}, grenade pulls ${pulls}, late inputs ${late}, shots ${shots}, hits ${hits}, ` +
         `rewinds ${room.rewinds} (avg ${(avgRewind * 16.7).toFixed(0)} ms), ` +
         `interp ${a.core.interpTicks.toFixed(1)} ticks, down ${(a.core.bytesIn / 7 / 1024).toFixed(1)} KB/s\n`,
     );
     expect(ticks).toBeGreaterThan(350);
-    // reconciliation should be rare (other players' grenade pulls and hits can't be
-    // predicted): at most ~2 per second per client
-    expect(corrections).toBeLessThan(28);
+    // reconciliation should be rare: well under one correction per second per client
+    // (other players' grenade pulls are predicted too)
+    expect(corrections).toBeLessThan(14);
     // inputs arrive before the server needs them (after the first second of clock sync)
     expect(late).toBeLessThan(ticks * 0.05);
     // bots fight: with enough shots, some must register (exact hit registration under lag

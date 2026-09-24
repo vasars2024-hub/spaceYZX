@@ -12,3 +12,4 @@ test-results/
 screenshots/
 SpaceYZ-Host*
 *.blob
+.claude/worktrees/

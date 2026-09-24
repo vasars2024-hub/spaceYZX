@@ -172,3 +172,224 @@ select {
   border-radius: 5px;
   padding: 8px 10px;
 }
+
+h2 {
+  margin: 0;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.screen.pause {
+  background: rgba(5, 7, 13, 0.72);
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(520px, 90vw);
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 1fr 180px 60px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.setting input[type='checkbox'] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+}
+
+.setting-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+table.controls {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.controls td {
+  padding: 5px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+table.controls td.key {
+  color: var(--team-a);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- HUD ---------- */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: var(--ch-color, #fff);
+}
+
+.crosshair[data-style='cross']::before {
+  width: calc(var(--ch-size) * 2 + var(--ch-gap) * 2);
+  height: var(--ch-thick);
+  left: calc(-1 * (var(--ch-size) + var(--ch-gap)));
+  top: calc(var(--ch-thick) / -2);
+  background: linear-gradient(
+    90deg,
+    var(--ch-color) 0 var(--ch-size),
+    transparent var(--ch-size) calc(var(--ch-size) + var(--ch-gap) * 2),
+    var(--ch-color) calc(var(--ch-size) + var(--ch-gap) * 2)
+  );
+}
+
+.crosshair[data-style='cross']::after {
+  height: calc(var(--ch-size) * 2 + var(--ch-gap) * 2);
+  width: var(--ch-thick);
+  top: calc(-1 * (var(--ch-size) + var(--ch-gap)));
+  left: calc(var(--ch-thick) / -2);
+  background: linear-gradient(
+    180deg,
+    var(--ch-color) 0 var(--ch-size),
+    transparent var(--ch-size) calc(var(--ch-size) + var(--ch-gap) * 2),
+    var(--ch-color) calc(var(--ch-size) + var(--ch-gap) * 2)
+  );
+}
+
+.crosshair[data-style='dot']::before {
+  width: calc(var(--ch-thick) * 2);
+  height: calc(var(--ch-thick) * 2);
+  border-radius: 50%;
+  left: calc(var(--ch-thick) * -1);
+  top: calc(var(--ch-thick) * -1);
+}
+
+.crosshair[data-style='circle']::before {
+  width: calc(var(--ch-size) * 2);
+  height: calc(var(--ch-size) * 2);
+  left: calc(var(--ch-size) * -1);
+  top: calc(var(--ch-size) * -1);
+  border-radius: 50%;
+  background: transparent;
+  border: var(--ch-thick) solid var(--ch-color);
+}
+
+.crosshair.outlined::before,
+.crosshair.outlined::after {
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+}
+
+.hud-bl {
+  position: absolute;
+  left: 24px;
+  bottom: 22px;
+}
+
+.hud-speed {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+}
+
+.hud-speed-sub,
+.hud-state {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.hud-graph {
+  display: block;
+  margin: 6px 0 4px;
+  width: 220px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+.hud-tl {
+  position: absolute;
+  left: 20px;
+  top: 16px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.hud-grav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.hud-grav-arrow {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 138, 31, 0.6);
+  position: relative;
+}
+
+.hud-grav-arrow::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 6px solid transparent;
+  border-top: 10px solid var(--team-b);
+  transform: translate(-50%, -10%);
+}
+
+.hud-counters {
+  white-space: pre;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.hud-fps {
+  position: absolute;
+  right: 16px;
+  top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre;
+  text-align: right;
+}
+
+.hud-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-size: 12px;
+  color: rgba(138, 160, 189, 0.7);
+  max-width: 40vw;
+  text-align: right;
+}
+
+.tuning-panel {
+  pointer-events: auto;
+}

@@ -27,6 +27,7 @@
     "matches": "tsx tools/balance/matches.ts",
     "size": "tsx tools/perf/bundle-size.ts",
     "load": "tsx tools/perf/server-load.ts",
+    "map": "tsx tools/map/analyze.ts",
     "bench": "node tools/perf/browser-bench.mjs",
     "tour": "node tools/e2e/feature-tour.mjs",
     "host": "tsx packages/server/src/host/host-main.ts",

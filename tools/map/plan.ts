@@ -520,6 +520,14 @@ export const renderPlan = (an: Analyzer, opts: PlanOptions): string => {
       const pts = hull(corners(b).map((p) => ({ x: p.x, z: p.z })));
       const d =
         pts.map((p, i) => `${i ? 'L' : 'M'}${f1(sx(v, p.x))},${f1(sy(v, p.z))}`).join('') + 'Z';
+      // turned about the vertical only (an angled wall or crate): not a ramp
+      if (Math.max(Math.abs(b.ax.y), Math.abs(b.ay.y), Math.abs(b.az.y)) > 0.999) {
+        const path = `<path d="${d}" fill="${C.wall}"><title>${esc(`${title} — angled, top at ${fmtH(b.max.y)} m`)}</title></path>`;
+        boxes.push(
+          filled(b, path, `<path d="${d}" fill="none" stroke="${C.ink2}" stroke-width="1"/>`),
+        );
+        continue;
+      }
       const r = rampInfo(b);
       boxes.push(
         filled(

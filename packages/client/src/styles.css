@@ -514,10 +514,11 @@ table.controls td.key {
 .kill-icon {
   color: #fff;
 }
+/* kill banners sit below the round banner (.match-banner-wrap): a round-ending kill shows both */
 .banner {
   position: absolute;
   left: 50%;
-  top: 28%;
+  top: 32%;
   transform: translate(-50%, -50%) scale(0.8);
   font-size: 30px;
   font-weight: 900;
@@ -595,6 +596,11 @@ table.controls td.key {
 .hitmark.kill::after {
   width: 3px;
   background: #ffe45c;
+}
+/* you hit a teammate */
+.hitmark.team::before,
+.hitmark.team::after {
+  background: #ff8a1f;
 }
 .hitmark.anim {
   animation: hitmark 0.28s ease-out;
@@ -727,7 +733,7 @@ table.controls td.key {
 }
 .match-banner-wrap {
   position: absolute;
-  top: 26%;
+  top: 15%;
   left: 0;
   right: 0;
   text-align: center;
@@ -744,21 +750,69 @@ table.controls td.key {
   color: #d8e6ff;
   transition: opacity 0.3s;
 }
-.match-markers .mk {
+/* ---------- world markers: name tags, reveals, objectives (game/world-markers.ts) ---------- */
+.world-markers {
   position: absolute;
-  transform: translate(-50%, -100%);
-  font-size: 12px;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.wm {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 13px;
+  line-height: 17px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   text-shadow:
+    0 0 2px #000,
     0 0 3px #000,
-    0 0 6px #000;
+    0 1px 5px rgba(0, 0, 0, 0.9);
 }
-.mk-enemy {
-  font-size: 20px !important;
+/* a notched dart: its tip stays obvious at any rotation (a plain triangle doesn't) */
+.wm-arrow {
+  display: none;
+  width: 10px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 50% 68%, 0 100%);
 }
-.mk-ally {
-  opacity: 0.85;
+.wm.wm-clamped .wm-arrow {
+  display: inline-block;
+}
+/* teammate behind a wall: same tag, visibly "through the wall" */
+.wm-ally.wm-occluded {
+  font-weight: 600;
+  filter: saturate(0.5);
+}
+/* enemy icon, never a name (revealed through walls, or a carrier in sight): big enough to
+   catch during a 1 s reveal pulse */
+.wm-icon {
+  font-size: 26px;
+  line-height: 26px;
+  text-shadow:
+    0 0 2px #000,
+    0 0 3px #000,
+    0 0 10px currentColor;
+}
+.wm-aim {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.wm-objective {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+}
+.wm-objective.wm-clamped {
+  background: rgba(4, 8, 16, 0.55);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 .scoreboard,
 .match-results {
@@ -1014,9 +1068,13 @@ table.binds .btn.tiny {
   transition: opacity 0.15s;
   white-space: nowrap;
 }
+/* notched dart (see .wm-arrow): a plain triangle's tip is ambiguous when rotated */
 .sr-arrow {
-  font-size: 16px;
-  line-height: 1;
+  width: 11px;
+  height: 13px;
+  margin-bottom: 2px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 50% 68%, 0 100%);
 }
 .sr-meta {
   font-size: 10px;

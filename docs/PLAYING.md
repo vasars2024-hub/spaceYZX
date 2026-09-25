@@ -34,6 +34,24 @@
   Sides swap at half time; a tie goes to one **sudden death** round (half time, bigger
   Tower zones, everyone revealed).
 
+## What the markers mean
+
+- **Teammates** have their name above them: bright when you can see them, faded when a wall
+  is in the way. **◆** before a name = that player carries your Controller.
+- **Enemies** never show through walls. While they are revealed (carrier pulse, last 10
+  seconds) you see only **◇** (**◆** = their carrier), never a name. You also see the ◆ over
+  the enemy carrier whenever they are in sight. Put your crosshair on an enemy you can see to
+  read their name.
+- **ATTACK / DEFEND** float over the Towers and swap at half time together with the sides.
+  While you carry the Controller, ATTACK sticks to the edge of the screen with an arrow when
+  the Tower is off screen.
+- **A dropped Controller** counts down until it goes back to base (your team's one sticks to
+  the screen edge). **AT BASE** = it is back at its base, waiting for a teammate to pick it
+  up.
+- **Sound indicators** (Settings) show every sound at the screen edge in the direction it
+  came from: top = ahead, bottom = behind, ▲ / ▼ = above / below you.
+- Holding **Tab** (scoreboard) hides the markers.
+
 ## The map: Kestrel
 
 Three ways between the bases:

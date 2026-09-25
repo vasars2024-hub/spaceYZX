@@ -1,15 +1,13 @@
-// Match presentation: score/timer bar, round banners, Controller & Tower markers, reveal
-// icons, teammate name tags, scoreboard (Tab) and the match results overlay.
+// Match presentation: score/timer bar, round banners, Tower beams and dropped Controllers
+// (3D), scoreboard (Tab) and the match results overlay. On-screen markers (Towers,
+// Controllers, name tags, reveals) are drawn by WorldMarkers.
 import * as THREE from 'three';
-import type { SimEvent, Vec3 } from '@space-yz/shared';
-import { v3, add, scale } from '@space-yz/shared';
+import type { SimEvent } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, Session } from './session';
-import { projectMarker } from '../ui/combat-hud';
 import { h } from '../ui/menus';
+import { TEAM_COLOR, TEAM_HEX, towerRole, controllerAtHome } from './objectives';
 
-const TEAM_COLOR = ['#19e3ff', '#ff8a1f'] as const;
-const TEAM_HEX = [0x19e3ff, 0xff8a1f] as const;
 const TEAM_NAME = ['CYAN', 'ORANGE'] as const;
 
 const REASON_TEXT: Record<string, string> = {
@@ -25,7 +23,8 @@ const fmtTime = (sec: number): string => {
 };
 
 interface TowerFx {
-  team: 0 | 1;
+  team: 0 | 1; // map side (whose Tower it is depends on the half-time side swap)
+  owner: 0 | 1;
   beam: THREE.Mesh;
   ring: THREE.Mesh;
   flash: number;
@@ -41,7 +40,6 @@ export class MatchFeature implements ClientFeature {
   private banner!: HTMLDivElement;
   private bannerSub!: HTMLDivElement;
   private bannerUntil = 0;
-  private markers!: HTMLDivElement;
   private board!: HTMLDivElement;
   private results!: HTMLDivElement;
   private boardHeld = false;
@@ -68,13 +66,11 @@ export class MatchFeature implements ClientFeature {
     );
     this.banner = h('div', { class: 'match-banner' });
     this.bannerSub = h('div', { class: 'match-banner-sub' });
-    this.markers = h('div', { class: 'match-markers' });
     this.board = h('div', { class: 'scoreboard' });
     this.results = h('div', { class: 'match-results' });
     this.root = h(
       'div',
       { class: 'match-ui' },
-      this.markers,
       this.bar,
       h('div', { class: 'match-banner-wrap' }, this.banner, this.bannerSub),
       this.board,
@@ -114,7 +110,7 @@ export class MatchFeature implements ClientFeature {
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(t.pos.x, t.pos.y + 0.03, t.pos.z);
       this.group.add(beam, ring);
-      this.towers.push({ team: t.team, beam, ring, flash: 0 });
+      this.towers.push({ team: t.team, owner: t.team, beam, ring, flash: 0 });
     }
     for (const team of [0, 1] as const) {
       const m = new THREE.Mesh(
@@ -147,15 +143,22 @@ export class MatchFeature implements ClientFeature {
     const nameOf = (id: number) => (id === s.localId ? 'You' : (names[id] ?? `Player ${id}`));
     for (const e of events) {
       switch (e.type) {
-        case 'roundStart':
+        case 'roundStart': {
+          // teams swap map sides at half time: say so, or people run to the wrong Tower
+          const swapped = !!s.match?.()?.sideSwapped && this.last?.sideSwapped === false;
           this.showBanner(
             e.suddenDeath ? 'SUDDEN DEATH' : `ROUND ${e.round}`,
-            e.suddenDeath ? 'Half timer · bigger Tower zones · everyone revealed' : 'Get ready',
-            3,
+            e.suddenDeath
+              ? 'Half timer · bigger Tower zones · everyone revealed'
+              : swapped
+                ? 'Sides swapped — attack the other Tower now'
+                : 'Get ready',
+            swapped ? 4 : 3,
             e.suddenDeath ? '#ff5b5b' : '#fff',
           );
           a.play('roundStart');
           break;
+        }
         case 'roundLive':
           this.showBanner('GO!', '', 1);
           break;
@@ -194,9 +197,17 @@ export class MatchFeature implements ClientFeature {
           );
           a.play('controllerPickup');
           break;
-        case 'controllerReturn':
-          a.play('controllerReturn');
+        case 'controllerReturn': {
+          // the rules re-send "returned" every few seconds while it sits at base: only the
+          // first one is news
+          const prev = this.last?.controllers.find((x) => x.team === e.team);
+          const wasHome =
+            !!this.last &&
+            !!prev?.droppedAt &&
+            controllerAtHome(s.level.def, e.team, this.last.sideSwapped, prev.droppedAt);
+          if (!wasHome) a.play('controllerReturn');
           break;
+        }
         case 'towerTouch': {
           // the touched Tower belongs to the other team; towers are stored by map side
           const swapped = this.last?.sideSwapped ? 1 : 0;
@@ -218,6 +229,7 @@ export class MatchFeature implements ClientFeature {
     if (!m) {
       this.root.style.display = 'none';
       this.group.visible = false;
+      c.panelOpen = false;
       return;
     }
     this.root.style.display = '';
@@ -279,9 +291,17 @@ export class MatchFeature implements ClientFeature {
     for (const fx of this.towers) {
       fx.flash = Math.max(0, fx.flash - dt);
       const pulse = fx.flash > 0 ? 0.5 + 0.5 * Math.sin(this.time * 30) : 0;
-      (fx.beam.material as THREE.MeshBasicMaterial).opacity = 0.1 + pulse * 0.6;
+      const beam = fx.beam.material as THREE.MeshBasicMaterial;
+      beam.opacity = 0.1 + pulse * 0.6;
       const sd = m.suddenDeath ? rules.suddenDeathTowerScale : 1;
       fx.ring.scale.setScalar(sd);
+      // after the half-time swap the beam shows its new owner (same color as its marker)
+      const { owner } = towerRole(fx.team, m.sideSwapped, mine);
+      if (owner !== fx.owner) {
+        fx.owner = owner;
+        beam.color.setHex(TEAM_HEX[owner]);
+        (fx.ring.material as THREE.MeshBasicMaterial).color.setHex(TEAM_HEX[owner]);
+      }
     }
     for (const ctl of m.controllers) {
       const mesh = this.dropped[ctl.team];
@@ -296,84 +316,18 @@ export class MatchFeature implements ClientFeature {
       }
     }
 
-    // ---- screen markers ----
-    this.renderMarkers(c, m, tick, mine);
-
     // ---- scoreboard & results ----
     const showBoard = this.boardHeld || m.phase === 'roundEnd';
     const refresh = this.time - this.lastBoard > 0.25;
     this.board.style.display = showBoard && m.phase !== 'matchEnd' ? '' : 'none';
     this.results.style.display = m.phase === 'matchEnd' ? '' : 'none';
+    // name tags and markers would show through the (see-through) panels
+    c.panelOpen = showBoard || m.phase === 'matchEnd';
     if (refresh) {
       this.lastBoard = this.time;
       if (showBoard) this.board.replaceChildren(this.scoreboard(s, m, false));
       if (m.phase === 'matchEnd') this.results.replaceChildren(this.resultsView(s, m, tick));
     }
-  }
-
-  private renderMarkers(c: GameClient, m: MatchInfo, tick: number, mine: 0 | 1): void {
-    const s = c.session;
-    const w = c.deps.renderer.domElement.clientWidth;
-    const hh = c.deps.renderer.domElement.clientHeight;
-    const out: HTMLElement[] = [];
-    const place = (p: Vec3, cls: string, text: string, color: string, clamp = false) => {
-      const pm = projectMarker(p, c.camera, w, hh);
-      if (!pm.onScreen && !clamp) return;
-      let x = pm.x;
-      let y = pm.y;
-      if (!pm.onScreen) {
-        // clamp to the screen edge in the direction of the target
-        const r = Math.min(w, hh) * 0.45;
-        x = w / 2 + Math.sin(pm.angle) * r;
-        y = hh / 2 - Math.cos(pm.angle) * r;
-      }
-      const el = h(
-        'div',
-        { class: `mk ${cls}`, style: `left:${x}px;top:${y}px;color:${color}` },
-        text,
-      );
-      out.push(el);
-    };
-    if (m.phase === 'live' || m.phase === 'spawnLock') {
-      // Towers
-      for (const t of s.level.def.towers) {
-        const side = m.sideSwapped ? ((1 - t.team) as 0 | 1) : t.team;
-        const attack = side !== mine;
-        const p = add(t.pos, v3(0, t.height + 1.5, 0));
-        const carrying = m.carriers.includes(s.localId);
-        place(
-          p,
-          'mk-tower',
-          attack ? 'ATTACK ▼' : 'DEFEND ▼',
-          TEAM_COLOR[side],
-          attack && carrying,
-        );
-      }
-      // dropped Controllers with return countdown
-      for (const ctl of m.controllers) {
-        if (!ctl.droppedAt) continue;
-        const left = (ctl.returnAt + s.config.rules.controllerReturnSec * 60 - tick) / 60;
-        place(
-          add(ctl.droppedAt, v3(0, 1, 0)),
-          'mk-ctl',
-          `◆ ${ctl.team === mine ? 'YOUR' : 'ENEMY'} CONTROLLER ${Math.max(0, Math.ceil(left))}s`,
-          TEAM_COLOR[ctl.team],
-          ctl.team === mine,
-        );
-      }
-    }
-    // teammates (names through walls) and revealed enemies
-    const revealed = new Set(m.revealed);
-    for (const p of s.others()) {
-      if (!p.alive) continue;
-      const head = add(p.pos, scale(p.up, 1.3));
-      if (p.team === mine) {
-        place(head, 'mk-ally', `${p.carrier ? '◆ ' : ''}${p.name}`, TEAM_COLOR[mine]);
-      } else if (revealed.has(p.id)) {
-        place(head, 'mk-enemy', p.carrier ? '◆' : '◇', TEAM_COLOR[p.team]);
-      }
-    }
-    this.markers.replaceChildren(...out);
   }
 
   /** Scoreboard table (also used in the pause menu with report buttons). */

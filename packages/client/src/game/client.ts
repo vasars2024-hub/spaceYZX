@@ -41,6 +41,11 @@ export class GameClient {
   private features: ClientFeature[] = [];
   private currentFov = 100;
   shake = 0;
+  /**
+   * A panel covers the middle of the screen this frame (scoreboard, match results): world
+   * markers step aside so they don't show through it. Set by the feature that shows it.
+   */
+  panelOpen = false;
   /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
   overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
@@ -113,6 +118,9 @@ export class GameClient {
       this.camera.fov = vfov;
       this.camera.updateProjectionMatrix();
     }
+    // this frame's view for features that project into it (markers, threat arcs); otherwise
+    // they'd use last frame's and lag behind the world while you turn
+    this.camera.updateMatrixWorld();
 
     const local = this.session.local();
     this.hud.update(local, this.session.config.movement, dt, this.fps.forward(), this.fps.camUp());

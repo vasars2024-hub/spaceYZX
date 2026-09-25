@@ -4,9 +4,18 @@
 // Brightness = loudness (closer = brighter), ▲/▼ = above/below you (gravity changes!), enemy
 // sounds in the enemy's color, dangers pulse red. Only what you could hear is shown, so it
 // gives no advantage over headphones.
-import * as THREE from 'three';
 import type { SimEvent, Vec3 } from '@space-yz/shared';
-import { Move, isFlying, len, sub, dot, normalize, v3 } from '@space-yz/shared';
+import {
+  Move,
+  isFlying,
+  len,
+  sub,
+  dot,
+  normalize,
+  v3,
+  cross,
+  projectOnPlane,
+} from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import { h } from '../ui/menus';
 
@@ -90,6 +99,21 @@ export const soundDirection = (
   return { angle: Math.atan2(x, z), dist, vertical };
 };
 
+/**
+ * The frame sounds are placed in: your body's (forward along the floor, up = your up), not
+ * the camera's. Otherwise looking up or down would turn "ahead" into "above"/"below" and
+ * swing the indicators around the screen edge.
+ */
+export const listenerFrame = (
+  viewForward: Vec3,
+  bodyUp: Vec3,
+): { forward: Vec3; right: Vec3; up: Vec3 } => {
+  const up = normalize(bodyUp, v3(0, 1, 0));
+  // (straight up/down can't happen: pitch stops at 88°)
+  const forward = normalize(projectOnPlane(viewForward, up), v3(0, 0, -1));
+  return { forward, right: cross(forward, up), up };
+};
+
 /** 0..1 loudness (0 = can't hear it). */
 export const loudness = (kind: SoundKind, dist: number): number => {
   const r = SOUND_KINDS[kind].range;
@@ -160,6 +184,7 @@ export class SoundRadar implements ClientFeature {
           from(e.player, 'thruster');
           break;
         case 'throw':
+          this.sounds.delete(`windup:${e.player}`); // fired: no longer winding up
           from(e.player, 'throw');
           break;
         case 'windupStart':
@@ -210,12 +235,20 @@ export class SoundRadar implements ClientFeature {
     this.time += dt;
     const on = this.enabled();
     this.root.style.display = on ? '' : 'none';
-    if (!on) return;
+    if (!on) {
+      // keep forgetting old sounds while switched off (they'd pile up otherwise)
+      for (const [key, snd] of this.sounds)
+        if (this.time - snd.born > SOUND_KINDS[snd.kind].life) this.sounds.delete(key);
+      return;
+    }
     const s = c.session;
     const local = s.local();
     const myTeam = local?.team ?? 0;
     // continuous sounds: footsteps of running players, Boomerangs flying at you
-    for (const p of s.others()) {
+    const others = s.others();
+    for (const id of this.stepPhase.keys())
+      if (!others.some((p) => p.id === id)) this.stepPhase.delete(id); // left the game
+    for (const p of others) {
       if (!p.alive) continue;
       const planar = len(p.vel);
       const onGround = p.move === Move.Ground || p.move === Move.Slide;
@@ -236,19 +269,13 @@ export class SoundRadar implements ClientFeature {
       if (d > SOUND_KINDS.boomerang.range || d < 0.5) continue;
       const approaching = dot(normalize(b.vel, v3()), normalize(toMe)) > 0.5;
       if (approaching) {
-        const owner = s.others().find((p) => p.id === b.controller);
+        const owner = others.find((p) => p.id === b.controller);
         this.hear('boomerang', b.pos, owner?.team ?? null, `b${b.id}`);
       }
     }
 
-    // camera frame
-    const q = c.camera.quaternion;
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
-    const F = v3(fwd.x, fwd.y, fwd.z);
-    const R = v3(right.x, right.y, right.z);
-    const U = v3(up.x, up.y, up.z);
+    // your body's frame (see listenerFrame)
+    const { forward: F, right: R, up: U } = listenerFrame(c.fps.forward(), c.fps.up);
 
     // choose what to show: enemy and neutral sounds you can hear (teammates' own noise is
     // just clutter — except their Controller), most important first
@@ -291,7 +318,7 @@ export class SoundRadar implements ClientFeature {
         el = h(
           'div',
           { class: 'sr-item' },
-          h('span', { class: 'sr-arrow' }, '▲'),
+          h('span', { class: 'sr-arrow' }),
           h('span', { class: 'sr-label' }),
           h('span', { class: 'sr-meta' }),
         );

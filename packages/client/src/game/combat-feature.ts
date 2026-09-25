@@ -19,7 +19,8 @@ import type { ClientFeature, GameClient } from './client';
 import { PlayerModels } from '../render/players';
 import { CombatView } from '../render/combat-view';
 import { Viewmodel } from '../render/viewmodel';
-import { CombatHud, projectMarker, type Threat } from '../ui/combat-hud';
+import { CombatHud, type Threat } from '../ui/combat-hud';
+import { projectMarker, screenAngle } from '../ui/markers';
 import type { LoopHandle } from '../audio';
 import type { SoundName } from '../audio';
 
@@ -42,11 +43,12 @@ export class CombatFeature implements ClientFeature {
   private streakCount = 0;
   private time = 0;
   private slashed = false;
+  private wasAlive = true;
+  private camLocal = new THREE.Vector3();
   statsText: (() => string | null) | null = null;
 
   init(c: GameClient): void {
-    const local = () => c.session.local();
-    this.models = new PlayerModels(() => local()?.team ?? 0);
+    this.models = new PlayerModels();
     this.view = new CombatView(c.session.level);
     c.scene.add(this.models.group, this.view.group);
     this.hud = new CombatHud(c.deps.ui);
@@ -56,8 +58,23 @@ export class CombatFeature implements ClientFeature {
 
   private onResize = (): void => this.hud.resize();
 
+  /**
+   * A player's team. Online, enemies you can't see are left out of the world, so fall back to
+   * the match stats and the room roster; undefined if nobody knows (never guess).
+   */
   private teamOf(c: GameClient, id: number): 0 | 1 | undefined {
-    return c.session.world().players.find((p) => p.id === id)?.team;
+    const s = c.session;
+    return (
+      s.world().players.find((p) => p.id === id)?.team ??
+      s.match?.()?.stats.find((p) => p.id === id)?.team ??
+      s.teams?.()[id]
+    );
+  }
+
+  /** Screen direction (0 = up, clockwise) of a world point from this frame's camera. */
+  private angleOf(c: GameClient, p: Vec3): number {
+    const d = this.camLocal.set(p.x, p.y, p.z).applyMatrix4(c.camera.matrixWorldInverse);
+    return screenAngle(d.x, d.y, d.z);
   }
 
   private name(c: GameClient, id: number): string {
@@ -149,19 +166,17 @@ export class CombatFeature implements ClientFeature {
         case 'hit':
           this.models.flash(e.victim);
           if (e.attacker === me && e.victim !== me) {
-            const killed = !world.players.find((p) => p.id === e.victim)?.alive;
-            this.hud.hitMarker(e.head, killed);
-            if (!killed) a.play(e.head ? 'hitHead' : 'hitMarker', { volume: 0.9 });
+            // the kill arrives with its hit (the world may be a snapshot behind online)
+            const killed = events.some((k) => k.type === 'kill' && k.victim === e.victim);
+            const myTeam = c.session.local()?.team;
+            const mate = myTeam !== undefined && this.teamOf(c, e.victim) === myTeam;
+            this.hud.hitMarker(e.head, killed && !mate, mate);
+            if (!killed && !mate) a.play(e.head ? 'hitHead' : 'hitMarker', { volume: 0.9 });
           }
           if (e.victim === me) {
             a.play('hurt', { volume: 0.8 });
             c.shake = Math.max(c.shake, 0.35);
-            // direction on screen (camera space)
-            const cam = c.camera;
-            const d = new THREE.Vector3(e.src.x, e.src.y, e.src.z).applyMatrix4(
-              cam.matrixWorldInverse,
-            );
-            this.hud.damageFrom(Math.atan2(d.x, d.y));
+            this.hud.damageFrom(e.src);
           }
           break;
         case 'kill': {
@@ -186,7 +201,13 @@ export class CombatFeature implements ClientFeature {
           }
           if (e.victim === me) {
             c.shake = 0.8;
-            this.hud.showCenter(`Eliminated by ${this.name(c, e.attacker)}`, 2.5, 'warn');
+            this.hud.showCenter(
+              e.attacker === me
+                ? 'You eliminated yourself'
+                : `Eliminated by ${this.name(c, e.attacker)}`,
+              2.5,
+              'warn',
+            );
           }
           break;
         }
@@ -207,10 +228,20 @@ export class CombatFeature implements ClientFeature {
     a.play(KILL_SOUND[kind] ?? 'killConfirm', { volume: 1 });
     if (kind === 'recall' && sameThrow && sameThrow >= 2) a.play('killRecallMulti', { volume: 1 });
     c.shake = Math.max(c.shake, 0.45);
-    // ACE: whole enemy team (2+) dead
-    const me = c.session.local();
-    const enemies = c.session.world().players.filter((p) => p.team !== me?.team);
-    const ace = enemies.length >= 2 && enemies.every((p) => !p.alive);
+    // ACE: whole enemy team (2+) dead. Online the world leaves out enemies you can't see (dead
+    // ones are always sent), so count them from the match stats / roster and treat any
+    // missing one as alive.
+    const s = c.session;
+    const myTeam = s.local()?.team;
+    const players = s.world().players;
+    const enemyIds = new Set<number>();
+    for (const p of players) if (p.team !== myTeam) enemyIds.add(p.id);
+    for (const p of s.match?.()?.stats ?? []) if (p.team !== myTeam) enemyIds.add(p.id);
+    for (const [id, team] of Object.entries(s.teams?.() ?? {}))
+      if (team !== myTeam) enemyIds.add(Number(id));
+    const ace =
+      enemyIds.size >= 2 &&
+      [...enemyIds].every((id) => players.find((p) => p.id === id)?.alive === false);
     if (ace) {
       a.play('multiAce');
       this.hud.showBanner('ACE', true);
@@ -346,12 +377,9 @@ export class CombatFeature implements ClientFeature {
         const closing = dot(normalize(b.vel), normalize(rel));
         const tta = dist / speed;
         if (closing < 0.75 || tta > 1.5) continue;
-        const d = new THREE.Vector3(b.pos.x, b.pos.y, b.pos.z).applyMatrix4(
-          c.camera.matrixWorldInverse,
-        );
         const mateThrow = this.teamOf(c, b.controller) === me.team;
         threats.push({
-          dirCam: d.normalize(),
+          angle: this.angleOf(c, b.pos),
           intensity: Math.max(0, 1 - tta / 1.5),
           color: mateThrow ? '#ffd34d' : '#ff3b4f',
         });
@@ -376,12 +404,8 @@ export class CombatFeature implements ClientFeature {
           y: b.recallFrom.y + seg.y * t,
           z: b.recallFrom.z + seg.z * t,
         };
-        if (len(sub(p, eye)) < 2.5) {
-          const d = new THREE.Vector3(b.recallFrom.x, b.recallFrom.y, b.recallFrom.z).applyMatrix4(
-            c.camera.matrixWorldInverse,
-          );
-          threats.push({ dirCam: d.normalize(), intensity: 1, color: '#ffffff' });
-        }
+        if (len(sub(p, eye)) < 2.5)
+          threats.push({ angle: this.angleOf(c, b.recallFrom), intensity: 1, color: '#ffffff' });
       }
     }
 
@@ -416,6 +440,8 @@ export class CombatFeature implements ClientFeature {
 
     // HUD
     if (me) {
+      if (me.alive && !this.wasAlive) this.hud.clearTransient(); // respawned / new round
+      this.wasAlive = me.alive;
       const fullTicks = Math.round(cfg.combat.windupSec * 60);
       const status: 'held' | 'flying' | 'dropped' | 'recalling' | 'steer' = !myB
         ? 'held'
@@ -426,8 +452,9 @@ export class CombatFeature implements ClientFeature {
             : myB.phase === Phase.Recall || myB.phase === Phase.RecallTelegraph
               ? 'recalling'
               : 'flying';
+      // nothing to go and get while you're dead
       const marker =
-        myB && myB.phase !== Phase.Held
+        me.alive && myB && myB.phase !== Phase.Held
           ? projectMarker(myB.pos, c.camera, window.innerWidth, window.innerHeight)
           : null;
       this.hud.update(
@@ -453,6 +480,16 @@ export class CombatFeature implements ClientFeature {
         },
         threats,
         marker,
+        (p) => this.angleOf(c, p),
+      );
+      // between rounds the scoreboard / results say it all (and would sit on top of it)
+      const m = s.match?.() ?? null;
+      this.hud.setDeath(
+        me.alive || c.panelOpen
+          ? null
+          : m?.phase === 'live'
+            ? 'ELIMINATED · back next round'
+            : 'ELIMINATED',
       );
     }
     this.hud.setStats(this.statsText?.() ?? null);

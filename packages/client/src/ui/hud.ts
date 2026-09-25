@@ -1,6 +1,6 @@
 // In-game HUD (DOM overlay). Text updates are throttled; the speed graph is a tiny canvas.
 import type { PlayerState, MovementConfig, Vec3 } from '@space-yz/shared';
-import { MOVE_NAMES, len, projectOnPlane, lenSq, normalize, dot } from '@space-yz/shared';
+import { MOVE_NAMES, len, projectOnPlane, lenSq, normalize, dot, cross } from '@space-yz/shared';
 import type { Settings } from '../settings';
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -12,6 +12,19 @@ const el = <K extends keyof HTMLElementTagNameMap>(
   if (cls) e.className = cls;
   parent?.appendChild(e);
   return e;
+};
+
+/**
+ * CSS rotation (radians, clockwise) for the gravity arrow, which points down when unrotated:
+ * it then points the way gravity pulls on screen. Rotating "down" clockwise by θ gives
+ * (−sin θ, cos θ) in screen pixels (y down).
+ */
+export const gravityArrowAngle = (gravity: Vec3, camForward: Vec3, camUp: Vec3): number => {
+  const gdir = normalize(gravity);
+  const right = normalize(cross(camForward, camUp));
+  const sx = dot(gdir, right); // screen right
+  const sy = dot(gdir, camUp); // screen up
+  return Math.atan2(-sx, -sy);
 };
 
 export class Hud {
@@ -118,15 +131,7 @@ export class Hud {
             : 'SHIFTED GRAVITY';
       // arrow: gravity direction projected into the screen (right/up)
       if (!zeroG) {
-        const gdir = normalize(p.gravity);
-        const right = normalize({
-          x: camForward.y * camUp.z - camForward.z * camUp.y,
-          y: camForward.z * camUp.x - camForward.x * camUp.z,
-          z: camForward.x * camUp.y - camForward.y * camUp.x,
-        });
-        const sx = dot(gdir, right);
-        const sy = dot(gdir, camUp);
-        const ang = Math.atan2(sx, -sy);
+        const ang = gravityArrowAngle(p.gravity, camForward, camUp);
         this.gravArrow.style.transform = `rotate(${ang}rad)`;
         this.gravArrow.style.opacity = '1';
       } else this.gravArrow.style.opacity = '0.2';

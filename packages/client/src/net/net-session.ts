@@ -165,6 +165,12 @@ export class NetSession implements Session {
     return out;
   }
 
+  teams(): Record<number, 0 | 1> {
+    const out: Record<number, 0 | 1> = {};
+    for (const p of this.core.roster) out[p.id] = p.team;
+    return out;
+  }
+
   dispose(): void {
     this.core.leaveRoom();
   }

@@ -112,7 +112,8 @@ describe('Kestrel map', () => {
         ...w,
         links: blocked.includes(i) ? [] : w.links.filter((l) => !blocked.includes(l)),
       }));
-    const mid = [near(0, 9), near(0, -9)]; // reactor floor, both sides of the platform
+    // reactor room: floor on both sides of the platform, and the balcony window into the shaft
+    const mid = [near(0, 9), near(0, -9), near(0, 16)];
     const S0 = near(0, 31); // zero-G shaft
     const SC = near(0, -38.5); // engine ceiling
     for (const i of [a, b, ...mid, S0, SC]) expect(i).toBeGreaterThanOrEqual(0);

@@ -104,6 +104,13 @@ const VIEWS = [
   { name: '13 cargo shaft (zero-G)', pos: [-27, 3, 36], yaw: -90, pitch: 6, mate: [-14, 3, 30] },
   { name: '14 turbine hall', pos: [-74, 0, -27], yaw: -110, pitch: 6, mate: [-61, 0, -30] },
   { name: '15 engine corridor mouth', pos: [-51, 0, -33], yaw: -90, pitch: 6, mate: [-40, 0, -30] },
+  {
+    name: '17 reactor window into the cargo shaft',
+    pos: [-6, 6, 12],
+    yaw: 180,
+    pitch: 12,
+    mate: [3, 6, 16],
+  },
   { name: '16 crawl vent', pos: [-51.5, 0, -14], yaw: 180, pitch: -18, mate: [-56, 0, -22] },
 ];
 

@@ -104,6 +104,7 @@ export const buildKestrel = (): LevelDef => {
   // ================= shared middle: Reactor room, Cargo shaft, Engine corridor =================
   const R = K.reactor;
   // doorways in the reactor's side walls (shared with each Trench): ground + gallery level
+  const shaftWindow: Hole = { u0: -8, u1: 8, v0: U + 1, v1: U + 8 };
   const reactorSide: Hole[] = [
     { u0: -6, u1: 4, v0: 0, v1: 9 },
     { u0: 10, u1: 16, v0: U, v1: U + 5 },
@@ -118,7 +119,8 @@ export const buildKestrel = (): LevelDef => {
     v3(-R.x, 0, R.z0),
     v3(R.x, R.h, R.z1),
     1,
-    { '-x': reactorSide, '+x': reactorSide },
+    // + a big opening from the balcony into the zero-G cargo shaft (a view, and a way in)
+    { '-x': reactorSide, '+x': reactorSide, '+z': [shaftWindow] },
     { trim: VIOLET },
   );
   // the raised core platform (ramps on the lane sides, climbable on the others)
@@ -153,7 +155,7 @@ export const buildKestrel = (): LevelDef => {
     v3(-SH.x, SH.y0, SH.z0),
     v3(SH.x, SH.y1, SH.z1),
     1,
-    { '-x': [shaftDoor], '+x': [shaftDoor] },
+    { '-x': [shaftDoor], '+x': [shaftDoor], '-z': [shaftWindow] },
     { trim: WHITE },
   );
   // a container floating right in line with both doors (no straight shot through the shaft)
@@ -483,6 +485,7 @@ export const buildKestrel = (): LevelDef => {
   add('M0s', v3(0, 1, -9));
   add('S0', v3(0, 10.5, 31));
   add('SC', v3(0, S.h - 1, -38.5));
+  add('rWin', v3(0, U + 2, 16)); // reactor balcony, at the window into the shaft
   for (const s of [-1, 1] as const) {
     const L = s < 0 ? 'A' : 'B';
     const X = (x: number) => s * x;
@@ -605,8 +608,11 @@ export const buildKestrel = (): LevelDef => {
     link(`${L}.rN`, 'M0n');
     link(`${L}.rS`, 'M0s');
     link(`${L}.shaft`, 'S0');
+    link(`${L}.balc`, 'rWin');
     link(`${L}.s4`, 'SC');
   }
+
+  link('rWin', 'S0'); // jump through the window into zero-G (or float out onto the balcony)
 
   return b.build({
     name: 'Kestrel',

@@ -310,9 +310,12 @@ export const updateMatch = (ms: MatchState, world: WorldState, ctx: SimContext):
     } else {
       c.pickup = null;
       if (world.tick - c.droppedTick >= secTicks(r.controllerReturnSec, dt)) {
-        c.droppedAt = homeOf(ms, ctx, c.team);
+        const home = homeOf(ms, ctx, c.team);
+        // (already waiting at home for a teammate: nothing returns)
+        if (len(sub(c.droppedAt, home)) > 1e-3)
+          world.events.push({ type: 'controllerReturn', team: c.team });
+        c.droppedAt = home;
         c.droppedTick = world.tick;
-        world.events.push({ type: 'controllerReturn', team: c.team });
       }
     }
   }

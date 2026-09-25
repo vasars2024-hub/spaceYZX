@@ -177,8 +177,21 @@ describe('match rules', () => {
     // keep the teammate far away
     const mate = world.players.find((p) => p.team === 0 && p.alive)!;
     mate.pos = v3(-80, 0.9, 30);
-    tick(ms, world, ctx, secs(8) + 1);
+    let returns = 0;
+    const run = (n: number) => {
+      for (let i = 0; i < n; i++) {
+        tick(ms, world, ctx, 1);
+        returns += world.events.filter((e) => e.type === 'controllerReturn').length;
+      }
+    };
+    run(secs(8) + 1);
     expect(c.droppedAt!.x).toBeLessThan(-70); // back at the team's home
+    expect(returns).toBe(1);
+    // it waits there for a teammate, without "returning" again every 8 s
+    const home = { ...c.droppedAt! };
+    run(secs(20));
+    expect(returns).toBe(1);
+    expect(c.droppedAt).toEqual(home);
   });
 
   it('timeout tiebreak: players alive, then total HP, then draw', () => {

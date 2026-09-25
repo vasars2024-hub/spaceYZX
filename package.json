@@ -2,7 +2,7 @@
   "name": "space-yz",
   "private": true,
   "version": "0.1.0",
-  "description": "Space YZ — a free, fast, first-person gravity arena shooter for Chrome.",
+  "description": "Space YZ \u2014 a free, fast, first-person gravity arena shooter for Chrome.",
   "type": "module",
   "workspaces": [
     "packages/shared",
@@ -25,6 +25,7 @@
     "check": "npm run lint && npm run typecheck && npm run test",
     "balance": "tsx tools/balance/run.ts",
     "matches": "tsx tools/balance/matches.ts",
+    "netcheck": "tsx tools/netcheck/run.ts",
     "size": "tsx tools/perf/bundle-size.ts",
     "load": "tsx tools/perf/server-load.ts",
     "bench": "node tools/perf/browser-bench.mjs",

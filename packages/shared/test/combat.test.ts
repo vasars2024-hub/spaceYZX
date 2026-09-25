@@ -422,3 +422,103 @@ describe('prediction of other players’ grenades', () => {
     expect(pc.vel).toEqual(ps.vel);
   });
 });
+
+describe('hit registration: judged by what the shooter saw', () => {
+  it('a Boomerang hits the target where its thrower saw it (lag compensation)', async () => {
+    const { hitboxOf } = await import('../src/index');
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    const target = addOther(sim, 2, 1, v3(3, 0, -10));
+    settle(sim);
+    // on the thrower's screen the target stood 3 m to the left: right in the Boomerang's path
+    const seen = hitboxOf({ ...target, pos: v3(0, target.pos.y, -10) }, sim.config);
+    sim.ctx.rewindHitboxes = (id) => (id === 1 ? [seen] : null);
+    const ev = [...quickThrow(sim, 1), ...tick(sim, {}, 40)];
+    expect(ev.some((e) => e.type === 'hit' && e.victim === 2 && e.attacker === 1)).toBe(true);
+    // ...and without lag compensation the same throw misses the real (current) spot
+    const sim2 = makeSim(flatLevel());
+    settle(sim2);
+    addOther(sim2, 2, 1, v3(3, 0, -10));
+    settle(sim2);
+    const ev2 = [...quickThrow(sim2, 1), ...tick(sim2, {}, 40)];
+    expect(ev2.some((e) => e.type === 'hit')).toBe(false);
+  });
+
+  it('prediction never guesses kills that are judged where players are now', async () => {
+    const { stepPredict, cloneWorld } = await import('../src/index');
+    // a lethal recall straight through an enemy: the server kills, the client doesn't guess
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    const b = boomerangOf(sim, 1);
+    b.phase = Phase.Dropped;
+    b.pos = v3(0, 1.2, -30);
+    addOther(sim, 2, 1, v3(0, 0, -20));
+    settle(sim);
+    const client = cloneWorld(sim.world);
+    const predicted: SimEvent[] = [];
+    for (let i = 0; i < 60; i++) {
+      const input = { tick: client.tick + 1, buttons: i === 0 ? Btn.Recall : 0, view: view(0) };
+      stepPredict(client, 1, input, sim.ctx);
+      predicted.push(...client.events);
+    }
+    expect(predicted.some((e) => e.type === 'recallStart')).toBe(true);
+    expect(predicted.some((e) => e.type === 'hit')).toBe(false);
+    const real = tick(sim, { 1: { buttons: Btn.Recall } }, 1).concat(tick(sim, {}, 59));
+    expect(real.some((e) => e.type === 'kill' && e.victim === 2)).toBe(true);
+  });
+
+  it('a predicted deflect trusts only where the defender saw the other Boomerang', async () => {
+    const { stepPredict, cloneWorld } = await import('../src/index');
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    addOther(sim, 2, 1, v3(0, 0, -20));
+    settle(sim);
+    // the enemy Boomerang (as last reported) is right in front of player 1's blade...
+    const enemyB = boomerangOf(sim, 2);
+    enemyB.phase = Phase.Out;
+    enemyB.controller = 2;
+    enemyB.pos = v3(0, 1.6, -1.5);
+    enemyB.vel = v3(0, 0, 45);
+    const slash = (seenAt: ReturnType<typeof v3>) => {
+      const client = cloneWorld(sim.world);
+      const ctx = {
+        ...sim.ctx,
+        rewindPos: (id: number, kind: string) => (id === 1 && kind === 'boomerang' ? seenAt : null),
+      };
+      stepPredict(client, 1, { tick: client.tick + 1, buttons: Btn.Melee, view: view(0) }, ctx);
+      return client.events.some((e) => e.type === 'deflect');
+    };
+    // ...but on the defender's screen it was still 12 m away: no deflect predicted
+    expect(slash(v3(0, 1.6, -12))).toBe(false);
+    // seen within reach: deflect predicted
+    expect(slash(v3(0, 1.6, -1.5))).toBe(true);
+  });
+});
+
+describe('Boomerang preview in gravity zones', () => {
+  it.each([
+    ['zero-G', v3(0, 0, 0)],
+    ['sideways gravity', v3(20, 0, 0)],
+  ] as const)('the preview matches the real flight in %s', (_name, gravity) => {
+    const sim = makeSim(
+      flatLevel([], [{ name: 'zone', min: v3(-40, 0.5, -60), max: v3(40, 30, -4), gravity }]),
+    );
+    settle(sim);
+    sim.config.movement.runSpeed = 0;
+    sim.config.movement.sprintSpeed = 0;
+    tick(sim, { 1: { buttons: Btn.Fire, view: view(0, 3) } }, 5);
+    const pred = predictThrow(sim.world, sim.ctx, sim.p, 0, 200);
+    tick(sim, { 1: { buttons: 0, view: view(0, 3) } }, 1);
+    const b = boomerangOf(sim, 1);
+    const real = [{ ...b.pos }];
+    for (let i = 0; i < 200 && b.phase !== Phase.Held && b.phase !== Phase.Dropped; i++) {
+      tick(sim);
+      real.push({ ...b.pos });
+    }
+    const n = Math.min(real.length, pred.points.length) - 1;
+    expect(n).toBeGreaterThan(20);
+    for (let i = 0; i < n; i++) expect(len(sub(real[i], pred.points[i + 1]))).toBeLessThan(1e-9);
+    // the zone really bends it (sideways: drifts +x)
+    if (gravity.x > 0) expect(Math.max(...real.map((p) => p.x))).toBeGreaterThan(0.5);
+  });
+});

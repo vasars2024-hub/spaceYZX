@@ -398,8 +398,10 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
         const vn = dot(g.vel, hit.normal);
         g.vel = scale(madd(g.vel, hit.normal, -2 * vn), 0.4); // bounce, lose energy
       } else g.pos = madd(g.pos, g.vel, dt);
-      // touching a player (not the thrower) sets it off
+      // touching a player (not the thrower) sets it off. (Judged where players are now, so a
+      // predicting client only knows about touching itself.)
       for (const hb of hbs) {
+        if (only !== undefined && hb.id !== only) continue;
         if (hb.id === g.owner && g.t < ticks(0.4, dt)) continue;
         if (sweepHitbox(g.pos, g.pos, c.grenadeRadius, hb)) {
           activateGrenade(world, g, false);
@@ -422,7 +424,8 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
         g.phase = 2;
         world.events.push({ type: 'grenadePop', grenade: g.id, pos: clone(g.pos) });
         for (const p of world.players) {
-          if (!p.alive) continue;
+          // (judged where players are now: a predicting client only knows its own position)
+          if (!p.alive || (only !== undefined && p.id !== only)) continue;
           const dist = len(sub(p.pos, g.pos));
           if (dist > c.grenadeDamageRadius || !lineOfSight(ctx.level, g.pos, p.pos)) continue;
           const dmg = Math.round(c.grenadeDamage * (1 - (dist / c.grenadeDamageRadius) * 0.6));
@@ -461,8 +464,8 @@ const fireLaser = (
   }
   for (const g of world.grenades) {
     if (g.phase !== 0) continue;
-    // server: shoot the grenade where the shooter saw it
-    const gp = ctx.rewindPos?.(p.id, 'grenade', g.id) ?? g.pos;
+    // shoot the grenade where the shooter saw it (their own is drawn where it is now)
+    const gp = (g.owner !== p.id && ctx.rewindPos?.(p.id, 'grenade', g.id)) || g.pos;
     const cp = closestPointSeg(gp, eye, madd(eye, dir, best));
     if (cp.distSq <= c.grenadeHitRadius * c.grenadeHitRadius) {
       best = cp.t * best;
@@ -703,14 +706,16 @@ export const updateCombat = (
     const cosCone = Math.cos(c.deflectConeDeg * DEG);
     for (const b of world.boomerangs) {
       if (!isFlying(b) || b.controller === p.id) continue;
-      // deflectable where it is now, or (server) where the slasher saw it
+      // deflectable where it is now, or (lag compensation) where the slasher saw it. A client
+      // predicting its own swing only knows where it saw someone else's Boomerang.
       const inCone = (pos: Vec3): boolean => {
         const d = sub(pos, eye);
         const dist = len(d);
         if (dist > c.slashRange + c.boomerangRadius || dist < 1e-6) return false;
         return dot(scale(d, 1 / dist), fwd) >= cosCone;
       };
-      if (!inCone(b.pos)) {
+      const remote = only !== undefined && b.owner !== only;
+      if (remote || !inCone(b.pos)) {
         const seen = ctx.rewindPos?.(p.id, 'boomerang', b.id);
         if (!seen || !inCone(seen)) continue;
       }
@@ -729,11 +734,13 @@ export const updateCombat = (
     }
     for (const g of world.grenades) {
       if (g.phase !== 0) continue;
-      if (
-        len(sub(g.pos, eye)) <= c.slashRange + c.grenadeHitRadius &&
-        dot(normalize(sub(g.pos, eye)), fwd) >= Math.cos(c.slashConeDeg * DEG)
-      )
-        activateGrenade(world, g, true);
+      // like deflects: where the grenade is now, or where the slasher saw it
+      const reach = (pos: Vec3): boolean =>
+        len(sub(pos, eye)) <= c.slashRange + c.grenadeHitRadius &&
+        dot(normalize(sub(pos, eye)), fwd) >= Math.cos(c.slashConeDeg * DEG);
+      const foreign = only !== undefined && g.owner !== only;
+      const seen = g.owner !== p.id ? ctx.rewindPos?.(p.id, 'grenade', g.id) : null;
+      if ((!foreign && reach(g.pos)) || (!!seen && reach(seen))) activateGrenade(world, g, true);
     }
   }
 
@@ -767,7 +774,9 @@ export const updateCombat = (
       const traveled = Math.min(total, b.t * c.recallSpeed * dt);
       b.pos = total > 1e-6 ? lerp(from, to, traveled / total) : clone(to);
       b.vel = total > 1e-6 ? scale(normalize(sub(to, from)), c.recallSpeed) : v3();
-      if (b.recallLethal) {
+      // lethal line: judged where players are *now* (the line is telegraphed so it can be
+      // dodged), which a predicting client can't know: the server reports those kills
+      if (b.recallLethal && only === undefined) {
         for (const hb of liveHitboxes) {
           if (hb.id === b.owner || b.hitIds.includes(hb.id)) continue;
           if (sweepHitbox(prevPos, b.pos, c.recallKillRadius, hb)) {
@@ -823,9 +832,12 @@ export const updateCombat = (
     const res = flightStep(b, env);
     segs.set(b.id, [res.from, res.to]);
 
-    // player hits along the swept segment (hits on the way out AND back)
+    // player hits along the swept segment (hits on the way out AND back). The thrower sees
+    // their own Boomerang where it really is but everyone else a little in the past, so
+    // (server) the targets are rewound to what the Boomerang's controller saw.
+    const targets = ctx.rewindHitboxes?.(b.controller) ?? liveHitboxes;
     const hits: { t: number; hb: Hitbox; head: boolean; point: Vec3 }[] = [];
-    for (const hb of liveHitboxes) {
+    for (const hb of targets) {
       if (b.hitIds.includes(hb.id)) continue;
       if (hb.id === b.controller) continue; // your own throw can't hit you (a deflected one can)
       if (hb.id === b.owner && b.phase === Phase.Return) continue; // owner catches instead

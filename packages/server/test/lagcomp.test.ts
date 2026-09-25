@@ -99,10 +99,10 @@ describe('lag compensation', () => {
       h.record(world, config);
     }
     expect(h.hitboxesAt(20.5)![0].head.x).toBeCloseTo(20.5, 5);
-    // 300 ms of history: the oldest ticks are gone
-    expect(h.hitboxesAt(5)![0].head.x).toBeGreaterThan(10);
-    // 175 ms latency + 100 ms interpolation allowance = 16.5 ticks
-    expect(h.clampTick(0, 30)).toBeCloseTo(13.5, 5);
+    // 350 ms of history: the oldest ticks are gone
+    expect(h.hitboxesAt(5)![0].head.x).toBeGreaterThan(8);
+    // 175 ms latency + 100 ms interpolation + 50 ms input lead allowance = 19.5 ticks
+    expect(h.clampTick(0, 30)).toBeCloseTo(10.5, 5);
     expect(h.clampTick(25, 30)).toBe(25);
   });
 
@@ -118,10 +118,11 @@ describe('lag compensation', () => {
     expect(laserDuel({ lagComp: false, viewLag: 6, moveBeforeFire: 3 }).hp).toBe(100);
   });
 
-  it('never rewinds more than 175 ms of latency (+ the interpolation delay)', () => {
-    // shooter claims to see 30 ticks (500 ms) in the past: only 16.5 ticks are honoured
+  it('never rewinds more than 175 ms of latency (+ interpolation and input lead)', () => {
+    // shooter claims to see 30 ticks (500 ms) in the past: only 19.5 ticks are honoured
     expect(laserDuel({ lagComp: true, viewLag: 30, moveBeforeFire: 3 }).hp).toBeLessThan(100);
-    expect(laserDuel({ lagComp: true, viewLag: 30, moveBeforeFire: 18 }).hp).toBe(100);
+    expect(laserDuel({ lagComp: true, viewLag: 30, moveBeforeFire: 18 }).hp).toBeLessThan(100);
+    expect(laserDuel({ lagComp: true, viewLag: 30, moveBeforeFire: 22 }).hp).toBe(100);
   });
 });
 

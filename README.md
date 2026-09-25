@@ -82,9 +82,16 @@ To get the newest version later, run `git pull` and then `npm install` again.
 | `npm run format`     | Format all files with Prettier                                                      |
 | `npm run balance`    | Bot-vs-bot combat metrics vs the design targets                                     |
 | `npm run matches`    | Full bot matches per mode on Kestrel (round length, how rounds end)                 |
+| `npm run netcheck`   | Hit registration + Boomerang consistency at 0–200 ms ping (virtual network)         |
 | `npm run load`       | Server CPU per tick and bandwidth per player, per mode                              |
 | `npm run size`       | Fails if the first download is over 5 MB                                            |
 | `npm run bench`      | Browser frame-time benchmark with CPU throttling (needs Playwright; see the script) |
+
+**Hit registration.** What you hit on your screen counts, and what you miss doesn't: the
+server judges every Laser shot, slash, Boomerang and deflect against exactly the frame the
+shooter saw (up to 175 ms of ping). `npm run netcheck` plays scripted duels against the real
+server over a simulated network and compares, shot by shot, the shooter's screen with the
+server's verdict (the same checks run in `npm test`).
 
 In the game, the `` ` `` key opens the live tuning panel (offline modes). **Copy values** there
 puts every movement/combat number on the clipboard.

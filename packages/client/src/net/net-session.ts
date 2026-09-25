@@ -147,8 +147,21 @@ export class NetSession implements Session {
     return out;
   }
 
+  /**
+   * Grenades as drawn: your own where your prediction has them (now), everyone else's
+   * interpolated like the players around them — the same moment the server's lag
+   * compensation rewinds to when you shoot one.
+   */
   grenades(): GrenadeState[] {
-    return this.core.latest?.grenades ?? [];
+    const me = this.localId;
+    const out: GrenadeState[] = (this.core.predWorld?.grenades ?? []).filter(
+      (g) => g.owner === me && g.phase !== 2,
+    );
+    for (const g of this.core.latest?.grenades ?? []) {
+      if (g.owner === me) continue;
+      out.push({ ...g, pos: this.core.interpolatedGrenade(g.id) ?? g.pos });
+    }
+    return out;
   }
 
   world(): WorldState {

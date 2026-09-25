@@ -8,9 +8,11 @@ import type { Quat } from '../math/quat';
 import { qNormalize } from '../math/quat';
 import { BitWriter, BitReader, CodecError } from './codec/bits';
 import { defineSchema, type Schema } from './codec/delta';
-import { writePos, readPos, uniformVec3Format } from './codec/quantize';
+import { writePos, readPos, uniformVec3Format, snapVec3 } from './codec/quantize';
 
 const GRENADE_POS = uniformVec3Format(-512, 512, 18);
+/** A grenade position as the network rounds it. */
+export const snapGrenadePos = (v: Vec3): Vec3 => snapVec3(v, GRENADE_POS);
 import type { PlayerInput } from '../sim/input';
 import { ALL_BUTTONS } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
@@ -168,6 +170,7 @@ const PLAYER_KEYS = Object.keys(
   createPlayer(0, 0, v3(), 0, defaultConfig()),
 ) as (keyof PlayerState)[];
 const BOOMERANG_KEYS = Object.keys(newBoomerang(0, v3())) as (keyof BoomerangState)[];
+const GRENADE_KEYS: (keyof GrenadeState)[] = ['id', 'owner', 'pos', 'vel', 'phase', 't'];
 
 const T_INT = 0,
   T_F64 = 1,
@@ -362,7 +365,13 @@ export interface SnapshotData {
   boomerangs: Map<number, NetBoomerang>; // by owner id
   grenades: GrenadeState[];
   zones: { index: number; dir: Vec3; until: number }[];
-  own: { player: PlayerState; boomerang: BoomerangState | null } | null;
+  /** private, exact state for the receiving client (every few snapshots): for prediction */
+  own: {
+    player: PlayerState;
+    boomerang: BoomerangState | null;
+    /** your own grenades (flight + fuse), so their flight can be predicted exactly */
+    grenades?: GrenadeState[];
+  } | null;
   events: SimEvent[] | null;
   extra: unknown; // rules / match state (JSON), sent when changed
 }
@@ -411,6 +420,9 @@ export const encodeSnapshot = (s: SnapshotData, base: SnapshotBaseline | null): 
     writeExact(w, s.own.player, PLAYER_KEYS);
     w.writeBool(!!s.own.boomerang);
     if (s.own.boomerang) writeExact(w, s.own.boomerang, BOOMERANG_KEYS);
+    const og = s.own.grenades ?? [];
+    w.writeVarUint(og.length);
+    for (const g of og) writeExact(w, g, GRENADE_KEYS);
   }
   w.writeBool(!!s.events && s.events.length > 0);
   if (s.events && s.events.length > 0) w.writeString(JSON.stringify(s.events), 60000);
@@ -471,7 +483,11 @@ export const decodeSnapshot = (
   if (r.readBool()) {
     const player = readExact<PlayerState>(r, PLAYER_KEYS);
     const boomerang = r.readBool() ? readExact<BoomerangState>(r, BOOMERANG_KEYS) : null;
-    own = { player, boomerang };
+    const n = r.readVarUint();
+    if (n > 16) throw new CodecError('invalid', 'too many own grenades');
+    const grenades: GrenadeState[] = [];
+    for (let k = 0; k < n; k++) grenades.push(readExact<GrenadeState>(r, GRENADE_KEYS));
+    own = { player, boomerang, grenades };
   }
   const events = r.readBool() ? (JSON.parse(r.readString(60000)) as SimEvent[]) : null;
   const extra = r.readBool() ? (JSON.parse(r.readString(60000)) as unknown) : null;

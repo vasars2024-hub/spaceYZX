@@ -311,18 +311,19 @@ export class Room {
     }
     step(this.world, inputs, this.ctx);
     this.rules?.afterStep(this);
-    this.history.record(this.world, this.ctx.config);
+    // what everyone is shown this tick: recorded for lag compensation, and sent
+    const pub = publicState(this.world);
+    this.history.record(this.world, this.ctx.config, pub);
     if (this.vision.enabled && this.humans.length)
       this.vision.update(this.world, this.ctx, this.rules?.revealed?.(this) ?? []);
     if (this.world.events.length) {
       this.pendingEvents.push(...this.world.events);
       this.onEvents?.(this.world.events);
     }
-    if (++this.tickCounter % this.snapshotEvery === 0) this.sendSnapshots();
+    if (++this.tickCounter % this.snapshotEvery === 0) this.sendSnapshots(pub);
   }
 
-  private sendSnapshots(): void {
-    const pub = publicState(this.world);
+  private sendSnapshots(pub: ReturnType<typeof publicState>): void {
     const zones = zoneOverrides(this.world);
     const events = this.pendingEvents;
     this.pendingEvents = [];
@@ -355,7 +356,14 @@ export class Room {
           boomerangs: pub.boomerangs,
           grenades: this.world.grenades,
           zones,
-          own: own && seq % this.privateEvery === 0 ? { player: own, boomerang: ownB } : null,
+          own:
+            own && seq % this.privateEvery === 0
+              ? {
+                  player: own,
+                  boomerang: ownB,
+                  grenades: this.world.grenades.filter((g) => g.owner === m.id),
+                }
+              : null,
           events,
           extra: sendExtra ? rulesState : null,
         },

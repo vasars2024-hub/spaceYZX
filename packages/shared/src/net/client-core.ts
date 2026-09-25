@@ -1,8 +1,7 @@
 // Platform-neutral network client (browser game and headless bots): connection, clock sync,
 // input sending, prediction + reconciliation, and a snapshot buffer for interpolation.
 import type { Vec3 } from '../math/vec3';
-import { v3, lerp, sub, len, add, scale, normalize } from '../math/vec3';
-import { qSlerp } from '../math/quat';
+import { v3, sub, len, add, scale } from '../math/vec3';
 import type { GameConfig } from '../config';
 import { mergeConfig, defaultConfig } from '../config';
 import type { Level } from '../level/level';
@@ -11,9 +10,10 @@ import { mapDef } from '../level/maps/index';
 import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
-import type { BoomerangState } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
-import { createWorld, createPlayer, newBoomerang, stepPredict } from '../sim/world';
+import type { Hitbox } from '../sim/hitbox';
+import { interpNetPlayer, interpObjectPos, netHitbox, netToBoomerang, netToPlayer } from './interp';
+import { createWorld, stepPredict } from '../sim/world';
 import { eyePos } from '../sim/movement';
 import { TICK_DT } from '../sim/constants';
 import {
@@ -27,11 +27,11 @@ import {
   type SnapshotData,
   type SnapshotBaseline,
   type NetPlayer,
-  type NetBoomerang,
   type GameMode,
   type RoomPlayerInfo,
 } from './protocol';
 import { PROTOCOL_VERSION } from '../version';
+import { MAX_REWIND_MS } from './lag-limits';
 
 export interface SocketLike {
   binaryType: string;
@@ -80,6 +80,34 @@ const PREDICTED_EVENTS = new Set([
   'pickup',
 ]);
 
+/**
+ * Events of your own actions that prediction shows instantly and the server later reports
+ * again: the server's copy is dropped when a predicted twin exists (same key, same tick ± a
+ * few), so beams, hit markers and deflect sounds play once. Unmatched server events (things
+ * prediction didn't see coming) still play.
+ */
+const echoKey = (e: SimEvent): string | null => {
+  switch (e.type) {
+    case 'hit':
+      return `hit:${e.attacker}:${e.victim}`;
+    case 'laserFire':
+      return `laserFire:${e.player}`;
+    case 'deflect':
+      return `deflect:${e.player}:${e.boomerang}`;
+    case 'recallStart':
+    case 'recallGo':
+      return `${e.type}:${e.boomerang}`;
+    case 'wallHit':
+      return `wallHit:${e.boomerang}`;
+    case 'grenadeActivate':
+    case 'grenadePop':
+      return `${e.type}:${e.grenade}`;
+    default:
+      return null;
+  }
+};
+const ECHO_TOLERANCE_TICKS = 4;
+
 export class NetCore {
   ws: SocketLike | null = null;
   state: 'connecting' | 'lobby' | 'room' | 'closed' = 'connecting';
@@ -126,8 +154,14 @@ export class NetCore {
   private lastUpdateAt = 0;
   /** Ping equalization: sampled inputs are applied this many ticks later (server-assigned). */
   inputDelay = 0;
-  private delayQueue: { buttons: number; view: { x: number; y: number; z: number; w: number } }[] =
-    [];
+  private delayQueue: {
+    buttons: number;
+    view: { x: number; y: number; z: number; w: number };
+    /** the server tick other players were drawn at when this input was sampled */
+    seen: number;
+  }[] = [];
+  /** The tick other players were drawn at on the last rendered frame (null: no renderer). */
+  shownTick: number | null = null;
   /** FIFO ordering for the network simulator (TCP never reorders). */
   private simLast = { in: 0, out: 0 };
   interpTicks: number;
@@ -139,12 +173,16 @@ export class NetCore {
   correction = v3();
   // events
   private events: SimEvent[] = [];
+  /** predicted events the server will echo (see echoKey) */
+  private echoes: { key: string; tick: number }[] = [];
   // stats
   bytesIn = 0;
   snapshotsIn = 0;
   corrections = 0;
   lastLead = 0;
   onMessage: (msg: ServerMsg) => void = () => {};
+  /** Debug/test hook: called after each forward prediction step (not for replays). */
+  onPredicted: ((world: WorldState, input: PlayerInput) => void) | null = null;
 
   private opts: NetCoreOptions;
 
@@ -243,6 +281,8 @@ export class NetCore {
     this.lastAck = 0;
     this.inputDelay = 0;
     this.delayQueue = [];
+    this.shownTick = null;
+    this.echoes = [];
   }
 
   private onData(data: unknown): void {
@@ -378,10 +418,21 @@ export class NetCore {
       this.dilation = 1;
     } else this.dilation = 1 + Math.max(-0.15, Math.min(0.12, err * 0.03));
     // server events (skip ones we already predicted for ourselves)
+    this.echoes = this.echoes.filter((x) => x.tick > snap.tick - 120);
     if (snap.events)
       for (const e of snap.events) {
         const mine = 'player' in e && (e as { player: number }).player === this.localId;
         if (mine && PREDICTED_EVENTS.has(e.type)) continue;
+        const key = echoKey(e);
+        if (key) {
+          const i = this.echoes.findIndex(
+            (x) => x.key === key && Math.abs(x.tick - snap.tick) <= ECHO_TOLERANCE_TICKS,
+          );
+          if (i >= 0) {
+            this.echoes.splice(i, 1);
+            continue;
+          }
+        }
         this.events.push(e);
       }
     if (snap.own) this.reconcile(snap);
@@ -411,7 +462,13 @@ export class NetCore {
         w.boomerangs.push(snap.own.boomerang);
       else w.boomerangs.push(netToBoomerang(owner, nb));
     }
-    w.grenades = snap.grenades.map((g) => ({ ...g }));
+    // your own grenades: exact private state (flight + fuse) so they predict correctly
+    const ownGrenades = snap.own?.grenades;
+    w.grenades = snap.grenades
+      .filter((g) => !ownGrenades || g.owner !== this.localId)
+      .map((g) => ({ ...g }));
+    if (ownGrenades)
+      w.grenades.push(...ownGrenades.map((g) => ({ ...g, pos: { ...g.pos }, vel: { ...g.vel } })));
     for (const z of snap.zones)
       if (w.zones[z.index]) w.zones[z.index] = { override: z.dir, until: z.until };
     return w;
@@ -421,7 +478,7 @@ export class NetCore {
     const before = this.localPredicted();
     const w = this.worldFromSnapshot(snap);
     this.pending = this.pending.filter((i) => i.tick > snap.ackInput);
-    for (const inp of this.pending) stepPredict(w, this.localId, inp, this.ctx!);
+    for (const inp of this.pending) stepPredict(w, this.localId, inp, this.predictCtx(inp));
     // predicted events from replay are duplicates of ones we already showed: drop them
     w.events = [];
     this.predWorld = w;
@@ -458,15 +515,18 @@ export class NetCore {
     while (Math.floor(this.clientTick) > this.lastSentTick && steps < 30) {
       steps++;
       this.lastSentTick++;
-      this.delayQueue.push(sample());
+      // what the player was looking at while choosing this input: the last drawn frame
+      const seen = this.shownTick ?? Math.round((this.serverNow() - this.interpTicks) * 4) / 4;
+      this.delayQueue.push({ ...sample(), seen });
       while (this.delayQueue.length > this.inputDelay + 1) this.delayQueue.shift();
       const raw = this.delayQueue[0];
       const input: PlayerInput = {
         tick: this.lastSentTick,
         buttons: raw.buttons,
         view: netView(raw.view),
-        // others are drawn at serverNow - interpTicks: tell the server for lag compensation
-        viewLag: Math.max(0, this.lastSentTick - (this.serverNow() - this.interpTicks)),
+        // how far in the past the others were drawn (incl. any input delay): lag compensation.
+        // Rounded like the wire format, so prediction judges hits exactly like the server.
+        viewLag: Math.min(63.75, Math.round(Math.max(0, this.lastSentTick - raw.seen) * 4) / 4),
       };
       this.pending.push(input);
       if (this.pending.length > 240) this.pending.shift();
@@ -476,8 +536,13 @@ export class NetCore {
       if (this.predWorld) {
         const me = this.localPredicted();
         if (me) this.prevLocal = { pos: me.pos, up: me.up, eye: eyePos(me, this.config.movement) };
-        stepPredict(this.predWorld, this.localId, input, this.ctx);
+        stepPredict(this.predWorld, this.localId, input, this.predictCtx(input));
         this.events.push(...this.predWorld.events);
+        for (const e of this.predWorld.events) {
+          const key = echoKey(e);
+          if (key) this.echoes.push({ key, tick: input.tick });
+        }
+        this.onPredicted?.(this.predWorld, input);
         const me2 = this.localPredicted();
         if (me2)
           this.curLocal = { pos: me2.pos, up: me2.up, eye: eyePos(me2, this.config.movement) };
@@ -496,14 +561,34 @@ export class NetCore {
     return e;
   }
 
+  /**
+   * The server tick other players are drawn at right now. Snapped to quarter ticks — the
+   * resolution inputs report it in — so the server's lag compensation rewinds to exactly the
+   * frame you saw.
+   */
+  renderTick(): number {
+    const t = Math.round((this.serverNow() - this.interpTicks) * 4) / 4;
+    this.shownTick = t;
+    return t;
+  }
+
   /** Interpolated public state of another player at render time. */
   interpolated(id: number): { np: NetPlayer; pos: Vec3; up: Vec3 } | null {
-    const renderTick = this.serverNow() - this.interpTicks;
+    return this.playerAt(id, this.renderTick());
+  }
+
+  /** Interpolated Boomerang positions of others. */
+  interpolatedBoomerang(owner: number): Vec3 | null {
+    return this.boomerangAt(owner, this.renderTick());
+  }
+
+  /** The two buffered snapshots around a (fractional) server tick, and the blend factor. */
+  private around(tick: number): { a: SnapshotData; b: SnapshotData; t: number } | null {
     let a: SnapshotData | null = null;
     let b: SnapshotData | null = null;
     for (let i = this.snapshots.length - 1; i >= 0; i--) {
       const s = this.snapshots[i];
-      if (s.tick <= renderTick) {
+      if (s.tick <= tick) {
         a = s;
         b = this.snapshots[i + 1] ?? s;
         break;
@@ -514,88 +599,81 @@ export class NetCore {
       b = a;
     }
     if (!a || !b) return null;
-    const pa = a.players.get(id);
-    const pb = b.players.get(id) ?? pa;
-    if (!pa || !pb) return null;
     const span = b.tick - a.tick;
-    const t = span > 0 ? Math.max(0, Math.min(1, (renderTick - a.tick) / span)) : 0;
-    const teleport = len(sub(pa.pos, pb.pos)) > 6;
-    const pos = teleport ? pb.pos : lerp(pa.pos, pb.pos, t);
-    const up = normalize(lerp(pa.up, pb.up, t), pb.up);
-    const np = { ...(t < 0.5 ? pa : pb), view: qSlerp(pa.view, pb.view, t) };
-    return { np, pos, up };
+    return { a, b, t: span > 0 ? Math.max(0, Math.min(1, (tick - a.tick) / span)) : 0 };
   }
 
-  /** Interpolated Boomerang positions of others. */
-  interpolatedBoomerang(owner: number): Vec3 | null {
-    const renderTick = this.serverNow() - this.interpTicks;
-    let a: SnapshotData | null = null;
-    let b: SnapshotData | null = null;
-    for (let i = this.snapshots.length - 1; i >= 0; i--) {
-      const s = this.snapshots[i];
-      if (s.tick <= renderTick) {
-        a = s;
-        b = this.snapshots[i + 1] ?? s;
-        break;
-      }
-    }
-    if (!a || !b) return this.latest?.boomerangs.get(owner)?.pos ?? null;
-    const ba = a.boomerangs.get(owner);
-    const bb = b.boomerangs.get(owner) ?? ba;
+  /** Another player's public state as drawn at `tick`. */
+  playerAt(id: number, tick: number): { np: NetPlayer; pos: Vec3; up: Vec3 } | null {
+    const r = this.around(tick);
+    if (!r) return null;
+    const pa = r.a.players.get(id);
+    const pb = r.b.players.get(id) ?? pa;
+    if (!pa || !pb) return null;
+    return interpNetPlayer(pa, pb, r.t);
+  }
+
+  /** Another player's Boomerang as drawn at `tick`. */
+  boomerangAt(owner: number, tick: number): Vec3 | null {
+    const r = this.around(tick);
+    if (!r) return this.latest?.boomerangs.get(owner)?.pos ?? null;
+    const ba = r.a.boomerangs.get(owner);
+    const bb = r.b.boomerangs.get(owner) ?? ba;
     if (!ba || !bb) return null;
-    const span = b.tick - a.tick;
-    const t = span > 0 ? Math.max(0, Math.min(1, (renderTick - a.tick) / span)) : 0;
-    if (len(sub(ba.pos, bb.pos)) > 8) return bb.pos;
-    return lerp(ba.pos, bb.pos, t);
+    return interpObjectPos(ba.pos, bb.pos, r.t);
+  }
+
+  /** Interpolated position of another player's grenade (render time). */
+  interpolatedGrenade(id: number): Vec3 | null {
+    return this.grenadeAt(id, this.renderTick());
+  }
+
+  /** A grenade as drawn at `tick`. */
+  private grenadeAt(id: number, tick: number): Vec3 | null {
+    const r = this.around(tick);
+    if (!r) return null;
+    const ga = r.a.grenades.find((g) => g.id === id);
+    const gb = r.b.grenades.find((g) => g.id === id) ?? ga;
+    if (!ga || !gb) return null;
+    return interpObjectPos(ga.pos, gb.pos, r.t);
+  }
+
+  /** Hitboxes of the other players as drawn at `tick` (what you aim at). */
+  private hitboxesAt(tick: number): Hitbox[] {
+    const out: Hitbox[] = [];
+    const snap = this.latest;
+    if (!snap) return out;
+    for (const [id] of snap.players) {
+      if (id === this.localId) continue;
+      const ip = this.playerAt(id, tick);
+      if (ip && ip.np.alive) out.push(netHitbox(id, ip.np, ip.pos, ip.up, this.config));
+    }
+    return out;
+  }
+
+  /**
+   * Context for predicting one of your own inputs: your hits are judged against the others
+   * as they were drawn when you chose that input — exactly what the server's lag
+   * compensation rewinds to — so predicted hit markers match the server's verdict.
+   */
+  private predictCtx(input: PlayerInput): SimContext {
+    const ctx = this.ctx!;
+    // the server never rewinds further than MAX_REWIND_MS: neither do we
+    const maxLag = MAX_REWIND_MS / (TICK_DT * 1000);
+    const seen = input.tick - Math.min(input.viewLag ?? 0, maxLag);
+    let boxes: Hitbox[] | null = null;
+    return {
+      ...ctx,
+      rewindHitboxes: (id) => (id === this.localId ? (boxes ??= this.hitboxesAt(seen)) : null),
+      rewindPos: (id, kind, objId) =>
+        id !== this.localId
+          ? null
+          : kind === 'boomerang'
+            ? this.boomerangAt(objId, seen)
+            : this.grenadeAt(objId, seen),
+    };
   }
 }
-
-export const netToPlayer = (id: number, np: NetPlayer, config: GameConfig): PlayerState => {
-  const p = createPlayer(id, np.team as 0 | 1, v3(), 0, config);
-  Object.assign(p, {
-    alive: np.alive,
-    hp: np.hp,
-    pos: np.pos,
-    vel: np.vel,
-    up: np.up,
-    view: np.view,
-    move: np.move,
-    crouched: np.crouched,
-    grounded: np.grounded,
-    windup: np.windup,
-    windupHeld: np.windupHeld,
-    aiming: np.aiming,
-    laserWarn: np.laserWarn,
-    laserCharges: np.laserCharges,
-    slashTicks: np.slashTicks,
-    mag: np.magOn ? v3(0, 1, 0) : null,
-    grenadesLeft: np.grenadesLeft,
-    kills: np.kills,
-    deaths: np.deaths,
-    teamKills: np.teamKills,
-    frozen: np.frozen,
-    dashTicks: np.dashTicks,
-  });
-  return p;
-};
-
-export const netToBoomerang = (owner: number, nb: NetBoomerang): BoomerangState => {
-  const b = newBoomerang(owner, nb.pos);
-  Object.assign(b, {
-    phase: nb.phase,
-    controller: nb.controller,
-    pos: nb.pos,
-    vel: nb.vel,
-    windup: nb.windup,
-    recallLethal: nb.recallLethal,
-    recallFrom: nb.phase >= 4 ? nb.recallFrom : null,
-    recallTo: nb.phase >= 4 ? nb.recallTo : null,
-    steerLeft: nb.steerLeft,
-    throwId: nb.throwId,
-    t: nb.t,
-  });
-  return b;
-};
 
 // deterministic-enough jitter source for the network simulator (not part of the sim)
 let seed = 12345;

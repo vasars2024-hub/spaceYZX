@@ -35,4 +35,6 @@ export * from './stats/tracker';
 export * from './modes/practice';
 export * from './rules/match';
 export * from './net/protocol';
+export * from './net/lag-limits';
+export * from './net/interp';
 export * from './net/client-core';

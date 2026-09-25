@@ -97,6 +97,37 @@ describe('snapshots', () => {
     expect(b2.length).toBeLessThan(b1.length);
   });
 
+  it('your own grenades travel exactly in the private block (flight + fuse)', () => {
+    const { ctx, world } = setup();
+    const g = {
+      id: 77,
+      owner: 1,
+      pos: { x: 1.23456789, y: 2.5, z: -3.25 },
+      vel: { x: 7.1, y: 3.3, z: -0.25 },
+      phase: 0 as const,
+      t: 41,
+    };
+    const snap = {
+      seq: 1,
+      tick: world.tick,
+      ackInput: 0,
+      lead: 0,
+      baseline: 0,
+      ...publicState(world),
+      grenades: [g],
+      zones: zoneOverrides(world),
+      own: { player: world.players[0], boomerang: world.boomerangs[0], grenades: [g] },
+      events: null,
+      extra: null,
+    };
+    void ctx;
+    const d = decodeSnapshot(encodeSnapshot(snap, null), () => null);
+    expect(d.own?.grenades).toEqual([g]);
+    // the public copy is rounded (and carries no velocity / fuse)
+    expect(d.grenades[0].id).toBe(77);
+    expect(d.grenades[0].t).toBe(0);
+  });
+
   it('client prediction from the exact private state matches the server bit-for-bit', () => {
     const def = buildTestShip();
     const ctx: SimContext = { level: buildLevel(def), config: defaultConfig(), dt: TICK_DT };

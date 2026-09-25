@@ -1,40 +1,36 @@
-// Lag compensation: a short history of hitboxes and projectile positions, so shots and
-// deflects are judged against what the shooter actually saw (capped, so high-ping players
-// can't shoot far into the past).
-import type { GameConfig, Hitbox, Vec3, WorldState } from '@space-yz/shared';
-import { hitboxOf, lerp, isFlying, TICK_DT } from '@space-yz/shared';
+// Lag compensation: a short history of what every client is shown (the same network-rounded
+// public state the snapshots carry), so shots and deflects are judged against exactly what the
+// shooter had on screen — interpolated with the same code the client draws with. Capped, so
+// high-ping players can't shoot far into the past.
+import type { GameConfig, Hitbox, NetPlayer, Vec3, WorldState } from '@space-yz/shared';
+import {
+  TICK_DT,
+  MAX_REWIND_MS,
+  LAG_COMP,
+  publicState,
+  snapGrenadePos,
+  interpNetPlayer,
+  interpObjectPos,
+  netHitbox,
+} from '@space-yz/shared';
 
-export const LAG_COMP = {
-  /** the most network latency a shot is compensated for (the build plan's ~175 ms cap) */
-  maxLatencyMs: 175,
-  /**
-   * Every client also draws other players ~4–8 ticks in the past for smooth interpolation;
-   * that part is always compensated (up to this much) on top of the latency cap.
-   */
-  interpAllowanceMs: 100,
-  /** history kept: enough for the largest allowed rewind */
-  historyMs: 300,
-};
-
-/** Largest total rewind (latency cap + interpolation allowance). */
-export const MAX_REWIND_MS = LAG_COMP.maxLatencyMs + LAG_COMP.interpAllowanceMs;
+export { LAG_COMP, MAX_REWIND_MS } from '@space-yz/shared';
 
 interface Frame {
   tick: number;
-  hitboxes: Hitbox[];
+  /** public player state, rounded exactly like the snapshots */
+  players: Map<number, NetPlayer>;
+  /** Boomerang positions by id (= owner), as sent */
   boomerangs: Map<number, Vec3>;
+  /** flying grenades, as sent */
   grenades: Map<number, Vec3>;
 }
 
-const lerpHitbox = (a: Hitbox, b: Hitbox, t: number): Hitbox => ({
-  ...a,
-  head: lerp(a.head, b.head, t),
-  bodyA: lerp(a.bodyA, b.bodyA, t),
-  bodyB: lerp(a.bodyB, b.bodyB, t),
-});
-
 export class LagHistory {
   private frames: Frame[] = [];
+  private config: GameConfig | null = null;
+  /** rewound hitboxes are asked for many times per tick (every flying Boomerang): cache */
+  private cache: { tick: number; boxes: Hitbox[] | null } | null = null;
   readonly maxFrames: number;
   readonly maxRewindTicks: number;
 
@@ -44,18 +40,18 @@ export class LagHistory {
     this.maxRewindTicks = (opts.maxRewindMs ?? MAX_REWIND_MS) / tickMs;
   }
 
-  /** Call after every authoritative step. */
-  record(world: WorldState, cfg: GameConfig): void {
+  /**
+   * Call after every authoritative step. `pub` = the public state being sent this tick (pass
+   * it when already computed, to save the work).
+   */
+  record(world: WorldState, cfg: GameConfig, pub = publicState(world)): void {
+    this.config = cfg;
+    this.cache = null;
     const boomerangs = new Map<number, Vec3>();
-    for (const b of world.boomerangs) if (isFlying(b)) boomerangs.set(b.id, { ...b.pos });
+    for (const [owner, nb] of pub.boomerangs) boomerangs.set(owner, nb.pos);
     const grenades = new Map<number, Vec3>();
-    for (const g of world.grenades) if (g.phase === 0) grenades.set(g.id, { ...g.pos });
-    this.frames.push({
-      tick: world.tick,
-      hitboxes: world.players.filter((p) => p.alive).map((p) => hitboxOf(p, cfg)),
-      boomerangs,
-      grenades,
-    });
+    for (const g of world.grenades) if (g.phase === 0) grenades.set(g.id, snapGrenadePos(g.pos));
+    this.frames.push({ tick: world.tick, players: pub.players, boomerangs, grenades });
     while (this.frames.length > this.maxFrames) this.frames.shift();
   }
 
@@ -68,7 +64,7 @@ export class LagHistory {
     return Math.max(viewTick, nowTick - this.maxRewindTicks);
   }
 
-  /** The two recorded frames around `tick` and the blend factor. */
+  /** The two recorded frames around `tick` and the blend factor (like the client's buffer). */
   private around(tick: number): { a: Frame; b: Frame; t: number } | null {
     const f = this.frames;
     if (!f.length) return null;
@@ -78,30 +74,35 @@ export class LagHistory {
         const a = f[i];
         const b = f[i + 1] ?? a;
         const span = b.tick - a.tick;
-        return { a, b, t: span > 0 ? (tick - a.tick) / span : 0 };
+        return { a, b, t: span > 0 ? Math.max(0, Math.min(1, (tick - a.tick) / span)) : 0 };
       }
     }
     return null;
   }
 
-  /** Hitboxes as they were at (fractional) `tick`; players missing from either frame are skipped. */
+  /** Hitboxes of the players alive (as drawn) at (fractional) `tick`. */
   hitboxesAt(tick: number): Hitbox[] | null {
+    if (this.cache?.tick === tick) return this.cache.boxes;
     const r = this.around(tick);
-    if (!r) return null;
-    const out: Hitbox[] = [];
-    for (const ha of r.a.hitboxes) {
-      const hb = r.b.hitboxes.find((x) => x.id === ha.id);
-      out.push(hb ? lerpHitbox(ha, hb, r.t) : ha);
+    let boxes: Hitbox[] | null = null;
+    if (r && this.config) {
+      boxes = [];
+      for (const [id, pa] of r.a.players) {
+        const ip = interpNetPlayer(pa, r.b.players.get(id) ?? pa, r.t);
+        if (ip.np.alive) boxes.push(netHitbox(id, ip.np, ip.pos, ip.up, this.config));
+      }
     }
-    return out;
+    this.cache = { tick, boxes };
+    return boxes;
   }
 
+  /** Where a Boomerang (by id) or a flying grenade was drawn at `tick`. */
   posAt(kind: 'boomerang' | 'grenade', id: number, tick: number): Vec3 | null {
     const r = this.around(tick);
     if (!r) return null;
     const pa = (kind === 'boomerang' ? r.a.boomerangs : r.a.grenades).get(id);
     const pb = (kind === 'boomerang' ? r.b.boomerangs : r.b.grenades).get(id);
-    if (pa && pb) return lerp(pa, pb, r.t);
+    if (pa && pb) return interpObjectPos(pa, pb, r.t);
     return pa ?? pb ?? null;
   }
 }

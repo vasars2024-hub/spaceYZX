@@ -380,10 +380,10 @@ export class MatchFeature implements ClientFeature {
   scoreboard(s: Session, m: MatchInfo, interactive: boolean): HTMLElement {
     const names = s.names();
     const pings = s.pings?.() ?? {};
-    const world = s.world();
     const stats = new Map(m.stats.map((x) => [x.id, x]));
     const cols = (team: 0 | 1) => {
-      const rows = world.players
+      // from the server's match stats: includes players hidden by line-of-sight culling
+      const rows = m.stats
         .filter((p) => p.team === team)
         .map((p) => {
           const st = stats.get(p.id);

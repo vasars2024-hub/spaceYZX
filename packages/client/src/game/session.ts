@@ -17,7 +17,15 @@ import type {
 /** Match state as the client sees it (rules view + per-player stats). */
 export interface MatchInfo extends MatchView {
   startAt: number;
-  stats: { id: number; kills: number; deaths: number; teamKills: number; damage: number }[];
+  /** every player in the match (also ones you can't currently see) */
+  stats: {
+    id: number;
+    team: 0 | 1;
+    kills: number;
+    deaths: number;
+    teamKills: number;
+    damage: number;
+  }[];
 }
 
 export interface TickInput {

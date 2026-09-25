@@ -25,12 +25,12 @@ interface Dummy {
 }
 
 export const RANGE_DUMMIES: { pos: Vec3; kind: DummyKind }[] = [
-  { pos: v3(-18, 0, -6), kind: 'static' },
+  { pos: v3(-18, 0, -9), kind: 'static' }, // clear of the cover line from the start point
   { pos: v3(-18, 0, 6), kind: 'strafe' },
   { pos: v3(-4, 3, 0), kind: 'static' }, // on the centre platform
   { pos: v3(8, 0, -8), kind: 'strafe' },
   { pos: v3(8, 0, 8), kind: 'jumper' },
-  { pos: v3(24, 0, -3), kind: 'static' },
+  { pos: v3(26, 0, -10), kind: 'static' },
   { pos: v3(24, 0, 10), kind: 'jumper' },
   { pos: v3(0, 6, -19), kind: 'strafe' }, // on the balcony
 ];

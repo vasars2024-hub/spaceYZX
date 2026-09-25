@@ -28,6 +28,7 @@
     "size": "tsx tools/perf/bundle-size.ts",
     "load": "tsx tools/perf/server-load.ts",
     "bench": "node tools/perf/browser-bench.mjs",
+    "tour": "node tools/e2e/feature-tour.mjs",
     "host": "tsx packages/server/src/host/host-main.ts",
     "build:host": "npm run build && tsx tools/host/build-exe.ts"
   },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultConfig, capsuleOverlaps, v3 } from '@space-yz/shared';
+import { defaultConfig, capsuleOverlaps, lineOfSight, v3 } from '@space-yz/shared';
 import { bindKey, keyLabel } from '../src/ui/settings-screen';
 import { createRangeSession, RANGE_DUMMIES, dummyInput } from '../src/game/range';
 import { DEFAULT_KEYBINDS } from '../src/settings';
@@ -56,5 +56,15 @@ describe('practice range', () => {
       session.update(1 / 60, () => ({ buttons: 0, view: { x: 0, y: 0, z: 0, w: 1 } }));
     expect(victim.alive).toBe(true);
     expect(dummyInput({ kind: 'static', phase: 0 }, 5)).toBe(0);
+  });
+
+  it('every dummy can be seen (chest) from where you start', () => {
+    const { session } = createRangeSession(defaultConfig());
+    const eye = v3(-31, 1.6, 0);
+    for (const d of RANGE_DUMMIES)
+      expect(
+        lineOfSight(session.level, eye, v3(d.pos.x, d.pos.y + 1.15, d.pos.z)),
+        JSON.stringify(d.pos),
+      ).toBe(true);
   });
 });

@@ -163,6 +163,7 @@ export class LocalSession implements Session {
       startAt: 0,
       stats: this.w.players.map((p) => ({
         id: p.id,
+        team: p.team,
         kills: p.kills,
         deaths: p.deaths,
         teamKills: p.teamKills,

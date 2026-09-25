@@ -574,7 +574,8 @@ export const updateMovement = (
       p.move = Move.Ground;
       if (crouchHeld) setCrouch(ctx, p, true);
       else if (p.crouched) setCrouch(ctx, p, false);
-      if (p.landGrace === 0) p.vel = applyFriction(p.vel, m, dt);
+      // no friction during landing grace (bhop) or the dash burst
+      if (p.landGrace === 0 && p.dashTicks === 0) p.vel = applyFriction(p.vel, m, dt);
       let wishSpeed = p.crouched ? m.crouchSpeed : wish.fb > 0 ? m.sprintSpeed : m.runSpeed;
       if (p.speedCap > 0) wishSpeed = Math.min(wishSpeed, p.speedCap);
       if (hasWish) {
@@ -628,7 +629,7 @@ export const updateMovement = (
         p.vel = madd(scale(d, s), p.up, dot(p.vel, p.up));
       }
     }
-    p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
+    if (p.dashTicks === 0) p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
 
     if (tryGrabRail(world, ctx, p)) {
       p.prevButtons = buttons;

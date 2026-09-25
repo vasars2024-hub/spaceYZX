@@ -321,3 +321,22 @@ describe('test ship', () => {
     }
   });
 });
+
+describe('dash burst', () => {
+  it('keeps dash speed for the whole burst (no friction eating it)', async () => {
+    const { Btn: B, v3: vec } = await import('../src/index');
+    const {
+      makeSim: mk,
+      run: go,
+      settle: st,
+      flatLevel: fl,
+      planarSpeed: ps,
+      view: vw,
+    } = await import('./helpers');
+    const sim = mk(fl(), vec(0, 0, 0));
+    st(sim);
+    go(sim, 1, B.Dash, vw(0));
+    go(sim, 6, 0, vw(0));
+    expect(ps(sim.p)).toBeGreaterThan(14);
+  });
+});

@@ -347,6 +347,6 @@ $('speed').onclick = () => api('/speedtest', {}).then(refresh);
 $('mbps').onchange = () => { const v = Number($('mbps').value); if (v > 0) api('/speedtest', { mbps: v }).then(refresh); };
 $('ranked').onchange = () => api('/ranked', { on: $('ranked').checked });
 $('restart').onclick = () => confirm('End every match and send players back to the menu?') && api('/restart', {}).then(refresh);
-$('stop').onclick = () => confirm('Stop the server? Everyone will be disconnected.') && api('/stop', {}).then(() => { document.body.textContent = 'Server stopped. You can close this tab.'; });
-refresh(); reports(); setInterval(refresh, 2000); setInterval(reports, 15000);
+$('stop').onclick = () => confirm('Stop the server? Everyone will be disconnected.') && api('/stop', {}).then(() => { clearInterval(t1); clearInterval(t2); document.body.textContent = 'Server stopped. You can close this tab.'; });
+refresh(); reports(); const t1 = setInterval(refresh, 2000); const t2 = setInterval(reports, 15000);
 </script></body></html>`;

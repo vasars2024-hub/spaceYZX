@@ -180,6 +180,7 @@ export class MatchRules implements Rules {
       startAt: this.startAt,
       stats: room.world.players.map((p) => ({
         id: p.id,
+        team: p.team,
         kills: p.kills,
         deaths: p.deaths,
         teamKills: p.teamKills,

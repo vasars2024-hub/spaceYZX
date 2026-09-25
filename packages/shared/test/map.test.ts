@@ -60,7 +60,7 @@ describe('Kestrel map', () => {
             o.team !== s.team && key(o.pos.x) === key(-s.pos.x) && key(o.pos.z) === key(s.pos.z),
         ),
       ).toBe(true);
-    expect(def.towers.map((t) => t.pos.x).sort((a, b) => a - b)).toEqual([-90, 90]);
+    expect(def.towers.map((t) => t.pos.x).sort((a, b) => a - b)).toEqual([-88, 88]);
     for (const w of def.waypoints!)
       expect(
         def.waypoints!.some((o) => key(o.pos.x) === key(-w.pos.x) && key(o.pos.z) === key(w.pos.z)),
@@ -104,22 +104,24 @@ describe('Kestrel map', () => {
     const wps = level.def.waypoints!;
     const near = (x: number, z: number) =>
       wps.findIndex((w) => Math.abs(w.pos.x - x) < 0.5 && Math.abs(w.pos.z - z) < 0.5);
-    const a = near(-80, 0);
-    const b = near(80, 0);
-    // remove the main hall centre and see the shaft/engine routes still connect
+    const a = near(-84.5, 0);
+    const b = near(84.5, 0);
+    // remove lane middles and check which routes still connect the Towers
     const without = (blocked: number[]) =>
       wps.map((w, i) => ({
         ...w,
         links: blocked.includes(i) ? [] : w.links.filter((l) => !blocked.includes(l)),
       }));
-    const M0 = near(0, 0);
-    const S0 = near(0, 30);
-    const SC = near(0, -34);
+    const mid = [near(0, 9), near(0, -9)]; // reactor floor, both sides of the platform
+    const S0 = near(0, 31); // zero-G shaft
+    const SC = near(0, -38.5); // engine ceiling
+    for (const i of [a, b, ...mid, S0, SC]) expect(i).toBeGreaterThanOrEqual(0);
     expect(waypointRoute(wps, a, b).length).toBeGreaterThan(0);
-    expect(waypointRoute(without([S0, SC]), a, b)).toContain(M0);
-    expect(waypointRoute(without([M0, SC]), a, b)).toContain(S0);
-    expect(waypointRoute(without([M0, S0]), a, b)).toContain(SC);
-    expect(waypointRoute(without([M0, S0, SC]), a, b)).toEqual([]);
+    const viaMid = waypointRoute(without([S0, SC]), a, b);
+    expect(viaMid.some((i) => mid.includes(i))).toBe(true);
+    expect(waypointRoute(without([...mid, SC]), a, b)).toContain(S0);
+    expect(waypointRoute(without([...mid, S0]), a, b)).toContain(SC);
+    expect(waypointRoute(without([...mid, S0, SC]), a, b)).toEqual([]);
   });
 
   it('has the three gravity areas: zero-G shaft, wall corridor, ceiling section', () => {

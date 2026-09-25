@@ -36,14 +36,26 @@
 
 ## The map: Kestrel
 
-Three ways between the bases:
+A warship, the same for both teams (mirrored). You spawn in your **hangar** (on the ready
+deck or behind the blast barricade); your Tower stands in the middle of it. Three ways lead
+to the enemy hangar:
 
-1. **Main hall**: normal gravity, pillars, crates, balconies and a zip-rail on the ceiling.
-2. **Cargo shaft** (north): zero gravity. Push off walls (Space) and use thrusters.
-3. **Engine corridor** (south): gravity pulls you onto the wall, then the ceiling. The
-   orange arrows show which way is "down". A pad on the ceiling flips it back for a while.
+1. **Main lane** (middle, normal gravity): through the **airlock** into the two-level
+   **atrium**, then either down in the **trench** or up on the **gallery** (step over its
+   rail to drop into the trench), into the **reactor room** in the middle of the map:
+   a raised platform around the reactor core, a balcony above it and two **zip-rails**
+   across the room.
+2. **Cargo lane** (north, raised): the **cargo bay** with its containers — take the ramp or
+   climb onto the **loading dock** — then the zigzag **conveyor corridor** into the zero-G
+   **cargo shaft**. Push off walls (Space), use thrusters, grab a container for cover.
+3. **Engine lane** (south): the **turbine hall** (go around the turbines, or up the gantry),
+   then the **engine corridor**, where gravity pulls you onto the wall — weave between the
+   coolant tanks — and in the middle onto the ceiling. The orange arrows show which way is
+   "down"; a pad on the ceiling flips it back for a while.
 
-Side passages connect the hall to the other two routes.
+Shortcuts: a ramp from the gallery down to the conveyor corridor, a drop from the trench
+into the engine corridor, and a **crawl vent** (crouch or slide) between the atrium and the
+turbine hall.
 
 ## Ranked
 

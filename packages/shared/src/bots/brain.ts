@@ -196,10 +196,35 @@ const pickGoal = (ctx: SimContext, mem: BotMemory): Vec3 => {
   return clone(pts[rngInt(mem.rng, pts.length)] ?? v3());
 };
 
-/** Can a walker at `p` (body up `up`) head straight for `q`? Needs a clear line and, unless
- * floating, no big climb/drop along its up axis. */
-const walkable = (level: SimContext['level'], p: Vec3, q: Vec3, up: Vec3 | null): boolean =>
-  (up === null || Math.abs(dot(sub(q, p), up)) < 2.5) && lineOfSight(level, p, q);
+/** Height (along `up`) of the floor under `pt`, or null if there is none within reach. */
+const floorBelow = (level: SimContext['level'], pt: Vec3, up: Vec3): number | null => {
+  const hit = raycast(level, madd(pt, up, 1), scale(up, -1), 4.5);
+  return hit ? dot(hit.point, up) : null;
+};
+
+/** Highest step up a walker takes on its own (just under the auto-vault height). */
+const MAX_STEP_UP = 1.1;
+
+/**
+ * Can a walker at `p` (body up `up`) head straight for `q`? Needs a clear line and, unless
+ * floating: no big climb/drop along its up axis, ground all the way (no holes) and no ledge
+ * higher than it can vault — seeing a spot is not the same as being able to walk there.
+ */
+const walkable = (level: SimContext['level'], p: Vec3, q: Vec3, up: Vec3 | null): boolean => {
+  if (up !== null && Math.abs(dot(sub(q, p), up)) >= 2.5) return false;
+  if (!lineOfSight(level, p, q)) return false;
+  if (up === null) return true;
+  const d = sub(q, p);
+  const n = Math.min(32, Math.ceil(len(projectOnPlane(d, up)) / 1.25));
+  let prev = floorBelow(level, p, up);
+  if (prev === null) return true; // airborne: can't judge, let it try
+  for (let i = 1; i <= n; i++) {
+    const f = floorBelow(level, madd(p, d, i / n), up);
+    if (f === null || f - prev > MAX_STEP_UP) return false;
+    prev = f;
+  }
+  return true;
+};
 
 const nearestWaypoint = (
   wps: WaypointDef[],

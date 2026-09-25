@@ -131,8 +131,9 @@ describe('line-of-sight culling', () => {
     const config = defaultConfig();
     const ctx = { level: buildLevel(mapDef('kestrel')), config, dt: TICK_DT };
     const world = createWorld(ctx.level, 1);
-    const a = addPlayer(world, createPlayer(1, 0, v3(-80, 0, 0), -90, config));
-    const e = addPlayer(world, createPlayer(2, 1, v3(80, 0, 30), 90, config)); // orange base, north
+    // A in the reactor room (mid), E in the orange hangar
+    const a = addPlayer(world, createPlayer(1, 0, v3(-15, 0, -9), -90, config));
+    const e = addPlayer(world, createPlayer(2, 1, v3(80, 0, 30), 90, config));
     const vis = new TeamVision();
     world.tick = 3;
     vis.updateAll(world, ctx, []);
@@ -143,8 +144,8 @@ describe('line-of-sight culling', () => {
     world.tick = 6;
     vis.updateAll(world, ctx, [e.id]);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
-    // in the open main hall, in line: visible
-    e.pos = v3(20, 0.9, 0);
+    // in the open reactor room, in line: visible
+    e.pos = v3(15, 0.9, -9);
     world.tick = 30;
     vis.updateAll(world, ctx, []);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);

@@ -880,10 +880,14 @@ const until = async (page, fn, arg, ms = 5000) => {
   await until(q, () => window.T.app().client, null, 20000);
   await q.waitForTimeout(1200);
   for (const [i, name] of [
-    'Cyan base',
-    'Orange base',
-    'Main hall',
+    'Cyan hangar',
+    'Orange hangar',
+    'Atrium',
+    'Gallery',
+    'Reactor (mid)',
+    'Cargo bay',
     'Cargo shaft',
+    'Turbine hall',
     'Engine corridor',
   ].entries()) {
     await check('Visual', `Kestrel: ${name}`, q, async () => {

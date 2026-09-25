@@ -220,14 +220,15 @@ const overlapping = (tags) => {
 {
   const p = await newPage('2v2');
   await startPractice(p, 'match', 2);
-  const HALL = { x: -60, y: 0, z: 0 };
+  // the reactor floor below the north balcony: 40 m of open floor along z 12.5
+  const HALL = { x: -18.5, y: 0, z: 12.5 };
   await p.evaluate((h) => T.put(1, h), HALL);
 
   await check('Name tags', 'Teammate in view: exactly one tag, bright', p, async () => {
     await p.evaluate(() => {
-      T.put(2, { x: -45, y: 0, z: 3 });
-      T.put(3, { x: -82, y: 0, z: 18 }); // enemy in the base, behind the wall
-      T.put(4, { x: -38, y: 0, z: -3 }); // enemy in the hall, in view
+      T.put(2, { x: -8, y: 0, z: 12.5 });
+      T.put(3, { x: -31, y: 0, z: -10 }); // enemy in the trench, behind the reactor wall
+      T.put(4, { x: 8, y: 0, z: 11.5 }); // enemy across the reactor, in view
     });
     await p.waitForTimeout(300);
     await p.evaluate(() => T.lookAt(T.chest(2)));
@@ -250,7 +251,7 @@ const overlapping = (tags) => {
   });
 
   await check('Name tags', 'Teammate behind a wall: still one tag, dimmed', p, async () => {
-    await p.evaluate(() => T.put(2, { x: -80, y: 0, z: 20 }));
+    await p.evaluate(() => T.put(2, { x: -84, y: 0, z: 22 })); // in the hangar
     await p.waitForTimeout(300);
     await p.evaluate(() => T.lookAt(T.chest(2)));
     await p.waitForTimeout(700);
@@ -269,8 +270,8 @@ const overlapping = (tags) => {
       await p.waitForTimeout(600);
       return p.evaluate(() => T.tag('ally-2'));
     };
-    const near = await at({ x: -54, y: 0, z: 1 }); // 6 m
-    const far = await at({ x: -22, y: 0, z: 3 }); // 38 m, down the hall
+    const near = await at({ x: -12.5, y: 0, z: 12.5 }); // 6 m
+    const far = await at({ x: 19.5, y: 0, z: 12.5 }); // 38 m, across the reactor
     const size = (t) => ({ w: t.rect.r - t.rect.l, h: t.rect.b - t.rect.t });
     const a = near && size(near);
     const b = far && size(far);
@@ -288,7 +289,7 @@ const overlapping = (tags) => {
   });
 
   await check('Name tags', 'Scoreboard held (Tab): tags and markers step aside', p, async () => {
-    await p.evaluate(() => T.put(2, { x: -45, y: 0, z: 3 }));
+    await p.evaluate(() => T.put(2, { x: -8, y: 0, z: 12.5 }));
     await p.waitForTimeout(300);
     await p.evaluate(() => T.lookAt(T.chest(2)));
     await p.waitForTimeout(500);
@@ -323,21 +324,21 @@ const overlapping = (tags) => {
         revealed: T.s().match().revealed.length,
       }));
     };
-    // Vega stands next to Nova behind the base wall (Nova's dim tag shows, Vega's doesn't)
-    await p.evaluate(() => T.put(2, { x: -80, y: 0, z: 20 }));
+    // Vega stands next to Nova behind the reactor wall (Nova's dim tag shows, Vega's doesn't)
+    await p.evaluate(() => T.put(2, { x: -30, y: 0, z: -7.5 }));
     await p.waitForTimeout(300);
-    const wall = await look({ x: -76, y: 1.6, z: 16 });
+    const wall = await look({ x: -31, y: 1.6, z: -10 });
     await p.screenshot({ path: path.join(OUT, 'enemies-behind-wall-no-tag.png') });
-    // Orion is in the open hall, in view but not under the crosshair
-    const hall = await look({ x: -45, y: 1.6, z: 4 });
-    const enemyTags = [...wall.tags, ...hall.tags].filter((k) => /^(enemy|aim)-/.test(k));
+    // Orion is across the reactor, in view but not under the crosshair
+    const open = await look({ x: 8, y: 1.6, z: 15.5 });
+    const enemyTags = [...wall.tags, ...open.tags].filter((k) => /^(enemy|aim)-/.test(k));
     return {
       pass:
         enemyTags.length === 0 &&
-        wall.names + hall.names === 0 &&
-        wall.revealed + hall.revealed === 0 &&
+        wall.names + open.names === 0 &&
+        wall.revealed + open.revealed === 0 &&
         wall.tags.includes('ally-2'),
-      note: `behind the wall: ${wall.tags.join(', ') || 'none'}; hall: ${hall.tags.join(', ') || 'none'}`,
+      note: `behind the wall: ${wall.tags.join(', ') || 'none'}; in view: ${open.tags.join(', ') || 'none'}`,
     };
   });
 
@@ -357,7 +358,7 @@ const overlapping = (tags) => {
 
   await check('Enemies', 'Last-seconds reveal: enemies get only ◇/◆ icons', p, async () => {
     await p.evaluate(() => {
-      T.lookAt({ x: -76, y: 1.6, z: 16 }); // Vega is behind the base wall
+      T.lookAt({ x: -31, y: 1.6, z: -10 }); // Vega is behind the reactor wall
       T.ms().roundEnds = T.w().tick + 60 * 8; // inside the last 10 s: everyone revealed
     });
     const ok = await until(p, () => !!T.tag('enemy-3'), null, 3000);
@@ -384,11 +385,11 @@ const overlapping = (tags) => {
     async () => {
       await p.evaluate(() => {
         T.ms().controllers[0].carrier = 2; // Nova carries ours now
-        T.put(2, { x: -48, y: 0, z: 2 });
-        T.put(3, { x: -40, y: 0, z: 6 }); // enemy carrier in view
+        T.put(2, { x: -12.5, y: 0, z: 12.5 });
+        T.put(3, { x: -4, y: 0, z: 16 }); // enemy carrier in view
       });
       await p.waitForTimeout(300);
-      await p.evaluate(() => T.lookAt({ x: -44, y: 1.6, z: 4 }));
+      await p.evaluate(() => T.lookAt({ x: -8, y: 1.6, z: 12.5 }));
       await p.waitForTimeout(700);
       const r = await p.evaluate(() => {
         const models = T.combat().models;
@@ -433,7 +434,8 @@ const overlapping = (tags) => {
   });
 
   await check('Objectives', 'Carrier: ATTACK marker clamps to the correct edge', p, async () => {
-    // tower 90° to your right / left / straight behind
+    // tower 90° to your right / left / straight behind (stand in line with it, at z = 0)
+    await p.evaluate(() => T.put(1, { x: -18.5, y: 0, z: 0 }));
     const at = async (yaw) => {
       await p.evaluate((y) => T.yaw(y, 0), yaw);
       await p.waitForTimeout(500);
@@ -442,6 +444,7 @@ const overlapping = (tags) => {
     const right = await at(0); // facing -Z: +X is on the right
     const left = await at(-180); // facing +Z: +X is on the left
     const behind = await at(90); // facing -X
+    await p.evaluate((h) => T.put(1, h), HALL);
     const arrows = [right, left, behind].map((t) => t.err);
     const ok =
       right.cls?.includes('wm-clamped') &&
@@ -461,10 +464,10 @@ const overlapping = (tags) => {
     await p.evaluate(() => {
       const c = T.ms().controllers[0];
       c.carrier = null;
-      c.droppedAt = { x: -50, y: 0.9, z: 4 };
+      c.droppedAt = { x: -10, y: 0.9, z: 12.5 };
       c.droppedTick = T.w().tick;
-      T.put(2, { x: -80, y: 0, z: 20 }); // nobody near it
-      T.lookAt({ x: -50, y: 1.5, z: 4 });
+      T.put(2, { x: -84, y: 0, z: 22 }); // nobody near it
+      T.lookAt({ x: -10, y: 1.5, z: 12.5 });
     });
     await p.waitForTimeout(500);
     const t1 = await p.evaluate(() => T.tag('ctl-0')?.text);
@@ -506,9 +509,9 @@ const overlapping = (tags) => {
       T.ms().controllers[0].droppedAt = null;
       const c = T.ms().controllers[1];
       c.carrier = null;
-      c.droppedAt = { x: -44, y: 0.9, z: -4 };
+      c.droppedAt = { x: -2, y: 0.9, z: 12.5 };
       c.droppedTick = T.w().tick;
-      T.lookAt({ x: -44, y: 1.5, z: -4 });
+      T.lookAt({ x: -2, y: 1.5, z: 12.5 });
     });
     await p.waitForTimeout(600);
     const on = await p.evaluate(() => T.tag('ctl-1'));
@@ -532,8 +535,8 @@ const overlapping = (tags) => {
 
   await check('Name tags', 'Dead teammate: no tag', p, async () => {
     await p.evaluate(() => {
-      T.put(2, { x: -48, y: 0, z: 2 });
-      T.lookAt({ x: -48, y: 1.6, z: 2 });
+      T.put(2, { x: -10, y: 0, z: 12.5 });
+      T.lookAt({ x: -10, y: 1.6, z: 12.5 });
     });
     await p.waitForTimeout(500);
     const before = await p.evaluate(() => !!T.tag('ally-2'));
@@ -552,7 +555,7 @@ const overlapping = (tags) => {
     'Looking up or down: a sound ahead stays at the top, not "above/below"',
     p,
     async () => {
-      await p.evaluate(() => T.put(4, { x: -46, y: 0, z: 0 })); // Orion 14 m ahead, eye level
+      await p.evaluate(() => T.put(4, { x: -4.5, y: 0, z: 12.5 })); // Orion 14 m ahead, eye level
       await p.waitForTimeout(300);
       const at = async (pitch) => {
         await p.evaluate((pt) => T.yaw(-90, pt), pitch); // facing +X
@@ -595,7 +598,7 @@ const overlapping = (tags) => {
     async () => {
       // engine corridor: gravity pulls toward -Z there, so your "up" becomes +Z
       await p.evaluate(() => {
-        T.put(1, { x: -30, y: 5, z: -38.4 });
+        T.put(1, { x: -24.5, y: 5, z: -38.4 }); // (between a conduit and a coolant tank)
       });
       const ok = await until(p, () => T.app().client.fps.up.z > 0.95, null, 6000);
       await p.evaluate(() => T.lookAt({ x: 90, y: 7.5, z: 0 }));

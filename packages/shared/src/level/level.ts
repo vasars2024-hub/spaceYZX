@@ -114,6 +114,16 @@ export const buildLevel = (def: LevelDef): Level => {
   };
 };
 
+/** A fresh id for `level.stamp` (marks boxes already visited by one query). */
+export const nextStamp = (level: Level): number => {
+  level.stampId = (level.stampId + 1) >>> 0;
+  if (level.stampId === 0) {
+    level.stamp.fill(0);
+    level.stampId = 1;
+  }
+  return level.stampId;
+};
+
 const cellOf = (
   gridMin: Vec3,
   dims: [number, number, number],
@@ -131,12 +141,7 @@ const cellOf = (
 export const queryBoxes = (level: Level, min: Vec3, max: Vec3): number[] => {
   const [x0, y0, z0] = cellOf(level.gridMin, level.gridDims, min);
   const [x1, y1, z1] = cellOf(level.gridMin, level.gridDims, max);
-  level.stampId = (level.stampId + 1) >>> 0;
-  if (level.stampId === 0) {
-    level.stamp.fill(0);
-    level.stampId = 1;
-  }
-  const id = level.stampId;
+  const id = nextStamp(level);
   const out: number[] = [];
   const d = level.gridDims;
   for (let x = x0; x <= x1; x++)

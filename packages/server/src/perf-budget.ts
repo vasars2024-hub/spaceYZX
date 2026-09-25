@@ -6,9 +6,9 @@ export const MEASURED: Record<
   RankedMode,
   { players: number; tickMs: number; kbpsPerPlayer: number }
 > = {
-  '1v1': { players: 2, tickMs: 0.38, kbpsPerPlayer: 8.8 },
-  '2v2': { players: 4, tickMs: 0.5, kbpsPerPlayer: 10.5 },
-  '5v5': { players: 10, tickMs: 1.17, kbpsPerPlayer: 14.9 },
+  '1v1': { players: 2, tickMs: 0.39, kbpsPerPlayer: 8.5 },
+  '2v2': { players: 4, tickMs: 0.43, kbpsPerPlayer: 9.8 },
+  '5v5': { players: 10, tickMs: 0.89, kbpsPerPlayer: 13.5 },
 };
 
 /** Share of one CPU core the game loop may use (the rest: OS, browser, the host's own game). */

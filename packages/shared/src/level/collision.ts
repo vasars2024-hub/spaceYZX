@@ -2,7 +2,7 @@
 import type { Vec3 } from '../math/vec3';
 import { v3, sub, add, scale, dot, madd, normalize, len } from '../math/vec3';
 import type { BoxShape, Level } from './level';
-import { queryBoxes } from './level';
+import { queryBoxes, nextStamp } from './level';
 
 /** World point -> box-local coordinates. */
 export const toLocal = (b: BoxShape, p: Vec3): Vec3 => {
@@ -253,6 +253,66 @@ export const rayBox = (
   return { t: tmin, normal: scale(axis, nSign) };
 };
 
+/**
+ * Visit the grid cells a ray passes through, nearest first (a 3D DDA, Amanatides & Woo), calling
+ * `visit(boxes, tEnter)` for each cell that holds boxes until it returns true. For long rays
+ * (sight lines across the map) this touches a few dozen cells instead of every cell of the
+ * ray's bounding box. Returns false, having visited nothing, unless the whole ray is inside the
+ * grid (the callers then use a bounding-box query instead).
+ */
+const walkCells = (
+  level: Level,
+  o: Vec3,
+  dir: Vec3,
+  maxDist: number,
+  visit: (boxes: readonly number[], tEnter: number) => boolean,
+): boolean => {
+  const g = level.gridMin;
+  const [nx, ny, nz] = level.gridDims;
+  const s = level.cell;
+  const fx = (o.x - g.x) / s;
+  const fy = (o.y - g.y) / s;
+  const fz = (o.z - g.z) / s;
+  const ex = fx + (dir.x * maxDist) / s;
+  const ey = fy + (dir.y * maxDist) / s;
+  const ez = fz + (dir.z * maxDist) / s;
+  // (written so NaN fails too)
+  if (!(fx >= 0 && fy >= 0 && fz >= 0 && fx < nx && fy < ny && fz < nz)) return false;
+  if (!(ex >= 0 && ey >= 0 && ez >= 0 && ex < nx && ey < ny && ez < nz)) return false;
+  let x = Math.floor(fx);
+  let y = Math.floor(fy);
+  let z = Math.floor(fz);
+  const sx = dir.x > 0 ? 1 : dir.x < 0 ? -1 : 0;
+  const sy = dir.y > 0 ? 1 : dir.y < 0 ? -1 : 0;
+  const sz = dir.z > 0 ? 1 : dir.z < 0 ? -1 : 0;
+  // distance along the ray to cross one cell, and to the first cell border, per axis
+  const dx = sx !== 0 ? s / Math.abs(dir.x) : Infinity;
+  const dy = sy !== 0 ? s / Math.abs(dir.y) : Infinity;
+  const dz = sz !== 0 ? s / Math.abs(dir.z) : Infinity;
+  let tx = sx > 0 ? (x + 1 - fx) * dx : sx < 0 ? (fx - x) * dx : Infinity;
+  let ty = sy > 0 ? (y + 1 - fy) * dy : sy < 0 ? (fy - y) * dy : Infinity;
+  let tz = sz > 0 ? (z + 1 - fz) * dz : sz < 0 ? (fz - z) * dz : Infinity;
+  let t = 0;
+  for (;;) {
+    const list = level.grid.get(x + nx * (y + ny * z));
+    if (list && visit(list, t)) return true;
+    if (tx <= ty && tx <= tz) {
+      t = tx;
+      x += sx;
+      tx += dx;
+    } else if (ty <= tz) {
+      t = ty;
+      y += sy;
+      ty += dy;
+    } else {
+      t = tz;
+      z += sz;
+      tz += dz;
+    }
+    if (t > maxDist || x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return true;
+  }
+};
+
 /** First hit of a ray (or swept sphere) against the level. */
 export const raycast = (
   level: Level,
@@ -261,6 +321,29 @@ export const raycast = (
   maxDist: number,
   radius = 0,
 ): RayHit | null => {
+  // the nearest hit; on an exact tie the lowest box index (the same answer in any visit order)
+  const r: { best: RayHit | null } = { best: null };
+  const test = (i: number): void => {
+    const best = r.best;
+    const h = rayBox(level.boxes[i], origin, dir, best ? best.t : maxDist, radius);
+    if (h && (!best || h.t < best.t || (h.t === best.t && i < best.box)))
+      r.best = { t: h.t, point: madd(origin, dir, h.t), normal: h.normal, box: i };
+  };
+  if (radius === 0) {
+    const stamp = level.stamp;
+    const id = nextStamp(level);
+    const walked = walkCells(level, origin, dir, maxDist, (list, tEnter) => {
+      // cells come nearest first: nothing in a cell that starts past the best hit can beat it
+      if (r.best && tEnter > r.best.t + 1e-6) return true;
+      for (const i of list) {
+        if (stamp[i] === id) continue;
+        stamp[i] = id;
+        test(i);
+      }
+      return false;
+    });
+    if (walked) return r.best;
+  }
   const end = madd(origin, dir, maxDist);
   const pad = radius + 0.01;
   const mn = v3(
@@ -273,13 +356,8 @@ export const raycast = (
     Math.max(origin.y, end.y) + pad,
     Math.max(origin.z, end.z) + pad,
   );
-  let best: RayHit | null = null;
-  for (const i of queryBoxes(level, mn, mx)) {
-    const h = rayBox(level.boxes[i], origin, dir, best ? best.t : maxDist, radius);
-    if (h && (!best || h.t < best.t))
-      best = { t: h.t, point: madd(origin, dir, h.t), normal: h.normal, box: i };
-  }
-  return best;
+  for (const i of queryBoxes(level, mn, mx)) test(i);
+  return r.best;
 };
 
 /** Is the straight line between two points free of level geometry? */
@@ -287,7 +365,21 @@ export const lineOfSight = (level: Level, a: Vec3, b: Vec3): boolean => {
   const d = sub(b, a);
   const l = len(d);
   if (l < 1e-6) return true;
-  return raycast(level, a, scale(d, 1 / l), l) === null;
+  const dir = scale(d, 1 / l);
+  // any hit will do: stop at the first one
+  const stamp = level.stamp;
+  const id = nextStamp(level);
+  let blocked = false;
+  const walked = walkCells(level, a, dir, l, (list) => {
+    for (const i of list) {
+      if (stamp[i] === id) continue;
+      stamp[i] = id;
+      if (rayBox(level.boxes[i], a, dir, l)) return (blocked = true);
+    }
+    return false;
+  });
+  if (walked) return !blocked;
+  return raycast(level, a, dir, l) === null;
 };
 
 /** Nearest surface point (and outward normal) within `range` of a point. */

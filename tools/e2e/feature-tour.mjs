@@ -419,12 +419,7 @@ const until = async (page, fn, arg, ms = 5000) => {
     await p.waitForTimeout(500);
     await p.screenshot({ path: path.join(OUT, 'combat-aim-preview.png') });
     await p.evaluate(() => T.btn(0));
-    await until(
-      p,
-      () => T.has('hit', (e) => e.victim === 2) || T.has('wallHit'),
-      null,
-      3000,
-    );
+    await until(p, () => T.has('hit', (e) => e.victim === 2) || T.has('wallHit'), null, 3000);
     const r = await p.evaluate(() => ({
       thrown: T.has('throw'),
       hit: T.has('hit', (e) => e.victim === 2),

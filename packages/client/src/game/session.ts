@@ -79,6 +79,8 @@ export interface Session {
   /** Events produced since the last drain. */
   drainEvents(): SimEvent[];
   names(): Record<number, string>;
+  /** Team of every player, also ones not in `world()` (online: enemies you can't see). */
+  teams?(): Record<number, 0 | 1>;
   /** Rounds & objective state (null in practice / playground). */
   match?(): MatchInfo | null;
   /** Current authoritative tick (for timers). */

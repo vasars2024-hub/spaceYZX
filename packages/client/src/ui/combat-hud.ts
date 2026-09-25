@@ -1,11 +1,11 @@
 // Combat HUD: health, kit status, threat arcs, own-Boomerang marker, Wind-up ring, hit
 // markers, damage direction, kill feed, multi-kill banners, death screen.
-import * as THREE from 'three';
 import type { Vec3, KillKind } from '@space-yz/shared';
 import { h } from './menus';
+import { edgePoint, type ScreenMarker } from './markers';
 
 export interface Threat {
-  dirCam: THREE.Vector3; // direction to threat in camera space
+  angle: number; // screen direction to the threat (0 = up, clockwise; see screenAngle)
   intensity: number; // 0..1
   color: string;
 }
@@ -40,6 +40,10 @@ const KIND_ICON: Record<KillKind, string> = {
 };
 
 const TEAM_CSS = ['#19e3ff', '#ff8a1f'];
+/** kill feed color when a player's team isn't known (never guess a wrong team color) */
+const NEUTRAL_CSS = '#e8f1ff';
+const teamCss = (team: 0 | 1 | undefined): string =>
+  team === undefined ? NEUTRAL_CSS : TEAM_CSS[team];
 
 export class CombatHud {
   root: HTMLDivElement;
@@ -54,7 +58,8 @@ export class CombatHud {
   private death: HTMLDivElement;
   private centerMsg: HTMLDivElement;
   private statsEl: HTMLDivElement;
-  private damageDirs: { angle: number; life: number }[] = [];
+  /** where recent damage came from (world); drawn relative to the current view */
+  private damageDirs: { src: Vec3; life: number }[] = [];
   private bannerTimer = 0;
   private centerTimer = 0;
   showStats = false;
@@ -93,14 +98,22 @@ export class CombatHud {
     this.canvas.height = window.innerHeight;
   }
 
-  hitMarker(head: boolean, kill: boolean): void {
-    this.hitmark.className = `hitmark show ${head ? 'head' : ''} ${kill ? 'kill' : ''}`;
+  /** `team`: you hit a teammate (friendly fire) — a warning, not a reward. */
+  hitMarker(head: boolean, kill: boolean, team = false): void {
+    const cls = team ? 'team' : `${head ? 'head' : ''} ${kill ? 'kill' : ''}`;
+    this.hitmark.className = `hitmark show ${cls}`;
     void this.hitmark.offsetWidth; // restart animation
-    this.hitmark.className = `hitmark show anim ${head ? 'head' : ''} ${kill ? 'kill' : ''}`;
+    this.hitmark.className = `hitmark show anim ${cls}`;
   }
 
-  damageFrom(angleRad: number): void {
-    this.damageDirs.push({ angle: angleRad, life: 1.2 });
+  /** You took damage from `src` (world position); the arc follows it as you turn. */
+  damageFrom(src: Vec3): void {
+    this.damageDirs.push({ src: { x: src.x, y: src.y, z: src.z }, life: 1.2 });
+  }
+
+  /** Forget short-lived indicators (respawn, new round). */
+  clearTransient(): void {
+    this.damageDirs = [];
   }
 
   showBanner(text: string, big = false): void {
@@ -127,9 +140,9 @@ export class CombatHud {
     const row = h(
       'div',
       { class: `kill-row ${mine ? 'mine' : ''} ${teamKill ? 'teamkill' : ''}` },
-      h('span', { style: `color:${TEAM_CSS[killerTeam ?? 0]}` }, killer),
+      h('span', { style: `color:${teamCss(killerTeam)}` }, killer),
       h('span', { class: 'kill-icon', title: kind }, ` ${KIND_ICON[kind]} `),
-      h('span', { style: `color:${TEAM_CSS[victimTeam ?? 1]}` }, victim),
+      h('span', { style: `color:${teamCss(victimTeam)}` }, victim),
       teamKill ? h('span', { class: 'tk' }, ' TEAM KILL') : null,
     );
     this.feed.prepend(row);
@@ -148,11 +161,13 @@ export class CombatHud {
     if (text) this.statsEl.textContent = text;
   }
 
+  /** `angleOf`: screen direction (0 = up, clockwise) of a world point from the current view. */
   update(
     dt: number,
     kit: KitStatus,
     threats: Threat[],
-    ownMarker: { x: number; y: number; onScreen: boolean; dist: number; angle: number } | null,
+    ownMarker: ScreenMarker | null,
+    angleOf: (p: Vec3) => number,
   ): void {
     // health
     const f = Math.max(0, kit.hp / kit.maxHp);
@@ -194,7 +209,7 @@ export class CombatHud {
 
     // threat arcs around the crosshair (incl. behind you)
     for (const t of threats) {
-      const ang = Math.atan2(t.dirCam.x, t.dirCam.y); // 0 = up on screen
+      const ang = t.angle; // 0 = up on screen
       ctx.strokeStyle = t.color;
       ctx.globalAlpha = 0.25 + 0.75 * t.intensity;
       ctx.lineWidth = 3 + 5 * t.intensity;
@@ -208,17 +223,12 @@ export class CombatHud {
     // damage direction
     this.damageDirs = this.damageDirs.filter((d) => (d.life -= dt) > 0);
     for (const d of this.damageDirs) {
+      const angle = angleOf(d.src);
       ctx.strokeStyle = '#ff3b4f';
       ctx.globalAlpha = Math.min(1, d.life);
       ctx.lineWidth = 10;
       ctx.beginPath();
-      ctx.arc(
-        cx,
-        cy,
-        Math.min(w, hgt) * 0.3,
-        d.angle - Math.PI / 2 - 0.3,
-        d.angle - Math.PI / 2 + 0.3,
-      );
+      ctx.arc(cx, cy, Math.min(w, hgt) * 0.3, angle - Math.PI / 2 - 0.3, angle - Math.PI / 2 + 0.3);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -258,16 +268,17 @@ export class CombatHud {
         ctx.restore();
         ctx.fillText(`${Math.round(ownMarker.dist)} m`, ownMarker.x, ownMarker.y + 22);
       } else {
-        const r = Math.min(w, hgt) * 0.42;
-        const x = cx + Math.sin(ownMarker.angle) * r;
-        const y = cy - Math.cos(ownMarker.angle) * r;
+        // inside the objective markers' ring, so the two never sit on top of each other
+        const { x, y } = edgePoint(ownMarker.angle, w, hgt, { x: 150, y: 150 });
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(ownMarker.angle);
+        // notched dart: the tip reads clearly at any angle
         ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(8, 6);
-        ctx.lineTo(-8, 6);
+        ctx.moveTo(0, -11);
+        ctx.lineTo(8, 7);
+        ctx.lineTo(0, 2);
+        ctx.lineTo(-8, 7);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
@@ -279,24 +290,3 @@ export class CombatHud {
     this.root.remove();
   }
 }
-
-/** Screen-space info for a world point (edge-arrow angle: 0 = up, clockwise). */
-export const projectMarker = (
-  p: Vec3,
-  camera: THREE.PerspectiveCamera,
-  w: number,
-  hgt: number,
-): { x: number; y: number; onScreen: boolean; dist: number; angle: number } => {
-  const v = new THREE.Vector3(p.x, p.y, p.z);
-  const dist = v.distanceTo(camera.position);
-  const local = v.clone().applyMatrix4(camera.matrixWorldInverse);
-  const ndc = v.clone().project(camera);
-  const onScreen = local.z < 0 && Math.abs(ndc.x) < 0.95 && Math.abs(ndc.y) < 0.95;
-  return {
-    x: ((ndc.x + 1) / 2) * w,
-    y: ((1 - ndc.y) / 2) * hgt,
-    onScreen,
-    dist,
-    angle: Math.atan2(local.x, local.y),
-  };
-};

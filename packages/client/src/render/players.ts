@@ -1,7 +1,7 @@
 // Low-poly player models with a team-colored rim light (easy to spot, never camouflaged).
-// Procedural animation: run cycle, slide pose, air tuck, head pitch.
+// Procedural animation: run cycle, slide pose, air tuck, head pitch. Name tags are screen-space
+// markers (game/world-markers.ts), not part of the model.
 import * as THREE from 'three';
-import type { Vec3 } from '@space-yz/shared';
 import {
   qForward,
   qFromBasis,
@@ -76,12 +76,10 @@ interface Model {
   armL: THREE.Group;
   armR: THREE.Group;
   pack: THREE.Group; // back: Controller attaches here (M5)
-  controller: THREE.Mesh;
+  controller: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   mat: THREE.ShaderMaterial;
   phase: number;
   team: 0 | 1;
-  label: THREE.Sprite | null;
-  labelText: string;
 }
 
 const limb = (w: number, h: number, color: number, mat: THREE.Material): THREE.Group => {
@@ -145,37 +143,12 @@ const buildModel = (team: 0 | 1): Model => {
     mat,
     phase: 0,
     team,
-    label: null,
-    labelText: '',
   };
-};
-
-const makeLabel = (text: string, color: string): THREE.Sprite => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 48;
-  const ctx = canvas.getContext('2d')!;
-  ctx.font = 'bold 26px Segoe UI, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-  ctx.strokeText(text, 128, 24);
-  ctx.fillStyle = color;
-  ctx.fillText(text, 128, 24);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
-  const s = new THREE.Sprite(mat);
-  s.scale.set(1.6, 0.3, 1);
-  s.renderOrder = 10;
-  return s;
 };
 
 export class PlayerModels {
   group = new THREE.Group();
   private models = new Map<number, Model>();
-
-  constructor(private localTeam: () => 0 | 1) {}
 
   update(players: RenderPlayer[], dt: number, time: number): void {
     const seen = new Set<number>();
@@ -191,20 +164,7 @@ export class PlayerModels {
       m.root.visible = p.alive;
       if (!p.alive) continue;
       this.pose(m, p, dt);
-      // name tags for teammates (visible through walls, per the visibility rules)
-      const mate = p.team === this.localTeam();
-      const text = p.name;
-      if (mate && (!m.label || m.labelText !== text)) {
-        if (m.label) m.root.remove(m.label);
-        m.label = makeLabel(text, '#9ff3ff');
-        m.labelText = text;
-        m.label.position.set(0, 1.35, 0);
-        m.root.add(m.label);
-      }
-      if (!mate && m.label) {
-        m.root.remove(m.label);
-        m.label = null;
-      }
+      // the Controller glows on the carrier's back (only the carrier)
       m.controller.visible = p.carrier;
       if (p.carrier) m.controller.rotation.y = time * 2;
       m.mat.uniforms.flash.value = Math.max(0, m.mat.uniforms.flash.value - dt * 4);
@@ -260,16 +220,14 @@ export class PlayerModels {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
     m.mat.dispose();
+    m.controller.material.dispose();
     this.models.delete(id);
   }
 
-  /** World position of a player's head (for markers). */
-  headPos(id: number): Vec3 | null {
+  /** Is the Controller shown on this player's back? (tests, tools) */
+  showsController(id: number): boolean {
     const m = this.models.get(id);
-    if (!m || !m.root.visible) return null;
-    const v = new THREE.Vector3();
-    m.head.getWorldPosition(v);
-    return { x: v.x, y: v.y, z: v.z };
+    return !!m && m.root.visible && m.controller.visible;
   }
 
   dispose(): void {

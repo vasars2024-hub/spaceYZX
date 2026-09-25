@@ -111,7 +111,7 @@ const VIEWS = [
     pitch: 12,
     mate: [3, 6, 16],
   },
-  { name: '16 crawl vent', pos: [-51.5, 0, -14], yaw: 180, pitch: -18, mate: [-56, 0, -22] },
+  { name: '16 crawl vent', pos: [-51.5, 0, -11.5], yaw: 0, pitch: -14, mate: [-55, 0, -15] },
 ];
 
 const p = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();

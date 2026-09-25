@@ -35,6 +35,8 @@ export interface LaneDef {
   name: string;
   /** x/z of the waypoint at the lane's centre (the "mid" of that lane) */
   centre: { x: number; z: number };
+  /** x/z of other waypoints in the lane's middle, closed while the other lanes are timed */
+  alsoBlock?: { x: number; z: number }[];
 }
 
 export interface MapAnalysisConfig {
@@ -79,32 +81,32 @@ const kestrel = (): MapAnalysisConfig => {
     { s: -1, T: 'A', side: 0 as Team },
     { s: 1, T: 'B', side: 1 as Team },
   ];
-  // bases: x ∈ [72, 96] (the doorway thresholds at |x| ∈ [71, 72] belong to the lanes)
-  for (const { s, T, side } of sides) rect(`${T} base`, side, 'base', s * 72, s * 97, -43, 43);
-  // zero-G cargo shaft (whole volume, every height)
-  rect('shaft (zero-G)', null, 'north', -24, 24, 17, 55);
+  // (coordinates from packages/shared/src/level/maps/kestrel.ts, the KESTREL table)
+  // hangars: x ∈ [76, 98] (the door thresholds at |x| ∈ [75, 76] belong to the lanes)
+  for (const { s, T, side } of sides) rect(`${T} hangar`, side, 'base', s * 76, s * 99, -35, 35);
+  // the shared middle of each lane
+  rect('reactor (mid)', null, 'main', -21, 21, -19, 19);
+  rect('cargo shaft (zero-G, mid)', null, 'north', -26, 26, 19, 57);
+  rect('engine corridor ceiling (mid)', null, 'south', -16, 16, -41, -27);
   for (const { s, T, side } of sides) {
     const X = (x: number) => s * x;
-    rect(`${T} north corridor`, side, 'north', X(24), X(72), 25.5, 35);
-    rect(`${T} north connector`, side, 'connector', X(28), X(34), 12, 25.5);
-    rect(`${T} south connector`, side, 'connector', X(22), X(28), -28, -12);
-    // balcony slabs (y 6.6) and the ramps up to them, along both long hall walls
-    for (const [za, zb] of [
-      [8.4, 12.5],
-      [-12.5, -8.4],
-    ]) {
-      rect(`${T} balconies`, side, 'main', X(25.5), X(52.5), za, zb, 5);
-      rect(`${T} ramps`, side, 'main', X(51.5), X(64.5), za, zb, 0.2);
-    }
+    // main lane
+    rect(`${T} airlock`, side, 'main', X(68), X(76), -6, 6);
+    rect(`${T} atrium shelf`, side, 'main', X(47), X(56), 6, 17, 5);
+    rect(`${T} atrium`, side, 'main', X(46), X(68), -17, 17);
+    rect(`${T} gallery`, side, 'main', X(21), X(46), 4, 17, 5);
+    rect(`${T} trench`, side, 'main', X(21), X(46), -13, 17);
+    // shortcuts between the lanes
+    rect(`${T} north connector`, side, 'connector', X(27.5), X(34.5), 16, 31.9);
+    rect(`${T} south connector`, side, 'connector', X(29.5), X(36.5), -28, -12.9);
+    rect(`${T} crouch vent`, side, 'connector', X(49.5), X(58.5), -20, -17);
+    // north lane
+    rect(`${T} cargo bay`, side, 'north', X(50.5), X(76), 19, 43);
+    rect(`${T} conveyor`, side, 'north', X(26), X(50.5), 31.9, 41);
+    // south lane
+    rect(`${T} turbine hall`, side, 'south', X(48.5), X(76), -45, -19);
+    rect(`${T} engine wall`, side, 'south', X(16), X(48.5), -41, -27);
   }
-  // engine corridor: ceiling section in the middle, wall-walk sections, normal-gravity ends
-  rect('engine mid (ceiling)', null, 'south', -16, 16, -41, -27.9);
-  for (const { s, T, side } of sides) {
-    rect(`${T} engine wall`, side, 'south', s * 16, s * 48, -41, -27.9);
-    rect(`${T} engine floor`, side, 'south', s * 48, s * 72, -41, -27.9);
-  }
-  rect('hall mid', null, 'main', -12, 12, -13, 13);
-  for (const { s, T, side } of sides) rect(`${T} hall`, side, 'main', s * 12, s * 72, -13, 13);
 
   for (const { s, T, side } of sides) {
     const X = (x: number) => s * x;
@@ -127,33 +129,56 @@ const kestrel = (): MapAnalysisConfig => {
         halfWidth,
         final,
       });
-    c('base door (main)', 'door M', 'main', v3(X(68), 1, 0), 'z', 8, true);
-    c('base door (north)', 'door N', 'north', v3(X(68), 1, 30), 'z', 4, true);
-    c('base door (south)', 'door S', 'south', v3(X(68), 1, -34), 'z', 6, true);
-    c('shaft door', 'shaft', 'north', v3(X(24.5), 1, 30), 'z', 4);
-    c('north connector, hall mouth', 'N-conn hall', 'connector', v3(X(31), 1, 12.5), 'x', 3);
-    c('north connector, corridor mouth', 'N-conn corr', 'connector', v3(X(31), 1, 25.5), 'x', 3);
-    c('south connector, hall mouth', 'S-conn hall', 'connector', v3(X(25), 1, -12.5), 'x', 3);
-    c('south connector, corridor mouth', 'S-conn corr', 'connector', v3(X(25), 1, -27.5), 'x', 3);
+    // the three hangar doors (the last chokes before the Tower)
+    c('hangar door (main)', 'door M', 'main', v3(X(75.5), 1, 0), 'z', 5, true);
+    c('hangar door (north)', 'door N', 'north', v3(X(75.5), 1, 26), 'z', 4, true);
+    c('hangar door (south)', 'door S', 'south', v3(X(75.5), 1, -26), 'z', 4, true);
+    // main lane
+    c('airlock (atrium side)', 'airlock', 'main', v3(X(68.5), 1, 0), 'z', 5);
+    c('trench mouth', 'trench', 'main', v3(X(46.5), 1, -8), 'z', 4);
+    c('gallery mouth', 'gallery', 'main', v3(X(46.5), 7, 12), 'z', 4);
+    c('reactor door (floor)', 'reactor', 'main', v3(X(20.5), 1, -1), 'z', 5);
+    c('reactor door (balcony)', 'balcony', 'main', v3(X(20.5), 7, 13), 'z', 3);
+    // north lane
+    c('dock door (cargo bay → conveyor)', 'dock', 'north', v3(X(50.5), 4, 36), 'z', 4);
+    c('shaft door', 'shaft', 'north', v3(X(26.5), 4, 36), 'z', 4);
+    // south lane
+    c('engine corridor mouth', 'engine', 'south', v3(X(48.5), 1, -34), 'z', 6);
+    // shortcuts
+    c('north connector, gallery end', 'N-conn gal', 'connector', v3(X(31), 7, 16.5), 'x', 3);
+    c('north connector, conveyor end', 'N-conn cv', 'connector', v3(X(31), 4, 31.5), 'x', 3);
+    c('south connector, trench end', 'S-conn tr', 'connector', v3(X(33), 1, -12.5), 'x', 3);
+    c('south connector, engine end', 'S-conn eng', 'connector', v3(X(33), 1, -27.5), 'x', 3);
+    c('crouch vent (atrium end)', 'vent', 'connector', v3(X(51.5), 0.6, -16.5), 'x', 1.5);
   }
 
   return {
     id: 'kestrel',
     teamNames: ['A (cyan)', 'B (orange)'],
     regions,
-    baseRegion: ['A base', 'B base'],
+    baseRegion: ['A hangar', 'B hangar'],
     chokepoints,
+    // the waypoint at each lane's middle (the reactor floor south of the core, the middle of
+    // the zero-G shaft, the engine corridor ceiling)
     lanes: [
-      { name: 'main hall', centre: { x: 0, z: 0 } },
-      { name: 'north (zero-G shaft)', centre: { x: 0, z: 30 } },
-      { name: 'south (engine corridor)', centre: { x: 0, z: -34 } },
+      {
+        name: 'main (atrium, trench, reactor)',
+        centre: { x: 0, z: -9 },
+        // the reactor floor north of the core, and the balcony window into the shaft
+        alsoBlock: [
+          { x: 0, z: 9 },
+          { x: 0, z: 16 },
+        ],
+      },
+      { name: 'north (cargo bay, conveyor, zero-G shaft)', centre: { x: 0, z: 31 } },
+      { name: 'south (turbine hall, engine corridor)', centre: { x: 0, z: -38.5 } },
     ],
     laneLabels: {
-      main: 'main hall',
-      north: 'north (zero-G shaft)',
-      south: 'south (engine corridor)',
-      connector: 'side connectors',
-      base: 'bases',
+      main: 'main lane',
+      north: 'north lane',
+      south: 'south lane',
+      connector: 'shortcuts',
+      base: 'hangars',
     },
     mirrorX: true,
   };

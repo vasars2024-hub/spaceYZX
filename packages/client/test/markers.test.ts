@@ -254,12 +254,11 @@ describe('name tag rules', () => {
     expect(playerTag(carrier, 0, false, false)).toBeNull(); // behind a wall
     expect(playerTag(enemy, 0, false, true)).toBeNull(); // other enemies: nothing
     expect(playerTag({ ...carrier, alive: false }, 0, false, true)).toBeNull();
-    // "in sight" ends where the fog hides players: Kestrel's base-to-base view (~170 m
-    // through both doors) is clear of walls but lost in the fog
+    // "in sight" ends where the fog hides players (a long line clear of walls can still be lost
+    // in the fog), but Kestrel's longest lines (~110 m across the reactor) still count
     const range = fogSightRange(mapDef('kestrel').fog!);
-    expect(lineOfSight(buildLevel(mapDef('kestrel')), v3(-85, 1.6, 0), v3(85, 1.6, 0))).toBe(true);
     expect(range).toBeLessThan(150);
-    expect(range).toBeGreaterThan(90); // long fights down the main hall still count
+    expect(range).toBeGreaterThan(110);
     expect(fogSightRange(null)).toBe(Infinity);
   });
 
@@ -304,9 +303,9 @@ describe('crosshair on an enemy', () => {
 
   it("uses the level's line of sight (a wall hides the enemy)", () => {
     const level = buildLevel(mapDef('kestrel'));
-    // hall → behind the base wall (the door is at |z| < 8)
+    // atrium → the hangar behind its wall; across the atrium floor
     expect(lineOfSight(level, v3(-60, 1.6, 0), v3(-80, 1.6, 20))).toBe(false);
-    expect(lineOfSight(level, v3(-60, 1.6, 0), v3(-45, 1.6, 3))).toBe(true);
+    expect(lineOfSight(level, v3(-62, 1.6, 0), v3(-50, 1.6, -8))).toBe(true);
   });
 });
 

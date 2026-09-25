@@ -36,7 +36,8 @@
 - Host app + dashboard: `packages/server/src/host/`; exe build `tools/host/build-exe.ts`.
 - Reports/benchmarks: `npm run balance`, `npm run matches`, `npm run load`, `npm run size`,
   `npm run netcheck` (hit registration + Boomerang prediction on a virtual network:
-  `tools/netcheck/`; its tests must stay at 100% agreement up to 150 ms ping).
+  `tools/netcheck/`; its tests must stay at 100% agreement up to 150 ms ping), `npm run map`
+  (layout report + floor plans; its per-map setup `tools/map/maps.ts` must match the map).
 - Lag compensation must judge against exactly what the client drew: the client draws others
   with `net/interp.ts` at quarter-tick render ticks, the server rewinds with the same code
   from the same network-rounded state. Change both together.

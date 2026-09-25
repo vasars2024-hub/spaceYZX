@@ -83,9 +83,12 @@ To get the newest version later, run `git pull` and then `npm install` again.
 | `npm run balance`    | Bot-vs-bot combat metrics vs the design targets                                     |
 | `npm run matches`    | Full bot matches per mode on Kestrel (round length, how rounds end)                 |
 | `npm run netcheck`   | Hit registration + Boomerang consistency at 0–200 ms ping (virtual network)         |
+| `npm run map`        | Map report: floor plans, sightlines, lane timings, spawn safety (`tools/map/out`)   |
 | `npm run load`       | Server CPU per tick and bandwidth per player, per mode                              |
 | `npm run size`       | Fails if the first download is over 5 MB                                            |
 | `npm run bench`      | Browser frame-time benchmark with CPU throttling (needs Playwright; see the script) |
+| `npm run tour`       | Plays every feature in a browser and saves screenshots (needs Playwright)           |
+| `npm run indicators` | Browser check of name tags, markers and HUD indicators (needs Playwright)           |
 
 **Hit registration.** What you hit on your screen counts, and what you miss doesn't: the
 server judges every Laser shot, slash, Boomerang and deflect against exactly the frame the

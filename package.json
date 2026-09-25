@@ -31,6 +31,7 @@
     "map": "tsx tools/map/analyze.ts",
     "bench": "node tools/perf/browser-bench.mjs",
     "tour": "node tools/e2e/feature-tour.mjs",
+    "indicators": "node tools/e2e/indicators.mjs",
     "host": "tsx packages/server/src/host/host-main.ts",
     "build:host": "npm run build && tsx tools/host/build-exe.ts"
   },

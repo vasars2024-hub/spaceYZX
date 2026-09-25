@@ -940,28 +940,33 @@ export const routeTimings = (an: Analyzer): RouteReport => {
       entries: entries.map((e) => ({ waypoint: rp(wps[e.idx].pos), offset: r1(e.offset) })),
     });
   }
-  /** shortest start → node route length in graph g (optionally required to pass `via`) */
-  const routeLen = (g: WaypointDef[], team: Team, node: number, via = -1): number => {
+  /** shortest start → node route length in graph g */
+  const routeLen = (g: WaypointDef[], team: Team, node: number): number => {
     let best = Infinity;
     for (const e of starts[team]) {
       const r = waypointRoute(g, e.idx, node);
-      if (!r.length || (via >= 0 && !r.includes(via))) continue;
+      if (!r.length) continue;
       best = Math.min(best, e.offset + pathLength(g, r));
     }
     return best;
   };
-  const laneNodes = an.config.lanes.map((l) => {
+  const nodeAt = (p: { x: number; z: number }): number => {
     let best = -1;
     let bd = 1.5;
     wps.forEach((w, i) => {
-      const d = Math.hypot(w.pos.x - l.centre.x, w.pos.z - l.centre.z);
+      const d = Math.hypot(w.pos.x - p.x, w.pos.z - p.z);
       if (d < bd) {
         bd = d;
         best = i;
       }
     });
     return best;
-  });
+  };
+  const laneNodes = an.config.lanes.map((l) => nodeAt(l.centre));
+  /** every waypoint of a lane's middle (closed while timing the other lanes) */
+  const laneMids = an.config.lanes.map((l, i) =>
+    [laneNodes[i], ...(l.alsoBlock ?? []).map(nodeAt)].filter((n) => n >= 0),
+  );
   const towerNode = (team: Team): number => {
     const t = def.towers.find((tw) => tw.team === team);
     return t ? nearestWaypointTo(an, wps, add(t.pos, v3(0, 1, 0))) : -1;
@@ -973,16 +978,19 @@ export const routeTimings = (an: Analyzer): RouteReport => {
   };
   an.config.lanes.forEach((lane, li) => {
     const node = laneNodes[li];
-    const blocked = laneNodes.filter((n, j) => j !== li && n >= 0);
+    const blocked = laneMids.filter((_, j) => j !== li).flat();
     const g = withoutNodes(wps, blocked);
     for (const team of [0, 1] as const) {
       let toMid: Timing | null = null;
       let toTower: Timing | null = null;
       if (node >= 0) {
-        toMid = timing(routeLen(g, team, node));
+        const mid = routeLen(g, team, node);
+        toMid = timing(mid);
         const enemy = (1 - team) as Team;
         const tn = towerNode(enemy);
-        if (tn >= 0) toTower = timing(routeLen(g, team, tn, node) + towerGap(enemy, tn));
+        // spawn → this lane's middle → the enemy Tower (the other lanes' middles closed)
+        const on = tn >= 0 ? waypointRoute(g, node, tn) : [];
+        if (on.length) toTower = timing(mid + pathLength(g, on) + towerGap(enemy, tn));
       }
       report.lanes.push({ lane: lane.name, team, toMid, toEnemyTower: toTower });
     }

@@ -137,6 +137,8 @@ export const buildKestrel = (): LevelDef => {
   b.box(v3(-2.5, U, 10.6), v3(2.5, U + 3.5, 14), { mat: 'panel', trim: VIOLET });
   // balcony supports
   for (const x of [-12, 12]) b.box(v3(x - 0.5, 0, 10), v3(x + 0.5, U - 0.5, 11), { mat: 'pillar' });
+  // a coolant pump under the balcony: cover on the strip of floor below it
+  b.box(v3(-1.5, 0, 14.5), v3(1.5, 2.5, 17.5), { mat: 'engine', trim: VIOLET });
   // chamfered south corners: the reactor reads as an octagonal chamber
   for (const sx of [-1, 1])
     b.boxes.push({
@@ -236,7 +238,7 @@ export const buildKestrel = (): LevelDef => {
     box(92, deckY - 0.5, -HG.z, HG.x1, deckY, HG.z, { mat: 'floor', trim: tc });
     b.ramp('x', X(92), X(84), deckY, 0, 30, 4, { mat: 'floor' });
     b.ramp('x', X(92), X(84), deckY, 0, -30, 4, { mat: 'floor' });
-    box(91.8, deckY, -27.8, 92, deckY + 1, 27.8, { mat: 'pillar' });
+    box(91.8, deckY, -27.8, 92, deckY + 0.6, 27.8, { mat: 'pillar' }); // (a kick-rail: no chest cover)
     for (const z of [-22, -11, 11, 22])
       box(92, 0, z - 0.4, 92.8, deckY - 0.5, z + 0.4, { mat: 'pillar' });
     // hangar cover
@@ -292,15 +294,16 @@ export const buildKestrel = (): LevelDef => {
     box(52, 0, 0, 56, 1.2, 2, { mat: 'panel', trim: tc });
     box(60, 0, -14, 63, 3, -11, { mat: 'crate' });
 
-    // crouch vent (Atrium ↔ Turbine hall): slide through it; its two ends are offset so it is
-    // not a peephole between the rooms
+    // crouch vent (Atrium ↔ Turbine hall): slide through it. Its two ends are 7 m apart along a
+    // 2 m deep tunnel, so no straight line runs through it (a crouched player can't watch the
+    // other room from inside while standing players can't see in)
     room(
       X(50),
-      X(58),
+      X(63),
       { y: 0, z: -19 },
       { y: 1.3, z: -17 },
       {
-        '-z': [{ u0: 55, u1: 58, v0: 0, v1: 1.3 }],
+        '-z': [{ u0: 60, u1: 63, v0: 0, v1: 1.3 }],
         '+z': [{ u0: 50, u1: 53, v0: 0, v1: 1.3 }],
       },
       { trim: tc },
@@ -408,7 +411,7 @@ export const buildKestrel = (): LevelDef => {
       {
         '+x': [{ u0: -30, u1: -22, v0: 0, v1: 6 }],
         '-x': [{ u0: S.z0, u1: S.z1, v0: 0, v1: S.h }],
-        '+z': [{ u0: 55, u1: 58, v0: 0, v1: 1.3 }], // crouch vent
+        '+z': [{ u0: 60, u1: 63, v0: 0, v1: 1.3 }], // crouch vent
       },
       { trim: tc },
     );
@@ -417,7 +420,7 @@ export const buildKestrel = (): LevelDef => {
     // gantry along the north wall (y 5) with its ramp and railing
     box(TH.x0, 4.5, -24, 66, 5, TH.z1, { mat: 'floor', trim: tc });
     b.ramp('x', X(66), X(74), 5, 0, -22, 4, { mat: 'floor' });
-    box(TH.x0, 5, -24.2, 62, 6, -24, { mat: 'pillar' });
+    box(TH.x0, 5, -24.2, 62, 5.6, -24, { mat: 'pillar' });
     box(60, 0, -42, 61.2, 1.2, -38, { mat: 'panel' });
 
     // ---------------- South connector: Trench → engine wall ----------------

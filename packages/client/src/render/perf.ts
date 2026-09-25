@@ -13,13 +13,36 @@ export interface QualityProfile {
   /** decorative particle amount (kill shatters, sparks, zero-G dust) */
   particles: number;
   dust: boolean;
+  /** light glows and light shafts (decoration) */
+  atmosphere: boolean;
 }
 
 export const QUALITY: Record<Settings['quality'], QualityProfile> = {
-  potato: { maxScale: 0.5, minScale: 0.5, antialias: false, particles: 0.25, dust: false },
-  low: { maxScale: 0.75, minScale: 0.5, antialias: false, particles: 0.5, dust: false },
-  medium: { maxScale: 1, minScale: 0.5, antialias: true, particles: 1, dust: true },
-  high: { maxScale: 1, minScale: 0.6, antialias: true, particles: 1, dust: true },
+  potato: {
+    maxScale: 0.5,
+    minScale: 0.5,
+    antialias: false,
+    particles: 0.25,
+    dust: false,
+    atmosphere: false,
+  },
+  low: {
+    maxScale: 0.75,
+    minScale: 0.5,
+    antialias: false,
+    particles: 0.5,
+    dust: false,
+    atmosphere: false,
+  },
+  medium: {
+    maxScale: 1,
+    minScale: 0.5,
+    antialias: true,
+    particles: 1,
+    dust: true,
+    atmosphere: true,
+  },
+  high: { maxScale: 1, minScale: 0.6, antialias: true, particles: 1, dust: true, atmosphere: true },
 };
 
 /** Current decorative particle factor (read by effects). */

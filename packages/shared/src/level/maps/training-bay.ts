@@ -66,6 +66,21 @@ export const buildTrainingBay = (): LevelDef => {
       { name: 'Orange side', pos: v3(30, 0, 0), yawDeg: 90 },
       { name: 'Center platform', pos: v3(0, 3, 0), yawDeg: -90 },
     ],
-    fog: { color: 0x070b14, near: 35, far: 120 },
+    fog: { color: 0x060912, near: 35, far: 120 },
+    ambient: 0.85,
+    lights: [
+      ...[-20, 0, 20].flatMap((x) =>
+        [-9, 9].map((z) => ({
+          pos: v3(x, 12.5, z),
+          color: 0xffe0b0,
+          radius: 15,
+          intensity: 0.95,
+          shaft: true,
+        })),
+      ),
+      { pos: v3(-31, 4, 0), color: CYAN, radius: 10, intensity: 1 },
+      { pos: v3(31, 4, 0), color: ORANGE, radius: 10, intensity: 1 },
+      { pos: v3(0, 5, 0), color: VIOLET, radius: 8, intensity: 0.8 },
+    ],
   });
 };

@@ -1,20 +1,48 @@
-// Build the static level as a few merged meshes with lighting baked into vertex colors.
-// MeshBasicMaterial = no lighting cost at runtime; looks flat-shaded and low-poly.
+// Build the static level as a few merged meshes: procedural textures (one mesh per surface
+// kind) multiplied by lighting baked into vertex colors — a directional key light, soft ambient
+// occlusion, and colored point lights (explicit map lights + every strip light). Walls block
+// light, so rooms don't bleed into each other. MeshBasicMaterial = no lighting cost at runtime.
 import * as THREE from 'three';
-import type { LevelDef, BoxDef, Material, Vec3 } from '@space-yz/shared';
-import { qRotate, v3, normalize, dot, cross, len, sub, lenSq } from '@space-yz/shared';
+import type { LevelDef, BoxDef, Material, Vec3, LightDef, Level } from '@space-yz/shared';
+import {
+  qRotate,
+  v3,
+  normalize,
+  dot,
+  cross,
+  len,
+  sub,
+  lenSq,
+  madd,
+  buildLevel,
+  lineOfSight,
+} from '@space-yz/shared';
+import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
 
 export const MATERIAL_COLORS: Record<Material, number> = {
-  hull: 0x2b3446,
-  floor: 0x394358,
-  panel: 0x4a5670,
-  crate: 0x6a5238,
-  pillar: 0x3c4760,
-  glass: 0x9ec3e6,
-  engine: 0x3f3040,
-  teamA: 0x1f6f80,
-  teamB: 0x80501f,
+  hull: 0x3a4660,
+  floor: 0x4b5670,
+  panel: 0x5d6b88,
+  crate: 0x7c6242,
+  pillar: 0x4d5a78,
+  engine: 0x4f3c50,
+  teamA: 0x2a8296,
+  teamB: 0x96602a,
+  glass: 0xffffff,
   trim: 0xffffff,
+};
+
+const TEX_OF: Record<Material, TexKind | null> = {
+  hull: 'hull',
+  floor: 'floor',
+  panel: 'panel',
+  crate: 'crate',
+  pillar: 'pillar',
+  engine: 'engine',
+  teamA: 'team',
+  teamB: 'team',
+  glass: 'stars',
+  trim: null,
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -87,6 +115,12 @@ const FACES: { n: Vec3; corners: [number, number, number][] }[] = [
 class GeoBuilder {
   pos: number[] = [];
   col: number[] = [];
+  uv: number[] = [];
+  vert(p: Vec3, c: THREE.Color, u: number, v: number): void {
+    this.pos.push(p.x, p.y, p.z);
+    this.col.push(c.r, c.g, c.b);
+    this.uv.push(u, v);
+  }
   quad(
     a: Vec3,
     b: Vec3,
@@ -96,23 +130,25 @@ class GeoBuilder {
     cb: THREE.Color,
     cc: THREE.Color,
     cd: THREE.Color,
+    uvs: [number, number][] = [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ],
   ): void {
-    for (const [p, cl] of [
-      [a, ca],
-      [b, cb],
-      [c, cc],
-      [a, ca],
-      [c, cc],
-      [d, cd],
-    ] as [Vec3, THREE.Color][]) {
-      this.pos.push(p.x, p.y, p.z);
-      this.col.push(cl.r, cl.g, cl.b);
-    }
+    const P = [a, b, c, d];
+    const C = [ca, cb, cc, cd];
+    for (const i of [0, 1, 2, 0, 2, 3]) this.vert(P[i], C[i], uvs[i][0], uvs[i][1]);
+  }
+  get empty(): boolean {
+    return this.pos.length === 0;
   }
   build(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.computeBoundingSphere();
     return g;
   }
@@ -124,43 +160,169 @@ const boxCorner = (b: BoxDef, lx: number, ly: number, lz: number): Vec3 => {
   return v3(b.c.x + r.x, b.c.y + r.y, b.c.z + r.z);
 };
 
+/** Key light + fill + fake ambient occlusion (the part of lighting shared by a whole face). */
 const shade = (
   base: THREE.Color,
   n: Vec3,
   variation: number,
   bottom: boolean,
-  brightness: number,
+  ambient: number,
 ): THREE.Color => {
   const diffuse = Math.max(0, dot(n, LIGHT));
-  const fill = Math.max(0, -dot(n, LIGHT)) * 0.18;
-  const up = n.y > 0.5 ? 0.08 : 0;
-  let k = 0.42 + 0.52 * diffuse + fill + up;
+  const fill = Math.max(0, -dot(n, LIGHT)) * 0.15;
+  const up = n.y > 0.5 ? 0.06 : 0;
+  let k = (0.34 + 0.4 * diffuse + fill + up) * ambient;
   k *= 0.94 + variation * 0.12;
-  if (bottom) k *= 0.78; // fake ambient occlusion toward the bottom of walls
-  return base.clone().multiplyScalar(k * brightness);
+  if (bottom) k *= 0.72; // darker toward the bottom of walls
+  return base.clone().multiplyScalar(k);
 };
+
+// ---------------------------------------------------------------------------------------------
+// Point lights
+
+export interface BakeLight {
+  pos: Vec3;
+  color: THREE.Color;
+  radius: number;
+  intensity: number;
+}
+
+/** Explicit map lights + one light every few meters along each strip light ('trim' box). */
+export const collectLights = (def: LevelDef): LightDef[] => {
+  const out: LightDef[] = [...(def.lights ?? [])];
+  for (const b of def.boxes) {
+    if (b.mat !== 'trim' || b.noRender) continue;
+    const ext = [b.h.x * 2, b.h.y * 2, b.h.z * 2];
+    const longest = Math.max(...ext);
+    const color = b.color ?? 0xffffff;
+    if (longest < 1.5) {
+      out.push({ pos: b.c, color, radius: 2.5, intensity: 0.45 });
+      continue;
+    }
+    const axis = ext.indexOf(longest);
+    const n = Math.max(1, Math.round(longest / 5));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n - 0.5;
+      const p = { ...b.c };
+      if (axis === 0) p.x += t * longest;
+      else if (axis === 1) p.y += t * longest;
+      else p.z += t * longest;
+      out.push({ pos: p, color, radius: 6.5, intensity: 0.75 });
+    }
+  }
+  return out;
+};
+
+/** Spatial hash of lights so each vertex only looks at nearby ones. */
+class LightGrid {
+  private cells = new Map<string, BakeLight[]>();
+  constructor(
+    lights: BakeLight[],
+    private cell = 8,
+  ) {
+    for (const l of lights) {
+      const r = Math.ceil(l.radius / cell);
+      const cx = Math.floor(l.pos.x / cell);
+      const cy = Math.floor(l.pos.y / cell);
+      const cz = Math.floor(l.pos.z / cell);
+      for (let x = cx - r; x <= cx + r; x++)
+        for (let y = cy - r; y <= cy + r; y++)
+          for (let z = cz - r; z <= cz + r; z++) {
+            const k = `${x},${y},${z}`;
+            const list = this.cells.get(k) ?? [];
+            list.push(l);
+            this.cells.set(k, list);
+          }
+    }
+  }
+  near(p: Vec3): BakeLight[] {
+    return (
+      this.cells.get(
+        `${Math.floor(p.x / this.cell)},${Math.floor(p.y / this.cell)},${Math.floor(p.z / this.cell)}`,
+      ) ?? []
+    );
+  }
+}
+
+/** Light arriving at a surface point (with normal n), walls block it. Cached per position. */
+export const makeLightAt = (level: Level, lights: BakeLight[]) => {
+  const grid = new LightGrid(lights);
+  const cache = new Map<string, THREE.Color>();
+  return (p: Vec3, n: Vec3): THREE.Color => {
+    const key = `${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)},${n.x.toFixed(1)},${n.y.toFixed(1)},${n.z.toFixed(1)}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const out = new THREE.Color(0, 0, 0);
+    const from = madd(p, n, 0.12);
+    for (const l of grid.near(p)) {
+      const d = sub(l.pos, p);
+      const dist = len(d);
+      if (dist > l.radius) continue;
+      const ndl = dist < 1e-3 ? 1 : dot(n, d) / dist;
+      if (ndl < -0.05) continue; // facing away
+      const att = (1 - dist / l.radius) ** 2;
+      const w = att * l.intensity * (0.25 + 0.75 * Math.max(0, ndl));
+      if (w < 0.01) continue;
+      if (dist > 1.2 && !lineOfSight(level, from, l.pos)) continue;
+      out.r += l.color.r * w;
+      out.g += l.color.g * w;
+      out.b += l.color.b * w;
+    }
+    cache.set(key, out);
+    return out;
+  };
+};
+
+// ---------------------------------------------------------------------------------------------
 
 export interface LevelMeshes {
   group: THREE.Group;
   dispose(): void;
 }
 
-export const buildLevelMeshes = (def: LevelDef, brightness = 1, dust = true): LevelMeshes => {
-  const solid = new GeoBuilder();
-  const trims = new GeoBuilder();
-  const tmp = new THREE.Color();
+export interface LevelMeshOptions {
+  brightness?: number;
+  /** zero-G dust motes */
+  dust?: boolean;
+  /** light glows and light shafts */
+  atmosphere?: boolean;
+}
 
+export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): LevelMeshes => {
+  const brightness = opts.brightness ?? 1;
+  const ambient = (def.ambient ?? 1) * brightness;
+  const builders = new Map<TexKind | 'none', GeoBuilder>();
+  const builder = (k: TexKind | 'none') => {
+    let b = builders.get(k);
+    if (!b) builders.set(k, (b = new GeoBuilder()));
+    return b;
+  };
+  const trims = new GeoBuilder();
+  const level = buildLevel(def);
+  const lightDefs = collectLights(def);
+  const lightAt = makeLightAt(
+    level,
+    lightDefs.map((l) => ({
+      pos: l.pos,
+      color: new THREE.Color(l.color),
+      radius: l.radius,
+      intensity: l.intensity,
+    })),
+  );
   const tintNeg = def.sideTint ? new THREE.Color(def.sideTint.neg) : null;
   const tintPos = def.sideTint ? new THREE.Color(def.sideTint.pos) : null;
+
   def.boxes.forEach((b, bi) => {
     if (b.noRender) return;
-    const base = new THREE.Color(b.color ?? MATERIAL_COLORS[b.mat ?? 'hull']);
-    if (def.sideTint && b.mat !== 'trim' && b.mat !== 'teamA' && b.mat !== 'teamB') {
+    const mat = b.mat ?? 'hull';
+    const base = new THREE.Color(b.color ?? MATERIAL_COLORS[mat]);
+    if (def.sideTint && mat !== 'trim' && mat !== 'teamA' && mat !== 'teamB' && mat !== 'glass') {
       // fade from neutral in the middle to the team color on each half
       const k = Math.min(1, Math.abs(b.c.x) / 30) * def.sideTint.amount;
       if (k > 0) base.lerp(b.c.x < 0 ? tintNeg! : tintPos!, k);
     }
-    const isTrim = b.mat === 'trim';
+    const isTrim = mat === 'trim';
+    const tex = TEX_OF[mat];
     FACES.forEach((f, fi) => {
       const n = b.q ? qRotate(b.q, f.n) : f.n;
       const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
@@ -169,71 +331,124 @@ export const buildLevelMeshes = (def: LevelDef, brightness = 1, dust = true): Le
         trims.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
         return;
       }
+      if (mat === 'glass') {
+        // windows: unlit starfield
+        const c = base.clone().multiplyScalar(0.9 * brightness);
+        builder('stars').quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c, faceUvs(pts, n, 'stars'));
+        return;
+      }
       const variation = hash(bi * 7 + fi);
-      // darker near the bottom of vertical faces
       const vertical = Math.abs(n.y) < 0.5;
-      const cols = f.corners.map(([, y]) =>
-        shade(base, n, variation, vertical && y < 0, brightness),
-      );
-      tiledQuad(solid, pts, cols, bi * 31 + fi);
+      const cols = f.corners.map(([, y]) => shade(base, n, variation, vertical && y < 0, ambient));
+      tiledQuad(builder(tex ?? 'none'), pts, cols, n, bi * 31 + fi, tex, base, lightAt, brightness);
     });
     if (b.trim !== undefined)
-      addTrims(trims, b, new THREE.Color(b.trim).multiplyScalar(brightness), tmp);
+      addTrims(trims, b, new THREE.Color(b.trim).multiplyScalar(brightness));
   });
 
   const group = new THREE.Group();
-  const solidGeo = solid.build();
-  const trimGeo = trims.build();
-  const solidMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-  const trimMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: true });
-  const solidMesh = new THREE.Mesh(solidGeo, solidMat);
-  const trimMesh = new THREE.Mesh(trimGeo, trimMat);
-  solidMesh.matrixAutoUpdate = false;
-  trimMesh.matrixAutoUpdate = false;
-  group.add(solidMesh, trimMesh);
+  const disposables: { dispose(): void }[] = [];
+  for (const [k, gb] of builders) {
+    if (gb.empty) continue;
+    const geo = gb.build();
+    const map = k === 'none' ? null : surfaceTexture(k);
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, map });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
+  if (!trims.empty) {
+    const trimGeo = trims.build();
+    const trimMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: true });
+    const trimMesh = new THREE.Mesh(trimGeo, trimMat);
+    trimMesh.matrixAutoUpdate = false;
+    group.add(trimMesh);
+    disposables.push(trimGeo, trimMat);
+  }
 
-  const extras = buildExtras(def, dust);
+  const extras = buildExtras(def, opts.dust ?? true);
   group.add(extras.group);
+  disposables.push(extras);
+  if (opts.atmosphere ?? true) {
+    const atmo = buildAtmosphere(def, lightDefs, level);
+    group.add(atmo.group);
+    disposables.push(atmo);
+  }
 
   return {
     group,
-    dispose: () => {
-      solidGeo.dispose();
-      trimGeo.dispose();
-      solidMat.dispose();
-      trimMat.dispose();
-      extras.dispose();
-    },
+    dispose: () => disposables.forEach((d) => d.dispose()),
   };
+};
+
+/** World-aligned UVs so textures line up across neighboring boxes (crates: one per face). */
+const faceUvs = (pts: Vec3[], n: Vec3, kind: TexKind | null): [number, number][] => {
+  const scale = kind ? TEX_SCALE[kind] : null;
+  if (scale === null) {
+    return [
+      [0, 0],
+      [0, 1],
+      [1, 1],
+      [1, 0],
+    ];
+  }
+  return pts.map((p) => worldUv(p, n, scale));
+};
+
+const worldUv = (p: Vec3, n: Vec3, scale: number): [number, number] => {
+  const ax = Math.abs(n.x);
+  const ay = Math.abs(n.y);
+  const az = Math.abs(n.z);
+  if (ay >= ax && ay >= az) return [p.x / scale, p.z / scale];
+  if (ax >= az) return [p.z / scale, p.y / scale];
+  return [p.x / scale, p.y / scale];
 };
 
 const TILE = 2.5;
 
 /**
- * Split a face into ~2.5 m panels with a subtle checker tint. Gives surfaces scale, which is
- * what makes speed readable in a fast movement game.
+ * Split a face into ~2.5 m panels (gives lighting per-vertex detail and a subtle checker
+ * tint, which makes speed readable) and bake point lights at every vertex.
  */
-const tiledQuad = (g: GeoBuilder, pts: Vec3[], cols: THREE.Color[], seed: number): void => {
+const tiledQuad = (
+  g: GeoBuilder,
+  pts: Vec3[],
+  cols: THREE.Color[],
+  n: Vec3,
+  seed: number,
+  kind: TexKind | null,
+  base: THREE.Color,
+  lightAt: (p: Vec3, n: Vec3) => THREE.Color,
+  brightness: number,
+): void => {
   const [p0, p1, , p3] = pts;
   const l1 = len(sub(p1, p0));
   const l2 = len(sub(p3, p0));
-  const nu = Math.min(40, Math.max(1, Math.round(l1 / TILE)));
-  const nv = Math.min(40, Math.max(1, Math.round(l2 / TILE)));
-  if (nu === 1 && nv === 1) {
-    g.quad(pts[0], pts[1], pts[2], pts[3], cols[0], cols[1], cols[2], cols[3]);
-    return;
-  }
+  const nu = Math.min(48, Math.max(1, Math.round(l1 / TILE)));
+  const nv = Math.min(48, Math.max(1, Math.round(l2 / TILE)));
+  const faceUv = kind !== null && TEX_SCALE[kind] === null;
+  const scale = kind ? (TEX_SCALE[kind] ?? 1) : 1;
   const at = (u: number, v: number): Vec3 => {
-    // bilinear over the (planar) quad p0 p1 p2 p3
     const a = lerp3(pts[0], pts[1], u);
     const b = lerp3(pts[3], pts[2], u);
     return lerp3(a, b, v);
   };
-  const colAt = (u: number, v: number, tint: number): THREE.Color => {
+  const colAt = (p: Vec3, u: number, v: number, tint: number): THREE.Color => {
     const a = cols[0].clone().lerp(cols[1], u);
     const b = cols[3].clone().lerp(cols[2], u);
-    return a.lerp(b, v).multiplyScalar(tint);
+    const c = a.lerp(b, v).multiplyScalar(tint);
+    const L = lightAt(p, n);
+    // lights tint the surface color, plus a little of their own color (colored glow)
+    c.r += (base.r * 1.1 + 0.12) * L.r * brightness;
+    c.g += (base.g * 1.1 + 0.12) * L.g * brightness;
+    c.b += (base.b * 1.1 + 0.12) * L.b * brightness;
+    return c;
   };
+  const uvAt = (p: Vec3, u: number, v: number): [number, number] =>
+    faceUv
+      ? [u * Math.max(1, Math.round(l1 / 3)), v * Math.max(1, Math.round(l2 / 3))]
+      : worldUv(p, n, scale);
   for (let i = 0; i < nu; i++)
     for (let j = 0; j < nv; j++) {
       const u0 = i / nu,
@@ -241,16 +456,24 @@ const tiledQuad = (g: GeoBuilder, pts: Vec3[], cols: THREE.Color[], seed: number
         v0 = j / nv,
         v1 = (j + 1) / nv;
       const tint =
-        ((i + j) % 2 === 0 ? 1.035 : 0.965) * (0.98 + hash(seed * 977 + i * 131 + j) * 0.04);
+        ((i + j) % 2 === 0 ? 1.02 : 0.98) * (0.985 + hash(seed * 977 + i * 131 + j) * 0.03);
+      const q = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+      const uvw: [number, number][] = [
+        [u0, v0],
+        [u1, v0],
+        [u1, v1],
+        [u0, v1],
+      ];
       g.quad(
-        at(u0, v0),
-        at(u1, v0),
-        at(u1, v1),
-        at(u0, v1),
-        colAt(u0, v0, tint),
-        colAt(u1, v0, tint),
-        colAt(u1, v1, tint),
-        colAt(u0, v1, tint),
+        q[0],
+        q[1],
+        q[2],
+        q[3],
+        colAt(q[0], u0, v0, tint),
+        colAt(q[1], u1, v0, tint),
+        colAt(q[2], u1, v1, tint),
+        colAt(q[3], u0, v1, tint),
+        q.map((p, k) => uvAt(p, uvw[k][0], uvw[k][1])),
       );
     }
 };
@@ -258,8 +481,75 @@ const tiledQuad = (g: GeoBuilder, pts: Vec3[], cols: THREE.Color[], seed: number
 const lerp3 = (a: Vec3, b: Vec3, t: number): Vec3 =>
   v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
 
+/** Glowing halos at every light, and soft light shafts under ceiling lights. */
+const buildAtmosphere = (
+  def: LevelDef,
+  lights: LightDef[],
+  level: Level,
+): { group: THREE.Group; dispose(): void } => {
+  const group = new THREE.Group();
+  const disposables: { dispose(): void }[] = [];
+  const glow = glowTexture();
+  if (!glow) return { group, dispose: () => {} };
+  disposables.push(glow);
+  // halos: one sprite per light, sized by its strength, grouped by color
+  const byColor = new Map<number, LightDef[]>();
+  for (const l of lights) {
+    const list = byColor.get(l.color) ?? [];
+    list.push(l);
+    byColor.set(l.color, list);
+  }
+  for (const [color, list] of byColor) {
+    const mat = new THREE.SpriteMaterial({
+      map: glow,
+      color,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    disposables.push(mat);
+    for (const l of list) {
+      const s = new THREE.Sprite(mat);
+      s.position.set(l.pos.x, l.pos.y, l.pos.z);
+      const size = Math.min(4, 0.6 + l.intensity * l.radius * 0.18);
+      s.scale.set(size, size, 1);
+      group.add(s);
+    }
+  }
+  // light shafts: open cones from the light down to whatever is below
+  const shafts = (def.lights ?? []).filter((l) => l.shaft);
+  if (shafts.length) {
+    for (const l of shafts) {
+      const hit = level ? raycastDown(level, l.pos) : 8;
+      const h = Math.max(1, hit);
+      const geo = new THREE.CylinderGeometry(0.4, Math.min(4.5, 0.4 + h * 0.35), h, 20, 1, true);
+      geo.translate(0, -h / 2, 0);
+      const mat = new THREE.MeshBasicMaterial({
+        color: l.color,
+        transparent: true,
+        opacity: 0.06,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(l.pos.x, l.pos.y, l.pos.z);
+      group.add(m);
+      disposables.push(geo, mat);
+    }
+  }
+  return { group, dispose: () => disposables.forEach((d) => d.dispose()) };
+};
+
+const raycastDown = (level: Level, from: Vec3): number => {
+  for (let d = 0.5; d < 30; d += 0.5)
+    if (!lineOfSight(level, from, v3(from.x, from.y - d, from.z))) return d - 0.25;
+  return 30;
+};
+
 /** Thin glowing strips along the top (and for tall boxes, bottom) edges of a box. */
-const addTrims = (g: GeoBuilder, b: BoxDef, color: THREE.Color, _tmp: THREE.Color): void => {
+const addTrims = (g: GeoBuilder, b: BoxDef, color: THREE.Color): void => {
   const w = 0.07;
   const edges: [number, number, number, number, number, number][] = [
     // along x at top front/back

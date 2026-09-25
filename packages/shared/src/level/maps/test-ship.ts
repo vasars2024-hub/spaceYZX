@@ -114,6 +114,16 @@ export const buildTestShip = (): LevelDef => {
       { name: 'Wall-gravity corridor', pos: v3(-28, 0, 0), yawDeg: 90 },
       { name: 'Flip room', pos: v3(-73, 0, 0), yawDeg: 90 },
     ],
-    fog: { color: 0x070b14, near: 30, far: 140 },
+    fog: { color: 0x060912, near: 30, far: 140 },
+    ambient: 0.9,
+    lights: [
+      { pos: v3(0, 11, 14), color: 0xffe0b0, radius: 16, intensity: 1, shaft: true },
+      { pos: v3(-18, 11, -12), color: 0xffe0b0, radius: 14, intensity: 0.9, shaft: true },
+      { pos: v3(12, 11, -8), color: 0xbcd4ff, radius: 14, intensity: 0.9, shaft: true },
+      { pos: v3(26, 10, 19), color: 0xbcd4ff, radius: 10, intensity: 0.8 },
+      { pos: v3(48, 8, 0), color: 0xa46bff, radius: 18, intensity: 1 },
+      { pos: v3(-45, 5, 0), color: 0xff5a3c, radius: 14, intensity: 1 },
+      { pos: v3(-80, 10, 0), color: 0xbcd4ff, radius: 14, intensity: 0.9 },
+    ],
   });
 };

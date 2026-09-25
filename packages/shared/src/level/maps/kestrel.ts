@@ -12,6 +12,7 @@ import type {
   GravityPadDef,
   GravityZoneDef,
   LevelDef,
+  LightDef,
   Material,
   SpawnDef,
   TowerDef,
@@ -342,9 +343,46 @@ export const buildKestrel = (): LevelDef => {
       { name: 'Cargo shaft', pos: v3(-30, 0, 30), yawDeg: -90 },
       { name: 'Engine corridor', pos: v3(-60, 0, -34), yawDeg: -90 },
     ],
-    fog: { color: 0x070b14, near: 45, far: 170 },
+    fog: { color: 0x060912, near: 40, far: 170 },
+    ambient: 0.85,
+    lights: kestrelLights(),
     sideTint: { neg: 0x1d6a80, pos: 0x86501f, amount: 0.16 },
   });
+};
+
+/** Atmospheric lights (mirror pairs). Strip lights add their own small lights automatically. */
+const kestrelLights = (): LightDef[] => {
+  const K = KESTREL;
+  const WARM = 0xffe0b0;
+  const COOL = 0xbcd4ff;
+  const out: LightDef[] = [];
+  for (const s of [-1, 1] as const) {
+    const X = (x: number) => s * x;
+    const tc = s < 0 ? CYAN : ORANGE;
+    // base: team spotlight on the Tower, cool fill lights over the spawns
+    out.push({ pos: v3(X(K.towerX), 13, 0), color: tc, radius: 20, intensity: 1.8, shaft: true });
+    for (const z of [-22, 22])
+      out.push({ pos: v3(X(82), 14, z), color: COOL, radius: 21, intensity: 1.3, shaft: true });
+    out.push({ pos: v3(X(80), 3, -36), color: tc, radius: 8, intensity: 0.8 });
+    out.push({ pos: v3(X(80), 3, 36), color: tc, radius: 8, intensity: 0.8 });
+    // main hall: warm ceiling lamps with light shafts
+    for (const x of [8, 24, 40, 56])
+      out.push({ pos: v3(X(x), 14.5, 0), color: WARM, radius: 22, intensity: 1.4, shaft: true });
+    out.push({ pos: v3(X(66), 9, 0), color: tc, radius: 10, intensity: 0.9 }); // door glow
+    // north corridor + connectors
+    out.push({ pos: v3(X(48), 5, 30), color: COOL, radius: 11, intensity: 0.9 });
+    out.push({ pos: v3(X(31), 4, 19), color: COOL, radius: 8, intensity: 0.7 });
+    out.push({ pos: v3(X(25), 4, -20), color: 0xff7a4a, radius: 8, intensity: 0.7 });
+    // engine corridor: hot red-orange
+    for (const x of [30, 55])
+      out.push({ pos: v3(X(x), 9, -34), color: 0xff5a3c, radius: 13, intensity: 1.0 });
+    // cargo shaft: violet
+    out.push({ pos: v3(X(16), 6, 30), color: VIOLET, radius: 16, intensity: 1.0 });
+    out.push({ pos: v3(X(12), 22, 44), color: VIOLET, radius: 16, intensity: 0.9 });
+  }
+  out.push({ pos: v3(0, 2, -34), color: 0xff5a3c, radius: 12, intensity: 1.0 });
+  out.push({ pos: v3(0, -6, 26), color: VIOLET, radius: 14, intensity: 0.9 });
+  return out;
 };
 
 /**

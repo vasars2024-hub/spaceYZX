@@ -52,11 +52,12 @@ export class GameClient {
     const fog = def.fog ?? { color: 0x070b14, near: 30, far: 160 };
     this.scene.background = new THREE.Color(fog.color);
     this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
-    this.levelMeshes = buildLevelMeshes(
-      def,
-      Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
-      QUALITY[deps.settings.quality]?.dust ?? true,
-    );
+    const q = QUALITY[deps.settings.quality] ?? QUALITY.medium;
+    this.levelMeshes = buildLevelMeshes(def, {
+      brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
+      dust: q.dust,
+      atmosphere: q.atmosphere,
+    });
     this.scene.add(this.levelMeshes.group);
     this.scene.add(this.camera);
     const p = session.local();

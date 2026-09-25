@@ -64,6 +64,16 @@ export interface WaypointDef {
   links: number[]; // outgoing links (usually both ways; drops into gravity areas are one-way)
 }
 
+/** A light baked into the level's surfaces (plus a glow, and optionally a light shaft). */
+export interface LightDef {
+  pos: Vec3;
+  color: number;
+  radius: number; // meters
+  intensity: number; // ~0.5 subtle .. 2 strong
+  /** draw a soft volumetric cone down to the floor (hall/base ceiling lights) */
+  shaft?: boolean;
+}
+
 export interface LevelDef {
   name: string;
   boundsMin: Vec3;
@@ -81,4 +91,8 @@ export interface LevelDef {
   fog?: { color: number; near: number; far: number };
   /** Tint each half of a mirrored map (x < 0 / x > 0) toward its team color (0..1 amount). */
   sideTint?: { neg: number; pos: number; amount: number };
+  /** Atmospheric lights (strip lights made of 'trim' boxes add their own automatically). */
+  lights?: LightDef[];
+  /** Overall ambient light level (default 1); lower = moodier, lights stand out more. */
+  ambient?: number;
 }

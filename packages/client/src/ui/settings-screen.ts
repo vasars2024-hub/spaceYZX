@@ -184,6 +184,14 @@ export const settingsScreen = (
   ];
 
   const audioTab = () => [
+    toggle(
+      'Show sounds on screen (footsteps, shots… — for playing without sound)',
+      s.soundVisualizer,
+      (v) => {
+        s.soundVisualizer = v;
+        apply();
+      },
+    ),
     slider('Master volume', 0, 1, 0.05, s.masterVolume, pct, (v) => {
       s.masterVolume = v;
       apply();

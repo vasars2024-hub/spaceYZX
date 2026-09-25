@@ -12,6 +12,7 @@ import { h, button, controlsTable } from './ui/menus';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
+import { SoundRadar } from './game/sound-radar';
 import { DynamicResolution, FrameStats, QUALITY, setParticleDensity } from './render/perf';
 import { createPracticeSession } from './game/practice';
 import { createRangeSession } from './game/range';
@@ -234,6 +235,7 @@ export class App {
     );
     this.client = client;
     for (const f of features) client.addFeature(f);
+    client.addFeature(new SoundRadar(() => this.settings.soundVisualizer));
     client.resize(window.innerWidth, window.innerHeight);
     if (opts.tuning !== false) {
       this.tuning = new TuningPanel({

@@ -17,6 +17,8 @@ export interface Settings {
   dynamicResolution: boolean;
   brightness: number; // 0.8..1.2 (capped for fairness)
   screenShake: boolean;
+  /** show sounds as on-screen direction indicators (play without sound / headphones) */
+  soundVisualizer: boolean;
   throwPreview: boolean;
   throwPreviewOpacity: number;
   crosshair: CrosshairSettings;
@@ -67,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dynamicResolution: true,
   brightness: 1,
   screenShake: true,
+  soundVisualizer: true,
   throwPreview: true,
   throwPreviewOpacity: 0.8,
   crosshair: { style: 'cross', color: '#e8fbff', size: 7, gap: 4, thickness: 2, outline: true },

@@ -48,14 +48,6 @@ export const RULES_DEFAULTS = {
   bombPickupRadius: 1.6,
   bombKillRadius: 10,
   bombDamageRadius: 20,
-  // The objective glitch (maps with objectiveGlitch, rules/glitch.ts): in Tower mode a
-  // Controller carrier can plant their Controller at a bomb site. Shorter fuse than Bomb mode
-  // (Tower rounds are shorter) and a quicker defuse (a defused Controller only goes home).
-  glitchPlantSec: 3,
-  glitchFuseSec: 30,
-  glitchDefuseSec: 5,
-  // share of Tower rounds on a glitch map where bot carriers go plant instead of running
-  glitchBotPlantChance: 0.5,
   controllerPickupSec: 0.5,
   controllerPickupRadius: 1.6,
   controllerReturnSec: 8,

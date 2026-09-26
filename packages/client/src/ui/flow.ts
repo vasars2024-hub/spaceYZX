@@ -138,7 +138,7 @@ export const MAP_BLURBS: Record<string, string> = {
   'split-deck': 'Warship deck on three levels. Two bomb sites, sides swap at half time.',
   kestrel: 'Mirror-symmetric ship: three lanes with their own gravity.',
   'orbital-ring':
-    'Station around a reactor core: ring + basement ring, zip-rails, launch pads, rift portals. Reactor glitch: plant your Controller in Tower mode.',
+    'Station around a reactor core: ring + basement ring, zip-rails, launch pads, rift portals.',
   'training-bay': 'Compact combat bay for quick fights.',
   'proving-grounds': 'The movement test ship: zero-G bay, wall corridor, flip room.',
   arena: 'Sealed duel pits: crates in the middle, upper ground along the sides.',
@@ -149,7 +149,6 @@ export const mapTags = (def: LevelDef): string[] => {
   const tags: string[] = [];
   if (def.towers.length) tags.push('Towers');
   if (def.bombSites?.length) tags.push(`Bomb sites ${def.bombSites.map((b) => b.name).join('/')}`);
-  if (def.objectiveGlitch) tags.push('Reactor glitch');
   if (def.portals?.length) tags.push('Portals');
   if (def.launchPads?.length) tags.push('Launch pads');
   if (def.skyArena) tags.push('Sky duel');

@@ -847,7 +847,8 @@ export class App {
       'div',
       { class: 'menu pause-menu' },
       iconButton('play', 'Resume', () => this.pause(false), 'btn primary'),
-      s.respawn
+      // respawning is a practice tool: never in a match (it would skip a death mid-round)
+      s.respawn && !match
         ? iconButton(
             'respawn',
             'Respawn',

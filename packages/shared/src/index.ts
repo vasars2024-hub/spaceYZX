@@ -44,7 +44,6 @@ export * from './stats/tracker';
 export * from './modes/practice';
 export * from './rules/match';
 export * from './rules/bomb';
-export * from './rules/glitch';
 export * from './rules/arena';
 export * from './rules/powerups';
 export * from './net/protocol';

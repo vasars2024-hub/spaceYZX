@@ -68,13 +68,11 @@ const sim = (d: LevelDef = def()) => {
 };
 
 describe('Orbital Ring map', () => {
-  it('is a competitive map next to Split Deck and Kestrel, with the objective glitch on', () => {
+  it('is a competitive map next to Split Deck and Kestrel, ', () => {
     const m = MAPS.find((x) => x.id === 'orbital-ring');
     expect(m?.competitive).toBe(true);
     expect(MAPS.find((x) => x.id === 'split-deck')?.competitive).toBe(true);
     expect(MAPS.find((x) => x.id === 'kestrel')?.competitive).toBe(true);
-    expect(def().objectiveGlitch).toBe(true);
-    expect(mapDef('split-deck').objectiveGlitch).toBeFalsy();
   });
 
   it('is mirror-symmetric north ↔ south (z → -z, teams swapped)', () => {
@@ -357,7 +355,6 @@ describe('Orbital Ring bots', () => {
       const ms = createMatch('1v1');
       startMatch(ms, world, ctx);
       for (let t = 0; t < 60 * 60 && ms.phase !== 'roundEnd'; t++) {
-        ms.botPlant = false; // go for the Tower, not a plant
         applyBotObjectives(ms, world, ctx, [mem]);
         step(world, { 1: botThink(world, ctx, world.players[0], mem) }, ctx);
         updateMatch(ms, world, ctx);
@@ -400,143 +397,5 @@ describe('Orbital Ring bots', () => {
         Math.abs(p.pos.y - (goal.y - 1)) < 1.5;
     }
     expect(arrived).toBe(true);
-  });
-});
-
-describe('the objective glitch (Orbital Ring)', () => {
-  /** a live Tower-mode 1v1 on the map; returns helpers to drive player 1 (Cyan) */
-  const live = (objective: 'tower' | 'bomb' = 'tower', mapId = 'orbital-ring') => {
-    const lv = buildLevel(mapDef(mapId));
-    const config = defaultConfig();
-    const ctx: SimContext = { level: lv, config, dt: TICK_DT };
-    const world = createWorld(lv, 11);
-    const s0 = lv.def.spawns.find((sp) => sp.team === 0)!;
-    const s1 = lv.def.spawns.find((sp) => sp.team === 1)!;
-    addPlayer(world, createPlayer(1, 0, s0.pos, s0.yawDeg, config));
-    addPlayer(world, createPlayer(2, 1, s1.pos, s1.yawDeg, config));
-    const ms = createMatch('1v1', objective);
-    startMatch(ms, world, ctx);
-    const tick = (b1 = 0, b2 = 0) => {
-      step(
-        world,
-        {
-          1: { tick: world.tick + 1, buttons: b1, view: world.players[0].view },
-          2: { tick: world.tick + 1, buttons: b2, view: world.players[1].view },
-        },
-        ctx,
-      );
-      updateMatch(ms, world, ctx);
-    };
-    while (ms.phase !== 'live') tick();
-    return { ms, world, ctx, config, tick, p1: world.players[0], p2: world.players[1] };
-  };
-  const place = (ms: MatchState, p: { pos: Vec3; vel: Vec3 }, x: number, z: number) => {
-    void ms;
-    p.pos = v3(x, 0.9, z);
-    p.vel = v3();
-  };
-
-  it('Tower mode: the Controller carrier plants at A, it goes off and wins the round', () => {
-    const { ms, world, config, tick, p1, p2 } = live();
-    expect(ms.glitch).not.toBeNull();
-    expect(ms.controllers[0].carrier).toBe(1);
-    place(ms, p1, 51, 0);
-    place(ms, p2, -51, 0); // far away in B
-    for (let t = 0; t < 10; t++) tick();
-    for (let t = 0; t < Math.round(config.rules.glitchPlantSec * 60) + 2; t++) tick(Btn.Use);
-    expect(ms.glitch!.planted?.site).toBe('A');
-    expect(ms.glitch!.planted?.team).toBe(0);
-    expect(ms.controllers[0].carrier).toBeNull();
-    const v = matchView(ms);
-    expect(v.glitch).toBe(true);
-    expect(v.attackers).toBe(0);
-    expect(v.bomb?.planted?.site).toBe('A');
-    // the round timer waits for the fuse
-    expect(ms.roundEnds).toBeGreaterThan(ms.glitch!.planted!.explodeAt);
-    p1.pos = v3(-30, 0.9, 0); // run away from the blast
-    for (let t = 0; t < 60 * (config.rules.glitchFuseSec + 1) && ms.phase === 'live'; t++) tick();
-    expect(ms.rounds[0]?.reason).toBe('exploded');
-    expect(ms.rounds[0]?.winner).toBe(0);
-    void world;
-  });
-
-  it('Tower mode: an enemy defuses the planted Controller, it goes home, the round goes on', () => {
-    const { ms, config, tick, p1, p2 } = live();
-    place(ms, p1, 51, 0);
-    place(ms, p2, -51, 0);
-    for (let t = 0; t < 10; t++) tick();
-    for (let t = 0; t < Math.round(config.rules.glitchPlantSec * 60) + 2; t++) tick(Btn.Use);
-    expect(ms.glitch!.planted).not.toBeNull();
-    place(ms, p1, 30, 0);
-    const bp = ms.glitch!.pos;
-    place(ms, p2, bp.x + 1, bp.z);
-    for (let t = 0; t < 5; t++) tick();
-    for (let t = 0; t < Math.round(config.rules.glitchDefuseSec * 60) + 2; t++) tick(0, Btn.Use);
-    expect(ms.phase).toBe('live');
-    expect(ms.glitch!.planted).toBeNull();
-    expect(ms.controllers[0].droppedAt).not.toBeNull();
-    expect(Math.abs(ms.controllers[0].droppedAt!.z)).toBeGreaterThan(50); // back at Cyan's home
-  });
-
-  it('Tower mode: holding Use outside a site, or without the Controller, plants nothing', () => {
-    const { ms, config, tick, p1, p2 } = live();
-    place(ms, p1, 30, 0); // the site connector, not a site
-    place(ms, p2, -51, 0); // in B, but Orange's carrier... hand it off first
-    ms.controllers[1].carrier = null;
-    ms.controllers[1].droppedAt = v3(0, 0.9, 62);
-    for (let t = 0; t < Math.round(config.rules.glitchPlantSec * 60) + 30; t++)
-      tick(Btn.Use, Btn.Use);
-    expect(ms.glitch!.planted).toBeNull();
-  });
-
-  it('Bomb mode: the bomb carrier touching the defenders’ Tower wins the round', () => {
-    const { ms, tick, world } = live('bomb');
-    expect(ms.glitchMap).toBe(true);
-    const attackers = matchView(ms).attackers!;
-    const carrier = world.players.find((p) => p.id === ms.bomb!.carrier)!;
-    expect(carrier.team).toBe(attackers);
-    const tower = mapDef('orbital-ring').towers.find((t) => t.team !== attackers)!;
-    carrier.pos = v3(tower.pos.x, 0.9, tower.pos.z - Math.sign(tower.pos.z) * 2.5);
-    carrier.vel = v3();
-    tick();
-    tick();
-    expect(ms.rounds[0]?.reason).toBe('tower');
-    expect(ms.rounds[0]?.winner).toBe(attackers);
-  });
-
-  it('maps without the glitch keep the modes apart (Split Deck)', () => {
-    const t = live('tower', 'split-deck');
-    expect(t.ms.glitch).toBeNull();
-    expect(matchView(t.ms).glitch).toBe(false);
-    const A = mapDef('split-deck').bombSites!.find((s) => s.name === 'A')!;
-    t.p1.pos = v3((A.min.x + A.max.x) / 2, A.min.y + 0.9, (A.min.z + A.max.z) / 2);
-    for (let i = 0; i < 60 * 5; i++) t.tick(Btn.Use);
-    expect(t.ms.controllers[0].carrier).toBe(1);
-    expect(matchView(t.ms).bomb).toBeNull();
-  });
-
-  it('bots plant a Controller on plant rounds, and the enemy bot goes to defuse it', () => {
-    const { ms, world, ctx, tick, p1, p2 } = live();
-    const mems = [
-      createBotMemory(1, BOT_SKILLS.normal, 3),
-      createBotMemory(2, BOT_SKILLS.normal, 4),
-    ];
-    ms.botPlant = true;
-    ms.botSite = 'A';
-    place(ms, p1, 43, -30); // Cyan's carrier on its way down the outer corridor
-    place(ms, p2, -30, 0);
-    let planted = false;
-    for (let t = 0; t < 60 * 30 && ms.phase === 'live' && !planted; t++) {
-      applyBotObjectives(ms, world, ctx, mems);
-      const i1 = botThink(world, ctx, p1, mems[0]);
-      const i2 = botThink(world, ctx, p2, mems[1]);
-      step(world, { 1: i1, 2: i2 }, ctx);
-      updateMatch(ms, world, ctx);
-      planted = !!ms.glitch?.planted;
-    }
-    expect(planted).toBe(true);
-    applyBotObjectives(ms, world, ctx, mems);
-    expect(mems[1].useAt).not.toBeNull(); // Orange's bot heads for it to defuse
-    void tick;
   });
 });

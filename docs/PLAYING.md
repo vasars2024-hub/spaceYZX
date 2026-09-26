@@ -158,12 +158,6 @@ site** on the west side, halfway between the spawns.
   each site has two ramps up from it.
 - **Rift portals**: a glowing portal at the back of each site. Walk into A's and you come out
   of B's (and back) — the fastest rotation on the map, but everyone hears it at both ends.
-- **Reactor glitch** (this map only): the Tower and Bomb objectives mix. In **Tower mode** the
-  Controller carrier can also **plant the Controller at A or B** (hold **G** for 3 s). It
-  goes off 30 s later and wins the round for the planting team, unless an enemy **defuses**
-  it (hold G next to it for 5 s) — then it goes back to its team's base and the round goes
-  on. While it ticks, the round timer waits for it. One Controller can be planted at a time.
-  In **Bomb mode** the bomb carrier can also win by **touching the defenders' Tower**.
 
 ## Ranked
 

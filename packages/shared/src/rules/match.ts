@@ -19,14 +19,6 @@ import {
   bombPlayerLeft,
   bombBotObjectives,
 } from './bomb';
-import {
-  type GlitchState,
-  newGlitch,
-  glitchOn,
-  updateGlitch,
-  glitchPlayerLeft,
-  glitchBotObjectives,
-} from './glitch';
 import { MODE_RULES, type ModeRules } from '../config/rules';
 import type { LoadoutName } from '../config/loadout';
 import type { RankedMode } from '../rating/global';
@@ -103,12 +95,6 @@ export interface MatchState {
   botSite: 'A' | 'B';
   /** power-ups this round has had so far (rules/powerups.ts) */
   powerupsSpawned: number;
-  /** Tower mode on a glitch map (rules/glitch.ts): this round's planted Controller state */
-  glitch: GlitchState | null;
-  /** the map runs the objective glitch (plants in Tower mode, Tower touches in Bomb mode) */
-  glitchMap: boolean;
-  /** glitch map, Tower mode: bot carriers go plant at `botSite` this round (not the Tower) */
-  botPlant: boolean;
 }
 
 const secTicks = (s: number, dt: number) => Math.round(s / dt);
@@ -123,9 +109,6 @@ export const createMatch = (
   bomb: null,
   botSite: 'A',
   powerupsSpawned: 0,
-  glitch: null,
-  glitchMap: false,
-  botPlant: false,
   mode,
   rules: { ...MODE_RULES[mode] },
   phase: 'warmup',
@@ -231,15 +214,6 @@ export const beginRound = (ms: MatchState, world: WorldState, ctx: SimContext): 
     ms.bomb = newBomb(world, attackingTeam(ms.sideSwapped));
     ms.botSite = rngFloat(world.rng) < 0.5 ? 'A' : 'B';
   } else ms.bomb = null;
-  // the objective glitch: Controllers can be planted at the sites too (Tower mode)
-  ms.glitch = null;
-  ms.botPlant = false;
-  ms.glitchMap = glitchOn(ctx);
-  if (ms.objective === 'tower' && ms.glitchMap) {
-    ms.glitch = newGlitch();
-    ms.botSite = rngFloat(world.rng) < 0.5 ? 'A' : 'B';
-    ms.botPlant = rngFloat(world.rng) < r.glitchBotPlantChance;
-  }
   ms.phase = 'spawnLock';
   ms.phaseEnds = world.tick + secTicks(r.spawnLockSec, ctx.dt);
   ms.revealed = [];
@@ -423,28 +397,18 @@ export const updateMatch = (ms: MatchState, world: WorldState, ctx: SimContext):
     }
   }
 
-  // the objective glitch: a Controller planted at a site, ticking (the timer waits for it)
-  const g = ms.glitch;
-  if (g) {
-    const res = updateGlitch(
-      g,
-      world,
-      ctx,
-      ms.controllers,
-      (team) => homeOf(ms, ctx, team),
-      !ms.overtime,
-    );
-    if (res) return endRound(ms, world, ctx, res.winner, res.reason);
-    if (g.planted && ms.roundEnds <= g.planted.explodeAt) ms.roundEnds = g.planted.explodeAt + 1;
-  }
-
   // Tower touch with the Controller wins the round instantly (switched off in overtime)
   for (const c of ms.overtime ? [] : ms.controllers) {
     if (c.carrier === null) continue;
     const carrier = world.players.find((p) => p.id === c.carrier);
     const tower = towerOf(ms, ctx, (1 - c.team) as 0 | 1);
     if (!carrier || !carrier.alive || !tower) continue;
-    if (touchesTower(ms, ctx, carrier, tower)) {
+    const scale = ms.suddenDeath ? r.suddenDeathTowerScale : 1;
+    const dx = carrier.pos.x - tower.pos.x;
+    const dz = carrier.pos.z - tower.pos.z;
+    const dy = carrier.pos.y - tower.pos.y;
+    const reach = tower.radius * scale + r.towerTouchRadius;
+    if (Math.hypot(dx, dz) <= reach && dy >= -1 && dy <= tower.height + 2) {
       world.events.push({ type: 'towerTouch', team: c.team, player: carrier.id });
       endRound(ms, world, ctx, c.team, 'tower');
       return;
@@ -541,24 +505,6 @@ export const updateMatch = (ms: MatchState, world: WorldState, ctx: SimContext):
   else ms.revealed = [];
 };
 
-/** Is this player close enough to touch this Tower (sudden death: bigger touch zone)? */
-const touchesTower = (
-  ms: MatchState,
-  ctx: SimContext,
-  p: PlayerState,
-  tower: TowerDef,
-): boolean => {
-  const r = ctx.config.rules;
-  const scale = ms.suddenDeath ? r.suddenDeathTowerScale : 1;
-  const dy = p.pos.y - tower.pos.y;
-  const reach = tower.radius * scale + r.towerTouchRadius;
-  return (
-    Math.hypot(p.pos.x - tower.pos.x, p.pos.z - tower.pos.z) <= reach &&
-    dy >= -1 &&
-    dy <= tower.height + 2
-  );
-};
-
 /** A live tick of a bomb-mode round: the bomb, then eliminations. */
 const updateBombRound = (ms: MatchState, world: WorldState, ctx: SimContext): void => {
   const bomb = ms.bomb;
@@ -567,15 +513,6 @@ const updateBombRound = (ms: MatchState, world: WorldState, ctx: SimContext): vo
   const defenders = (1 - attackers) as 0 | 1;
   const res = updateBomb(bomb, world, ctx, attackers, world.tick >= ms.roundEnds);
   if (res) return endRound(ms, world, ctx, res.winner, res.reason);
-  // the objective glitch: the bomb carrier touching the defenders' Tower wins it too
-  if (glitchOn(ctx) && !bomb.planted && bomb.carrier !== null) {
-    const carrier = world.players.find((p) => p.id === bomb.carrier);
-    const tower = towerOf(ms, ctx, defenders);
-    if (carrier?.alive && tower && touchesTower(ms, ctx, carrier, tower)) {
-      world.events.push({ type: 'towerTouch', team: attackers, player: carrier.id });
-      return endRound(ms, world, ctx, attackers, 'tower');
-    }
-  }
   const alive: [number, number] = [0, 0];
   const present: [number, number] = [0, 0];
   for (const p of world.players) {
@@ -750,10 +687,7 @@ export const matchView = (ms: MatchState): MatchView => ({
   endReason: ms.endReason,
   objective: ms.objective,
   loadout: ms.loadout,
-  attackers:
-    ms.objective === 'bomb'
-      ? attackingTeam(ms.sideSwapped)
-      : (ms.glitch?.planted?.team ?? ms.glitch?.plant?.team ?? null),
+  attackers: ms.objective === 'bomb' ? attackingTeam(ms.sideSwapped) : null,
   bomb: ms.bomb
     ? {
         carrier: ms.bomb.carrier,
@@ -764,21 +698,7 @@ export const matchView = (ms: MatchState): MatchView => ({
         plant: ms.bomb.plant,
         defuse: ms.bomb.defuse,
       }
-    : ms.glitch && (ms.glitch.planted || ms.glitch.plant)
-      ? {
-          // a Controller being planted / planted at a site (Tower mode on a glitch map)
-          carrier: ms.glitch.plant?.player ?? null,
-          pos: ms.glitch.pos,
-          planted: ms.glitch.planted
-            ? { site: ms.glitch.planted.site, explodeAt: ms.glitch.planted.explodeAt }
-            : null,
-          plant: ms.glitch.plant
-            ? { player: ms.glitch.plant.player, ticks: ms.glitch.plant.ticks }
-            : null,
-          defuse: ms.glitch.defuse,
-        }
-      : null,
-  glitch: ms.glitchMap,
+    : null,
   overtime: ms.overtime
     ? {
         kind: ms.overtime.kind,
@@ -811,14 +731,8 @@ export interface MatchView {
   objective: MatchObjective;
   /** 'cs': CS mode (players are drawn dim, the HUD shows guns) */
   loadout: LoadoutName;
-  /**
-   * bomb mode: which team attacks this half; Tower mode on a glitch map: the team planting /
-   * that planted its Controller (null when nobody is)
-   */
+  /** bomb mode: which team attacks this half */
   attackers: 0 | 1 | null;
-  /** the objective glitch is on: Controllers plant at sites (Tower), bombs touch Towers (Bomb) */
-  glitch: boolean;
-  /** the bomb (Bomb mode) or a planted / being-planted Controller (glitch, Tower mode) */
   bomb: {
     carrier: number | null;
     pos: Vec3;
@@ -881,7 +795,6 @@ export const benchPlayer = (ms: MatchState, p: PlayerState): void => {
 /** A player left: drop their Controller (or the bomb) where they were. */
 export const playerLeft = (ms: MatchState, world: WorldState, id: number): void => {
   if (ms.bomb) bombPlayerLeft(ms.bomb, world, id);
-  if (ms.glitch) glitchPlayerLeft(ms.glitch, id);
   const p = world.players.find((q) => q.id === id);
   for (const c of ms.controllers) {
     if (c.carrier !== id) continue;
@@ -924,12 +837,6 @@ export const takeOverInMatch = (
     if (b.plant) b.plant.player = swap(b.plant.player);
     if (b.defuse) b.defuse.player = swap(b.defuse.player);
   }
-  if (ms.glitch) {
-    const g = ms.glitch;
-    if (g.plant) g.plant.player = swap(g.plant.player);
-    if (g.defuse) g.defuse.player = swap(g.defuse.player);
-    if (g.planted) g.planted.by = swap(g.planted.by);
-  }
   return true;
 };
 
@@ -950,7 +857,6 @@ export const resetToWarmup = (ms: MatchState, world: WorldState, ctx: SimContext
   ms.round = 0;
   ms.revealed = [];
   ms.controllers = [newController(0), newController(1)];
-  ms.glitch = null;
   clearPowerups(world);
   for (const p of world.players) {
     const spawns = ctx.level.def.spawns.filter((s) => s.team === p.team || s.team === undefined);
@@ -981,19 +887,7 @@ export const applyBotObjectives = (
     return;
   }
   const obj = botObjectives(ms, world, ctx);
-  // the objective glitch: plant a Controller / defuse one (overrides the Tower plan)
-  const glitch =
-    ms.phase === 'live' && ms.glitch && !ms.overtime
-      ? glitchBotObjectives(ms.glitch, world, ctx, ms.controllers, ms.botPlant, ms.botSite)
-      : {};
   for (const mem of mems) {
-    const gl = glitch[mem.id];
-    if (gl) {
-      mem.objective = gl.goal;
-      mem.objectiveFirst = gl.first;
-      mem.useAt = gl.use ? gl.goal : null;
-      continue;
-    }
     mem.objective = obj[mem.id] ?? null;
     mem.objectiveFirst =
       ms.phase === 'live' &&

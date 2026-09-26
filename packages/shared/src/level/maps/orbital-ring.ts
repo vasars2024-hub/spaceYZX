@@ -17,10 +17,6 @@
 //   RIFT PORTALS                 a portal at the back of each site: walk into A's and you come
 //        out of B's, and back — the fastest (and loudest) rotation on the map
 //
-// The objective glitch is on (LevelDef.objectiveGlitch, rules/glitch.ts): Tower mode and Bomb
-// mode bleed into each other here. A Controller carrier can plant their Controller at A or B;
-// the bomb carrier can win by touching the defenders' Tower.
-//
 // Coordinates: x → east, z → south, y up. Rooms are open volumes; `shellAround` puts 1 m walls
 // around them (rooms 1 m apart share a wall, a 1 m deep volume through it is a doorway).
 import type { Vec3 } from '../../math/vec3';
@@ -417,7 +413,6 @@ export const buildOrbitalRing = (): LevelDef => {
     powerups: O.powerups,
     launchPads,
     portals,
-    objectiveGlitch: true,
     sky: {
       moons: [
         // the planet the station orbits, filling the dome

@@ -178,12 +178,6 @@ export interface LevelDef {
   launchPads?: LaunchPadDef[];
   /** Portals (sim/devices.ts): each entry teleports one way; pairs are two entries. */
   portals?: PortalDef[];
-  /**
-   * The objective glitch (rules/glitch.ts): Tower mode and Bomb mode bleed into each other
-   * here. In Tower mode a Controller carrier can also plant their Controller at a bomb site;
-   * in Bomb mode the bomb carrier can also win by touching the defenders' Tower.
-   */
-  objectiveGlitch?: boolean;
   /** Power-up spawn points (rules/powerups.ts): where power-ups float during a round. */
   powerups?: Vec3[];
   /** Space outside the ship (visible through 'skyglass'). */

@@ -2,6 +2,7 @@
 // pointer lock (raw input), fullscreen + Keyboard Lock (so Ctrl+W can't close the tab).
 import { Btn } from '@space-yz/shared';
 import type { Settings } from '../settings';
+import { VirtualButtons, degreesToCounts } from './touch-input';
 
 const ACTION_BUTTON: Record<string, number> = {
   forward: Btn.Forward,
@@ -17,6 +18,9 @@ const ACTION_BUTTON: Record<string, number> = {
   grenade: Btn.Grenade,
   recall: Btn.Recall,
   magboots: Btn.MagBoots,
+  slot1: Btn.Slot1,
+  slot2: Btn.Slot2,
+  use: Btn.Use,
 };
 
 type ActionListener = (action: string) => void;
@@ -31,9 +35,23 @@ export class InputManager {
   locked = false;
   /** When false, game keys are not captured (menus open). */
   capture = false;
+  /** The chat box has the keyboard: game keys and clicks do nothing (see setTyping). */
+  private typing = false;
   /** Test hook: buttons forced on (used by automated browser tests). */
   debugButtons = 0;
   onLockChange: (locked: boolean) => void = () => {};
+  /** Esc while the mouse isn't locked and the game has the keys (touch layout: open the menu). */
+  onEscape: () => void = () => {};
+  /**
+   * On-screen touch buttons (mobile): actions held by fingers, whatever the key bindings.
+   * They feed the same buttons and action listeners as keys.
+   */
+  readonly virtual = new VirtualButtons(
+    (a) => ACTION_BUTTON[a] ?? 0,
+    (a) => {
+      for (const l of this.listeners) l(a);
+    },
+  );
 
   constructor(
     private canvas: HTMLElement,
@@ -96,18 +114,36 @@ export class InputManager {
 
   releaseAll(): void {
     this.held.clear();
+    this.virtual.releaseAll();
+  }
+
+  /** Touch look: turn by these degrees (goes through the mouse path, so it's the same view). */
+  addLook(yawDeg: number, pitchDeg: number): void {
+    this.mouseDX += degreesToCounts(yawDeg, this.settings.sensitivity);
+    this.mouseDY += degreesToCounts(pitchDeg, this.settings.sensitivity);
+  }
+
+  /** Chat box open: keys go to the text field, not the game (everything held is let go). */
+  setTyping(on: boolean): void {
+    this.typing = on;
+    this.releaseAll();
+    this.latched = 0;
+  }
+
+  get isTyping(): boolean {
+    return this.typing;
   }
 
   isHeld(action: string): boolean {
     for (const code of this.settings.keybinds[action] ?? []) if (this.held.has(code)) return true;
-    return false;
+    return this.virtual.isHeld(action);
   }
 
   /** Buttons for this tick: held keys plus any press that happened since the last sample. */
   sampleButtons(): number {
-    let b = this.latched | this.debugButtons;
+    let b = this.latched | this.debugButtons | this.virtual.sample();
     this.latched = 0;
-    if (!this.capture) return this.debugButtons;
+    if (!this.capture || this.typing) return this.debugButtons;
     for (const code of this.held) {
       for (const a of this.codeToActions.get(code) ?? []) b |= ACTION_BUTTON[a] ?? 0;
     }
@@ -122,6 +158,7 @@ export class InputManager {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (this.typing) return; // the chat box handles its own keys
     if (!this.capture) {
       if (e.code === 'Backquote' || e.code === 'Tab')
         for (const a of this.codeToActions.get(e.code) ?? []) for (const l of this.listeners) l(a);
@@ -132,6 +169,7 @@ export class InputManager {
     if (e.code !== 'F11' && e.code !== 'F12') e.preventDefault();
     if (e.code === 'Escape') {
       document.exitPointerLock?.();
+      if (!this.locked) this.onEscape();
       return;
     }
     if (e.repeat) return;
@@ -139,12 +177,12 @@ export class InputManager {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
-    if (this.capture) e.preventDefault();
+    if (this.capture && !this.typing) e.preventDefault();
     this.release(e.code);
   };
 
   private onMouseDown = (e: MouseEvent): void => {
-    if (!this.capture || !this.locked) return;
+    if (!this.capture || !this.locked || this.typing) return;
     this.press(`Mouse${e.button}`);
   };
 
@@ -159,7 +197,7 @@ export class InputManager {
   };
 
   private onWheel = (e: WheelEvent): void => {
-    if (!this.capture) return;
+    if (!this.capture || this.typing) return;
     e.preventDefault();
     const code = e.deltaY > 0 ? 'WheelDown' : 'WheelUp';
     // a wheel notch is an instant tap

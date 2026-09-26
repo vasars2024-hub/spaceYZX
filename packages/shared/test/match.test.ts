@@ -21,6 +21,8 @@ import {
   type WorldState,
   type RankedMode,
   type SimEvent,
+  MODE_RULES,
+  collapseRadius,
 } from '../src/index';
 
 const setup = (mode: RankedMode, perTeam: number, seed = 7) => {
@@ -194,31 +196,67 @@ describe('match rules', () => {
     expect(c.droppedAt).toEqual(home);
   });
 
-  it('timeout tiebreak: players alive, then total HP, then draw', () => {
+  // move a player to (x, z) on the floor of the map middle's height, standing still
+  const place = (world: WorldState, id: number, at: { x: number; y: number; z: number }) => {
+    const p = world.players.find((q) => q.id === id)!;
+    p.pos = { x: at.x, y: p.pos.y, z: at.z };
+    p.vel = { x: 0, y: 0, z: 0 };
+  };
+
+  // (these three force the collapse: the sky duel roll is tested in sky-overtime.test.ts)
+  it('time out starts the collapse: the Tower switches off, the zone shrinks to the middle', () => {
     const { ctx, world, ms } = setup('2v2', 2);
+    ctx.config.rules.skyOvertimeChance = 0;
     startMatch(ms, world, ctx);
     tick(ms, world, ctx, secs(5) + 1);
-    kill(world, 4, 1);
-    tick(ms, world, ctx, secs(60));
-    expect(ms.rounds[0]).toMatchObject({ winner: 0, reason: 'time' });
-
-    const b = setup('1v1', 1);
-    startMatch(b.ms, b.world, b.ctx);
-    tick(b.ms, b.world, b.ctx, secs(5) + 1);
-    b.world.players[1].hp = 40;
-    tick(b.ms, b.world, b.ctx, secs(40));
-    expect(b.ms.rounds[0]).toMatchObject({ winner: 0, reason: 'time' });
-
-    const c = setup('1v1', 1);
-    startMatch(c.ms, c.world, c.ctx);
-    tick(c.ms, c.world, c.ctx, secs(5) + secs(40) + 1);
-    expect(c.ms.rounds[0]).toMatchObject({ winner: null, reason: 'draw' });
+    tick(ms, world, ctx, secs(MODE_RULES['2v2'].roundSec));
+    expect(ms.overtime).not.toBeNull();
+    expect(ms.phase).toBe('live'); // no round result from the timer itself
+    const ot = ms.overtime!;
+    const r0 = collapseRadius(ot, world.tick, ctx);
+    tick(ms, world, ctx, secs(10));
+    expect(collapseRadius(ot, world.tick, ctx)).toBeLessThan(r0);
+    tick(ms, world, ctx, secs(ctx.config.rules.collapseShrinkSec));
+    expect(collapseRadius(ot, world.tick, ctx)).toBeCloseTo(ctx.config.rules.collapseMinRadius, 6);
   });
 
-  it('first to N ends the match; sides swap at half; sudden death after a tie', () => {
+  it('outside the zone for 3 s kills you; the team left in the middle wins', () => {
+    const { ctx, world, ms } = setup('2v2', 2);
+    ctx.config.rules.skyOvertimeChance = 0;
+    startMatch(ms, world, ctx);
+    tick(ms, world, ctx, secs(5) + 1);
+    tick(ms, world, ctx, secs(MODE_RULES['2v2'].roundSec));
+    const mid = ms.overtime!.center;
+    // team 0 (ids 1, 2) goes to the middle; team 1 stays at its spawn
+    place(world, 1, mid);
+    place(world, 2, mid);
+    for (let i = 0; i < secs(ctx.config.rules.collapseMaxSec) && ms.rounds.length === 0; i++)
+      tick(ms, world, ctx, 1);
+    expect(ms.rounds[0]).toMatchObject({ winner: 0, reason: 'elimination' });
+    expect(world.players.filter((p) => p.team === 1).every((p) => !p.alive)).toBe(true);
+    expect(world.players.filter((p) => p.team === 0).every((p) => p.alive)).toBe(true);
+  });
+
+  it('never a draw: when overtime runs out, alive players, then HP decide', () => {
+    const { ctx, world, ms } = setup('1v1', 1);
+    ctx.config.rules.skyOvertimeChance = 0;
+    startMatch(ms, world, ctx);
+    tick(ms, world, ctx, secs(5) + 1);
+    tick(ms, world, ctx, secs(MODE_RULES['1v1'].roundSec));
+    const mid = ms.overtime!.center;
+    place(world, 1, mid);
+    place(world, 2, mid);
+    world.players.find((p) => p.id === 1)!.hp = 40;
+    tick(ms, world, ctx, secs(ctx.config.rules.collapseMaxSec) + 1);
+    expect(ms.rounds[0]).toMatchObject({ winner: 1, reason: 'collapse' });
+    // every round in these tests has a winner
+    expect(ms.rounds.every((r) => r.winner !== null)).toBe(true);
+  });
+
+  it('first to N ends the match; sides swap at half; no sudden death (max rounds is odd)', () => {
     const { ctx, world, ms } = setup('1v1', 1);
     startMatch(ms, world, ctx);
-    // alternate wins: 1v1 is first to 5, max 8 → 4-4 → sudden death
+    // alternate wins: 1v1 is first to 5, max 9 → 4-4 → round 9 decides it
     for (let r = 0; r < 8; r++) {
       tick(ms, world, ctx, secs(5) + 1);
       expect(ms.phase).toBe('live');
@@ -231,13 +269,13 @@ describe('match rules', () => {
       tick(ms, world, ctx, secs(5));
     }
     expect(ms.scores).toEqual([4, 4]);
-    expect(ms.suddenDeath).toBe(true);
+    expect(ms.suddenDeath).toBe(false);
     expect(ms.round).toBe(9);
     tick(ms, world, ctx, secs(5) + 1);
-    // sudden death: half timer, everyone revealed
-    expect(ms.roundEnds - ms.roundStart).toBe(secs(20));
+    // a normal full-length round (1v1 never reveals anyone)
+    expect(ms.roundEnds - ms.roundStart).toBe(secs(MODE_RULES['1v1'].roundSec));
     tick(ms, world, ctx, 1);
-    expect(ms.revealed.length).toBe(2);
+    expect(ms.revealed.length).toBe(0);
     // side swapped: team 0 now spawns on +X
     expect(sideOf(ms, 0)).toBe(1);
     expect(world.players.find((p) => p.team === 0)!.pos.x).toBeGreaterThan(0);
@@ -261,8 +299,28 @@ describe('match rules', () => {
     expect(ms.endReason).toContain('first to 5');
   });
 
-  it('carrier reveal pulses 1 s every 5 s; everyone revealed in the last 10 s', () => {
+  it('team modes always reveal the carriers', () => {
+    const { ctx, world, ms } = setup('2v2', 2);
+    startMatch(ms, world, ctx);
+    tick(ms, world, ctx, secs(5) + 1);
+    for (let i = 0; i < secs(6); i++) {
+      tick(ms, world, ctx, 1);
+      expect(ms.revealed.length).toBe(2);
+    }
+  });
+
+  it('1v1 never reveals the opponent', () => {
     const { ctx, world, ms } = setup('1v1', 1);
+    startMatch(ms, world, ctx);
+    for (let i = 0; i < secs(40); i++) {
+      tick(ms, world, ctx, 1);
+      expect(ms.revealed.length).toBe(0);
+    }
+  });
+
+  it('carrier reveal pulses 1 s every 5 s when not always on; everyone in the last 20 s', () => {
+    const { ctx, world, ms } = setup('2v2', 2);
+    ctx.config.rules.carrierAlwaysRevealed = 0;
     startMatch(ms, world, ctx);
     tick(ms, world, ctx, secs(5) + 1);
     const seen: boolean[] = [];
@@ -273,8 +331,8 @@ describe('match rules', () => {
     const on = seen.filter(Boolean).length;
     expect(on).toBeGreaterThanOrEqual(secs(2) - 2);
     expect(on).toBeLessThanOrEqual(secs(2) + 2);
-    tick(ms, world, ctx, secs(40 - 12 - 9));
-    expect(ms.revealed.length).toBe(2);
+    tick(ms, world, ctx, secs(MODE_RULES['2v2'].roundSec - 18 - 5));
+    expect(ms.revealed.length).toBe(4);
   });
 
   it('never runs past the 15-minute hard cap', () => {

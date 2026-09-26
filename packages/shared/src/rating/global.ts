@@ -3,6 +3,13 @@
 export type RankedMode = '1v1' | '2v2' | '5v5';
 export const RANKED_MODES: readonly RankedMode[] = ['1v1', '2v2', '5v5'];
 
+/**
+ * Every ranked ladder: the three match modes plus Arena 1v1 (rules/arena.ts, rating/arena.ts),
+ * which has its own rating and ranks and is left out of the global (headline) rank.
+ */
+export type LadderMode = RankedMode | 'arena';
+export const LADDER_MODES: readonly LadderMode[] = [...RANKED_MODES, 'arena'];
+
 export interface ModeRating {
   rating: number;
   rd: number;

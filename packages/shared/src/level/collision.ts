@@ -387,6 +387,8 @@ export const nearestSurface = (
   level: Level,
   p: Vec3,
   range: number,
+  /** skip surfaces whose face normal fails this (e.g. the floor you're standing on) */
+  accept?: (normal: Vec3) => boolean,
 ): { point: Vec3; normal: Vec3; dist: number; box: number } | null => {
   const mn = v3(p.x - range, p.y - range, p.z - range);
   const mx = v3(p.x + range, p.y + range, p.z + range);
@@ -399,7 +401,9 @@ export const nearestSurface = (
     let n: Vec3;
     if (d > 1e-5) n = scale(sub(p, q), 1 / d);
     else n = satPush(box, p, p, 0).normal;
-    best = { point: q, normal: faceNormal(box, n), dist: d, box: i };
+    const fn = faceNormal(box, n);
+    if (accept && !accept(fn)) continue;
+    best = { point: q, normal: fn, dist: d, box: i };
   }
   return best;
 };

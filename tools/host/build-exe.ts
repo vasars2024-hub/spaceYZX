@@ -1,4 +1,4 @@
-// npm run build:host — builds SpaceYZ-Host(.exe): one file with Node, the server and the game
+// npm run build:host — builds LethalRecoil-Host(.exe): one file with Node, the server and the game
 // client inside (Node "single executable application"). Output: build/host/.
 //
 // Steps: bundle the host server with esbuild -> list the client files as SEA assets ->
@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(import.meta.dirname, '../..');
 const out = path.join(root, 'build', 'host');
 const clientDist = path.join(root, 'packages', 'client', 'dist');
-const exeName = process.platform === 'win32' ? 'SpaceYZ-Host.exe' : 'SpaceYZ-Host';
+const exeName = process.platform === 'win32' ? 'LethalRecoil-Host.exe' : 'LethalRecoil-Host';
 const version =
   process.env.SPACEYZ_VERSION ??
   (require(path.join(root, 'package.json')) as { version: string }).version;

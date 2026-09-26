@@ -64,7 +64,7 @@ const GROUPS: Record<string, string[]> = {
     'thrusterRechargeSec',
     'maxFloatSpeed',
   ],
-  'Mag-boots': ['magRange', 'magPull'],
+  'Gravity shift': ['magRange', 'magPull', 'magNearRange', 'magMaxSec', 'magCooldownSec'],
   Dash: ['dashSpeed', 'dashCooldownSec', 'dashDurationSec'],
 };
 
@@ -106,7 +106,7 @@ export class TuningPanel {
   visible = false;
 
   constructor(private opts: TuningPanelOptions) {
-    this.gui = new GUI({ title: 'Space YZ tuning (dev)', width: 320 });
+    this.gui = new GUI({ title: 'Lethal Recoil tuning (dev)', width: 320 });
     this.gui.domElement.classList.add('interactive', 'tuning-panel');
     const cfg = opts.config;
     const actions = {
@@ -181,7 +181,7 @@ export class TuningPanel {
 
   private flash(msg: string): void {
     this.gui.title(msg);
-    window.setTimeout(() => this.gui.title('Space YZ tuning (dev)'), 2500);
+    window.setTimeout(() => this.gui.title('Lethal Recoil tuning (dev)'), 2500);
   }
 
   toggle(force?: boolean): boolean {

@@ -6,6 +6,7 @@ import {
   qFromAxisAngle,
   buildLevel,
   buildTestShip,
+  LevelBuilder,
   dot,
   len,
   type BoxDef,
@@ -96,6 +97,27 @@ describe('slide & bhop', () => {
     expect(sim.p.crouched).toBe(true);
     run(sim, 200, F | Btn.Crouch);
     expect(sim.p.move).not.toBe(Move.Slide); // slows below end speed
+  });
+
+  it('running up a ramp keeps you on the ground at full pace', () => {
+    const b = new LevelBuilder();
+    b.ramp('z', -6, -10, 0, 2, 0, 6); // 27° like Kestrel's core ramps
+    const def = flatLevel([...b.boxes, { c: v3(0, 1, -30), h: v3(4, 1, 20) }]);
+    const sim = makeSim(def, v3(0, 1, 6));
+    settle(sim);
+    run(sim, 60, F, view(0));
+    const speeds: number[] = [];
+    for (let i = 0; i < 70; i++) {
+      run(sim, 1, F, view(0));
+      if (sim.p.pos.z < -6.3 && sim.p.pos.z > -9.7) {
+        speeds.push(planarSpeed(sim.p));
+        expect(sim.p.grounded).toBe(true);
+      }
+    }
+    // a small dip on the first touch of the slope, then full sprint pace all the way up
+    expect(speeds[0]).toBeGreaterThan(7.5);
+    expect(Math.min(...speeds.slice(2))).toBeGreaterThan(sim.config.movement.sprintSpeed - 0.1);
+    expect(sim.p.pos.y).toBeGreaterThan(2.5); // made it up
   });
 
   it('sliding down a ramp gains speed', () => {
@@ -338,5 +360,90 @@ describe('dash burst', () => {
     go(sim, 1, B.Dash, vw(0));
     go(sim, 6, 0, vw(0));
     expect(ps(sim.p)).toBeGreaterThan(14);
+  });
+});
+
+describe('jetpack', () => {
+  // jump, let go of Space, then (falling) press Space again with `hold` deciding each tick
+  const jumpThenJet = (hold: (i: number) => number, ticks = 30) => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    run(sim, 1, Btn.Jump);
+    run(sim, 30); // near the top / starting to fall
+    const y0 = sim.p.pos.y;
+    const vy0 = sim.p.vel.y;
+    const events: string[] = [];
+    for (let i = 0; i < ticks; i++) {
+      run(sim, 1, hold(i), view(0));
+      events.push(...sim.world.events.map((e) => e.type));
+    }
+    return { sim, y0, vy0, events };
+  };
+
+  it('holding Space in the air catches the fall, lifts you and burns fuel', () => {
+    const { sim, y0, vy0, events } = jumpThenJet(() => Btn.Jump);
+    expect(vy0).toBeLessThan(0.5);
+    expect(events.filter((e) => e === 'jetpack').length).toBe(1);
+    expect(sim.p.jetFuel).toBeLessThan(sim.config.movement.jetpackFuelSec);
+    expect(sim.p.pos.y).toBeGreaterThan(y0 + 0.5);
+    expect(sim.p.vel.y).toBeLessThanOrEqual(sim.config.movement.jetpackMaxRise + 1e-9);
+  });
+
+  it('steers in any direction while it burns, backwards too', () => {
+    const { sim } = jumpThenJet(() => Btn.Jump | Btn.Back, 40);
+    // facing -Z: backwards is +Z, at close to the jetpack's steering speed
+    expect(sim.p.vel.z).toBeGreaterThan(sim.config.movement.jetpackDirSpeed * 0.8);
+  });
+
+  it('quick taps (mouse-wheel jumps) never light it', () => {
+    const { events, sim } = jumpThenJet((i) => (i % 3 === 0 ? Btn.Jump : 0));
+    expect(events).not.toContain('jetpack');
+    expect(sim.p.jetFuel).toBe(sim.config.movement.jetpackFuelSec);
+  });
+
+  it('runs dry, then refills after a rest', () => {
+    const { sim } = jumpThenJet(() => Btn.Jump, 80);
+    expect(sim.p.jetFuel).toBe(0);
+    expect(sim.p.jetOn).toBe(false);
+    const m = sim.config.movement;
+    run(sim, Math.round((m.jetpackRechargeDelaySec + m.jetpackRechargeSec) * 60) + 5);
+    expect(sim.p.jetFuel).toBeCloseTo(m.jetpackFuelSec, 6);
+  });
+});
+
+describe('gravity shift (F) in normal gravity', () => {
+  // a wall 1.5 m to the right of the player
+  const withWall = () => {
+    const sim = makeSim(flatLevel([{ c: v3(2.4, 3, 0), h: v3(0.5, 3, 6) }]));
+    settle(sim);
+    return sim;
+  };
+
+  it('sticks you to a nearby wall whichever way you face, F again lets go', () => {
+    const sim = withWall();
+    run(sim, 1, Btn.MagBoots, view(180)); // facing away from the wall
+    expect(sim.p.mag).not.toBeNull();
+    expect(sim.p.mag!.x).toBeLessThan(-0.9); // the wall's face points back at you (−X)
+    run(sim, 60);
+    expect(sim.p.up.x).toBeLessThan(-0.9); // you now stand on the wall
+    run(sim, 1, Btn.MagBoots);
+    expect(sim.p.mag).toBeNull();
+  });
+
+  it('does nothing far from walls, and never picks the floor you stand on', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    run(sim, 1, Btn.MagBoots);
+    expect(sim.p.mag).toBeNull();
+  });
+
+  it('runs out after the time limit, then needs a short cooldown', () => {
+    const sim = withWall();
+    const m = sim.config.movement;
+    run(sim, 1, Btn.MagBoots);
+    expect(sim.p.mag).not.toBeNull();
+    run(sim, Math.round(m.magMaxSec * 60) + 2);
+    expect(sim.p.mag).toBeNull();
+    expect(sim.p.magCd).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,7 @@
-// Space YZ client entry.
+// Lethal Recoil client entry.
 import './styles.css';
+import './ui/mobile.css';
+import './ui/menu-flow.css';
 import type { Vec3 } from '@space-yz/shared';
 import { yawToView, qFromBasis, normalize, cross, sub, v3, dot } from '@space-yz/shared';
 import { App } from './app';

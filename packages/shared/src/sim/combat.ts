@@ -25,14 +25,42 @@ import type { PlayerInput } from './input';
 import { Btn } from './input';
 import type { PlayerState, WorldState } from './state';
 import type { BoomerangState, GrenadeState } from './combat-state';
-import { Phase } from './combat-state';
+import { Phase, Powerup } from './combat-state';
 import type { KillKind } from './events';
 import { eyePos, feetPos } from './movement';
 import { gravityAt, gravityDirAt } from './gravity';
 import { hitboxOf, sweepHitbox, rayHitbox, chestOf, type Hitbox } from './hitbox';
+import { flatAim, tiltStep } from './flick';
+import { loadoutOf } from '../config/loadout';
+import { updateGuns } from './guns';
 
 const DEG = Math.PI / 180;
 const ticks = (sec: number, dt: number): number => Math.max(1, Math.round(sec / dt));
+
+/** Hits that spend a Freeze charge (Boomerang, Laser, slash). */
+const FREEZE_KINDS: ReadonlySet<KillKind> = new Set<KillKind>([
+  'boomerang',
+  'headshot',
+  'windup',
+  'recall',
+  'deflect',
+  'slash',
+  'laser',
+]);
+
+/** What the round-start shield soaks up (everything but the Wind-up, the map and the bomb). */
+const SHIELDED_KINDS: ReadonlySet<KillKind> = new Set<KillKind>([
+  'boomerang',
+  'headshot',
+  'recall',
+  'deflect',
+  'slash',
+  'laser',
+  'grenade',
+  'blast',
+  'ak',
+  'deagle',
+]);
 
 // ---------------------------------------------------------------------------------------------
 // Damage
@@ -64,6 +92,15 @@ export const applyDamage = (
     return;
   }
   const attacker = world.players.find((p) => p.id === attackerId);
+  // round-start shield: the first hit breaks it and does nothing else (not the Wind-up, and
+  // not the map / the bomb)
+  if (victim.shield && SHIELDED_KINDS.has(kind) && attackerId !== victim.id) {
+    victim.shield = false;
+    victim.lastHurtTick = world.tick;
+    victim.lastAttacker = attackerId;
+    world.events.push({ type: 'shieldBreak', attacker: attackerId, victim: victim.id, pos });
+    return;
+  }
   victim.hp -= damage;
   victim.lastHurtTick = world.tick;
   victim.lastAttacker = attackerId;
@@ -86,6 +123,7 @@ export const applyDamage = (
     victim.alive = false;
     victim.deaths++;
     victim.vel = v3();
+    victim.stun = 0;
     victim.aiming = false;
     victim.laserWarn = 0;
     if (attacker && attacker.id !== victim.id) {
@@ -103,6 +141,28 @@ export const applyDamage = (
       pos: clone(victim.pos),
       src,
       throwId,
+    });
+  } else if (
+    attacker &&
+    attacker.powerup === Powerup.Freeze &&
+    attacker.powerupCharges > 0 &&
+    attacker.team !== victim.team &&
+    FREEZE_KINDS.has(kind)
+  ) {
+    // Freeze power-up: the hit (on an enemy who survives it) also freezes them. A new freeze
+    // refreshes a running one, never stacking beyond freezeSec.
+    victim.stun = Math.max(victim.stun, ticks(ctx.config.combat.freezeSec, ctx.dt));
+    victim.aiming = false;
+    victim.laserWarn = 0;
+    if (--attacker.powerupCharges <= 0) {
+      attacker.powerup = Powerup.None;
+      attacker.powerupCharges = 0;
+    }
+    world.events.push({
+      type: 'freeze',
+      attacker: attacker.id,
+      victim: victim.id,
+      pos: clone(pos),
     });
   }
 };
@@ -135,6 +195,38 @@ const dropAt = (b: BoomerangState, pos: Vec3): void => {
   b.windup = false;
 };
 
+/** Terminal speed (m/s) of a falling dropped Boomerang. */
+const DROP_MAX_FALL = 30;
+
+/**
+ * A dropped Boomerang falls with gravity until it lands on something (it used to hang in the
+ * air where it hit a wall). In zero-G it just floats where it is.
+ */
+const fallDropped = (b: BoomerangState, ctx: SimContext, world: WorldState): void => {
+  const c = ctx.config.combat;
+  const g = gravityAt(ctx, world, b.pos);
+  const gl = len(g);
+  if (gl < 1e-6) {
+    b.vel = v3();
+    return;
+  }
+  const down = scale(g, 1 / gl);
+  const r = c.boomerangRadius * 0.5;
+  // resting on a surface
+  if (lenSq(b.vel) === 0 && raycast(ctx.level, b.pos, down, r + 0.05, r)) return;
+  b.vel = madd(b.vel, g, ctx.dt);
+  const speed = len(b.vel);
+  if (speed > DROP_MAX_FALL) b.vel = scale(b.vel, DROP_MAX_FALL / speed);
+  const sp = Math.min(speed, DROP_MAX_FALL);
+  const dir = scale(b.vel, 1 / sp);
+  const step = sp * ctx.dt;
+  const hit = raycast(ctx.level, b.pos, dir, step, r);
+  if (hit) {
+    b.pos = madd(hit.point, hit.normal, r);
+    b.vel = v3();
+  } else b.pos = madd(b.pos, dir, step);
+};
+
 const toHeld = (b: BoomerangState): void => {
   b.phase = Phase.Held;
   b.vel = v3();
@@ -163,6 +255,7 @@ export const aimPoint = (p: PlayerState, ctx: SimContext, maxDist = 150): Vec3 =
 export type FlightOutcome =
   | { kind: 'none' }
   | { kind: 'wall'; point: Vec3; normal: Vec3 }
+  | { kind: 'bounce'; point: Vec3; normal: Vec3 }
   | { kind: 'catch' }
   | { kind: 'expire' };
 
@@ -239,6 +332,21 @@ export const flightStep = (
   const step = speed * dt;
   const hit = raycast(ctx.level, from, dir, step, c.boomerangRadius);
   if (hit) {
+    // a Quick Throw's first wall: bounce off it like a real throw would and keep flying (bank
+    // it around cover); the next wall drops it
+    const canBounce =
+      !b.bounced &&
+      !b.windup &&
+      !b.explosive && // an explosive throw goes off on the first wall instead
+      (b.phase === Phase.Out || b.phase === Phase.Return);
+    if (canBounce) {
+      const point = madd(hit.point, hit.normal, c.boomerangRadius);
+      const out = normalize(madd(dir, hit.normal, -2 * dot(dir, hit.normal)), hit.normal);
+      b.bounced = true;
+      b.pos = point;
+      b.vel = scale(out, speed);
+      return { from, to: point, outcome: { kind: 'bounce', point, normal: hit.normal } };
+    }
     const point = madd(hit.point, hit.normal, c.boomerangRadius * 0.5);
     b.pos = point;
     return { from, to: point, outcome: { kind: 'wall', point, normal: hit.normal } };
@@ -270,11 +378,14 @@ export const throwState = (
   // start just in front of the eye, but never inside a wall
   const clear = raycast(ctx.level, eye, fwd, 0.6, c.boomerangRadius);
   b.pos = clear ? madd(eye, fwd, Math.max(0, clear.t - 0.05)) : madd(eye, fwd, 0.6);
+  b.bounced = false;
+  b.explosive = false;
   b.phase = Phase.Out;
   b.t = 0;
   b.windup = windup;
   b.curve = windup ? 0 : curve;
   b.curveAxis = clone(p.up);
+  b.tiltRef = flatAim(p.view, p.up);
   const speed = windup ? c.windupSpeed : c.quickSpeed;
   b.vel = scale(fwd, speed);
   b.outTicks = windup ? ticks(c.windupRange / c.windupSpeed, ctx.dt) : ticks(c.quickOutSec, ctx.dt);
@@ -290,11 +401,26 @@ export interface PathPrediction {
   end: 'wall' | 'catch' | 'expire' | 'open';
   wallPoint: Vec3 | null;
   teammatesOnPath: number[];
+  enemiesOnPath: number[];
+  /** Where a Quick Throw would bounce off its first wall, if it does. */
+  bouncePoint: Vec3 | null;
+  /** First enemy the path runs into (where they are expected to be by then), if any. */
+  enemyHit: { id: number; index: number; point: Vec3; head: boolean } | null;
 }
+
+/** A hitbox moved by `off` (an enemy's expected position a moment from now). */
+const shiftHitbox = (hb: Hitbox, off: Vec3): Hitbox => ({
+  ...hb,
+  head: add(hb.head, off),
+  bodyA: add(hb.bodyA, off),
+  bodyB: add(hb.bodyB, off),
+});
 
 /**
  * Predict a Quick Throw's full path (out, curve, return) with the same flight code as the real
  * throw. Assumes the thrower stays where they are. Used for the private preview line.
+ * `leadSec`: enemies are checked where they will be if they keep their current velocity (for up
+ * to this many seconds), so a path that meets a running enemy counts as on target.
  */
 export const predictThrow = (
   world: WorldState,
@@ -304,6 +430,7 @@ export const predictThrow = (
   maxTicks = 200,
   from?: BoomerangState,
   steer = false,
+  leadSec = 0,
 ): PathPrediction => {
   const b: BoomerangState = from
     ? JSON.parse(JSON.stringify(from))
@@ -318,6 +445,7 @@ export const predictThrow = (
         outTicks: 0,
         curve: 0,
         curveAxis: v3(0, 1, 0),
+        tiltRef: v3(0, 0, -1),
         windup: false,
         steerLeft: 0,
         hitIds: [],
@@ -330,9 +458,24 @@ export const predictThrow = (
   const target = steer ? aimPoint(p, ctx) : null;
   const points: Vec3[] = [clone(b.pos)];
   const mates = new Set<number>();
-  const hbs = world.players
-    .filter((o) => o.alive && o.team === p.team && o.id !== p.id)
-    .map((o) => hitboxOf(o, ctx.config));
+  const foes = new Set<number>();
+  let enemyHit: PathPrediction['enemyHit'] = null;
+  let bouncePoint: Vec3 | null = null;
+  const others = world.players.filter((o) => o.alive && o.id !== p.id);
+  const mateHbs = others.filter((o) => o.team === p.team).map((o) => hitboxOf(o, ctx.config));
+  const foes0 = others
+    .filter((o) => o.team !== p.team)
+    .map((o) => ({ hb: hitboxOf(o, ctx.config), vel: o.vel }));
+  const r0 = ctx.config.combat.boomerangRadius;
+  const result = (end: PathPrediction['end'], wallPoint: Vec3 | null): PathPrediction => ({
+    points,
+    end,
+    wallPoint,
+    teammatesOnPath: [...mates],
+    enemiesOnPath: [...foes],
+    enemyHit,
+    bouncePoint,
+  });
   for (let i = 0; i < maxTicks; i++) {
     const useSteer = !!target && b.steerLeft > 0;
     if (useSteer) b.steerLeft--;
@@ -343,16 +486,23 @@ export const predictThrow = (
       steerTarget: useSteer ? target : null,
     });
     points.push(clone(b.pos));
-    for (const hb of hbs)
-      if (sweepHitbox(r.from, r.to, ctx.config.combat.boomerangRadius, hb)) mates.add(hb.id);
-    if (r.outcome.kind === 'wall')
-      return { points, end: 'wall', wallPoint: r.outcome.point, teammatesOnPath: [...mates] };
-    if (r.outcome.kind === 'catch')
-      return { points, end: 'catch', wallPoint: null, teammatesOnPath: [...mates] };
-    if (r.outcome.kind === 'expire')
-      return { points, end: 'expire', wallPoint: null, teammatesOnPath: [...mates] };
+    for (const hb of mateHbs) if (sweepHitbox(r.from, r.to, r0, hb)) mates.add(hb.id);
+    const lead = Math.min((i + 1) * ctx.dt, leadSec);
+    for (const f of foes0) {
+      if (foes.has(f.hb.id)) continue;
+      const hb = lead > 0 ? shiftHitbox(f.hb, scale(f.vel, lead)) : f.hb;
+      const hit = sweepHitbox(r.from, r.to, r0, hb);
+      if (!hit) continue;
+      foes.add(f.hb.id);
+      if (!enemyHit)
+        enemyHit = { id: f.hb.id, index: points.length - 1, point: hit.point, head: hit.head };
+    }
+    if (r.outcome.kind === 'bounce') bouncePoint = r.outcome.point;
+    if (r.outcome.kind === 'wall') return result('wall', r.outcome.point);
+    if (r.outcome.kind === 'catch') return result('catch', null);
+    if (r.outcome.kind === 'expire') return result('expire', null);
   }
-  return { points, end: 'open', wallPoint: null, teammatesOnPath: [...mates] };
+  return result('open', null);
 };
 
 /** Recall line: fixed at the moment R is pressed; lethal only if the whole path is open. */
@@ -365,6 +515,96 @@ export const recallLine = (
   const from = clone(b.pos);
   const lethal = lineOfSight(ctx.level, from, to);
   return { from, to, lethal };
+};
+
+// ---------------------------------------------------------------------------------------------
+// Double boomerang: twins
+
+/**
+ * A Double-boomerang Quick Throw: next to the real Boomerang `b` (just thrown), a twin flies
+ * the mirrored curve — or, for a straight throw, angled `twinStraightDeg` to the right. It
+ * can't be caught, recalled or steered, and never returns (see updateTwins).
+ */
+export const throwTwin = (
+  world: WorldState,
+  ctx: SimContext,
+  p: PlayerState,
+  b: BoomerangState,
+): BoomerangState => {
+  const t: BoomerangState = {
+    ...b,
+    // an id the thrower's prediction gives it too (the tick and the owner, not a counter)
+    id: world.tick * 256 + (p.id & 255),
+    pos: clone(b.pos),
+    vel: clone(b.vel),
+    curve: b.curve === 0 ? 0 : -b.curve,
+    curveAxis: clone(b.curveAxis),
+    tiltRef: clone(b.tiltRef),
+    explosive: false,
+    steerLeft: 0,
+    hitIds: [],
+    recallFrom: null,
+    recallTo: null,
+  };
+  if (b.curve === 0)
+    t.vel = rotateAxis(b.vel, b.curveAxis, -ctx.config.combat.twinStraightDeg * DEG);
+  world.twins.push(t);
+  world.events.push({ type: 'twinThrow', player: p.id, twin: t.id });
+  return t;
+};
+
+/** A twin's flight for one tick: like a Quick Throw's way out (one wall bounce), then gone. */
+const updateTwins = (
+  world: WorldState,
+  ctx: SimContext,
+  liveHitboxes: Hitbox[],
+  only?: number,
+): void => {
+  const c = ctx.config.combat;
+  let gone = false;
+  for (const t of world.twins) {
+    if (only !== undefined && t.owner !== only) continue;
+    const res = flightStep(t, { ctx, world, ownerChest: null, steerTarget: null });
+    // (the thrower's own twin never hits them; hits judged like the real Boomerang's)
+    const targets = ctx.rewindHitboxes?.(t.controller) ?? liveHitboxes;
+    const hits: { t: number; hb: Hitbox; head: boolean; point: Vec3 }[] = [];
+    for (const hb of targets) {
+      if (hb.id === t.controller || t.hitIds.includes(hb.id)) continue;
+      const h = sweepHitbox(res.from, res.to, c.boomerangRadius, hb);
+      if (h) hits.push({ t: h.t, hb, head: h.head, point: h.point });
+    }
+    hits.sort((x, y) => x.t - y.t || x.hb.id - y.hb.id);
+    for (const h of hits) {
+      t.hitIds.push(h.hb.id);
+      const victim = world.players.find((q) => q.id === h.hb.id);
+      if (!victim) continue;
+      applyDamage(
+        world,
+        ctx,
+        t.controller,
+        victim,
+        h.head ? c.quickHeadDamage : c.quickBodyDamage,
+        h.head ? 'headshot' : 'boomerang',
+        h.head,
+        h.point,
+        madd(res.from, normalize(t.vel), -2),
+        t.throwId,
+      );
+    }
+    const o = res.outcome;
+    if (o.kind === 'bounce' && t.phase === Phase.Out) {
+      world.events.push({ type: 'twinBounce', twin: t.id, pos: clone(o.point) });
+      continue;
+    }
+    // its 2nd wall, or the end of its way out (flightStep turned it for home): gone
+    if (o.kind === 'wall' || t.phase !== Phase.Out) {
+      const wall = o.kind === 'wall' || o.kind === 'bounce';
+      world.events.push({ type: 'twinEnd', twin: t.id, pos: clone(t.pos), wall });
+      t.phase = Phase.Dropped;
+      gone = true;
+    }
+  }
+  if (gone) world.twins = world.twins.filter((t) => t.phase === Phase.Out);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -435,6 +675,44 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
     }
   }
   world.grenades = world.grenades.filter((g) => g.phase !== 2);
+};
+
+/**
+ * An explosive Quick Throw goes off at `at`: enemies of its controller within `blastRadius`
+ * (in line of sight) take `blastDamage`, judged where they are now like a grenade's pop (a
+ * predicting client only knows its own position, so prediction shows just the explosion).
+ */
+const detonate = (
+  world: WorldState,
+  ctx: SimContext,
+  b: BoomerangState,
+  at: Vec3,
+  only: number | undefined,
+): void => {
+  const c = ctx.config.combat;
+  b.explosive = false;
+  const owner = world.players.find((p) => p.id === b.owner);
+  if (owner) owner.blastCount = 0;
+  world.events.push({ type: 'blast', player: b.controller, boomerang: b.id, pos: clone(at) });
+  const team = world.players.find((p) => p.id === b.controller)?.team;
+  for (const p of world.players) {
+    if (!p.alive || p.id === b.controller || p.team === team) continue;
+    if (only !== undefined && p.id !== only) continue;
+    const chest = madd(p.pos, p.up, 0.2);
+    if (len(sub(chest, at)) > c.blastRadius || !lineOfSight(ctx.level, at, chest)) continue;
+    applyDamage(
+      world,
+      ctx,
+      b.controller,
+      p,
+      c.blastDamage,
+      'blast',
+      false,
+      clone(chest),
+      clone(at),
+      b.throwId,
+    );
+  }
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -517,6 +795,16 @@ export const updateCombat = (
   const dt = ctx.dt;
   const liveHitboxes = world.players.filter((p) => p.alive).map((p) => hitboxOf(p, ctx.config));
 
+  // ---- Freeze power-up stun: counts down; stunned players can't act this tick ----
+  const stunned = new Set<number>();
+  for (const p of world.players) {
+    if (only !== undefined && p.id !== only) continue;
+    if (p.stun > 0) {
+      p.stun--;
+      if (!p.frozen) stunned.add(p.id);
+    }
+  }
+
   // ---- per-player actions ----
   for (const p of world.players) {
     if (only !== undefined && p.id !== only) continue;
@@ -528,12 +816,12 @@ export const updateCombat = (
     const b = world.boomerangs.find((bb) => bb.owner === p.id);
     if (p.slashCd > 0) p.slashCd--;
     if (p.slashTicks > 0) p.slashTicks--;
-    if (p.laserCharges < c.laserCharges) {
-      if (--p.laserRecharge <= 0) {
-        p.laserCharges++;
-        p.laserRecharge = ticks(c.laserRechargeSec, dt);
-      }
-    } else p.laserRecharge = ticks(c.laserRechargeSec, dt);
+    if (p.laserCd > 0) p.laserCd--;
+    if (p.laserReload > 0 && --p.laserReload === 0) {
+      const take = Math.min(c.laserCharges - p.laserCharges, p.laserReserve);
+      p.laserCharges += take;
+      p.laserReserve -= take;
+    }
     if (!p.alive || !b) {
       p.aiming = false;
       continue;
@@ -542,8 +830,36 @@ export const updateCombat = (
       p.aiming = false;
       continue;
     }
+    if (stunned.has(p.id)) {
+      // frozen by a Freeze hit: no throws, shots, slashes, grenades or weapon switches
+      p.aiming = false;
+      p.aimTicks = 0;
+      p.laserWarn = 0;
+      if (p.windup > 0) cancelWindup(world, p);
+      continue;
+    }
     const held = b.phase === Phase.Held;
     if (held) b.pos = handPos(p, ctx);
+    // what this match's kit allows (CS mode: guns + slash only)
+    const lo = loadoutOf(ctx.config);
+    if (lo.guns) updateGuns(world, ctx, p, buttons, pressed, () => liveHitboxes);
+
+    // --- weapon switch: 1 = Boomerang, 2 = Laser (CS mode: the guns handle 1 / 2) ---
+    if (lo.guns) {
+      // AK-47 / Desert Eagle (sim/guns.ts)
+    } else if (pressed & Btn.Slot1 && p.weapon !== 0) {
+      p.weapon = 0;
+      p.laserReload = 0; // switching away cancels a reload
+    } else if (pressed & Btn.Slot2 && p.weapon !== 1) {
+      p.weapon = 1;
+      if (p.windup > 0) cancelWindup(world, p);
+      p.aiming = false;
+      p.aimTicks = 0;
+    }
+    // the Boomerang in hand is only thrown while it's the chosen weapon
+    const boomerangOut = held && p.weapon === 0 && lo.boomerang;
+    // the Laser fires when chosen, and whenever the Boomerang is away
+    const laserOut = lo.laser && (p.weapon === 1 || !held);
 
     // --- Wind-up Throw (hold RMB with the Boomerang in hand) ---
     if (p.windup > 0) {
@@ -573,48 +889,82 @@ export const updateCombat = (
           world.events.push({ type: 'throw', player: p.id, boomerang: b.id, windup: true });
         }
       }
-    } else if (held && pressed & Btn.Alt && !p.aiming && p.grounded && !p.crouched) {
+    } else if (boomerangOut && pressed & Btn.Alt && !p.aiming && p.grounded && !p.crouched) {
       p.windup = 1;
       p.speedCap = c.windupWalkSpeed;
       world.events.push({ type: 'windupStart', player: p.id });
     }
 
-    // --- Quick Throw: hold LMB to aim, release to throw; A/D on release sets the curve ---
-    if (held && p.windup === 0 && b.phase === Phase.Held) {
+    // --- Quick Throw: hold LMB to aim, release to throw (straight); turning while it flies
+    // out tilts it (see the flight update) ---
+    if (boomerangOut && p.windup === 0) {
       if (buttons & Btn.Fire) {
         p.aiming = true;
         p.aimTicks++;
       } else if (released & Btn.Fire && p.aiming) {
-        const curve = (buttons & Btn.Right ? 1 : 0) - (buttons & Btn.Left ? 1 : 0);
         b.throwId = world.nextId++;
-        throwState(b, p, ctx, false, curve);
+        throwState(b, p, ctx, false, 0);
+        // every blastEvery-th throw explodes; the charge stays until one actually goes off
+        if (p.blastCount >= c.blastEvery - 1) b.explosive = true;
+        else p.blastCount++;
         p.aiming = false;
         p.aimTicks = 0;
         world.events.push({ type: 'throw', player: p.id, boomerang: b.id, windup: false });
+        // Double boomerang power-up: this throw splits
+        if (lo.powerups && p.powerup === Powerup.Double && p.powerupCharges > 0) {
+          throwTwin(world, ctx, p, b);
+          if (--p.powerupCharges <= 0) {
+            p.powerup = Powerup.None;
+            p.powerupCharges = 0;
+          }
+        }
       }
     }
-    if (!(buttons & Btn.Fire) || b.phase !== Phase.Held) {
-      if (b.phase !== Phase.Held) p.aiming = false;
+    if (!(buttons & Btn.Fire) || !boomerangOut) {
+      if (!boomerangOut) p.aiming = false;
       if (!(buttons & Btn.Fire)) {
         p.aiming = false;
         p.aimTicks = 0;
       }
     }
 
-    // --- Laser: LMB while the Boomerang is away ---
-    if (!held && pressed & Btn.Fire && p.laserWarn === 0 && p.laserCharges > 0) {
+    // --- Laser: LMB while it's out (a warning line, then the shot) ---
+    if (
+      laserOut &&
+      pressed & Btn.Fire &&
+      p.laserWarn === 0 &&
+      p.laserCd === 0 &&
+      p.laserReload === 0 &&
+      p.laserCharges > 0
+    ) {
       p.laserCharges--;
       p.laserWarn = ticks(c.laserWarnSec, dt);
+      p.laserCd = ticks(c.laserWarnSec + c.laserFireCdSec, dt);
       world.events.push({ type: 'laserWarn', player: p.id });
+    }
+    // reload: R while the Laser is chosen, or by itself when the magazine is empty
+    const wantReload =
+      (laserOut && p.weapon === 1 && pressed & Btn.Recall) || (laserOut && p.laserCharges === 0);
+    if (
+      wantReload &&
+      p.laserReload === 0 &&
+      p.laserWarn === 0 &&
+      p.laserCharges < c.laserCharges &&
+      p.laserReserve > 0
+    ) {
+      p.laserReload = ticks(c.laserReloadSec, dt);
+      world.events.push({ type: 'laserReload', player: p.id });
     }
     if (p.laserWarn > 0 && --p.laserWarn === 0) {
       const boxes = ctx.rewindHitboxes?.(p.id) ?? liveHitboxes;
       fireLaser(world, ctx, p, boxes);
     }
 
-    // --- Lethal Recall ---
+    // --- Lethal Recall (R with the Boomerang chosen; with the Laser chosen R reloads) ---
     if (
+      lo.boomerang &&
       pressed & Btn.Recall &&
+      p.weapon === 0 &&
       (b.phase === Phase.Out ||
         b.phase === Phase.Return ||
         b.phase === Phase.Dropped ||
@@ -647,7 +997,7 @@ export const updateCombat = (
     }
 
     // --- Gravity Grenade ---
-    if (pressed & Btn.Grenade && p.grenadesLeft > 0) {
+    if (lo.grenade && pressed & Btn.Grenade && p.grenadesLeft > 0) {
       p.grenadesLeft--;
       const eye = eyePos(p, ctx.config.movement);
       const fwd = qForward(p.view);
@@ -753,7 +1103,10 @@ export const updateCombat = (
       if (owner) b.pos = handPos(owner, ctx);
       continue;
     }
-    if (b.phase === Phase.Dropped) continue;
+    if (b.phase === Phase.Dropped) {
+      fallDropped(b, ctx, world);
+      continue;
+    }
 
     if (b.phase === Phase.RecallTelegraph) {
       if (++b.t >= ticks(c.recallTelegraphSec, dt)) {
@@ -816,8 +1169,15 @@ export const updateCombat = (
       b.controller === b.owner &&
       (b.phase === Phase.Out || b.phase === Phase.Return) &&
       b.steerLeft > 0 &&
+      !stunned.has(b.owner) &&
       !!((inputs[b.owner]?.buttons ?? 0) & Btn.Alt);
     if (steering) b.steerLeft--;
+    // tilt: on the way out, flicking the view left/right curves a Quick Throw that way
+    // (RMB steering takes over while it's held)
+    if (b.phase === Phase.Out && !b.windup) {
+      const tilting = ownerAlive && b.controller === b.owner && !steering && !stunned.has(b.owner);
+      b.curve = tilting ? tiltStep(owner!.view, b, c, ctx.dt) : 0;
+    }
     const env: FlightEnv = {
       ctx,
       world,
@@ -870,9 +1230,15 @@ export const updateCombat = (
         madd(res.from, normalize(b.vel), -2),
         b.throwId,
       );
+      // an explosive throw goes off on the first player it hits
+      if (b.explosive) detonate(world, ctx, b, h.point, only);
     }
 
-    if (res.outcome.kind === 'wall') {
+    if (res.outcome.kind === 'bounce') {
+      world.events.push({ type: 'wallBounce', boomerang: b.id, pos: clone(res.outcome.point) });
+    } else if (res.outcome.kind === 'wall') {
+      // (before dropAt: a deflected throw's blast is still the deflector's)
+      if (b.explosive) detonate(world, ctx, b, res.outcome.point, only);
       dropAt(b, res.outcome.point);
       world.events.push({ type: 'wallHit', boomerang: b.id, pos: clone(res.outcome.point) });
     } else if (res.outcome.kind === 'catch' && owner) {
@@ -909,6 +1275,7 @@ export const updateCombat = (
       }
     }
 
+  updateTwins(world, ctx, liveHitboxes, only);
   updateGrenades(world, ctx, liveHitboxes, only);
 
   // unused helpers kept for tooling

@@ -15,6 +15,8 @@ import {
   updateMatch,
   applyBotObjectives,
   mapDef,
+  csConfig,
+  DEFAULT_MATCH_MAP,
   type MatchState,
 } from '@space-yz/shared';
 import { LocalSession } from './local-session';
@@ -36,18 +38,33 @@ export interface PracticeOptions {
   skill: BotSkill['name'];
   levelDef?: LevelDef;
   config: GameConfig;
-  /** 'match': rounds + Controller & Tower on Kestrel; 'deathmatch': respawning practice. */
-  kind?: 'match' | 'deathmatch';
+  /**
+   * 'match': rounds + Controller & Tower; 'bomb': rounds + plant/defuse; 'cs': CS mode (bomb
+   * rules with AK + Deagle, half-speed movement); 'deathmatch': respawning.
+   */
+  kind?: PracticeKind;
+  /** map of a 'match' (default: the default match map, Split Deck) */
+  mapId?: string;
 }
+
+export type PracticeKind = 'match' | 'bomb' | 'cs' | 'deathmatch';
 
 export const createPracticeSession = (
   opts: PracticeOptions,
 ): { session: LocalSession; stats: StatsTracker } => {
-  const isMatch = opts.kind === 'match';
-  const levelDef = opts.levelDef ?? (isMatch ? mapDef('kestrel') : buildTrainingBay());
+  const isMatch = opts.kind === 'match' || opts.kind === 'bomb' || opts.kind === 'cs';
+  const cs = opts.kind === 'cs';
+  // CS mode runs the sim with its own config (guns, half-speed movement)
+  const config = cs ? csConfig(opts.config) : opts.config;
+  const levelDef =
+    opts.levelDef ?? (isMatch ? mapDef(opts.mapId ?? DEFAULT_MATCH_MAP()) : buildTrainingBay());
   const mems: BotMemory[] = [];
   const match: MatchState | undefined = isMatch
-    ? createMatch(opts.size <= 1 ? '1v1' : opts.size === 2 ? '2v2' : '5v5')
+    ? createMatch(
+        opts.size <= 1 ? '1v1' : opts.size === 2 ? '2v2' : '5v5',
+        opts.kind === 'bomb' || cs ? 'bomb' : 'tower',
+        cs ? 'cs' : 'lethal',
+      )
     : undefined;
   let restartAt = 0;
   const stats = new StatsTracker();
@@ -55,7 +72,7 @@ export const createPracticeSession = (
   const names: Record<number, string> = {};
   const session = new LocalSession({
     levelDef,
-    config: opts.config,
+    config,
     seed: 1 + Math.floor(Math.random() * 1e6),
     names,
     match,

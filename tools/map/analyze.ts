@@ -92,6 +92,8 @@ export const plans = (a: Analysis, heat = true): [string, string][] => {
   const plan = (file: string, o: PlanOptions) => out.push([`${id}-${file}.svg`, renderPlan(an, o)]);
   plan('ground', { band: BANDS.ground, title: `${name} — floor plan, ground level` });
   plan('upper', { band: BANDS.upper, title: `${name} — floor plan, upper level` });
+  if (an.samples.some((sm) => sm.reachable && sm.kind === 'floor' && sm.feet.y < -2))
+    plan('basement', { band: BANDS.basement, title: `${name} — floor plan, basement` });
   if (heat) {
     const L = a.layers;
     const o = a.report.options;

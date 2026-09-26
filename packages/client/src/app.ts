@@ -1,34 +1,73 @@
 // App shell: title screen, starting/stopping games, pause menu, settings.
 import * as THREE from 'three';
-import { GAME_NAME, buildTestShip } from '@space-yz/shared';
-import { loadSettings, saveSettings, type Settings } from './settings';
+import { GAME_NAME, buildTestShip, type MatchObjective, type LoadoutName } from '@space-yz/shared';
+import { loadSettings, saveSettings, hasSavedSettings, type Settings } from './settings';
+import {
+  applyMobileDefaults,
+  enterMobileFullscreen,
+  isTouchDevice,
+  MOBILE_PIXEL_RATIO_CAP,
+  readDeviceEnv,
+  setMobileClass,
+  useMobileLayout,
+} from './mobile';
+import { TouchControls, TOUCH_CONTROLS_HELP } from './game/touch-controls';
 import { InputManager, setLeaveGuard } from './game/input';
 import { GameClient, type ClientFeature } from './game/client';
 import type { Session } from './game/session';
 import { LocalSession } from './game/local-session';
 import { AudioEngine } from './audio';
 import { TuningPanel, loadTuning } from './ui/tuning';
-import { h, button, controlsTable } from './ui/menus';
+import { h, controlsTable } from './ui/menus';
+import { icon, type IconName } from './ui/icons';
+import {
+  card,
+  cardGrid,
+  fxEnter,
+  fxLeave,
+  focusFirst,
+  iconButton,
+  screenHead,
+  type Dir,
+} from './ui/menu-kit';
+import {
+  ARENA_ENABLED,
+  initialPractice,
+  initialRoom,
+  practiceMapId,
+  type PracticeState,
+} from './ui/flow';
+import { practiceMenu } from './ui/practice-menu';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
+import { ChatFeature } from './game/chat-feature';
 import { SoundRadar } from './game/sound-radar';
 import { WorldMarkers } from './game/world-markers';
-import { DynamicResolution, FrameStats, QUALITY, setParticleDensity } from './render/perf';
-import { createPracticeSession } from './game/practice';
+import {
+  DynamicResolution,
+  FrameStats,
+  QUALITY,
+  setParticleDensity,
+  setPixelRatioCap,
+} from './render/perf';
+import { effects, setEffects } from './render/effects';
+import { setTextureDetail } from './render/textures';
+import { createPracticeSession, type PracticeKind } from './game/practice';
+import { startArenaPractice, arenaOnlineFeatures } from './game/arena-entry';
 import { createRangeSession } from './game/range';
 import {
   createPractice,
   updatePractice,
   NetCore,
   type BotSkill,
-  type GameMode,
+  type RoomMode,
   type SocketLike,
 } from '@space-yz/shared';
 import { NetSession } from './net/net-session';
 import { onlineMenu, RoomPanel, netPanel } from './ui/online';
 import { settingsScreen } from './ui/settings-screen';
-import { rankedPanel, leaderboardScreen, profileScreen, type ClientProfile } from './ui/ranked';
+import { rankedScreen, leaderboardScreen, profileScreen, type ClientProfile } from './ui/ranked';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -46,11 +85,22 @@ export class App {
   private titleCam = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
   private last = performance.now();
   private titleTime = 0;
+  /** touch layout (phones/tablets or forced in Settings): on-screen controls, no pointer lock */
+  mobile = false;
 
   constructor(
     public canvas: HTMLCanvasElement,
     public ui: HTMLElement,
   ) {
+    // phones and tablets: touch layout; on the very first run also phone-friendly graphics
+    const device = readDeviceEnv();
+    if (!hasSavedSettings() && isTouchDevice(device)) {
+      applyMobileDefaults(this.settings);
+      saveSettings(this.settings);
+    }
+    this.mobile = useMobileLayout(this.settings.touchControls, device);
+    setMobileClass(this.mobile);
+    if (isTouchDevice(device)) setPixelRatioCap(MOBILE_PIXEL_RATIO_CAP);
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: (QUALITY[this.settings.quality] ?? QUALITY.medium).antialias,
@@ -72,19 +122,44 @@ export class App {
     });
     this.input.onLockChange = (locked) => {
       if (!this.client) return;
-      if (!locked && !AUTOTEST) this.pause(true);
+      // the touch layout never locks the pointer: the ❚❚ button opens the menu instead
+      if (!locked && !AUTOTEST && !this.mobile) this.pause(true);
+    };
+    this.input.onEscape = () => {
+      if (this.mobile && this.client && !this.screen) this.pause(true);
     };
     this.input.onAction((a) => this.onAction(a));
     canvas.addEventListener('click', () => {
-      if (this.client && !this.input.locked && !this.screen) void this.input.lockPointer();
+      if (this.client && !this.input.locked && !this.screen && !this.mobile)
+        void this.input.lockPointer();
+    });
+    // phone: switching apps / locking the screen opens the menu (and pauses offline games)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.mobile && this.client && !this.screen && !AUTOTEST)
+        this.pause(true);
+    });
+    // menus: Esc presses the screen's Back button (one step back); in a text field it leaves it
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape' || e.defaultPrevented || e.repeat || !this.screen) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.matches?.('input, select, textarea')) {
+        t.blur();
+        return;
+      }
+      const back = this.screen.querySelector<HTMLButtonElement>('[data-esc]:not(:disabled)');
+      if (back) {
+        e.preventDefault();
+        back.click();
+      }
     });
     window.addEventListener('resize', () => this.resize());
     this.resize();
     this.buildTitleScene();
     const join = params.get('join');
-    if (join) this.showOnline(join.toUpperCase().slice(0, 6));
-    else if (params.has('bench')) this.runBench(Number(params.get('bench')) || 20);
-    else this.showTitle();
+    if (join) this.showOnline(join.toUpperCase().slice(0, 6), 'fade');
+    else if (params.has('bench'))
+      this.runBench(Number(params.get('bench')) || 20, params.get('map') ?? undefined);
+    else this.showTitle('fade');
     this.server.connect();
     this.renderer.setAnimationLoop(() => this.loop());
   }
@@ -97,7 +172,11 @@ export class App {
 
   applyRenderScale(): void {
     this.dynRes.reset();
-    setParticleDensity((QUALITY[this.settings.quality] ?? QUALITY.medium).particles);
+    setEffects(this.settings.effects);
+    setTextureDetail(effects.textureDetail);
+    setParticleDensity(
+      (QUALITY[this.settings.quality] ?? QUALITY.medium).particles * effects.particles,
+    );
   }
 
   applyVolumes(): void {
@@ -145,14 +224,29 @@ export class App {
     });
   }
 
-  setScreen(el: HTMLElement | null): void {
-    this.screen?.remove();
+  /**
+   * Show a menu screen (null: none, back to the game). `dir` picks the transition: forward
+   * slides in from the right, back from the left, fade for opening a menu.
+   */
+  setScreen(el: HTMLElement | null, dir: Dir = 'fade'): void {
+    const old = this.screen;
+    const hadFocus = !!old?.contains(document.activeElement);
+    if (old && old !== el) {
+      if (el) fxLeave(old, dir);
+      else old.remove();
+    }
     this.screen = el;
-    if (el) this.ui.append(el);
+    if (el) {
+      this.ui.append(el);
+      fxEnter(el, dir);
+      if (hadFocus) focusFirst(el);
+    }
     this.input.capture = !!this.client && !el;
+    // any menu over a running game silences the game (menu clicks still play)
+    this.audio.setSfxPaused(!!this.client && !!el);
   }
 
-  showTitle(): void {
+  showTitle(dir: Dir = 'back'): void {
     const status = h('div', { class: 'status', id: 'server-status' });
     this.server.onStatus = (ok, text) => {
       status.replaceChildren(
@@ -161,51 +255,135 @@ export class App {
       );
     };
     this.server.emitStatus();
-    const menu = h('div', { class: 'menu' });
-    for (const [label, fn, cls] of this.menuEntries()) menu.append(button(label, fn, cls));
+    const tiles = cardGrid(
+      'tiles',
+      this.titleTiles().map(([name, title, desc, fn, cls]) =>
+        card({ title, desc, art: icon(name), cls: `tile ${cls}`, onClick: fn }),
+      ),
+    );
+    const small = h(
+      'nav',
+      { class: 'icon-row', 'aria-label': 'More' },
+      iconButton(
+        'leaderboard',
+        'Leaderboards',
+        () =>
+          this.setScreen(
+            leaderboardScreen(() => this.showTitle(), this.myAccountId()),
+            'forward',
+          ),
+        'btn small secondary',
+      ),
+      iconButton('profile', 'Profile', () => this.showProfile(), 'btn small secondary'),
+      iconButton(
+        'settings',
+        'Settings',
+        () => this.showSettings(() => this.showTitle(), 'forward'),
+        'btn small secondary',
+      ),
+      iconButton(
+        'controls',
+        'Controls',
+        () => this.showControls(() => this.showTitle(), 'forward'),
+        'btn small secondary',
+      ),
+    );
     this.setScreen(
       h(
         'div',
-        { class: 'screen title-screen interactive' },
+        { class: 'screen title-screen interactive flow-screen' },
         h('h1', { class: 'title' }, GAME_NAME.toUpperCase()),
         h('div', { class: 'subtitle' }, 'Gravity arena'),
-        menu,
+        tiles,
+        small,
         status,
       ),
+      dir,
     );
   }
 
-  /** Title menu entries; later milestones register more modes here. */
-  menuEntries(): [string, () => void, string?][] {
+  /** The big title tiles: [icon, name, one-line description, action, class]. */
+  titleTiles(): [IconName, string, string, () => void, string][] {
     return [
-      ['Play online', () => this.showOnline()],
-      ['Practice vs bots', () => this.showPracticeMenu()],
-      ['Practice range', () => this.startRange()],
-      ['Movement playground', () => this.startPlayground()],
       [
-        'Leaderboards',
-        () => this.setScreen(leaderboardScreen(() => this.showTitle(), this.myAccountId())),
-        'btn secondary',
+        'practice',
+        'Play',
+        'Practice vs bots: pick a mode, a map and your opponents.',
+        () => this.showPracticeMenu(),
+        'play',
       ],
-      ['Profile', () => this.showProfile(), 'btn secondary'],
-      ['Settings', () => this.showSettings(() => this.showTitle()), 'btn secondary'],
-      ['Controls', () => this.showControls(() => this.showTitle()), 'btn secondary'],
+      [
+        'online',
+        'Online',
+        'Play online with friends: create a room or join by code.',
+        () => this.showOnline(),
+        'online',
+      ],
+      [
+        'ranked',
+        'Ranked',
+        'Matched by rating. Climb the leaderboards.',
+        () => this.showRanked(),
+        'ranked',
+      ],
+      [
+        'training',
+        'Training',
+        'Practice range and movement playground.',
+        () => this.showTraining(),
+        'training',
+      ],
     ];
   }
 
-  showSettings(back: () => void): void {
-    this.setScreen(settingsScreen(this.settings, () => this.onSettingsChanged(), back));
-  }
-
-  showControls(back: () => void): void {
+  /** Training: the practice range and the movement playground. */
+  showTraining(dir: Dir = 'forward'): void {
     this.setScreen(
       h(
         'div',
-        { class: 'screen interactive' },
-        h('h2', {}, 'Controls'),
-        h('div', { class: 'panel' }, controlsTable()),
-        button('Back', back, 'btn secondary'),
+        { class: 'screen interactive flow-screen training-flow' },
+        screenHead('training', 'Training', () => this.showTitle()),
+        cardGrid('modes wide', [
+          card({
+            title: 'Practice range',
+            desc: 'Static, strafing and jumping dummies at 10–55 m. Shows your hit rates.',
+            art: icon('range'),
+            cls: 'mode',
+            onClick: () => this.startRange(),
+          }),
+          card({
+            title: 'Movement playground',
+            desc: 'Ramp, rail, zero-G bay and wall corridor. Learn to move fast.',
+            art: icon('playground'),
+            cls: 'mode',
+            onClick: () => this.startPlayground(),
+          }),
+        ]),
       ),
+      dir,
+    );
+  }
+
+  showSettings(back: () => void, dir: Dir = 'forward'): void {
+    this.setScreen(
+      settingsScreen(this.settings, () => this.onSettingsChanged(), back),
+      dir,
+    );
+  }
+
+  showControls(back: () => void, dir: Dir = 'forward'): void {
+    this.setScreen(
+      h(
+        'div',
+        { class: 'screen interactive flow-screen' },
+        screenHead('controls', 'Controls', back),
+        h(
+          'div',
+          { class: 'panel' },
+          this.mobile ? controlsTable(TOUCH_CONTROLS_HELP) : controlsTable(),
+        ),
+      ),
+      dir,
     );
   }
 
@@ -215,6 +393,14 @@ export class App {
     this.applyRenderScale();
     this.input.rebuildBindings();
     this.client?.hud.applyCrosshair();
+    // touch layout forced on/off: switches now in the menus, after the running game otherwise
+    if (!this.client) this.refreshLayout();
+  }
+
+  /** Touch layout on/off from the setting (or detection); not while a game runs. */
+  private refreshLayout(): void {
+    this.mobile = useMobileLayout(this.settings.touchControls, readDeviceEnv());
+    setMobileClass(this.mobile);
   }
 
   /** Start a game with a session; called from a click so pointer lock/fullscreen are allowed. */
@@ -239,6 +425,16 @@ export class App {
     // name tags and objective markers in every mode (teammates exist outside matches too)
     client.addFeature(new WorldMarkers());
     client.addFeature(new SoundRadar(() => this.settings.soundVisualizer));
+    // phones: on-screen controls (added last: they sit on top of the HUD)
+    if (this.mobile)
+      client.addFeature(
+        new TouchControls({
+          settings: this.settings,
+          onPause: () => this.pause(true),
+          online: session instanceof NetSession,
+          enabled: () => this.mobile,
+        }),
+      );
     client.resize(window.innerWidth, window.innerHeight);
     if (opts.tuning !== false) {
       this.tuning = new TuningPanel({
@@ -253,7 +449,12 @@ export class App {
     }
     this.setScreen(null);
     setLeaveGuard(true);
-    if (!AUTOTEST) {
+    if (AUTOTEST) {
+      /* automated browser tests drive input themselves */
+    } else if (this.mobile) {
+      // no pointer lock or Keyboard Lock on phones: fullscreen + landscape where allowed
+      if (this.settings.fullscreenOnPlay) void enterMobileFullscreen();
+    } else {
       void this.input.lockPointer();
       if (this.settings.fullscreenOnPlay) void this.input.enterFullscreen();
     }
@@ -266,102 +467,63 @@ export class App {
     this.client?.dispose();
     this.matchFeature = null;
     this.client = null;
+    this.audio.setSfxPaused(false);
     this.tuning?.dispose();
     this.tuning = null;
     setLeaveGuard(false);
     if (document.pointerLockElement) document.exitPointerLock();
+    this.refreshLayout(); // a touch-controls setting changed during the game applies now
   }
 
-  showPracticeMenu(): void {
-    let size = 1;
-    let skill: BotSkill['name'] = 'normal';
-    let kind: 'match' | 'deathmatch' = 'match';
-    const kindRow = h('div', { class: 'choice-row' });
-    const sizeRow = h('div', { class: 'choice-row' });
-    const skillRow = h('div', { class: 'choice-row' });
-    const renderRows = () => {
-      kindRow.replaceChildren(
-        ...(
-          [
-            ['match', 'Match (Kestrel)'],
-            ['deathmatch', 'Free fight (Training Bay)'],
-          ] as const
-        ).map(([k, label]) =>
-          button(
-            label,
-            () => {
-              kind = k;
-              renderRows();
-            },
-            `btn small ${kind === k ? '' : 'secondary'}`,
-          ),
-        ),
-      );
-      sizeRow.replaceChildren(
-        ...[1, 2, 3, 5].map((n) =>
-          button(
-            `${n}v${n}`,
-            () => {
-              size = n;
-              renderRows();
-            },
-            `btn small ${size === n ? '' : 'secondary'}`,
-          ),
-        ),
-      );
-      skillRow.replaceChildren(
-        ...(['easy', 'normal', 'hard'] as const).map((k) =>
-          button(
-            k,
-            () => {
-              skill = k;
-              renderRows();
-            },
-            `btn small ${skill === k ? '' : 'secondary'}`,
-          ),
-        ),
-      );
-    };
-    renderRows();
+  /** Practice choices, kept while the page is open (the menu reopens with your last setup). */
+  practiceState: PracticeState = initialPractice();
+
+  showPracticeMenu(dir: Dir = 'forward'): void {
     this.setScreen(
-      h(
-        'div',
-        { class: 'screen interactive' },
-        h('h2', {}, 'Practice vs bots'),
-        h(
-          'div',
-          { class: 'panel practice-panel' },
-          h('div', { class: 'label' }, 'Mode'),
-          kindRow,
-          h('div', { class: 'label' }, 'Team size'),
-          sizeRow,
-          h('div', { class: 'label' }, 'Bot difficulty'),
-          skillRow,
-        ),
-        h(
-          'div',
-          { class: 'menu' },
-          button('Start', () => this.startPractice(size, skill, kind)),
-          button('Back', () => this.showTitle(), 'btn secondary'),
-        ),
-      ),
+      practiceMenu({
+        state: this.practiceState,
+        back: () => this.showTitle(),
+        start: (st) => {
+          if (st.mode === 'arena') this.startArenaPractice(st);
+          else this.startPractice(st.size, st.skill, st.mode, practiceMapId(st));
+        },
+      }),
+      dir,
     );
+  }
+
+  /**
+   * Arena 1v1 vs bots (game/arena-entry.ts): `st.size` players in all (you + bots), the kit
+   * from `st.kit`. The menu only offers it when ui/flow.ts ARENA_ENABLED is true.
+   */
+  startArenaPractice(st: PracticeState): void {
+    if (!ARENA_ENABLED) return;
+    startArenaPractice(this, {
+      loadout: st.kit ?? 'lethal',
+      bots: Math.max(1, st.size - 1),
+      skill: st.skill,
+    });
   }
 
   startPractice(
     size: number,
     skill: BotSkill['name'],
-    kind: 'match' | 'deathmatch' = 'deathmatch',
+    kind: PracticeKind = 'deathmatch',
+    mapId?: string,
   ): void {
     const { session, stats } = createPracticeSession({
       size,
       skill,
       kind,
+      mapId,
       config: loadTuning(),
     });
     const combat = new CombatFeature();
-    const match = kind === 'match' ? new MatchFeature() : null;
-    const client = this.startGame(session, match ? [combat, match] : [combat]);
+    const match = kind !== 'deathmatch' ? new MatchFeature() : null;
+    // (no tuning panel in CS mode: its config is a CS copy that must not be saved as tuning)
+    const client = this.startGame(session, match ? [combat, match] : [combat], {
+      tuning: kind !== 'cs',
+    });
     this.matchFeature = match;
     combat.statsText = () => {
       const r = stats.report([1]);
@@ -380,7 +542,9 @@ export class App {
     };
     this.tuning?.gui.add(combat.hud, 'showStats').name('Show combat stats');
     client.hud.setHint(
-      '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
+      kind === 'cs'
+        ? 'Esc menu · LMB fire · 1 AK · 2 Deagle · R reload · E knife · G plant/defuse · stop moving to shoot straight'
+        : '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
     );
   }
 
@@ -424,7 +588,7 @@ export class App {
     return (this.net?.account as ClientProfile | null)?.id ?? null;
   }
 
-  showProfile(): void {
+  showProfile(dir: Dir = 'forward'): void {
     const core = this.ensureNet();
     this.setScreen(
       profileScreen(
@@ -438,9 +602,10 @@ export class App {
           }
           core.close();
           this.net = null;
-          this.showProfile();
+          this.showProfile('none');
         },
       ),
+      dir,
     );
   }
 
@@ -464,7 +629,7 @@ export class App {
     if (msg.t === 'roomLeft') {
       if (this.client?.session instanceof NetSession) this.stopGame();
       this.toast(core.roomLeftReason ?? 'You left the room.');
-      this.showOnline();
+      this.showOnline('', 'fade');
     }
     if (msg.t === 'welcome') {
       const token = core.token;
@@ -489,7 +654,38 @@ export class App {
     }
   }
 
-  showOnline(prefill = ''): void {
+  /** Online room choices, kept while the page is open. */
+  roomState = initialRoom();
+
+  /** Connection line for the online screens. */
+  private netStatus(core: NetCore): { text: string; ok: boolean | null } {
+    return core.error
+      ? { text: core.error, ok: false }
+      : core.state === 'lobby'
+        ? { text: `Connected as ${core.name} · ${Math.round(core.rttMs)} ms`, ok: true }
+        : core.state === 'room'
+          ? { text: `Joining room ${core.code}…`, ok: true }
+          : core.state === 'closed'
+            ? { text: 'Not connected — is the server running?', ok: false }
+            : { text: 'Connecting…', ok: null };
+  }
+
+  showRanked(dir: Dir = 'forward'): void {
+    const core = this.ensureNet();
+    this.setScreen(
+      rankedScreen(core, {
+        beforeQueue: () => this.reHello(core),
+        back: () => {
+          core.queueRanked(null);
+          this.showTitle();
+        },
+        status: () => this.netStatus(core),
+      }),
+      dir,
+    );
+  }
+
+  showOnline(prefill = '', dir: Dir = 'forward'): void {
     const core = this.ensureNet();
     this.setScreen(
       onlineMenu(
@@ -500,9 +696,16 @@ export class App {
             saveSettings(this.settings);
             if (core.state === 'lobby') this.reHello(core);
           },
-          create: (mode: GameMode, map: string, bots: number, skill: string) => {
+          create: (
+            mode: RoomMode,
+            map: string,
+            bots: number,
+            skill: string,
+            objective: MatchObjective,
+            loadout: LoadoutName = 'lethal',
+          ) => {
             this.reHello(core);
-            core.createRoom(mode, map, bots, skill);
+            core.createRoom(mode, map, bots, skill, objective, loadout);
           },
           join: (code: string) => {
             this.reHello(core);
@@ -512,20 +715,12 @@ export class App {
             core.queueRanked(null);
             this.showTitle();
           },
-          columns: [rankedPanel(core, () => this.reHello(core))],
-          status: () =>
-            core.error
-              ? { text: core.error, ok: false }
-              : core.state === 'lobby'
-                ? { text: `Connected as ${core.name} · ${Math.round(core.rttMs)} ms`, ok: true }
-                : core.state === 'room'
-                  ? { text: `Joining room ${core.code}…`, ok: true }
-                  : core.state === 'closed'
-                    ? { text: 'Not connected — is the server running?', ok: false }
-                    : { text: 'Connecting…', ok: null },
+          room: this.roomState,
+          status: () => this.netStatus(core),
         },
         prefill,
       ),
+      dir,
     );
   }
 
@@ -541,7 +736,11 @@ export class App {
     const session = new NetSession(core);
     const combat = new CombatFeature();
     const match = new MatchFeature();
-    const client = this.startGame(session, [combat, match], { tuning: false });
+    // text chat + voice: online only (offline play has nobody to talk to)
+    const chat = new ChatFeature(core, this.settings);
+    // Arena 1v1 rooms: the arena HUD (after the match feature, which stays empty there)
+    const arena = core.mode === 'arena' ? arenaOnlineFeatures(core, combat) : [];
+    const client = this.startGame(session, [combat, match, chat, ...arena], { tuning: false });
     this.matchFeature = match;
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
@@ -556,16 +755,19 @@ export class App {
         this.roomPanel = null;
       },
     });
-    client.hud.setHint(`Room ${core.code} — share the code or the invite link · Esc menu`);
+    client.hud.setHint(
+      `Room ${core.code} — share the code or the invite link · Esc menu · ${ChatFeature.hint(this.settings)}`,
+    );
   }
 
   /**
-   * Benchmark: an offline 5v5 bot match on Kestrel for N seconds, then frame-time stats and
-   * draw calls. Used by tools/perf/browser-bench.mjs (CPU throttling + software rendering).
+   * Benchmark: an offline 5v5 bot match (default match map unless `map` is given) for N seconds,
+   * then frame-time stats and draw calls. Used by tools/perf/browser-bench.mjs (CPU throttling +
+   * software rendering).
    */
-  runBench(seconds: number): void {
+  runBench(seconds: number, map?: string): void {
     const w = window as unknown as { __spaceyz: Record<string, unknown> };
-    this.startPractice(5, 'normal', 'match');
+    this.startPractice(5, 'normal', 'match', map);
     const t0 = performance.now();
     let calls = 0;
     let triangles = 0;
@@ -613,7 +815,7 @@ export class App {
       ].join('\n');
     };
     client.hud.setHint(
-      'Practice range · LMB throw (hold to aim, A/D to curve) · RMB wind-up · R recall · Q grenade · Esc menu',
+      'Practice range · LMB throw (hold to aim, flick the mouse while it flies to tilt it) · RMB wind-up · R recall · Q grenade · Esc menu',
     );
   }
 
@@ -631,22 +833,23 @@ export class App {
     );
   }
 
-  pause(on: boolean): void {
+  pause(on: boolean, dir: Dir = 'fade'): void {
     if (!this.client) return;
     this.client.paused = on && this.isOffline();
     if (!on) {
       this.setScreen(null);
-      void this.input.lockPointer();
+      if (!this.mobile) void this.input.lockPointer();
       return;
     }
     const s = this.client.session;
     const match = s.match?.() ?? null;
     const menu = h(
       'div',
-      { class: 'menu' },
-      button('Resume', () => this.pause(false)),
+      { class: 'menu pause-menu' },
+      iconButton('play', 'Resume', () => this.pause(false), 'btn primary'),
       s.respawn
-        ? button(
+        ? iconButton(
+            'respawn',
             'Respawn',
             () => {
               s.respawn?.();
@@ -657,18 +860,29 @@ export class App {
           )
         : null,
       match?.phase === 'warmup' && s.canStart?.()
-        ? button('Start match now', () => {
+        ? iconButton('next', 'Start match now', () => {
             s.startMatch?.();
             this.pause(false);
           })
         : null,
-      button('Settings', () => this.showSettings(() => this.pause(true)), 'btn secondary'),
-      button('Controls', () => this.showControls(() => this.pause(true)), 'btn secondary'),
-      button(
+      iconButton(
+        'settings',
+        'Settings',
+        () => this.showSettings(() => this.pause(true, 'back')),
+        'btn secondary',
+      ),
+      iconButton(
+        'controls',
+        'Controls',
+        () => this.showControls(() => this.pause(true, 'back')),
+        'btn secondary',
+      ),
+      iconButton(
+        'quit',
         'Quit to title',
         () => {
           this.stopGame();
-          this.showTitle();
+          this.showTitle('fade');
         },
         'btn orange',
       ),
@@ -680,12 +894,13 @@ export class App {
     this.setScreen(
       h(
         'div',
-        { class: 'screen interactive pause' },
-        h('h2', {}, this.isOffline() ? 'Paused' : 'Menu'),
+        { class: 'screen interactive pause flow-screen' },
+        h('h2', { class: 'pause-title' }, this.isOffline() ? 'Paused' : 'Menu'),
         board,
         menu,
         s instanceof NetSession ? netPanel(s.core, this.netSim) : null,
       ),
+      dir,
     );
   }
 
@@ -697,7 +912,7 @@ export class App {
     if (a === 'tuning' && this.tuning && this.client) {
       const open = this.tuning.toggle();
       if (open) document.exitPointerLock?.();
-      else void this.input.lockPointer();
+      else if (!this.mobile) void this.input.lockPointer();
     }
   }
 }

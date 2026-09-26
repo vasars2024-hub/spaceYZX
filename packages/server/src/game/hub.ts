@@ -1,7 +1,7 @@
 // GameHub: connections <-> rooms. Handles control messages, rate limits and validation.
 // Accounts, ranked matchmaking and the host dashboard plug in through HubServices.
 import type { WebSocket } from 'ws';
-import type { ClientMsg, GameMode, GameConfig } from '@space-yz/shared';
+import type { ClientMsg, GameConfig, LoadoutName, RoomMode } from '@space-yz/shared';
 import {
   PROTOCOL_VERSION,
   GAME_NAME,
@@ -11,13 +11,19 @@ import {
   sanitizeName,
   getMap,
   MAPS,
+  ARENA_MAP_ID,
   defaultConfig,
+  configForLoadout,
+  loadoutName,
+  botSkillName,
 } from '@space-yz/shared';
 import { Conn } from './conn';
 import { Room, makeRoomCode, type Rules } from './room';
 import { Clock } from './clock';
+import { relayChat, relayRtc, relayVoice } from './chat';
 import { PracticeRules } from './rules/practice';
 import { MatchRules, type MatchResult } from './rules/match';
+import { ArenaRules, type ArenaResult } from './rules/arena';
 
 export interface HubServices {
   /** Authenticate / create an account from a hello message; returns display name + token. */
@@ -28,11 +34,13 @@ export interface HubServices {
   ): { name: string; accountId: number; token: string; account: unknown } | null;
   /** Rules for a room (M5 match rules). Defaults to practice. */
   rulesFor?(room: Room, opts: { bots: number }): Rules;
-  /** Ranked queue (M8). */
-  queue?(hub: GameHub, conn: Conn, mode: GameMode | null): void;
+  /** Ranked queue (M8); 'arena' = the Arena 1v1 ladder (with the kit to play it with). */
+  queue?(hub: GameHub, conn: Conn, mode: RoomMode | null, opts?: { loadout?: LoadoutName }): void;
   onDisconnect?(hub: GameHub, conn: Conn): void;
   /** Called for every finished match (M8 records results). */
   onMatchEnd?(room: Room, result: MatchResult): void;
+  /** Called for every finished Arena 1v1 match (ranked: the arena ladder). */
+  onArenaEnd?(room: Room, result: ArenaResult): void;
   /** Anti-grief: a warning was given / a player was kicked (ranked bans live here). */
   onGrief?(conn: Conn, action: 'warn' | 'kick', reason: string, room: Room): void;
   /** The player's profile (ratings, ranks) for the client. */
@@ -49,6 +57,11 @@ export interface HubServices {
 
 const MAX_CONNS_PER_IP = 12;
 const MAX_ROOMS = 200;
+/**
+ * A client that sent nothing (not even a reply to the 1 s server ping) for this long is gone:
+ * drop it, so a vanished player (Wi-Fi died, laptop closed) doesn't hold a room slot forever.
+ */
+const SILENT_DROP_MS = 30_000;
 
 export class GameHub {
   conns = new Set<Conn>();
@@ -98,7 +111,8 @@ export class GameHub {
   }
 
   private onJson(conn: Conn, text: string): void {
-    const msg = parseJson<ClientMsg>(text);
+    // 16 KB: voice offers/answers carry an SDP of a few KB
+    const msg = parseJson<ClientMsg>(text, 16384);
     if (!msg || typeof msg.t !== 'string') return conn.strike('json');
     switch (msg.t) {
       case 'ping':
@@ -134,16 +148,21 @@ export class GameHub {
     if (!conn.helloDone) return conn.strike('no hello');
     switch (msg.t) {
       case 'createRoom': {
-        const mode: GameMode = ['1v1', '2v2', '5v5', 'practice'].includes(msg.mode)
+        const mode: RoomMode = ['1v1', '2v2', '5v5', 'practice', 'arena'].includes(msg.mode)
           ? msg.mode
           : 'practice';
-        const map = MAPS.some((m) => m.id === msg.map) ? (msg.map as string) : getMap('').id;
+        // (arena maps only for the Arena, which picks its own)
+        const map = MAPS.some((m) => m.id === msg.map && !m.arena)
+          ? (msg.map as string)
+          : getMap('').id;
         const bots = Math.max(0, Math.min(9, Math.floor(Number(msg.bots) || 0)));
         const room = this.createRoom({
           mode,
           map,
           bots,
-          botSkill: typeof msg.botSkill === 'string' ? msg.botSkill : 'normal',
+          botSkill: botSkillName(msg.botSkill),
+          objective: msg.objective === 'bomb' ? 'bomb' : 'tower',
+          loadout: loadoutName(msg.loadout),
         });
         if (!room) return conn.sendJson({ t: 'error', msg: 'The server is full right now.' });
         this.joinRoom(conn, room);
@@ -156,9 +175,11 @@ export class GameHub {
           .slice(0, 6);
         const room = this.rooms.get(code);
         if (!room) return conn.sendJson({ t: 'error', msg: `No room with code ${code}.` });
-        if (room.humans.length >= room.maxPlayers)
-          return conn.sendJson({ t: 'error', msg: 'That room is full.' });
+        if (conn.roomCode === room.code) return; // already in it
         if (room.ranked) return conn.sendJson({ t: 'error', msg: 'That is a ranked match.' });
+        // bots don't take a human's place: one leaves when a human joins a bot-filled room
+        if (!room.hasRoomForHuman())
+          return conn.sendJson({ t: 'error', msg: 'That room is full.' });
         this.joinRoom(conn, room);
         return;
       }
@@ -171,7 +192,7 @@ export class GameHub {
       case 'startMatch': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
         if (!room || room.hostId !== conn.playerId || room.ranked) return;
-        if (room.rules instanceof MatchRules) {
+        if (room.rules instanceof MatchRules || room.rules instanceof ArenaRules) {
           const err = room.rules.requestStart(room);
           if (err) conn.sendJson({ t: 'error', msg: err });
         }
@@ -179,7 +200,9 @@ export class GameHub {
       }
       case 'queue':
       case 'unqueue':
-        this.services.queue?.(this, conn, msg.t === 'queue' ? msg.mode : null);
+        this.services.queue?.(this, conn, msg.t === 'queue' ? msg.mode : null, {
+          loadout: msg.t === 'queue' ? loadoutName(msg.loadout) : undefined,
+        });
         return;
       case 'report': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
@@ -187,35 +210,71 @@ export class GameHub {
           this.services.onReport?.(conn, msg.player, String(msg.reason ?? '').slice(0, 200), room);
         return;
       }
+      case 'takeover': {
+        // while dead: step into a living bot teammate (the room checks everything else)
+        const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
+        if (room && conn.playerId !== null && typeof msg.target === 'number')
+          room.takeOver(conn.playerId, msg.target);
+        return;
+      }
       case 'chat':
-        return; // no chat yet
+      case 'rtc':
+      case 'voice': {
+        // text chat, voice signaling and talk state: only between humans in the same room
+        const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
+        if (!room) return;
+        if (msg.t === 'chat') relayChat(room, conn, msg.text, msg.team);
+        else if (msg.t === 'rtc') relayRtc(room, conn, msg.to, msg.data);
+        else relayVoice(room, conn, msg.on, msg.all);
+        return;
+      }
       default:
         conn.strike('unknown');
     }
   }
 
   createRoom(opts: {
-    mode: GameMode;
+    /** 'arena': an Arena 1v1 room (always on the Arena map, up to 8 players) */
+    mode: RoomMode;
     map: string;
     bots?: number;
     botSkill?: string;
     ranked?: boolean;
     config?: GameConfig;
+    objective?: 'tower' | 'bomb';
+    /**
+     * 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement); never practice, and ranked
+     * only in the Arena (its ladder is played with either kit)
+     */
+    loadout?: LoadoutName;
   }): Room | null {
     if (this.rooms.size >= MAX_ROOMS) return null;
+    const arena = opts.mode === 'arena';
+    const loadout: LoadoutName =
+      opts.loadout === 'cs' && (!opts.ranked || arena) && opts.mode !== 'practice'
+        ? 'cs'
+        : 'lethal';
     let code = makeRoomCode();
     while (this.rooms.has(code)) code = makeRoomCode();
     const room = new Room({
       code,
       mode: opts.mode,
-      map: opts.map,
+      map: arena ? ARENA_MAP_ID : opts.map,
       ranked: opts.ranked,
-      config: opts.config ?? this.services.config?.() ?? defaultConfig(),
+      config: configForLoadout(opts.config ?? this.services.config?.() ?? defaultConfig(), loadout),
       lagComp: this.services.lagComp ?? true,
     });
     const rules: Rules =
       this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
-      (opts.mode === 'practice' ? new PracticeRules() : new MatchRules(opts.mode));
+      (opts.mode === 'practice'
+        ? new PracticeRules()
+        : opts.mode === 'arena'
+          ? new ArenaRules(loadout, { ranked: opts.ranked })
+          : new MatchRules(
+              opts.mode,
+              opts.ranked ? 'tower' : (opts.objective ?? 'tower'),
+              loadout,
+            ));
     room.rules = rules;
     if (rules instanceof MatchRules) {
       rules.onGrief = (r, m, action, reason) => {
@@ -238,13 +297,27 @@ export class GameHub {
         );
         this.services.onMatchEnd?.(r, result);
       };
+    if (rules instanceof ArenaRules) {
+      rules.onResult = (r, result) => {
+        this.log(
+          `Room ${r.code}: arena over — ${result.standings[0]?.name ?? 'nobody'} wins (${result.reason})`,
+        );
+        this.services.onArenaEnd?.(r, result);
+      };
+      rules.onFinished = (r) => {
+        for (const m of r.humans) if (m.conn) this.removeFromRoom(m.conn, 'Arena over');
+        if (this.rooms.has(r.code)) this.closeRoom(r);
+      };
+    }
     (rules as Rules).setup?.(room);
     room.onChanged = () => this.broadcastRoom(room);
-    for (let i = 0; i < (opts.bots ?? 0); i++)
-      room.addMember(`Bot ${i + 1}`, null, { botSkill: opts.botSkill });
+    // bots fill the room (leaving a slot for the creator); humans who join take their slots
+    if (opts.bots && !opts.ranked) room.setBotFill(opts.bots, opts.botSkill ?? '');
     this.rooms.set(code, room);
     this.clock.add(room);
-    this.log(`Room ${code} created (${opts.mode}, ${opts.map}${opts.ranked ? ', ranked' : ''})`);
+    this.log(
+      `Room ${code} created (${opts.mode}, ${room.map}${opts.ranked ? ', ranked' : ''}${loadout === 'cs' ? ', CS mode' : ''})`,
+    );
     return room;
   }
 
@@ -317,7 +390,14 @@ export class GameHub {
   private pingAll(): void {
     const s = Math.round(performance.now());
     const ping = JSON.stringify({ t: 'sping', s });
-    for (const c of this.conns) c.sendRaw(ping);
+    for (const c of this.conns) {
+      if (s - c.lastHeard > SILENT_DROP_MS) {
+        c.ws.terminate();
+        this.onClose(c);
+        continue;
+      }
+      c.sendRaw(ping);
+    }
     for (const room of this.rooms.values()) {
       if (!room.humans.length) continue;
       this.broadcastRoom(room);

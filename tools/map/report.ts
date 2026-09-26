@@ -69,10 +69,18 @@ export const plainSummary = (r: MapReport): string[] => {
   const routes = r.routes;
 
   if (routes.available && routes.lanes.length) {
+    const failed = r.walks?.checks.filter((c) => !c.pass) ?? [];
     out.push(
-      routes.mirror.ok
-        ? '**Fair for both teams.** Every route takes exactly the same time from either side.'
-        : `**Not fair yet.** Some routes take longer for one team: ${routes.mirror.issues.slice(0, 2).join('; ')}.`,
+      r.walks
+        ? failed.length
+          ? `**Not balanced yet.** Measured sprint times miss ${failed.length} target(s): ${failed
+              .slice(0, 2)
+              .map((c) => `${c.name} (${c.detail})`)
+              .join('; ')}.`
+          : `**Balanced (measured).** All ${r.walks.checks.length} timing targets pass: see "Measured route timings".`
+        : routes.mirror.ok
+          ? '**Fair for both teams.** Every route takes exactly the same time from either side.'
+          : `**Not fair yet.** Some routes take longer for one team: ${routes.mirror.issues.slice(0, 2).join('; ')}.`,
     );
     const lanes = [...new Set(routes.lanes.map((l) => l.lane))]
       .map((lane) => routes.lanes.find((l) => l.lane === lane && l.team === 0)!)
@@ -233,11 +241,24 @@ export const principleChecks = (r: MapReport): PrincipleCheck[] => {
       const b = routes.lanes.find((x) => x.lane === l && x.team === 1)?.toMid;
       return `${l}: A ${a?.time ?? '—'} s / B ${b?.time ?? '—'} s`;
     });
+    const contact = r.walks?.checks.find((c) => c.name.startsWith('First contact'));
     out.push({
       principle: 'Both teams reach mid at the same time',
-      verdict: routes.mirror.ok ? 'PASS' : 'FAIL',
-      finding: mids.join('; ') + (routes.mirror.ok ? '.' : ` — ${routes.mirror.issues.join('; ')}`),
+      verdict: contact ? (contact.pass ? 'PASS' : 'FAIL') : routes.mirror.ok ? 'PASS' : 'FAIL',
+      finding: contact
+        ? `${contact.detail} (measured sprint to the centre); lane middles: ${mids.join('; ')}.`
+        : mids.join('; ') + (routes.mirror.ok ? '.' : ` — ${routes.mirror.issues.join('; ')}`),
     });
+    if (r.walks) {
+      const bad = r.walks.checks.filter((c) => !c.pass);
+      out.push({
+        principle: 'Measured route timings meet the balance targets',
+        verdict: bad.length ? 'FAIL' : 'PASS',
+        finding: bad.length
+          ? bad.map((c) => `${c.name}: ${c.detail}`).join('; ')
+          : `${r.walks.checks.length}/${r.walks.checks.length} targets pass (${r.walks.routes.length} routes walked).`,
+      });
+    }
     const leads = routes.chokes.filter((c) => c.lead !== null);
     if (leads.length) {
       const early = leads.filter((c) => c.lead! < 1);
@@ -414,10 +435,37 @@ export const renderMarkdown = (r: MapReport, files: string[] = []): string => {
       ),
     );
     push(
-      r.routes.mirror.ok
-        ? 'Mirror check: both teams need exactly the same time for every lane and chokepoint.'
-        : `Mirror check FAILED: ${r.routes.mirror.issues.join('; ')}`,
+      r.walks
+        ? 'Not a mirrored map: the balance between the teams is measured route by route below.'
+        : r.routes.mirror.ok
+          ? 'Mirror check: both teams need exactly the same time for every lane and chokepoint.'
+          : `Mirror check FAILED: ${r.routes.mirror.issues.join('; ')}`,
     );
+    if (r.walks) {
+      push('### Measured route timings');
+      push(
+        `A scripted player sprints each route with the game's movement code (${r.walks.sprintSpeed} m/s sprint, acceleration, ramps and drops included), starting at its team's spawn centroid and following the named waypoints. Metres = length of the waypoint path; seconds = measured.`,
+      );
+      push(
+        table(
+          ['Team', 'Mode', 'To', 'Route', 'Metres', 'Seconds'],
+          r.walks.routes.map((w) => [
+            w.spec.team === 0 ? 'Cyan' : 'Orange',
+            w.spec.mode,
+            w.spec.to,
+            w.spec.name,
+            `${w.metres}`,
+            w.seconds === null ? '**stuck**' : `${w.seconds.toFixed(2)}`,
+          ]),
+        ),
+      );
+      push(
+        table(
+          ['Balance target', 'Result', 'Measured'],
+          r.walks.checks.map((c) => [c.name, `**${c.pass ? 'PASS' : 'FAIL'}**`, c.detail]),
+        ),
+      );
+    }
     push('Region connections from the waypoint graph (the lane structure; → = one-way drop):');
     push(
       r.regionLinks

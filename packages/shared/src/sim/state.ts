@@ -3,7 +3,12 @@ import type { Vec3 } from '../math/vec3';
 import type { Quat } from '../math/quat';
 import type { RngState } from '../math/rng';
 import type { SimEvent } from './events';
-import type { BoomerangState, GrenadeState, CombatPlayerState } from './combat-state';
+import type {
+  BoomerangState,
+  GrenadeState,
+  CombatPlayerState,
+  PowerupPickup,
+} from './combat-state';
 
 export const Move = {
   Ground: 0,
@@ -58,6 +63,12 @@ export interface PlayerState extends CombatPlayerState {
   climbLeft: number;
   railCd: number;
   thrusterRecharge: number;
+  magT: number; // ticks on a gravity-shift surface (normal gravity only)
+  magCd: number; // ticks before the gravity shift can be used again
+  jetFuel: number; // seconds of jetpack thrust left
+  jetCd: number; // ticks before the tank starts refilling
+  jetOn: boolean; // the jetpack is burning this tick
+  jetHold: number; // ticks Space has been held since a fresh press in the air (-1 = not armed)
   dashCd: number;
   dashTicks: number;
   // counters
@@ -84,6 +95,10 @@ export interface WorldState {
   players: PlayerState[];
   boomerangs: BoomerangState[];
   grenades: GrenadeState[];
+  /** Double-boomerang twins in flight (same shape as a Boomerang; always phase Out) */
+  twins: BoomerangState[];
+  /** power-ups waiting to be picked up */
+  powerups: PowerupPickup[];
   zones: ZoneRuntime[];
   padReadyAt: number[];
   events: SimEvent[];

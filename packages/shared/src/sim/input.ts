@@ -16,9 +16,14 @@ export const Btn = {
   Grenade: 1 << 10, // Q
   Recall: 1 << 11, // R
   MagBoots: 1 << 12, // F
+  Slot1: 1 << 13, // 1: Boomerang
+  Slot2: 1 << 14, // 2: Laser
+  Use: 1 << 15, // G (hold): plant / defuse the bomb
 } as const;
 
-export const ALL_BUTTONS = (1 << 13) - 1;
+export const ALL_BUTTONS = (1 << 16) - 1;
+/** bits per input's buttons on the wire */
+export const BUTTON_BITS = 16;
 
 export interface PlayerInput {
   tick: number;

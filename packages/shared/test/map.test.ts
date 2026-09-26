@@ -35,13 +35,11 @@ const standingCapsule = (feet: { x: number; y: number; z: number }) => ({
 
 const key = (n: number) => n.toFixed(3);
 
-describe('Kestrel map', () => {
-  it('is registered as the competitive map', () => {
-    expect(MAPS.find((m) => m.id === 'kestrel')?.competitive).toBe(true);
-  });
-
+// maps built as a mirror image (Kestrel): every box, spawn and waypoint has its twin across x = 0.
+// Asymmetric maps (Split Deck) are balanced with measured route timings instead (tools/map).
+describe.each(MAPS.filter((m) => m.symmetric).map((m) => m.id))('%s: mirror symmetry', (id) => {
   it('is mirror-symmetric across x = 0', () => {
-    const def = mapDef('kestrel');
+    const def = mapDef(id);
     const boxes = new Set(
       def.boxes.map((b) => [b.c.x, b.c.y, b.c.z, b.h.x, b.h.y, b.h.z].map(key).join(',')),
     );
@@ -60,11 +58,27 @@ describe('Kestrel map', () => {
             o.team !== s.team && key(o.pos.x) === key(-s.pos.x) && key(o.pos.z) === key(s.pos.z),
         ),
       ).toBe(true);
-    expect(def.towers.map((t) => t.pos.x).sort((a, b) => a - b)).toEqual([-88, 88]);
+    for (const t of def.towers)
+      expect(def.towers.some((o) => o.team !== t.team && key(o.pos.x) === key(-t.pos.x))).toBe(
+        true,
+      );
     for (const w of def.waypoints!)
       expect(
         def.waypoints!.some((o) => key(o.pos.x) === key(-w.pos.x) && key(o.pos.z) === key(w.pos.z)),
       ).toBe(true);
+  });
+});
+
+describe('Kestrel map', () => {
+  it('is registered as a competitive, mirror-symmetric map', () => {
+    const m = MAPS.find((x) => x.id === 'kestrel');
+    expect(m?.competitive).toBe(true);
+    expect(m?.symmetric).toBe(true);
+    expect(
+      mapDef('kestrel')
+        .towers.map((t) => t.pos.x)
+        .sort((a, b) => a - b),
+    ).toEqual([-88, 88]);
   });
 
   it('has 8 valid spawns per team (clear capsule, floor underneath)', () => {

@@ -44,6 +44,11 @@ const REQUIRED: SoundName[] = [
   'laserWarn',
   'laserFire',
   'laserEmpty',
+  // guns (CS mode)
+  'akShot',
+  'deagleShot',
+  'gunReload',
+  'gunDraw',
   // grenade
   'grenadeThrow',
   'grenadePull',
@@ -74,6 +79,10 @@ const REQUIRED: SoundName[] = [
   'controllerDrop',
   'controllerReturn',
   'revealPulse',
+  // power-ups
+  'powerupSpawn',
+  'powerupPickup',
+  'freeze',
   'uiClick',
   'uiHover',
 ];

@@ -5,9 +5,11 @@ import {
   Btn,
   DEG,
   Phase,
+  Powerup,
   add,
   chestOf,
   closestPointSeg,
+  csConfig,
   defaultConfig,
   dot,
   eyePos,
@@ -141,6 +143,8 @@ const echoKeyOf = (e: SimEvent): string | null => {
       return `hit:${e.attacker}:${e.victim}:${e.kind}`;
     case 'laserFire':
       return `laserFire:${e.player}`;
+    case 'gunFire':
+      return `gunFire:${e.player}`;
     case 'deflect':
       return `deflect:${e.player}:${e.boomerang}`;
     case 'recallStart':
@@ -284,7 +288,7 @@ const onTick = (d: Duel, fn: (r: Room, events: SimEvent[]) => void): void => {
       // damage (judged where players are now, which only the server knows)
       const mine =
         e.type === 'hit'
-          ? e.attacker === d.sp.id && !['deflect', 'recall', 'grenade'].includes(e.kind)
+          ? e.attacker === d.sp.id && !['deflect', 'recall', 'grenade', 'blast'].includes(e.kind)
           : e.type === 'wallHit'
             ? e.boomerang === d.sp.id
             : e.type === 'grenadeActivate' || e.type === 'grenadePop'
@@ -300,6 +304,16 @@ const onTick = (d: Duel, fn: (r: Room, events: SimEvent[]) => void): void => {
 const endDuel = (d: Duel): Record<string, number> => {
   d.ending = true;
   d.h.run(1500);
+  // a Boomerang thrown just before the end is still out: let it come back (or drop) so the
+  // server gets to the catch the shooter already saw
+  const flying = () =>
+    d.room.world.boomerangs.some(
+      (b) => b.owner === d.sp.id && b.phase !== Phase.Held && b.phase !== Phase.Dropped,
+    );
+  if (flying()) {
+    d.h.runUntil(() => !flying(), 5000);
+    d.h.run(500);
+  }
   d.finish();
   if (process.env.NETCHECK_DEBUG) {
     console.log('predicted', JSON.stringify(d.predicted.filter((x) => x.key.startsWith('hit'))));
@@ -325,7 +339,8 @@ const shownTarget = (c: VClient): Hitbox | undefined => [...(c.shown?.hitboxes.v
 export const laserDuel = (opts: NetcheckOptions): ScenarioReport => {
   const config = defaultConfig();
   config.combat.laserCharges = 99;
-  config.combat.laserRechargeSec = 0.05;
+  config.combat.laserReserve = 999;
+  config.combat.laserFireCdSec = 0.05;
   const stats = emptyStats();
   let lagSum = 0;
   let eyeErr = 0;
@@ -415,7 +430,8 @@ export const laserDuel = (opts: NetcheckOptions): ScenarioReport => {
 //            where players are *now* (it is telegraphed, so it can be dodged), so only the
 //            line itself and its timing must match — not the kills
 
-export type BoomerangVariant = 'quick' | 'steer' | 'windup' | 'recall';
+/** 'twin': Quick Throws with the Double-boomerang power-up (each throw also flies a twin) */
+export type BoomerangVariant = 'quick' | 'steer' | 'windup' | 'recall' | 'twin';
 
 export const boomerangDuel = (
   opts: NetcheckOptions,
@@ -498,16 +514,27 @@ export const boomerangDuel = (
             ? 'recall line'
             : null,
   );
-  // the shooter's forward-predicted Boomerang per tick, and its predicted recall lines
+  // Double boomerang: plenty of charges (the client learns them from its exact own state)
+  if (variant === 'twin') {
+    d.sp.powerup = Powerup.Double;
+    d.sp.powerupCharges = 1000;
+  }
+  // the shooter's forward-predicted Boomerang (and twins) per tick, and its predicted recall lines
   const predicted = new Map<number, Vec3>();
+  const predictedTwins = new Map<string, Vec3>();
   const predictedLines = new Map<number, { from: Vec3; to: Vec3; lethal: boolean }>();
   const hook = d.shooter.core.onPredicted;
   d.shooter.core.onPredicted = (w, input) => {
     hook?.(w, input);
     const b = w.boomerangs.find((x) => x.owner === d.sp.id);
     if (b) predicted.set(input.tick, { ...b.pos });
+    for (const t of w.twins) predictedTwins.set(`${input.tick}:${t.id}`, { ...t.pos });
     for (const e of w.events) if (e.type === 'recallStart') predictedLines.set(input.tick, e);
   };
+  const twinPrev = new Map<number, Vec3>();
+  let twinErrMax = 0;
+  let twinsSeen = 0;
+  let twinsUnpredicted = 0;
   let cur: { onScreen: boolean; counted: boolean; prev: Vec3 | null } | null = null;
   let errSum = 0;
   let errN = 0;
@@ -569,6 +596,19 @@ export const boomerangDuel = (
         errMax = Math.max(errMax, err);
       }
     }
+    // Double-boomerang twins: on screen like the real one, predicted exactly like it
+    for (const t of r.world.twins) {
+      if (t.owner !== d.sp.id) continue;
+      const seen = d.shooter.seenAt.get(tick)?.hitboxes.get(d.tp.id);
+      const from = twinPrev.get(t.id) ?? t.pos;
+      if (cur && seen && sweepHitbox(from, t.pos, config.combat.boomerangRadius, seen))
+        cur.onScreen = true;
+      if (!twinPrev.has(t.id)) twinsSeen++;
+      twinPrev.set(t.id, { ...t.pos });
+      const p = predictedTwins.get(`${tick}:${t.id}`);
+      if (p) twinErrMax = Math.max(twinErrMax, len(sub(p, t.pos)));
+      else twinsUnpredicted++;
+    }
   });
   d.h.run((opts.seconds ?? 20) * 1000);
   if (cur && variant !== 'recall') {
@@ -581,6 +621,11 @@ export const boomerangDuel = (
     'predicted flight error, max (m)': errMax,
     ...echo,
   };
+  if (variant === 'twin') {
+    extra['twins thrown'] = twinsSeen;
+    extra['predicted twin flight error, max (m)'] = twinErrMax;
+    extra['twin ticks not predicted'] = twinsUnpredicted;
+  }
   if (variant === 'recall') {
     extra['recall lines'] = lines;
     extra['recall line: predicted vs server, max error (m)'] = lineErr;
@@ -591,6 +636,7 @@ export const boomerangDuel = (
     steer: 'boomerang, steered',
     windup: 'wind-up throw',
     recall: 'lethal recall',
+    twin: 'double boomerang (twins)',
   };
   return {
     name: `${names[variant]}${opts.shooterStrafes ? ', thrower strafing' : ''}`,
@@ -795,7 +841,8 @@ export const deflectDuel = (opts: NetcheckOptions): ScenarioReport => {
 export const grenadeShot = (opts: NetcheckOptions): ScenarioReport => {
   const config = defaultConfig();
   config.combat.laserCharges = 99;
-  config.combat.laserRechargeSec = 0.05;
+  config.combat.laserReserve = 999;
+  config.combat.laserFireCdSec = 0.05;
   const c = config.combat;
   const stats = emptyStats();
   let lagSum = 0;
@@ -877,6 +924,94 @@ export const grenadeShot = (opts: NetcheckOptions): ScenarioReport => {
   };
 };
 
+// ---------------------------------------------------------------------------------------------
+// CS mode guns: the shooter tracks the target as drawn and fires 3-round AK bursts (spray
+// pattern + random cone); every 4th burst aims 0.75 m beside the body. On screen = the bullet's
+// line (as the server fired it) passed through the target as drawn. The predicted bullet must
+// leave in exactly the server's direction (same spray, same seeded spread).
+
+export const gunDuel = (opts: NetcheckOptions): ScenarioReport => {
+  const config = csConfig(defaultConfig());
+  config.combat.akReserve = 9999;
+  const stats = emptyStats();
+  let lagSum = 0;
+  let burst = 0;
+  let holdFor = 0;
+  let fireIn = 90;
+  let dirErr = 0;
+  const move = strafePattern((opts.seed ?? 7) + 1, false);
+  const tgtMove = strafePattern(opts.seed ?? 7, true);
+  const d = startDuel(
+    opts,
+    config,
+    (c) => {
+      const me = c.core.localPredicted();
+      const tgt = shownTarget(c);
+      if (!me || !tgt) return IDLE;
+      const eye = eyePos(me, config.movement);
+      const chest = chestOf(tgt);
+      const side = normalize(v3(-(chest.z - eye.z), 0, chest.x - eye.x));
+      let buttons = opts.shooterStrafes ? move() : 0;
+      if (--fireIn === 0) {
+        burst++;
+        holdFor = 13; // 3 rounds
+        fireIn = 45;
+      }
+      if (holdFor > 0) {
+        holdFor--;
+        buttons |= Btn.Fire;
+      }
+      const aim = burst % 2 ? tgt.head : chest;
+      return { buttons, view: lookAt(eye, madd(aim, side, burst % 4 === 3 ? 0.75 : 0)) };
+    },
+    () => ({ buttons: tgtMove(), view: qFromBasis(v3(-1, 0, 0), UP) }),
+    { shooter: v3(-12, 0, 0), target: v3(12, 0, 0) },
+    (e, d) =>
+      e.type === 'hit' && e.attacker === d.sp.id
+        ? 'hit marker'
+        : e.type === 'gunFire' && e.player === d.sp.id
+          ? 'gun shot'
+          : null,
+  );
+  // the shooter's predicted bullet directions, per tick
+  const predictedDir = new Map<number, Vec3>();
+  const hook = d.shooter.core.onPredicted;
+  d.shooter.core.onPredicted = (w, input) => {
+    hook?.(w, input);
+    for (const e of w.events)
+      if (e.type === 'gunFire' && e.player === d.sp.id)
+        predictedDir.set(input.tick, normalize(sub(e.to, e.from)));
+  };
+  onTick(d, (r, events) => {
+    const tick = r.world.tick;
+    for (const e of events) {
+      if (e.type === 'hit' && e.attacker === d.sp.id) d.count('hit marker', 'real');
+      if (e.type !== 'gunFire' || e.player !== d.sp.id) continue;
+      d.count('gun shot', 'real');
+      const dir = normalize(sub(e.to, e.from));
+      const pd = predictedDir.get(tick);
+      if (pd) dirErr = Math.max(dirErr, len(sub(pd, dir)));
+      const seen = d.shooter.seenAt.get(tick)?.hitboxes.get(d.tp.id);
+      if (!seen) continue;
+      const onScreen = !!rayHitbox(e.from, dir, config.combat.akRange, seen);
+      const counted = events.some(
+        (x) => x.type === 'hit' && x.attacker === d.sp.id && x.kind === 'ak',
+      );
+      tally(stats, onScreen, counted);
+      lagSum += lagOf(r, d.sp.id, tick);
+    }
+  });
+  d.h.run((opts.seconds ?? 20) * 1000);
+  const echo = endDuel(d);
+  return {
+    name: opts.shooterStrafes ? 'AK, shooter strafing' : 'AK',
+    stats,
+    events: d.events,
+    viewLagMs: stats.shots ? lagSum / stats.shots : 0,
+    extra: { 'predicted vs server bullet direction error, max': dirErr, ...echo },
+  };
+};
+
 export const SCENARIOS: Record<string, (o: NetcheckOptions) => ScenarioReport> = {
   laser: laserDuel,
   laserStrafing: (o) => laserDuel({ ...o, shooterStrafes: true }),
@@ -885,7 +1020,10 @@ export const SCENARIOS: Record<string, (o: NetcheckOptions) => ScenarioReport> =
   boomerangSteered: (o) => boomerangDuel(o, 'steer'),
   windup: (o) => boomerangDuel(o, 'windup'),
   recall: (o) => boomerangDuel(o, 'recall'),
+  twin: (o) => boomerangDuel(o, 'twin'),
   slash: slashDuel,
   deflect: deflectDuel,
   grenade: grenadeShot,
+  gun: gunDuel,
+  gunStrafing: (o) => gunDuel({ ...o, shooterStrafes: true }),
 };

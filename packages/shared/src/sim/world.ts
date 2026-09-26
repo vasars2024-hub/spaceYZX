@@ -4,6 +4,7 @@ import { v3, madd, clone, UP } from '../math/vec3';
 import { qFromYawPitch } from '../math/quat';
 import { rngFromSeed } from '../math/rng';
 import { pointInAabb } from '../level/level';
+import { inSkyZone } from '../level/sky-arena';
 import type { Level } from '../level/level';
 import type { GameConfig } from '../config';
 import type { SimContext } from './context';
@@ -15,6 +16,7 @@ import type { BoomerangState } from './combat-state';
 import { updateMovement } from './movement';
 import { updateGravityPads } from './gravity';
 import { updateCombat } from './combat';
+import { updatePowerupPickups } from './powerups';
 
 export const DEG = Math.PI / 180;
 
@@ -28,6 +30,8 @@ export const createWorld = (level: Level, seed = 1): WorldState => ({
   players: [],
   boomerangs: [],
   grenades: [],
+  twins: [],
+  powerups: [],
   zones: level.zones.map(() => ({ override: null, until: 0 })),
   padReadyAt: level.def.pads.map(() => 0),
   events: [],
@@ -45,6 +49,7 @@ export const newBoomerang = (owner: number, pos: Vec3): BoomerangState => ({
   outTicks: 0,
   curve: 0,
   curveAxis: v3(0, 1, 0),
+  tiltRef: v3(0, 0, -1),
   windup: false,
   steerLeft: 0,
   hitIds: [],
@@ -52,6 +57,8 @@ export const newBoomerang = (owner: number, pos: Vec3): BoomerangState => ({
   recallFrom: null,
   recallTo: null,
   recallLethal: false,
+  explosive: false,
+  bounced: false,
 });
 
 /** A fresh player standing with feet at `feet`, facing yawDeg. */
@@ -87,6 +94,12 @@ export const createPlayer = (
     climbLeft: 0,
     railCd: 0,
     thrusterRecharge: 0,
+    magT: 0,
+    magCd: 0,
+    jetFuel: m.jetpackFuelSec,
+    jetCd: 0,
+    jetOn: false,
+    jetHold: -1,
     dashCd: 0,
     dashTicks: 0,
     wallJumpsLeft: m.wallJumpsPerAir,
@@ -101,15 +114,34 @@ export const createPlayer = (
     speedCap: 0,
     aiming: false,
     aimTicks: 0,
+    blastCount: 0,
+    flick: 0,
     windup: 0,
     windupHeld: 0,
+    weapon: 0,
     laserCharges: c.laserCharges,
-    laserRecharge: 0,
+    laserReserve: c.laserReserve,
+    laserReload: 0,
+    laserCd: 0,
     laserWarn: 0,
     slashCd: 0,
     slashTicks: 0,
     slashHit: false,
     grenadesLeft: c.grenadesPerRound,
+    akMag: c.akMag,
+    akReserve: c.akReserve,
+    deagleMag: c.deagleMag,
+    deagleReserve: c.deagleReserve,
+    gunCd: 0,
+    gunReload: 0,
+    gunSpray: 0,
+    gunPenalty: c.akStandMrad,
+    gunLastShot: -1000,
+    gunShots: 0,
+    powerup: 0,
+    powerupCharges: 0,
+    stun: 0,
+    shield: false,
     lastHurtTick: -1000,
     lastAttacker: -1,
     kills: 0,
@@ -129,6 +161,7 @@ export const addPlayer = (world: WorldState, player: PlayerState): PlayerState =
 export const removePlayer = (world: WorldState, id: number): void => {
   world.players = world.players.filter((p) => p.id !== id);
   world.boomerangs = world.boomerangs.filter((b) => b.owner !== id);
+  world.twins = world.twins.filter((b) => b.owner !== id);
   for (const b of world.boomerangs) if (b.controller === id) b.controller = b.owner;
 };
 
@@ -177,16 +210,23 @@ export const step = (
       continue;
     }
     updateMovement(world, ctx, p, input);
-    // fell out of the ship: bounce back into bounds
+    // fell out of the ship: bounce back into bounds (not up at the sky duel arena: falling off
+    // it is deadly, the match rules end you there)
     const d = ctx.level.def;
     if (
-      !pointInAabb(p.pos, madd(d.boundsMin, v3(1, 1, 1), -20), madd(d.boundsMax, v3(1, 1, 1), 20))
+      !pointInAabb(
+        p.pos,
+        madd(d.boundsMin, v3(1, 1, 1), -20),
+        madd(d.boundsMax, v3(1, 1, 1), 20),
+      ) &&
+      !inSkyZone(d, p.pos)
     ) {
       const s = d.spawns.find((sp) => sp.team === undefined || sp.team === p.team) ?? d.spawns[0];
       respawnPlayer(world, p, s.pos, s.yawDeg, ctx.config);
     }
   }
   updateCombat(world, ctx, inputs, prevButtons);
+  updatePowerupPickups(world, ctx);
 };
 
 /**
@@ -210,4 +250,5 @@ export const stepPredict = (
     p.view = input.view;
   }
   updateCombat(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, { only: localId });
+  updatePowerupPickups(world, ctx, localId);
 };

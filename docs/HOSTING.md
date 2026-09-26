@@ -1,19 +1,19 @@
-# Hosting Space YZ on your PC
+# Hosting Lethal Recoil on your PC
 
 Your PC can be the game server for you and your friends. There is nothing to install.
 
 ## 1. Get the host app
 
 1. Open the repository on GitHub and click **Releases** (on the right).
-2. Download **SpaceYZ-Host.exe** from the newest release.
+2. Download **LethalRecoil-Host.exe** from the newest release.
    (No release yet? Open **Actions → Host app**, click the newest green run, and download
-   **SpaceYZ-Host-Windows** at the bottom. It's a zip with the .exe inside.)
-3. Put it in its own folder, for example `Documents\SpaceYZ`. It will create a `data`
+   **LethalRecoil-Host-Windows** at the bottom. It's a zip with the .exe inside.)
+3. Put it in its own folder, for example `Documents\LethalRecoil`. It will create a `data`
    folder next to itself for accounts, ranks and backups.
 
 ## 2. Start it
 
-Double-click **SpaceYZ-Host.exe**.
+Double-click **LethalRecoil-Host.exe**.
 
 - **"Windows protected your PC"** (SmartScreen) appears because the app isn't signed with a
   paid certificate. Click **More info → Run anyway**.
@@ -66,7 +66,7 @@ npm install
 npm run host
 ```
 
-To build the .exe yourself (on Windows, it makes `build\host\SpaceYZ-Host.exe`):
+To build the .exe yourself (on Windows, it makes `build\host\LethalRecoil-Host.exe`):
 
 ```
 npm run build:host

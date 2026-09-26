@@ -6,7 +6,7 @@
 //   node tools/e2e/feature-tour.mjs --url http://localhost:7777 --out tour
 //
 // Needs Playwright (npm i -D playwright && npx playwright install chromium), or set
-// PLAYWRIGHT_PATH to an existing install. Optional: --host path/to/SpaceYZ-Host to also test
+// PLAYWRIGHT_PATH to an existing install. Optional: --host path/to/LethalRecoil-Host to also test
 // the host app and its dashboard.
 /* global T */ // in-page test helpers (window.T), used inside page.evaluate callbacks
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -177,7 +177,7 @@ const until = async (page, fn, arg, ms = 5000) => {
       null,
       4000,
     );
-    return { pass: /SPACE YZ/.test(title) && ok, note: title };
+    return { pass: /LETHAL RECOIL/.test(title) && ok, note: title };
   });
   await check('Menus', 'Settings: tabs, rebinding a key, crosshair editor', p, async () => {
     await p.click('text=Settings');
@@ -904,7 +904,7 @@ const until = async (page, fn, arg, ms = 5000) => {
 }
 
 // ==========================================================================================
-// 8. Host app (optional: --host path/to/SpaceYZ-Host)
+// 8. Host app (optional: --host path/to/LethalRecoil-Host)
 if (HOST) {
   const proc = spawn(HOST, ['--no-open', '--no-tunnel', '--port', '7890'], {
     stdio: ['ignore', 'pipe', 'pipe'],

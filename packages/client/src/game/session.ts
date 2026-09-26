@@ -10,6 +10,7 @@ import type {
   WorldState,
   BoomerangState,
   GrenadeState,
+  PowerupPickup,
   SimContext,
   MatchView,
 } from '@space-yz/shared';
@@ -50,6 +51,14 @@ export interface RenderPlayer {
   aiming: boolean;
   laserWarn: number;
   slashTicks: number;
+  /** 0 / 1: Boomerang / Laser, or in CS mode AK / Deagle */
+  weapon?: number;
+  /** round-start shield still up (drawn as a blue shell) */
+  shield?: boolean;
+  /** Freeze power-up: ticks of stun left (drawn iced over) */
+  stun?: number;
+  /** held power-up (0 none, 1 Freeze, 2 Double boomerang) */
+  powerup?: number;
   carrier: boolean;
   revealed: boolean;
 }
@@ -74,6 +83,10 @@ export interface Session {
   others(): RenderPlayer[];
   boomerangs(): BoomerangState[];
   grenades(): GrenadeState[];
+  /** Double-boomerang twins in flight (as drawn) */
+  twins?(): BoomerangState[];
+  /** power-ups waiting to be picked up */
+  powerups?(): PowerupPickup[];
   /** Latest world (offline: authoritative; online: predicted). */
   world(): WorldState;
   /** Events produced since the last drain. */
@@ -93,6 +106,10 @@ export interface Session {
   report?(playerId: number, reason: string): void;
   /** Round-trip ping per player id (online). */
   pings?(): Record<number, number>;
+  /** While you're dead: may you take over this player (a living bot teammate, round live)? */
+  canTakeOver?(id: number): boolean;
+  /** Take over that bot's body (offline: right away; online: the server decides). */
+  takeOver?(id: number): void;
   teleport?(areaIndex: number): void;
   respawn?(): void;
   dispose(): void;

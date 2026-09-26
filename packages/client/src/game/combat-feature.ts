@@ -14,15 +14,50 @@ import {
   scale,
   isFlying,
   projectOnPlane,
+  jetpackTuning,
+  loadoutOf,
+  currentGun,
+  gunAmmo,
+  gunDef,
+  gunConeDeg,
+  patternAt,
+  qForward,
+  qRight,
+  qUp,
+  madd,
 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import { PlayerModels } from '../render/players';
 import { CombatView } from '../render/combat-view';
 import { Viewmodel } from '../render/viewmodel';
-import { CombatHud, type Threat } from '../ui/combat-hud';
+import { CombatHud, POWERUP_HUD, type Threat } from '../ui/combat-hud';
 import { projectMarker, screenAngle } from '../ui/markers';
 import type { LoopHandle } from '../audio';
 import type { SoundName } from '../audio';
+
+/** Hearing range (m) of warnings aimed at you: Wind-ups, Laser warnings. */
+const DANGER_RANGE = 55;
+/** Boomerang whistles: hearing range (m) and how many play at once (nearest first). */
+const WHISTLE_RANGE = 45;
+const MAX_WHISTLES = 4;
+
+/** Where the sounds of players you can't see are placed: far outside any hearing range. */
+const UNHEARD: Vec3 = { x: 1e7, y: 1e7, z: 1e7 };
+
+/** Distance from `p` to the segment a–b. */
+const distToSegment = (p: Vec3, a: Vec3, b: Vec3): number => {
+  const ab = sub(b, a);
+  const t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / Math.max(1e-6, dot(ab, ab))));
+  return len(sub(p, { x: a.x + ab.x * t, y: a.y + ab.y * t, z: a.z + ab.z * t }));
+};
+
+/** CS mode: gunshots carry far (m); reloads only close by. */
+const GUNSHOT_RANGE = 70; // was 110 (the whole map): gunfire gave away positions
+const RELOAD_RANGE = 18;
+const DEG = Math.PI / 180;
+
+/** How far ahead (s) the throw preview leads moving enemies. */
+const PREVIEW_LEAD_SEC = 0.6;
 
 const KILL_SOUND: Partial<Record<KillKind, SoundName>> = {
   headshot: 'killHeadshot',
@@ -45,6 +80,14 @@ export class CombatFeature implements ClientFeature {
   private slashed = false;
   private wasAlive = true;
   private camLocal = new THREE.Vector3();
+  /** the previewed throw would hit an enemy (crosshair turns red) */
+  private onTarget = false;
+  private wasAiming = false;
+  private aimCurve: number | null = null;
+  /** CS mode: this match is played with guns (dim players, gun viewmodel, ammo HUD) */
+  private cs = false;
+  /** CS mode: the fast extra camera kick of the last shot (degrees, decays) */
+  private punchKick = 0;
   statsText: (() => string | null) | null = null;
 
   init(c: GameClient): void {
@@ -91,8 +134,12 @@ export class CombatFeature implements ClientFeature {
       events,
       (id) => this.teamOf(c, id),
       scale(normalize(gravity, v3(0, -1, 0)), 9),
+      (id) => this.muzzleOf(c, id),
     );
-    const posOf = (id: number): Vec3 => world.players.find((p) => p.id === id)?.pos ?? c.eye();
+    // where a player's sound comes from; an enemy you can't see isn't sent to you (anti-wallhack),
+    // so their sounds are placed out of hearing range instead of (as before) at your own head
+    const posOf = (id: number): Vec3 =>
+      world.players.find((p) => p.id === id)?.pos ?? (id === me ? c.eye() : UNHEARD);
     for (const e of events) {
       switch (e.type) {
         case 'throw':
@@ -104,12 +151,19 @@ export class CombatFeature implements ClientFeature {
           break;
         case 'windupStart':
           if (!this.windupSounds.get(e.player)) {
-            a.play3d('throwWindupCharge', posOf(e.player), { volume: 1, refDistance: 14 });
+            a.play3d('throwWindupCharge', posOf(e.player), {
+              volume: 1,
+              refDistance: 14,
+              maxDistance: DANGER_RANGE,
+            });
             this.windupSounds.set(e.player, true);
           }
           break;
         case 'windupReady':
-          a.play3d('windupReady', posOf(e.player), { refDistance: 12 });
+          a.play3d('windupReady', posOf(e.player), {
+            refDistance: 12,
+            maxDistance: DANGER_RANGE,
+          });
           break;
         case 'windupCancel':
           this.windupSounds.delete(e.player);
@@ -124,6 +178,45 @@ export class CombatFeature implements ClientFeature {
         case 'wallHit':
           a.play3d('wallHit', e.pos, { volume: 0.8 });
           break;
+        case 'wallBounce':
+          a.play3d('wallHit', e.pos, { volume: 0.7, rate: 1.35 });
+          break;
+        // ---- power-ups ----
+        case 'powerupSpawn':
+          a.play3d('powerupSpawn', e.pos, { volume: 0.9, refDistance: 14, maxDistance: 90 });
+          this.hud.showCenter(`${POWERUP_HUD[e.kind].name} POWER-UP IN THE MIDDLE`, 2);
+          break;
+        case 'powerupPickup': {
+          const d = POWERUP_HUD[e.kind];
+          const n =
+            e.kind === 1
+              ? c.session.config.combat.freezeCharges
+              : c.session.config.combat.doubleCharges;
+          if (e.player === me) {
+            a.play('powerupPickup', { volume: 1 });
+            this.hud.showBanner(`${d.name} ×${n}`, true);
+          } else {
+            a.play3d('powerupPickup', e.pos, { volume: 0.8, refDistance: 10 });
+            this.hud.showCenter(`${this.name(c, e.player)} took ${d.name}`, 2);
+          }
+          break;
+        }
+        case 'freeze':
+          if (e.victim === me) {
+            a.play('freeze', { volume: 1 });
+            c.shake = Math.max(c.shake, 0.3);
+          } else a.play3d('freeze', e.pos, { volume: 0.9, refDistance: 10 });
+          if (e.attacker === me) this.hud.showBanner('FROZEN!');
+          break;
+        case 'twinThrow':
+          a.play3d('throw', posOf(e.player), { volume: 0.5, rate: 1.25, refDistance: 6 });
+          break;
+        case 'twinBounce':
+          a.play3d('wallHit', e.pos, { volume: 0.6, rate: 1.5 });
+          break;
+        case 'twinEnd':
+          if (e.wall) a.play3d('wallHit', e.pos, { volume: 0.55, rate: 1.2 });
+          break;
         case 'clash':
           a.play3d('clash', e.pos, { volume: 1, refDistance: 10 });
           break;
@@ -132,8 +225,10 @@ export class CombatFeature implements ClientFeature {
           if (e.player === me) this.hud.showBanner('DEFLECT!');
           break;
         case 'recallStart':
-          a.play3d('recallTelegraph', e.from, { volume: 1, refDistance: 20 });
-          if (e.player !== me && e.lethal) a.play('recallTelegraph', { volume: 0.5 });
+          a.play3d('recallTelegraph', e.from, { volume: 1, refDistance: 20, maxDistance: 60 });
+          // the extra in-your-head warning only when the lethal line passes near you
+          if (e.player !== me && e.lethal && distToSegment(c.eye(), e.from, e.to) < 6)
+            a.play('recallTelegraph', { volume: 0.5 });
           break;
         case 'recallGo':
           a.play3d('recallWhoosh', posOf(e.player), { volume: 0.9, refDistance: 10 });
@@ -143,11 +238,57 @@ export class CombatFeature implements ClientFeature {
           if (e.player === me) this.slashed = true;
           break;
         case 'laserWarn':
-          a.play3d('laserWarn', posOf(e.player), { volume: 0.9, refDistance: 12 });
+          a.play3d('laserWarn', posOf(e.player), {
+            volume: 0.9,
+            refDistance: 12,
+            maxDistance: DANGER_RANGE,
+          });
           break;
         case 'laserFire':
           a.play3d('laserFire', e.from, { volume: 0.9, refDistance: 10 });
           break;
+        case 'gunFire': {
+          const name = e.gun === 'ak' ? 'akShot' : 'deagleShot';
+          if (e.player === me) {
+            a.play(name, {
+              volume: e.gun === 'ak' ? 0.75 : 0.9,
+              rate: 0.97 + Math.random() * 0.06,
+            });
+            this.punchKick += gunDef(c.session.config.combat, e.gun).punchDeg;
+          } else {
+            a.play3d(name, e.from, {
+              volume: 1,
+              refDistance: 6,
+              maxDistance: GUNSHOT_RANGE,
+              rate: 0.97 + Math.random() * 0.06,
+            });
+            this.models.gunKick(e.player);
+          }
+          break;
+        }
+        case 'gunReload':
+          if (e.player === me) a.play('gunReload', { volume: 0.7 });
+          else a.play3d('gunReload', posOf(e.player), { volume: 0.6, maxDistance: RELOAD_RANGE });
+          break;
+        case 'gunDraw':
+          if (e.player === me) a.play('gunDraw', { volume: 0.6 });
+          break;
+        case 'jetpack': {
+          // exhaust puff under the player (yours too: you see it looking down)
+          const p = posOf(e.player);
+          const up = world.players.find((q) => q.id === e.player)?.up ?? v3(0, 1, 0);
+          this.view.fragments.burst(
+            { x: p.x - up.x * 0.6, y: p.y - up.y * 0.6, z: p.z - up.z * 0.6 },
+            0xffb347,
+            10,
+            4,
+            0.25,
+            0.35,
+            scale(up, -9),
+          );
+          if (e.player !== me) a.play3d('thruster', p, { volume: 0.7, rate: 0.75, refDistance: 6 });
+          break;
+        }
         case 'grenadeThrow':
           a.play3d('grenadeThrow', posOf(e.player), { volume: 0.7 });
           break;
@@ -163,6 +304,24 @@ export class CombatFeature implements ClientFeature {
           this.pullLoops.delete(e.grenade);
           a.play3d('grenadePop', e.pos, { volume: 1, refDistance: 10 });
           break;
+        case 'blast': {
+          // explosive throw: a heavier, lower bang than a grenade, and a shake nearby
+          a.play3d('grenadePop', e.pos, { volume: 1.3, rate: 0.7, refDistance: 12 });
+          a.play3d('wallHit', e.pos, { volume: 0.9, rate: 0.6, refDistance: 10 });
+          const d = len(sub(e.pos, c.eye()));
+          if (d < 12) c.shake = Math.max(c.shake, 0.6 * (1 - d / 12));
+          break;
+        }
+        case 'shieldBreak':
+          // a glassy crack: higher and brighter than a normal hit
+          a.play3d('deflect', e.pos, { volume: 1.1, rate: 1.5, refDistance: 8 });
+          if (e.attacker === me) this.hud.shieldMarker();
+          if (e.victim === me) {
+            a.play('deflect', { volume: 0.9, rate: 1.3 });
+            c.shake = Math.max(c.shake, 0.25);
+            this.hud.shieldBroken();
+          }
+          break;
         case 'hit':
           this.models.flash(e.victim);
           if (e.attacker === me && e.victim !== me) {
@@ -171,12 +330,19 @@ export class CombatFeature implements ClientFeature {
             const myTeam = c.session.local()?.team;
             const mate = myTeam !== undefined && this.teamOf(c, e.victim) === myTeam;
             this.hud.hitMarker(e.head, killed && !mate, mate);
-            if (!killed && !mate) a.play(e.head ? 'hitHead' : 'hitMarker', { volume: 0.9 });
+            if (!killed && !mate) a.play(e.head ? 'hitHead' : 'hitMarker', { volume: 1.2 });
           }
           if (e.victim === me) {
             a.play('hurt', { volume: 0.8 });
             c.shake = Math.max(c.shake, 0.35);
             this.hud.damageFrom(e.src);
+          }
+          break;
+        case 'takeover':
+          if (e.player === me) {
+            // you're in the bot's body now: look from it, and say whose it was
+            c.syncCameraToPlayer();
+            this.hud.showCenter(`You took control of ${this.name(c, e.bot)}`, 2);
           }
           break;
         case 'kill': {
@@ -196,15 +362,23 @@ export class CombatFeature implements ClientFeature {
               a.play('teamKill');
               this.hud.showCenter('TEAM KILL', 2, 'warn');
             } else {
-              this.onMyKill(c, e.kind, e.throwId);
+              // a gun kill with a head shot plays and reads as a HEADSHOT
+              const gunHead =
+                (e.kind === 'ak' || e.kind === 'deagle') &&
+                events.some(
+                  (x) => x.type === 'hit' && x.victim === e.victim && x.attacker === me && x.head,
+                );
+              this.onMyKill(c, gunHead ? 'headshot' : e.kind, e.throwId);
             }
           }
           if (e.victim === me) {
             c.shake = 0.8;
             this.hud.showCenter(
-              e.attacker === me
-                ? 'You eliminated yourself'
-                : `Eliminated by ${this.name(c, e.attacker)}`,
+              e.kind === 'world'
+                ? 'Caught outside the zone'
+                : e.attacker === me
+                  ? 'You eliminated yourself'
+                  : `Eliminated by ${this.name(c, e.attacker)}`,
               2.5,
               'warn',
             );
@@ -275,7 +449,18 @@ export class CombatFeature implements ClientFeature {
     const me = s.local();
     const others = s.others();
     const world = s.world();
-    this.models.update(others, dt, this.time);
+    // CS mode (from the config the sim runs with, or the match): guns, dim players
+    this.cs = loadoutOf(s.config).guns || s.match?.()?.loadout === 'cs';
+    this.models.setCsMode(this.cs);
+    for (const b of s.boomerangs())
+      if (b.owner !== s.localId)
+        this.models.setHolding(b.owner, !this.cs && b.phase === Phase.Held);
+    // the player you watch while dead is seen from inside: don't draw their model over the view
+    this.models.update(
+      c.spectating === null ? others : others.filter((o) => o.id !== c.spectating),
+      dt,
+      this.time,
+    );
     const settings = c.deps.settings;
     const cfg = s.config;
     const booms = s.boomerangs();
@@ -296,6 +481,7 @@ export class CombatFeature implements ClientFeature {
       .filter((p) => p.laserWarn > 0)
       .map((p) => ({
         id: p.id,
+        team: p.team,
         eye: eyePos(p, cfg.movement),
         view: p.id === s.localId ? c.fps.quat : p.view,
       }));
@@ -303,6 +489,8 @@ export class CombatFeature implements ClientFeature {
       {
         boomerangs: booms,
         grenades: s.grenades(),
+        twins: s.twins?.() ?? [],
+        powerups: s.powerups?.() ?? [],
         teamOf: (id) => this.teamOf(c, id),
         windups,
         laserWarns,
@@ -313,32 +501,40 @@ export class CombatFeature implements ClientFeature {
       dt,
     );
 
-    // private throw preview (+ steering preview), teammates on the path turn it orange
+    // tilt meter while your Quick Throw flies out (flick the mouse to tilt it) + the first tips
+    const aiming = !!me && me.alive && myB?.phase === Phase.Held && me.aiming;
+    if (aiming && !this.wasAiming) this.hud.aimStarted();
+    this.wasAiming = aiming;
+    this.aimCurve =
+      me && me.alive && myB?.phase === Phase.Out && !myB.windup && myB.controller === me.id
+        ? myB.curve
+        : null;
+
+    // private throw preview (+ steering preview): orange with a teammate on the path, red when
+    // it would hit an enemy (checked where a moving enemy will be by then)
     let pred = null;
     if (me && me.alive && myB && settings.throwPreview) {
       const heldView = { ...me, view: c.fps.quat };
       if (myB.phase === Phase.Held && me.aiming) {
-        const curve =
-          (c.deps.input.isHeld('right') ? 1 : 0) - (c.deps.input.isHeld('left') ? 1 : 0);
-        pred = predictThrow(world, s.ctx, heldView, curve, 160);
+        // a release throws straight: flicking in flight tilts it afterwards
+        pred = predictThrow(world, s.ctx, heldView, 0, 160, undefined, false, PREVIEW_LEAD_SEC);
       } else if (
         (myB.phase === Phase.Out || myB.phase === Phase.Return) &&
         myB.steerLeft > 0 &&
         c.deps.input.isHeld('alt')
       ) {
-        pred = predictThrow(world, s.ctx, heldView, 0, 160, myB, true);
+        pred = predictThrow(world, s.ctx, heldView, 0, 160, myB, true, PREVIEW_LEAD_SEC);
       }
     }
-    this.view.setPreview(
-      pred,
-      settings.throwPreviewOpacity,
-      !!pred && pred.teammatesOnPath.length > 0,
-    );
+    this.view.setPreview(pred, settings.throwPreviewOpacity, c.eye());
+    this.onTarget = !!pred?.enemyHit;
 
     // zoom
     if (me && me.alive && me.windup > 0) c.fovOverride = cfg.combat.windupFov;
     else if (me && me.alive && me.aiming) c.fovOverride = cfg.combat.aimFov;
     else c.fovOverride = null;
+
+    this.updatePunch(c, me, dt);
 
     // viewmodel
     const vfov = c.camera.fov;
@@ -348,6 +544,7 @@ export class CombatFeature implements ClientFeature {
       this.viewmodel.update(
         {
           held: myB?.phase === Phase.Held,
+          laserOut: me.weapon === 1,
           team: me.team,
           aiming: me.aiming,
           windup: Math.min(1, me.windup / fullTicks),
@@ -357,6 +554,13 @@ export class CombatFeature implements ClientFeature {
           laserMax: cfg.combat.laserCharges,
           laserWarn: me.laserWarn > 0,
           moving: Math.min(1, len(projectOnPlane(me.vel, me.up)) / 9) * (me.grounded ? 1 : 0),
+          pitch: Math.asin(Math.max(-1, Math.min(1, dot(c.fps.forward(), c.fps.up)))),
+          grounded: me.grounded,
+          crouched: me.crouched,
+          move: me.move,
+          gun: this.cs ? currentGun(me) : null,
+          gunShots: me.gunShots,
+          gunReload01: this.cs ? this.gunReload01(c, me) : 0,
         },
         dt,
       );
@@ -364,11 +568,12 @@ export class CombatFeature implements ClientFeature {
       this.viewmodel.scene.visible = me.alive;
     }
 
-    // threat indicators: enemy (or deflected) Boomerangs heading at me, incl. behind
+    // threat indicators: enemy (or deflected) Boomerangs (and twins) heading at me, incl. behind
     const threats: Threat[] = [];
+    const twins = s.twins?.() ?? [];
     if (me && me.alive) {
       const eye = c.eye();
-      for (const b of booms) {
+      for (const b of [...booms, ...twins]) {
         if (!isFlying(b) || b.controller === s.localId) continue;
         const rel = sub(eye, b.pos);
         const dist = len(rel);
@@ -409,20 +614,24 @@ export class CombatFeature implements ClientFeature {
       }
     }
 
-    // 3D whistles: louder & higher as they close in
+    // 3D whistles: louder & higher as they close in; only the nearest few (a 5v5 full of
+    // whistles is just noise)
     const seen = new Set<number>();
     const a = c.deps.audio;
     if (a.unlocked) {
       const eye = c.eye();
-      for (const b of booms) {
-        if (!isFlying(b)) continue;
+      const near = [...booms, ...twins]
+        .filter((b) => isFlying(b) && len(sub(b.pos, eye)) < WHISTLE_RANGE)
+        .sort((x, y) => len(sub(x.pos, eye)) - len(sub(y.pos, eye)))
+        .slice(0, MAX_WHISTLES);
+      for (const b of near) {
         seen.add(b.id);
         let h = this.whistles.get(b.id);
         if (!h) {
           h = a.loop3d('boomerangWhistle', b.pos, {
             volume: 0.9,
             refDistance: 8,
-            maxDistance: 180,
+            maxDistance: WHISTLE_RANGE,
           });
           this.whistles.set(b.id, h);
         }
@@ -463,12 +672,25 @@ export class CombatFeature implements ClientFeature {
           hp: me.hp,
           maxHp: cfg.combat.maxHp,
           boomerang: status,
+          shield: !!me.shield && me.alive,
+          blastIn: this.cs ? undefined : Math.max(0, cfg.combat.blastEvery - 1 - me.blastCount),
+          blastFlying: !!myB?.explosive && myB.phase !== Phase.Held,
           boomerangDist: myB ? len(sub(myB.pos, me.pos)) : 0,
           laserCharges: me.laserCharges,
           laserMax: cfg.combat.laserCharges,
           laserRecharge01: 0,
+          laserReserve: me.laserReserve,
+          laserReload01:
+            me.laserReload > 0
+              ? 1 - me.laserReload / Math.max(1, Math.round(cfg.combat.laserReloadSec * 60))
+              : 0,
+          weapon: me.weapon === 1 || myB?.phase !== Phase.Held ? 'laser' : 'boomerang',
           grenades: me.grenadesLeft,
           dashReady01: 1 - me.dashCd / Math.max(1, Math.round(cfg.movement.dashCooldownSec * 60)),
+          // (the sky duel's tank is bigger)
+          jetReady01:
+            me.jetFuel /
+            Math.max(1e-6, jetpackTuning(cfg.movement, c.session.level.def, me.pos).fuel),
           steer01:
             myB && myB.phase !== Phase.Held
               ? myB.steerLeft / Math.max(1, Math.round(cfg.combat.steerSec * 60))
@@ -477,6 +699,29 @@ export class CombatFeature implements ClientFeature {
           windupFull: me.windup >= fullTicks,
           windupHold01: me.windupHeld / Math.max(1, Math.round(cfg.combat.windupHoldSec * 60)),
           alive: me.alive,
+          onTarget: me.alive && this.onTarget,
+          aimCurve: this.aimCurve,
+          powerup:
+            me.powerup === 1 || me.powerup === 2
+              ? {
+                  kind: me.powerup,
+                  charges: me.powerupCharges,
+                  max: me.powerup === 1 ? cfg.combat.freezeCharges : cfg.combat.doubleCharges,
+                }
+              : null,
+          stun01: me.stun / Math.max(1, Math.round(cfg.combat.freezeSec * 60)),
+          guns: this.cs
+            ? {
+                active: currentGun(me),
+                ak: gunAmmo(me, 'ak'),
+                deagle: gunAmmo(me, 'deagle'),
+                reload01: this.gunReload01(c, me),
+                spreadPx:
+                  (Math.tan(gunConeDeg(me, s.ctx) * DEG) /
+                    Math.tan(((c.camera.fov / 2) * Math.PI) / 180)) *
+                  (window.innerHeight / 2),
+              }
+            : null,
         },
         threats,
         marker,
@@ -493,9 +738,53 @@ export class CombatFeature implements ClientFeature {
       );
     }
     this.hud.setStats(this.statsText?.() ?? null);
+    this.hud.setSpectate(
+      c.spectating !== null && c.spectating >= 0 && !c.panelOpen
+        ? `SPECTATING ${this.name(c, c.spectating)}${
+            this.teamOf(c, c.spectating) === me?.team ? '' : ' (enemy)'
+          } · LMB / RMB switch${c.takeOverTarget() !== null ? ' · E take control' : ''}`
+        : null,
+    );
+  }
+
+  /** CS mode: reload progress of the gun in hand (0 = not reloading). */
+  private gunReload01(c: GameClient, me: PlayerState): number {
+    if (me.gunReload <= 0) return 0;
+    const g = gunDef(c.session.config.combat, currentGun(me));
+    return 1 - me.gunReload / Math.max(1, Math.round(g.reloadSec * 60));
+  }
+
+  /** Where a player's gun barrel is (CS mode tracers start there). */
+  private muzzleOf(c: GameClient, id: number): Vec3 | null {
+    const s = c.session;
+    if (id === s.localId) {
+      // your own: from the viewmodel's barrel, low right of the crosshair
+      const q = c.fps.quat;
+      const eye = c.eye();
+      return madd(madd(madd(eye, qRight(q), 0.11), qUp(q), -0.1), qForward(q), 0.55);
+    }
+    const p = s.others().find((o) => o.id === id);
+    if (!p) return null;
+    const eye = eyePos(p as unknown as PlayerState, s.config.movement);
+    return madd(madd(madd(eye, qRight(p.view), 0.25), qUp(p.view), -0.2), qForward(p.view), 0.7);
+  }
+
+  /** CS mode recoil on the camera: part of the spray (like CS) plus a quick kick per shot. */
+  private updatePunch(c: GameClient, me: PlayerState | undefined, dt: number): void {
+    this.punchKick *= Math.exp(-dt * 22);
+    if (!this.cs || !me || !me.alive) {
+      c.viewPunch = { pitch: 0, yaw: 0 };
+      this.punchKick = 0;
+      return;
+    }
+    const cfg = c.session.config.combat;
+    const [pp, py] = patternAt(gunDef(cfg, currentGun(me)).pattern, me.gunSpray);
+    const k = cfg.gunViewTracking;
+    c.viewPunch = { pitch: (pp * k + this.punchKick) * DEG, yaw: py * k * DEG };
   }
 
   dispose(c: GameClient): void {
+    c.viewPunch = { pitch: 0, yaw: 0 };
     for (const h of this.whistles.values()) h.stop(0.05);
     for (const h of this.pullLoops.values()) h.stop(0.05);
     this.models.dispose();

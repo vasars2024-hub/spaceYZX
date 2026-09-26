@@ -1,12 +1,13 @@
 // The in-game runtime: input -> session ticks -> camera -> render/HUD/audio, every frame.
 import * as THREE from 'three';
-import type { SimEvent, Vec3 } from '@space-yz/shared';
-import { len, projectOnPlane, v3, qForward, Move } from '@space-yz/shared';
-import type { Session } from './session';
+import type { PlayerState, SimEvent, Vec3 } from '@space-yz/shared';
+import { len, projectOnPlane, v3, qForward, qUp, Move, eyePos, Btn } from '@space-yz/shared';
+import type { RenderPlayer, Session } from './session';
 import { FpsCamera } from './camera';
 import type { InputManager } from './input';
 import { buildLevelMeshes, type LevelMeshes } from '../render/level-mesh';
 import { QUALITY } from '../render/perf';
+import { effects } from '../render/effects';
 import { Hud } from '../ui/hud';
 import type { Settings } from '../settings';
 import { cameraRotationRate } from '../settings';
@@ -42,10 +43,23 @@ export class GameClient {
   private currentFov = 100;
   shake = 0;
   /**
+   * CS mode recoil: extra camera pitch (+ = up) and yaw (+ = right) in radians, set by the combat
+   * feature. Visual only: the aim sent to the server is never punched.
+   */
+  viewPunch = { pitch: 0, yaw: 0 };
+  /**
    * A panel covers the middle of the screen this frame (scoreboard, match results): world
    * markers step aside so they don't show through it. Set by the feature that shows it.
    */
   panelOpen = false;
+  /** while you're dead: the player whose eyes you watch (null = your own view) */
+  spectating: number | null = null;
+  private offSpectate: (() => void) | null = null;
+  /**
+   * Buttons ignored until released (the E that took over a bot must not also slash with the
+   * new body).
+   */
+  muteButtons = 0;
   /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
   overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
@@ -60,14 +74,71 @@ export class GameClient {
     const q = QUALITY[deps.settings.quality] ?? QUALITY.medium;
     this.levelMeshes = buildLevelMeshes(def, {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
-      dust: q.dust,
-      atmosphere: q.atmosphere,
+      dust: q.dust && effects.decoration,
+      atmosphere: q.atmosphere && effects.decoration,
     });
     this.scene.add(this.levelMeshes.group);
     this.scene.add(this.camera);
     const p = session.local();
     this.fps = new FpsCamera(p?.view ?? { x: 0, y: 0, z: 0, w: 1 }, p?.up);
     this.hud = new Hud(deps.ui, deps.settings);
+    // LMB / RMB switch who you watch while dead, E takes over the bot teammate you watch
+    this.offSpectate = deps.input.onAction((a) => {
+      if (this.spectating === null) return;
+      if (a === 'fire') this.cycleSpectate(1);
+      else if (a === 'alt') this.cycleSpectate(-1);
+      else if (a === 'melee') this.requestTakeOver();
+    });
+  }
+
+  /** Living players you can watch while dead: teammates first, then everyone else. */
+  private spectateTargets(): RenderPlayer[] {
+    const myTeam = this.session.local()?.team;
+    const alive = this.session.others().filter((p) => p.alive);
+    return [
+      ...alive.filter((p) => p.team === myTeam).sort((a, b) => a.id - b.id),
+      ...alive.filter((p) => p.team !== myTeam).sort((a, b) => a.id - b.id),
+    ];
+  }
+
+  /** The bot teammate you watch, if you may take it over right now (E). */
+  takeOverTarget(): number | null {
+    const id = this.spectating;
+    return id !== null && id >= 0 && this.session.canTakeOver?.(id) ? id : null;
+  }
+
+  private requestTakeOver(): void {
+    const id = this.takeOverTarget();
+    if (id === null) return;
+    // this E must not also slash with the new body
+    this.muteButtons |= Btn.Melee;
+    // keep looking where the bot looks (online the server takes your inputs' view from here)
+    const p = this.session.others().find((o) => o.id === id);
+    if (p) this.fps.reset(p.view, p.up);
+    this.session.takeOver?.(id);
+  }
+
+  private cycleSpectate(step: number): void {
+    const list = this.spectateTargets();
+    if (list.length === 0) return;
+    const i = list.findIndex((p) => p.id === this.spectating);
+    this.spectating = list[(i + step + list.length) % list.length].id;
+  }
+
+  /** Keeps `spectating` on a living player while you're dead; null while you're alive. */
+  private updateSpectate(): RenderPlayer | null {
+    const me = this.session.local();
+    if (!me || me.alive) {
+      this.spectating = null;
+      return null;
+    }
+    const list = this.spectateTargets();
+    let target = list.find((p) => p.id === this.spectating) ?? null;
+    if (!target) {
+      target = list[0] ?? null;
+      this.spectating = target?.id ?? -1; // -1: dead, nobody to watch (your own body's view)
+    }
+    return target;
   }
 
   addFeature(f: ClientFeature): void {
@@ -92,17 +163,29 @@ export class GameClient {
       );
 
     if (!this.paused) {
-      this.session.update(dt, () => ({ buttons: input.sampleButtons(), view: this.fps.quat }));
+      this.session.update(dt, () => {
+        const raw = input.sampleButtons();
+        this.muteButtons &= raw; // released: counts again
+        return { buttons: raw & ~this.muteButtons, view: this.fps.quat };
+      });
     }
     const up = this.session.localUp();
     if (up) this.fps.followUp(up, cameraRotationRate(settings.cameraRotation), dt);
 
-    const eye = this.session.localEye();
+    // dead: watch a living player through their eyes
+    const watched = this.updateSpectate();
+    const eye = watched
+      ? eyePos(watched as unknown as PlayerState, this.session.config.movement)
+      : this.session.localEye();
     if (eye) this.camera.position.set(eye.x, eye.y, eye.z);
-    const q = this.fps.quat;
+    const q = watched ? watched.view : this.fps.quat;
     this.camera.quaternion.set(q.x, q.y, q.z, q.w);
+    if (!watched && (this.viewPunch.pitch !== 0 || this.viewPunch.yaw !== 0)) {
+      this.camera.rotateX(this.viewPunch.pitch);
+      this.camera.rotateY(-this.viewPunch.yaw);
+    }
     if (this.shake > 0 && settings.screenShake) {
-      const s = this.shake * 0.02;
+      const s = this.shake * 0.02 * effects.screenShake;
       this.camera.rotateX((Math.random() - 0.5) * s);
       this.camera.rotateY((Math.random() - 0.5) * s);
     }
@@ -150,8 +233,11 @@ export class GameClient {
 
   private audioFrame(events: SimEvent[], speed: number, move: number): void {
     const a = this.deps.audio;
-    const eye = this.session.localEye() ?? v3();
-    a.setListener(eye, qForward(this.fps.quat), this.fps.camUp());
+    // hear from the camera: your own head, or the player you watch while dead
+    const cp = this.camera.position;
+    const cq = this.camera.quaternion;
+    const view = { x: cq.x, y: cq.y, z: cq.z, w: cq.w };
+    a.setListener(v3(cp.x, cp.y, cp.z), qForward(view), qUp(view));
     const me = this.session.localId;
     for (const e of events) {
       if ('player' in e && e.player !== me) continue;
@@ -178,6 +264,9 @@ export class GameClient {
         case 'thruster':
         case 'pushOff':
           a.play('thruster');
+          break;
+        case 'jetpack':
+          a.play('thruster', { volume: 0.8, rate: 0.75 });
           break;
         case 'mag':
           a.play('magboots', { rate: e.on ? 1 : 0.8 });
@@ -216,6 +305,7 @@ export class GameClient {
   }
 
   dispose(): void {
+    this.offSpectate?.();
     for (const f of this.features) f.dispose?.(this);
     this.wind?.stop(0.05);
     this.slide?.stop(0.05);

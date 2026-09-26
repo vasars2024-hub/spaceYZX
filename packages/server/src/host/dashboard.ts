@@ -266,7 +266,7 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
 
 const DASHBOARD_HTML = /* html */ `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Space YZ Host</title>
+<title>Lethal Recoil Host</title>
 <style>
 :root{--bg:#070b14;--panel:#0e1524;--line:#1f2b44;--text:#e8f1ff;--dim:#8ea3c4;--cyan:#19e3ff;--orange:#ff8a1f;--ok:#3dff9a;--bad:#ff5b5b;--warn:#ffd24a}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,Segoe UI,sans-serif}
@@ -284,7 +284,7 @@ button.warn{border-color:var(--orange);background:#3a2410}button.small{padding:3
 .dim{color:var(--dim);font-size:13px}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
 #qr{width:150px;height:150px;background:#fff;border-radius:6px;display:block}
 </style></head><body>
-<header><h1>SPACE YZ · HOST</h1><span class="dim" id="uptime"></span><span style="flex:1"></span>
+<header><h1>LETHAL RECOIL · HOST</h1><span class="dim" id="uptime"></span><span style="flex:1"></span>
 <button class="big" id="play">▶ Play</button></header>
 <main>
 <section><h2>Invite friends</h2><div id="method" class="row"></div><div id="reason" class="dim"></div>
@@ -296,7 +296,7 @@ button.warn{border-color:var(--orange);background:#3a2410}button.small{padding:3
 <section><h2>Controls</h2>
 <div class="row"><label><input type="checkbox" id="ranked"> Ranked matchmaking on</label></div>
 <div class="row"><button class="warn" id="restart">Restart all matches</button><button class="warn" id="stop">Stop server</button></div>
-<div class="dim">Closing this window does not stop the server — use Stop, or close the black Space YZ window.</div></section>
+<div class="dim">Closing this window does not stop the server — use Stop, or close the black Lethal Recoil window.</div></section>
 <section style="grid-column:1/-1"><h2>Players</h2><table id="players"></table></section>
 <section style="grid-column:1/-1"><h2>Matches</h2><table id="rooms"></table></section>
 <section style="grid-column:1/-1"><h2>Reports</h2><table id="reports"></table></section>
@@ -311,7 +311,7 @@ const row = (cells) => { const tr = el('tr'); for (const c of cells) { const td 
 const head = (cols) => row(cols.map(c => el('b', c)));
 let st = null, lastQr = '';
 async function refresh() {
-  try { st = await api('/status'); } catch (e) { $('invite').textContent = e === 401 ? 'This page is out of date — use the link the Space YZ window printed.' : 'The server is not running.'; return; }
+  try { st = await api('/status'); } catch (e) { $('invite').textContent = e === 401 ? 'This page is out of date — use the link the Lethal Recoil window printed.' : 'The server is not running.'; return; }
   $('uptime').textContent = 'running ' + Math.floor(st.uptimeSec / 60) + ' min';
   const c = st.connectivity;
   $('method').replaceChildren(el('span', '', 'light ' + (!c ? 'warn' : c.publicUrl ? 'ok' : 'bad')), el('span', !c ? 'Checking…' : c.method === 'upnp' ? 'Direct (router port opened)' : c.method === 'tunnel' ? 'Cloudflare tunnel' : 'Only your network'));

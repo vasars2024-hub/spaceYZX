@@ -1,4 +1,4 @@
-// SpaceYZ-Host: the one-click host app. Starts the game server (client files embedded in the
+// LethalRecoil-Host: the one-click host app. Starts the game server (client files embedded in the
 // .exe), opens the Host Dashboard, and makes the game reachable for friends (LAN link, UPnP
 // port forwarding, or a Cloudflare quick tunnel). Also runs from source: `npm run host`.
 //
@@ -193,7 +193,10 @@ const main = async (): Promise<void> => {
 };
 
 main().catch((err) => {
-  console.error('\n  Space YZ Host could not start:', err instanceof Error ? err.message : err);
+  console.error(
+    '\n  Lethal Recoil Host could not start:',
+    err instanceof Error ? err.message : err,
+  );
   console.error('  Press Ctrl+C to close this window.');
   setTimeout(() => process.exit(1), 60_000);
 });

@@ -5,7 +5,7 @@ import { isZeroG, v3, type Level, type Vec3 } from '@space-yz/shared';
 import type { Analyzer, Sample } from './metrics';
 
 export interface Band {
-  name: 'ground' | 'upper';
+  name: 'ground' | 'upper' | 'basement';
   label: string;
   /** boxes intersecting this height range are drawn */
   lo: number;
@@ -35,6 +35,16 @@ export const BANDS: Record<Band['name'], Band> = {
     feetLo: 2.05,
     feetHi: 9.5,
     raisedFrom: 2.05,
+  },
+  // maps with a level below the main floor (Split Deck's hold at y -5)
+  basement: {
+    name: 'basement',
+    label: 'basement — walls and cover at -4.9 to -3 m',
+    lo: -4.9,
+    hi: -3,
+    feetLo: -8,
+    feetHi: -2,
+    raisedFrom: Infinity,
   },
 };
 

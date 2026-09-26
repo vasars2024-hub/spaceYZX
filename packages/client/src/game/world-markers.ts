@@ -188,6 +188,58 @@ export class WorldMarkers implements ClientFeature {
     if (m.phase !== 'live' && m.phase !== 'spawnLock') return;
     const s = c.session;
     const def = s.level.def;
+    // power-ups in the middle: marked for everyone while they're up (held on the screen edge
+    // while you hold none, so you know there's one to get)
+    const holding = (s.local()?.powerup ?? 0) !== 0;
+    for (const u of s.powerups?.() ?? []) {
+      this.place(c, w, hgt, out, {
+        key: `pu-${u.id}`,
+        cls: 'wm-objective wm-powerup',
+        text: u.kind === 1 ? 'FREEZE' : 'DOUBLE',
+        pin: ' ▼',
+        color: u.kind === 1 ? '#8fe6ff' : '#ffc44d',
+        at: add(u.pos, v3(0, 0.9, 0)),
+        priority: 75,
+        clamp: !holding && !!s.local()?.alive,
+      });
+    }
+    if (m.objective === 'bomb') {
+      const iAttack = myTeam === m.attackers;
+      const b = m.bomb;
+      const carrying = b?.carrier === s.localId && !!s.local()?.alive;
+      for (const site of def.bombSites ?? []) {
+        const at = v3((site.min.x + site.max.x) / 2, site.min.y + 3, (site.min.z + site.max.z) / 2);
+        const here = b?.planted?.site === site.name;
+        this.place(c, w, hgt, out, {
+          key: `site-${site.name}`,
+          cls: `wm-objective wm-site ${iAttack ? 'wm-attack' : 'wm-defend'}`,
+          text: here ? `${site.name} · BOMB` : site.name,
+          pin: ' ▼',
+          color: here ? '#ff5a6a' : '#e8f1ff',
+          at,
+          priority: 85,
+          clamp: carrying || here,
+        });
+      }
+      // the bomb: attackers always know where it is; defenders once it's planted
+      if (b && b.carrier === null && (iAttack || b.planted)) {
+        const now = s.tickNow?.() ?? s.world().tick;
+        const left = b.planted ? Math.max(0, Math.ceil((b.planted.explodeAt - now) / 60)) : 0;
+        this.place(c, w, hgt, out, {
+          key: 'bomb',
+          cls: 'wm-objective wm-bomb',
+          text: b.planted ? `BOMB ${left}s` : 'BOMB · pick it up',
+          pin: ' ▼',
+          color: '#ff5a6a',
+          at: add(b.pos, v3(0, 0.4, 0)),
+          priority: 100,
+          clamp: true,
+        });
+      }
+      return;
+    }
+    // sky duel overtime: the Tower is off and far below, nothing to point at
+    if (m.phase === 'live' && m.overtime?.kind === 'sky') return;
     const tick = s.tickNow?.() ?? s.world().tick;
     const carrying = m.carriers.includes(s.localId) && !!s.local()?.alive;
     for (const t of def.towers) {
@@ -203,6 +255,27 @@ export class WorldMarkers implements ClientFeature {
         // the carrier always sees where to go
         clamp: attack && carrying,
       });
+    }
+    // Controller carriers: always marked for both teams (the rules reveal them through walls),
+    // held on the screen edge when out of view
+    if (m.phase === 'live') {
+      const names = s.names();
+      for (const p of s.others()) {
+        if (!p.alive || !p.carrier) continue;
+        const mate = p.team === myTeam;
+        const name = names[p.id] ?? `Player ${p.id}`;
+        const body = bodyOf(p, s.config.movement);
+        this.place(c, w, hgt, out, {
+          key: `carrier-${p.id}`,
+          cls: `wm-objective wm-carrier-mark ${mate ? 'wm-defend' : 'wm-attack'}`,
+          text: mate ? `◆ ${name} · YOUR CARRIER` : `◆ ${name} · ENEMY CARRIER`,
+          pin: ' ▼',
+          color: TEAM_COLOR[p.team],
+          at: madd(p.pos, p.up, body.height / 2 + 0.5),
+          priority: mate ? 95 : 85,
+          clamp: true,
+        });
+      }
     }
     for (const ctl of m.controllers) {
       if (!ctl.droppedAt) continue;
@@ -305,9 +378,12 @@ export class WorldMarkers implements ClientFeature {
       if (!keep) this.aimed = null;
     }
 
+    const live = s.match?.()?.phase === 'live';
     const present = new Set<number>();
     for (const p of others) {
       present.add(p.id);
+      // carriers get their own objective marker (see objectives)
+      if (live && p.carrier && p.alive) continue;
       const enemy = p.team !== myTeam;
       // only an unrevealed enemy carrier needs this (its ◆ while you can see it: in the
       // clear, and not lost in the fog)

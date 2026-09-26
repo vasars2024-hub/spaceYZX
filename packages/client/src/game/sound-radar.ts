@@ -18,6 +18,7 @@ import {
 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import { h } from '../ui/menus';
+import { effects } from '../render/effects';
 
 export type SoundKind =
   | 'steps'
@@ -30,6 +31,7 @@ export type SoundKind =
   | 'windup'
   | 'laserWarn'
   | 'laser'
+  | 'gunshot'
   | 'grenade'
   | 'pull'
   | 'explosion'
@@ -39,7 +41,8 @@ export type SoundKind =
   | 'deflect'
   | 'slash'
   | 'boomerang'
-  | 'controller';
+  | 'controller'
+  | 'powerup';
 
 interface KindInfo {
   label: string;
@@ -60,6 +63,7 @@ export const SOUND_KINDS: Record<SoundKind, KindInfo> = {
   windup: { label: 'Wind-up!', range: 55, life: 3, danger: true, priority: 5 },
   laserWarn: { label: 'Laser!', range: 60, life: 0.8, danger: true, priority: 5 },
   laser: { label: 'Laser shot', range: 70, life: 1, priority: 3 },
+  gunshot: { label: 'Gunshot', range: 110, life: 1, priority: 3 },
   grenade: { label: 'Grenade', range: 40, life: 1.4, priority: 3 },
   pull: { label: 'Grenade pull', range: 50, life: 1.5, danger: true, priority: 4 },
   explosion: { label: 'Explosion', range: 60, life: 1.2, priority: 3 },
@@ -70,6 +74,7 @@ export const SOUND_KINDS: Record<SoundKind, KindInfo> = {
   slash: { label: 'Slash', range: 20, life: 0.8, priority: 3 },
   boomerang: { label: 'Boomerang incoming', range: 30, life: 0.25, danger: true, priority: 6 },
   controller: { label: 'Controller', range: 80, life: 2, priority: 4 },
+  powerup: { label: 'Power-up taken', range: 80, life: 1.6, priority: 4 },
 };
 
 export interface HeardSound {
@@ -120,7 +125,7 @@ export const loudness = (kind: SoundKind, dist: number): number => {
   return dist >= r ? 0 : Math.min(1, 1.15 - dist / r);
 };
 
-const TEAM_COLOR = ['#19e3ff', '#ff8a1f'];
+import { TEAM_COLOR } from '../render/team-palette';
 const MAX_SHOWN = 8;
 const CLUSTER_RAD = (15 * Math.PI) / 180;
 
@@ -181,6 +186,7 @@ export class SoundRadar implements ClientFeature {
           break;
         case 'thruster':
         case 'pushOff':
+        case 'jetpack':
           from(e.player, 'thruster');
           break;
         case 'throw':
@@ -199,6 +205,9 @@ export class SoundRadar implements ClientFeature {
         case 'laserFire':
           if (e.player !== me) this.hear('laser', e.from, teamOf(e.player), e.player);
           break;
+        case 'gunFire':
+          if (e.player !== me) this.hear('gunshot', e.from, teamOf(e.player), e.player);
+          break;
         case 'grenadeThrow':
           from(e.player, 'grenade');
           break;
@@ -209,6 +218,9 @@ export class SoundRadar implements ClientFeature {
           this.sounds.delete(`pull:${e.grenade}`);
           this.hear('explosion', e.pos, null, e.grenade);
           break;
+        case 'blast':
+          this.hear('explosion', e.pos, teamOf(e.player), `blast:${e.boomerang}`);
+          break;
         case 'recallStart':
           if (e.player !== me) this.hear('recall', e.from, teamOf(e.player), e.player);
           break;
@@ -216,6 +228,7 @@ export class SoundRadar implements ClientFeature {
           this.hear('clash', e.pos, null, `${e.a}-${e.b}`);
           break;
         case 'wallHit':
+        case 'wallBounce':
           this.hear('wallHit', e.pos, null, e.boomerang);
           break;
         case 'deflect':
@@ -226,6 +239,9 @@ export class SoundRadar implements ClientFeature {
           break;
         case 'controllerDrop':
           this.hear('controller', e.pos, e.team, `c${e.team}`);
+          break;
+        case 'powerupPickup':
+          if (e.player !== me) this.hear('powerup', e.pos, teamOf(e.player), `pu${e.id}`);
           break;
       }
     }
@@ -290,6 +306,8 @@ export class SoundRadar implements ClientFeature {
       const dir = soundDirection(snd.pos, eye, F, R, U);
       const loud = loudness(snd.kind, dir.dist);
       if (loud <= 0) continue;
+      // footsteps and the like only when close (Effects setting); threats always
+      if (info.priority <= 1 && loud < effects.radarQuietMin) continue;
       heard.push({ snd, loud, dir });
     }
     heard.sort(
@@ -301,7 +319,7 @@ export class SoundRadar implements ClientFeature {
     for (const x of heard) {
       const c = clusters.find((cl) => angleGap(cl[0].dir.angle, x.dir.angle) < CLUSTER_RAD);
       if (c) c.push(x);
-      else if (clusters.length < MAX_SHOWN) clusters.push([x]);
+      else if (clusters.length < Math.min(MAX_SHOWN, effects.radarMax)) clusters.push([x]);
     }
     const keep = new Set<string>();
     const w = c.deps.renderer.domElement.clientWidth;

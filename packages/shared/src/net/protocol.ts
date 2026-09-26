@@ -14,9 +14,9 @@ const GRENADE_POS = uniformVec3Format(-512, 512, 18);
 /** A grenade position as the network rounds it. */
 export const snapGrenadePos = (v: Vec3): Vec3 => snapVec3(v, GRENADE_POS);
 import type { PlayerInput } from '../sim/input';
-import { ALL_BUTTONS } from '../sim/input';
+import { ALL_BUTTONS, BUTTON_BITS } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
-import type { BoomerangState, GrenadeState } from '../sim/combat-state';
+import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import { createPlayer, newBoomerang } from '../sim/world';
 import { defaultConfig } from '../config';
@@ -28,6 +28,12 @@ export const MSG_SNAPSHOT = 2;
 // JSON control messages
 
 export type GameMode = '1v1' | '2v2' | '5v5' | 'practice';
+/**
+ * What a room plays: a GameMode, or Arena 1v1 ('arena': rotating 1v1 duels in separate pits,
+ * rules/arena.ts). Kept apart from GameMode so menus listing the match modes stay unchanged.
+ */
+export type RoomMode = GameMode | 'arena';
+export const ROOM_MODES: readonly RoomMode[] = ['1v1', '2v2', '5v5', 'practice', 'arena'];
 
 export interface RoomPlayerInfo {
   id: number;
@@ -40,17 +46,53 @@ export interface RoomPlayerInfo {
 
 export type ClientMsg =
   | { t: 'hello'; v: number; name: string; token?: string }
-  | { t: 'createRoom'; mode: GameMode; map?: string; bots?: number; botSkill?: string }
+  | {
+      t: 'createRoom';
+      mode: RoomMode;
+      map?: string;
+      bots?: number;
+      botSkill?: string;
+      objective?: 'tower' | 'bomb';
+      /** 'cs' = CS mode (AK + Deagle, bomb rules, half-speed movement) */
+      loadout?: 'lethal' | 'cs';
+    }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
   | { t: 'startMatch' }
   | { t: 'profile' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }
-  | { t: 'queue'; mode: GameMode }
+  /** Ranked queue: '1v1' / '2v2' / '5v5', or 'arena' (with the kit to play it with). */
+  | { t: 'queue'; mode: RoomMode; loadout?: 'lethal' | 'cs' }
   | { t: 'unqueue' }
   | { t: 'report'; player: number; reason: string }
-  | { t: 'chat'; text: string };
+  /** While dead: take over this bot teammate's body (Counter-Strike style). */
+  | { t: 'takeover'; target: number }
+  /** Text chat: `team` = only your team sees it, otherwise everyone in the room. */
+  | { t: 'chat'; text: string; team?: boolean }
+  /** Voice signaling (WebRTC offer/answer) for one other human in your room. */
+  | { t: 'rtc'; to: number; data: RtcSignal }
+  /** Push-to-talk state: talking or not, and on which channel. */
+  | { t: 'voice'; on: boolean; all: boolean };
+
+/** Voice signaling payload: SDP offers/answers (ICE candidates included), bye/hi. */
+export interface RtcSignal {
+  kind: 'offer' | 'answer' | 'bye' | 'hi';
+  sdp?: string;
+}
+
+/** A chat line as the server delivers it. */
+export interface ChatLine {
+  /** sender's player id in the room */
+  id: number;
+  from: string;
+  team: 0 | 1;
+  text: string;
+  /** team chat (only the sender's team got it) */
+  teamOnly: boolean;
+  /** the sender was dead when they wrote it */
+  dead: boolean;
+}
 
 export type ServerMsg =
   | { t: 'hello'; game: string; protocol: number }
@@ -58,7 +100,7 @@ export type ServerMsg =
   | {
       t: 'roomJoined';
       code: string;
-      mode: GameMode;
+      mode: RoomMode;
       map: string;
       playerId: number;
       tick: number;
@@ -75,13 +117,37 @@ export type ServerMsg =
   /** The server took you out of your room (match over, kicked for griefing…). */
   | { t: 'roomLeft'; reason: string }
   /** Ranked queue status (mode null = not queued). */
-  | { t: 'queue'; mode: GameMode | null; waitSec: number; searching: number; error?: string }
+  | { t: 'queue'; mode: RoomMode | null; waitSec: number; searching: number; error?: string }
   /** Your account profile (ratings, ranks, recent matches). */
   | { t: 'profile'; data: unknown }
   /** Ping equalization: extra input delay (ticks) this client should apply. */
   | { t: 'netcfg'; inputDelay: number }
   | { t: 'kicked'; reason: string }
-  | { t: 'chat'; from: string; text: string };
+  | ({ t: 'chat' } & ChatLine)
+  /** Voice signaling from another human in your room. */
+  | { t: 'rtc'; from: number; data: RtcSignal }
+  /** Someone started/stopped talking (enemies only ever hear about all-channel talk). */
+  | { t: 'voice'; from: number; on: boolean; all: boolean };
+
+export const CHAT_MAX_LEN = 140;
+/** Longest SDP a voice offer/answer may carry. */
+export const RTC_SDP_MAX = 12000;
+
+/**
+ * Clean a chat message: control/formatting characters (incl. bidi overrides) removed,
+ * combining-mark pile-ups ("zalgo") trimmed, whitespace collapsed. Null when it's empty,
+ * not a string or longer than CHAT_MAX_LEN (the client stops you at that length).
+ */
+export const sanitizeChat = (raw: unknown): string | null => {
+  if (typeof raw !== 'string' || raw.length > CHAT_MAX_LEN * 4) return null;
+  const clean = raw
+    .replace(/[\t\n\r\v\f]/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}]/gu, '')
+    .replace(/(\p{M}{2})\p{M}+/gu, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean.length > 0 && clean.length <= CHAT_MAX_LEN ? clean : null;
+};
 
 export const parseJson = <T>(data: unknown, maxLen = 8192): T | null => {
   if (typeof data !== 'string' || data.length > maxLen) return null;
@@ -131,7 +197,7 @@ export const encodeInput = (p: InputPacket): Uint8Array => {
   w.writeBits(Math.min(8, p.inputs.length), 4);
   for (const i of p.inputs.slice(0, 8)) {
     w.writeVarUint(i.tick);
-    w.writeBits(i.buttons & ALL_BUTTONS, 13);
+    w.writeBits(i.buttons & ALL_BUTTONS, BUTTON_BITS);
     w.writeFloat32(i.view.x);
     w.writeFloat32(i.view.y);
     w.writeFloat32(i.view.z);
@@ -150,7 +216,7 @@ export const decodeInput = (bytes: Uint8Array): InputPacket => {
   const inputs: PlayerInput[] = [];
   for (let k = 0; k < n; k++) {
     const tick = r.readVarUint();
-    const buttons = r.readBits(13);
+    const buttons = r.readBits(BUTTON_BITS);
     const x = r.readFloat32();
     const y = r.readFloat32();
     const z = r.readFloat32();
@@ -283,6 +349,7 @@ export const PLAYER_SCHEMA = defineSchema([
   { name: 'aiming', kind: 'bool' },
   { name: 'laserWarn', kind: 'uint', bits: 5 },
   { name: 'laserCharges', kind: 'uint', bits: 3 },
+  { name: 'weapon', kind: 'uint', bits: 1 },
   { name: 'slashTicks', kind: 'uint', bits: 5 },
   { name: 'magOn', kind: 'bool' },
   { name: 'grenadesLeft', kind: 'uint', bits: 2 },
@@ -291,6 +358,10 @@ export const PLAYER_SCHEMA = defineSchema([
   { name: 'teamKills', kind: 'uint', bits: 6 },
   { name: 'frozen', kind: 'bool' },
   { name: 'dashTicks', kind: 'uint', bits: 5 },
+  // power-ups: held one (0 none, 1 Freeze, 2 Double) and Freeze stun ticks left
+  { name: 'powerup', kind: 'uint', bits: 2 },
+  { name: 'stun', kind: 'uint', bits: 7 },
+  { name: 'shield', kind: 'bool' },
 ] as const);
 export type NetPlayer = ReturnType<typeof PLAYER_SCHEMA.decode>;
 
@@ -306,6 +377,9 @@ export const BOOMERANG_SCHEMA = defineSchema([
   { name: 'steerLeft', kind: 'uint', bits: 7 },
   { name: 'throwId', kind: 'uint', bits: 24 },
   { name: 't', kind: 'uint', bits: 10 },
+  { name: 'explosive', kind: 'bool' },
+  /** Quick Throw tilt, (curve + 1) * 32: drawn as the Boomerang banking */
+  { name: 'curve', kind: 'uint', bits: 7 },
 ] as const);
 export type NetBoomerang = ReturnType<typeof BOOMERANG_SCHEMA.decode>;
 
@@ -328,6 +402,7 @@ export const toNetPlayer = (p: PlayerState): NetPlayer => ({
   aiming: p.aiming,
   laserWarn: clampU(p.laserWarn, 5),
   laserCharges: clampU(p.laserCharges, 3),
+  weapon: clampU(p.weapon, 1),
   slashTicks: clampU(p.slashTicks, 5),
   magOn: !!p.mag,
   grenadesLeft: clampU(p.grenadesLeft, 2),
@@ -336,6 +411,9 @@ export const toNetPlayer = (p: PlayerState): NetPlayer => ({
   teamKills: clampU(p.teamKills, 6),
   frozen: p.frozen,
   dashTicks: clampU(p.dashTicks, 5),
+  powerup: clampU(p.powerup, 2),
+  stun: clampU(p.stun, 7),
+  shield: p.shield,
 });
 
 export const toNetBoomerang = (b: BoomerangState): NetBoomerang => ({
@@ -350,10 +428,19 @@ export const toNetBoomerang = (b: BoomerangState): NetBoomerang => ({
   steerLeft: clampU(b.steerLeft, 7),
   throwId: b.throwId % 2 ** 24,
   t: clampU(b.t, 10),
+  explosive: b.explosive,
+  curve: clampU((b.curve + 1) * 32, 7),
 });
 
 // ------------------------------------------------------------------------------------------
 // Snapshots (server -> client)
+
+/** A Double-boomerang twin as everyone sees it (position only: it isn't simulated remotely). */
+export interface NetTwin {
+  id: number;
+  owner: number;
+  pos: Vec3;
+}
 
 export interface SnapshotData {
   seq: number;
@@ -364,6 +451,10 @@ export interface SnapshotData {
   players: Map<number, NetPlayer>;
   boomerangs: Map<number, NetBoomerang>; // by owner id
   grenades: GrenadeState[];
+  /** Double-boomerang twins in flight (always present when decoded) */
+  twins?: NetTwin[];
+  /** power-ups waiting to be picked up (always present when decoded) */
+  powerups?: PowerupPickup[];
   zones: { index: number; dir: Vec3; until: number }[];
   /** private, exact state for the receiving client (every few snapshots): for prediction */
   own: {
@@ -371,6 +462,8 @@ export interface SnapshotData {
     boomerang: BoomerangState | null;
     /** your own grenades (flight + fuse), so their flight can be predicted exactly */
     grenades?: GrenadeState[];
+    /** your own twins in flight (exact), so they predict like your Boomerang */
+    twins?: BoomerangState[];
   } | null;
   events: SimEvent[] | null;
   extra: unknown; // rules / match state (JSON), sent when changed
@@ -407,6 +500,21 @@ export const encodeSnapshot = (s: SnapshotData, base: SnapshotBaseline | null): 
     w.writeBits(g.phase, 2);
     writePos(w, g.pos, GRENADE_POS);
   }
+  const twins = s.twins ?? [];
+  w.writeVarUint(twins.length);
+  for (const t of twins) {
+    w.writeVarUint(t.id);
+    w.writeBits(t.owner, 8);
+    writePos(w, t.pos, GRENADE_POS);
+  }
+  const pups = s.powerups ?? [];
+  w.writeVarUint(pups.length);
+  for (const u of pups) {
+    w.writeVarUint(u.id);
+    w.writeBits(u.kind, 2);
+    writePos(w, u.pos, GRENADE_POS);
+    w.writeVarUint(u.spawnTick);
+  }
   w.writeVarUint(s.zones.length);
   for (const z of s.zones) {
     w.writeVarUint(z.index);
@@ -423,6 +531,9 @@ export const encodeSnapshot = (s: SnapshotData, base: SnapshotBaseline | null): 
     const og = s.own.grenades ?? [];
     w.writeVarUint(og.length);
     for (const g of og) writeExact(w, g, GRENADE_KEYS);
+    const ot = s.own.twins ?? [];
+    w.writeVarUint(ot.length);
+    for (const t of ot) writeExact(w, t, BOOMERANG_KEYS);
   }
   w.writeBool(!!s.events && s.events.length > 0);
   if (s.events && s.events.length > 0) w.writeString(JSON.stringify(s.events), 60000);
@@ -470,6 +581,24 @@ export const decodeSnapshot = (
     const pos = readPos(r, GRENADE_POS);
     grenades.push({ id, owner, pos, vel: v3(), phase, t: 0 });
   }
+  const nt = r.readVarUint();
+  if (nt > 128) throw new CodecError('invalid', 'too many twins');
+  const twins: NetTwin[] = [];
+  for (let k = 0; k < nt; k++) {
+    const id = r.readVarUint();
+    const owner = r.readBits(8);
+    twins.push({ id, owner, pos: readPos(r, GRENADE_POS) });
+  }
+  const np = r.readVarUint();
+  if (np > 16) throw new CodecError('invalid', 'too many power-ups');
+  const powerups: PowerupPickup[] = [];
+  for (let k = 0; k < np; k++) {
+    const id = r.readVarUint();
+    const kind = r.readBits(2);
+    if (kind !== 1 && kind !== 2) throw new CodecError('invalid', 'bad power-up');
+    const pos = readPos(r, GRENADE_POS);
+    powerups.push({ id, kind, pos, spawnTick: r.readVarUint() });
+  }
   const nz = r.readVarUint();
   if (nz > 64) throw new CodecError('invalid', 'too many zones');
   const zones: SnapshotData['zones'] = [];
@@ -487,7 +616,11 @@ export const decodeSnapshot = (
     if (n > 16) throw new CodecError('invalid', 'too many own grenades');
     const grenades: GrenadeState[] = [];
     for (let k = 0; k < n; k++) grenades.push(readExact<GrenadeState>(r, GRENADE_KEYS));
-    own = { player, boomerang, grenades };
+    const n2 = r.readVarUint();
+    if (n2 > 32) throw new CodecError('invalid', 'too many own twins');
+    const twins: BoomerangState[] = [];
+    for (let k = 0; k < n2; k++) twins.push(readExact<BoomerangState>(r, BOOMERANG_KEYS));
+    own = { player, boomerang, grenades, twins };
   }
   const events = r.readBool() ? (JSON.parse(r.readString(60000)) as SimEvent[]) : null;
   const extra = r.readBool() ? (JSON.parse(r.readString(60000)) as unknown) : null;
@@ -500,6 +633,8 @@ export const decodeSnapshot = (
     players,
     boomerangs,
     grenades,
+    twins,
+    powerups,
     zones,
     own,
     events,

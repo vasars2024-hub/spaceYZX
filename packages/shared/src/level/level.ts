@@ -42,7 +42,9 @@ export interface Level {
 const CELL = 4;
 
 export const buildLevel = (def: LevelDef): Level => {
-  const boxes: BoxShape[] = def.boxes.map((b, index) => {
+  // the sky duel arena (if any) collides like the rest, after the ship's own boxes
+  const defs = def.skyArena ? [...def.boxes, ...def.skyArena.boxes] : def.boxes;
+  const boxes: BoxShape[] = defs.map((b, index) => {
     const rotated = !!b.q && Math.abs(b.q.x) + Math.abs(b.q.y) + Math.abs(b.q.z) > 1e-9;
     const ax = rotated ? qRotate(b.q!, v3(1, 0, 0)) : v3(1, 0, 0);
     const ay = rotated ? qRotate(b.q!, v3(0, 1, 0)) : v3(0, 1, 0);
@@ -65,11 +67,23 @@ export const buildLevel = (def: LevelDef): Level => {
     };
   });
 
-  const gridMin = v3(def.boundsMin.x - CELL, def.boundsMin.y - CELL, def.boundsMin.z - CELL);
+  // the grid covers the bounds and every colliding box (the sky arena floats far above them)
+  const lo = v3(def.boundsMin.x, def.boundsMin.y, def.boundsMin.z);
+  const hi = v3(def.boundsMax.x, def.boundsMax.y, def.boundsMax.z);
+  for (const b of boxes) {
+    if (!b.collide) continue;
+    lo.x = Math.min(lo.x, b.min.x);
+    lo.y = Math.min(lo.y, b.min.y);
+    lo.z = Math.min(lo.z, b.min.z);
+    hi.x = Math.max(hi.x, b.max.x);
+    hi.y = Math.max(hi.y, b.max.y);
+    hi.z = Math.max(hi.z, b.max.z);
+  }
+  const gridMin = v3(lo.x - CELL, lo.y - CELL, lo.z - CELL);
   const dims: [number, number, number] = [
-    Math.ceil((def.boundsMax.x - gridMin.x) / CELL) + 2,
-    Math.ceil((def.boundsMax.y - gridMin.y) / CELL) + 2,
-    Math.ceil((def.boundsMax.z - gridMin.z) / CELL) + 2,
+    Math.ceil((hi.x - gridMin.x) / CELL) + 2,
+    Math.ceil((hi.y - gridMin.y) / CELL) + 2,
+    Math.ceil((hi.z - gridMin.z) / CELL) + 2,
   ];
   const grid = new Map<number, number[]>();
   let colliders = 0;

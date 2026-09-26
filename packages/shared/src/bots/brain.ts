@@ -24,6 +24,7 @@ import { qForward, qFromBasis } from '../math/quat';
 import type { RngState } from '../math/rng';
 import { rngFromSeed, rngFloat, rngInt } from '../math/rng';
 import { lineOfSight, raycast } from '../level/collision';
+import { inSkyZone } from '../level/sky-arena';
 import type { SimContext } from '../sim/context';
 import type { WaypointDef } from '../level/types';
 import type { PlayerInput } from '../sim/input';
@@ -34,11 +35,30 @@ import { Phase } from '../sim/combat-state';
 import { eyePos } from '../sim/movement';
 import { hitboxOf, chestOf } from '../sim/hitbox';
 import { isFlying, recallLine } from '../sim/combat';
+import { loadoutOf } from '../config/loadout';
+import { type BotGunMemory, botGunSkill, newBotGunMemory, gunAimDir, gunBotButtons } from './guns';
 
 const DEG = Math.PI / 180;
 
+/** Bot difficulty ids, weakest first (menus list them in this order). */
+export const BOT_SKILL_NAMES = ['rookie', 'casual', 'easy', 'normal', 'hard'] as const;
+export type BotSkillName = (typeof BOT_SKILL_NAMES)[number];
+/** Menu labels for the difficulty ids. */
+export const BOT_SKILL_LABELS: Record<BotSkillName, string> = {
+  rookie: 'Rookie',
+  casual: 'Casual',
+  easy: 'Easy',
+  normal: 'Normal',
+  hard: 'Hard',
+};
+/** Default difficulty for new offline games and online bot fill. */
+export const DEFAULT_BOT_SKILL: BotSkillName = 'casual';
+/** A difficulty id from untrusted input (menus, network), or the default. */
+export const botSkillName = (v: unknown): BotSkillName =>
+  (BOT_SKILL_NAMES as readonly unknown[]).includes(v) ? (v as BotSkillName) : DEFAULT_BOT_SKILL;
+
 export interface BotSkill {
-  name: 'easy' | 'normal' | 'hard';
+  name: BotSkillName;
   reactionTicks: number; // before engaging a newly seen target
   aimErrorDeg: number; // random aim wobble
   turnDegPerTick: number; // max view turn speed
@@ -50,9 +70,51 @@ export interface BotSkill {
   slideHop: boolean;
   windupChance: number; // per decision when far from target
   recallSkill: number; // chance to notice a recall line through an enemy
+  headChance: number; // chance to aim at the head instead of the chest
+  grenadeChance: number; // per tick at mid range
+  sightRange: number; // how far away enemies are noticed (m)
+  fovDeg: number; // view cone for noticing new enemies (360 = sees all around)
 }
 
-export const BOT_SKILLS: Record<BotSkill['name'], BotSkill> = {
+export const BOT_SKILLS: Record<BotSkillName, BotSkill> = {
+  // rookie / casual: for new players. Slow to react and turn, wide aim error, no advanced
+  // movement or wind-ups, and they only notice enemies in front of them (or who hit them).
+  rookie: {
+    name: 'rookie',
+    reactionTicks: 60,
+    aimErrorDeg: 10,
+    turnDegPerTick: 2.5,
+    leadAccuracy: 0.1,
+    deflectChance: 0,
+    dodgeChance: 0.03,
+    throwInterval: [100, 190],
+    laserChance: 0.006,
+    slideHop: false,
+    windupChance: 0,
+    recallSkill: 0.03,
+    headChance: 0,
+    grenadeChance: 0.0005,
+    sightRange: 50,
+    fovDeg: 140,
+  },
+  casual: {
+    name: 'casual',
+    reactionTicks: 42,
+    aimErrorDeg: 7,
+    turnDegPerTick: 3.5,
+    leadAccuracy: 0.25,
+    deflectChance: 0.01,
+    dodgeChance: 0.07,
+    throwInterval: [80, 150],
+    laserChance: 0.012,
+    slideHop: false,
+    windupChance: 0.0008,
+    recallSkill: 0.08,
+    headChance: 0,
+    grenadeChance: 0.0015,
+    sightRange: 75,
+    fovDeg: 200,
+  },
   easy: {
     name: 'easy',
     reactionTicks: 30,
@@ -66,6 +128,10 @@ export const BOT_SKILLS: Record<BotSkill['name'], BotSkill> = {
     slideHop: false,
     windupChance: 0.002,
     recallSkill: 0.2,
+    headChance: 0,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
   },
   normal: {
     name: 'normal',
@@ -80,6 +146,10 @@ export const BOT_SKILLS: Record<BotSkill['name'], BotSkill> = {
     slideHop: true,
     windupChance: 0.004,
     recallSkill: 0.5,
+    headChance: 0,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
   },
   hard: {
     name: 'hard',
@@ -94,6 +164,10 @@ export const BOT_SKILLS: Record<BotSkill['name'], BotSkill> = {
     slideHop: true,
     windupChance: 0.006,
     recallSkill: 0.85,
+    headChance: 0.3,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
   },
 };
 
@@ -122,10 +196,14 @@ export interface BotMemory {
   objective: Vec3 | null;
   /** head for the objective even while fighting (Controller carriers) */
   objectiveFirst: boolean;
+  /** bomb mode: hold Use (plant / defuse) once here */
+  useAt?: Vec3 | null;
   /** current waypoint route */
   path: Vec3[];
   pathGoal: Vec3 | null;
   pathUntil: number;
+  /** CS mode guns (bots/guns.ts), created on first use */
+  gun?: BotGunMemory;
 }
 
 export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotMemory => ({
@@ -291,7 +369,13 @@ const navigate = (
   const pos = self.pos;
   const up = self.move === Move.Float ? null : self.up;
   const wps = ctx.level.def.waypoints;
-  if (!wps || wps.length < 2 || walkable(ctx.level, pos, goal, up)) {
+  // (the sky duel arena has no waypoints: the ship's are far below it)
+  if (
+    !wps ||
+    wps.length < 2 ||
+    inSkyZone(ctx.level.def, pos) ||
+    walkable(ctx.level, pos, goal, up)
+  ) {
     mem.path = [];
     return goal;
   }
@@ -327,6 +411,10 @@ export const botThink = (
   const s = mem.skill;
   const rng = mem.rng;
   const c = ctx.config.combat;
+  // CS mode: AK + Deagle instead of the Boomerang kit
+  const guns = loadoutOf(ctx.config).guns;
+  const gs = botGunSkill(s.name);
+  const gm = (mem.gun ??= newBotGunMemory());
   if (!self.alive || self.frozen) return { tick, buttons: 0, view: self.view };
 
   const eye = eyePos(self, ctx.config.movement);
@@ -340,10 +428,21 @@ export const botThink = (
   const visible = enemies.filter((p) => {
     const hb = hitboxOf(p, ctx.config);
     return (
-      len(sub(p.pos, self.pos)) < 120 &&
+      len(sub(p.pos, self.pos)) < s.sightRange &&
       (lineOfSight(ctx.level, eye, hb.head) || lineOfSight(ctx.level, eye, chestOf(hb)))
     );
   });
+  // weaker bots only notice new enemies in their view cone, or ones that just hit them
+  const noticeable =
+    s.fovDeg >= 360
+      ? visible
+      : visible.filter(
+          (p) =>
+            angleBetween(qForward(self.view), sub(p.pos, self.pos)) <= (s.fovDeg / 2) * DEG ||
+            world.events.some(
+              (e) => e.type === 'hit' && e.victim === self.id && e.attacker === p.id,
+            ),
+        );
   let target = mem.target !== null ? enemies.find((p) => p.id === mem.target) : undefined;
   const targetVisible = !!target && visible.includes(target);
   if (targetVisible) mem.targetSeenTick = tick;
@@ -351,7 +450,7 @@ export const botThink = (
     target = undefined;
     mem.target = null;
     let best = Infinity;
-    for (const p of visible) {
+    for (const p of noticeable) {
       const d = len(sub(p.pos, self.pos));
       if (d < best) {
         best = d;
@@ -423,6 +522,8 @@ export const botThink = (
     if (dist > 20) approach = 1;
     else if (dist < 7 && myB?.phase !== Phase.Held) approach = -0.6;
     else if (dist < 4) approach = myB?.phase === Phase.Held ? 0.6 : -1; // slash range
+    // guns: hold a mid-range fight (close the distance from far, back off when too close)
+    if (guns) approach = dist > 25 ? 1 : dist < 6 ? -0.5 : 0;
     moveDir = add(scale(toN, approach), scale(side, mem.strafeDir));
   } else {
     // wander / objective
@@ -469,7 +570,13 @@ export const botThink = (
     if (deflectTarget && len(sub(deflectTarget, eye)) < 2.4) buttons |= Btn.Melee;
   } else if (target && engaged) {
     const hb = hitboxOf(target, ctx.config);
-    const aimAt = s.name === 'hard' && rngFloat(rng) < 0.3 ? hb.head : chestOf(hb);
+    const aimAt = guns
+      ? gm.head
+        ? hb.head
+        : chestOf(hb)
+      : s.headChance > 0 && rngFloat(rng) < s.headChance
+        ? hb.head
+        : chestOf(hb);
     const dist = len(sub(aimAt, eye));
     const held = myB?.phase === Phase.Held;
     const speed = held ? (self.windup > 0 ? c.windupSpeed : c.quickSpeed) : 1e6;
@@ -479,7 +586,8 @@ export const botThink = (
     if (held && self.windup === 0)
       lead = madd(lead, up, 0.5 * ctx.config.movement.gravity * c.boomerangGravityScale * t * t);
     if (tick >= mem.aimErrUntil) {
-      const e = s.aimErrorDeg * DEG * dist;
+      const e = (guns ? gs.aimDeg : s.aimErrorDeg) * DEG * dist;
+      if (guns) gm.head = rngFloat(rng) < gs.headChance;
       mem.aimErr = v3(
         (rngFloat(rng) - 0.5) * e,
         (rngFloat(rng) - 0.5) * e,
@@ -487,7 +595,9 @@ export const botThink = (
       );
       mem.aimErrUntil = tick + 20 + rngInt(rng, 30);
     }
-    aimDir = sub(add(lead, mem.aimErr), eye);
+    aimDir = guns
+      ? gunAimDir(ctx, self, eye, aimAt, target.vel, mem.aimErr, gs, s.leadAccuracy)
+      : sub(add(lead, mem.aimErr), eye);
   } else if (lenSq(moveDir) > 0.01) {
     aimDir = moveDir;
   }
@@ -518,6 +628,27 @@ export const botThink = (
   }
   if (mem.jumpCooldown > 0) mem.jumpCooldown--;
 
+  // up on the sky duel arena: never walk (or dash) off an edge; over the void, head back to
+  // the middle on the jetpack
+  const arena = inSkyZone(ctx.level.def, self.pos) ? ctx.level.def.skyArena : undefined;
+  if (arena) {
+    const home = normalize(planarTo(arena.center));
+    const down = scale(up, -1);
+    if (self.grounded && lenSq(moveDir) > 0.01) {
+      const ahead = madd(self.pos, normalize(moveDir), 2);
+      if (!raycast(ctx.level, ahead, down, 6)) {
+        moveDir = home;
+        buttons &= ~Btn.Dash;
+      }
+    } else if (!self.grounded && !raycast(ctx.level, self.pos, down, 12)) {
+      moveDir = home;
+      buttons &= ~Btn.Dash;
+      // a fresh press arms the jetpack, holding keeps it burning
+      if (self.jetOn || self.jetHold >= 0 || !(self.prevButtons & Btn.Jump)) buttons |= Btn.Jump;
+      else buttons &= ~Btn.Jump;
+    }
+  }
+
   if (floatNav) buttons |= Btn.Forward;
   else buttons |= moveButtons(view, up, moveDir);
 
@@ -540,7 +671,21 @@ export const botThink = (
 
   // ---------------- weapons ----------------
   let releaseTick = false;
-  if (myB && target && engaged && targetVisible) {
+  if (guns) {
+    // CS mode: stop, burst / spray, reload, switch (bots/guns.ts)
+    buttons = gunBotButtons(
+      ctx,
+      self,
+      gm,
+      gs,
+      rng,
+      buttons,
+      !!target && engaged && targetVisible,
+      target ? len(sub(target.pos, self.pos)) : 0,
+      aimErrNow,
+      (d) => moveButtons(view, up, d),
+    );
+  } else if (myB && target && engaged && targetVisible) {
     const dist = len(sub(target.pos, self.pos));
     const held = myB.phase === Phase.Held;
     if (held) {
@@ -650,9 +795,9 @@ export const botThink = (
       }
     }
     // grenade at mid range
-    if (self.grenadesLeft > 0 && dist > 8 && dist < 20 && rngFloat(rng) < 0.003)
+    if (self.grenadesLeft > 0 && dist > 8 && dist < 20 && rngFloat(rng) < s.grenadeChance)
       buttons |= Btn.Grenade;
-    // A/D held on release curves the throw: release straight unless curving on purpose
+    // (a Quick Throw leaves straight; flicking the view in flight tilts it)
     if (releaseTick) buttons &= ~(Btn.Left | Btn.Right);
   } else if (myB) {
     mem.throwPhase = 0;
@@ -669,5 +814,10 @@ export const botThink = (
     }
   }
 
+  // bomb mode: at the spot, stand still and hold Use (plant / defuse)
+  if (mem.useAt && len(projectOnPlane(sub(mem.useAt, self.pos), up)) < 1.4) {
+    buttons &= ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right | Btn.Jump | Btn.Crouch | Btn.Dash);
+    buttons |= Btn.Use;
+  }
   return { tick, buttons, view };
 };

@@ -3,10 +3,15 @@
 // Controllers, name tags, reveals) are drawn by WorldMarkers.
 import * as THREE from 'three';
 import type { SimEvent } from '@space-yz/shared';
+import { GAME_NAME, TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, Session } from './session';
 import { h } from '../ui/menus';
+import { mutes } from '../net/mutes';
 import { TEAM_COLOR, TEAM_HEX, towerRole, controllerAtHome } from './objectives';
+import { setSidesSwapped } from '../render/team-palette';
+import { SkyArenaView } from '../render/sky-arena';
+import { effects } from '../render/effects';
 
 const TEAM_NAME = ['CYAN', 'ORANGE'] as const;
 
@@ -15,6 +20,10 @@ const REASON_TEXT: Record<string, string> = {
   elimination: 'Team eliminated',
   time: 'Time — more players alive / more health',
   draw: 'Draw',
+  collapse: 'Overtime: more players alive / more health / nearer the middle',
+  sky: 'Sky duel: more players alive / more health / nearer the middle',
+  exploded: 'The bomb exploded',
+  defused: 'The bomb was defused',
 };
 
 const fmtTime = (sec: number): string => {
@@ -40,17 +49,48 @@ export class MatchFeature implements ClientFeature {
   private banner!: HTMLDivElement;
   private bannerSub!: HTMLDivElement;
   private bannerUntil = 0;
+  /** the game's name, big, over the round result */
+  private wordmark!: HTMLDivElement;
+  private wordmarkUntil = 0;
   private board!: HTMLDivElement;
   private results!: HTMLDivElement;
   private boardHeld = false;
   private unsub: (() => void) | null = null;
   private group = new THREE.Group();
   private towers: TowerFx[] = [];
+  /** overtime: the glowing edge of the safe zone while the ship collapses */
+  private zone = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1, 1, 72, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffb347,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  private zoneWarn!: HTMLDivElement;
+  /** bomb mode: plant / defuse progress while you hold G */
+  private bombBar!: HTMLDivElement;
+  private bombBarFill!: HTMLDivElement;
+  private bombBarText!: HTMLDivElement;
+  /** bomb mode: the bomb itself (dropped or planted) with a blinking light */
+  private bombMesh = new THREE.Group();
+  private bombLight = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2e44 }),
+  );
+  private nextBeep = 0;
+  /** seconds you've been outside the zone (local estimate for the countdown) */
+  private outsideFor = 0;
   private dropped: THREE.Mesh[] = [];
   private time = 0;
   private lastCountdown = -1;
   private lastBoard = -1;
   private last: MatchInfo | null = null;
+  /** the sky duel overtime's arena, clouds and sky (drawn only while the camera is up there) */
+  private sky: SkyArenaView | null = null;
 
   init(c: GameClient): void {
     const ui = c.deps.ui;
@@ -64,6 +104,16 @@ export class MatchFeature implements ClientFeature {
       h('div', { class: 'mb-row' }, this.scoreA, this.center, this.scoreB),
       this.sub,
     );
+    this.wordmark = h('div', { class: 'match-wordmark' }, GAME_NAME.toUpperCase());
+    this.zoneWarn = h('div', { class: 'zone-warn' });
+    this.bombBarFill = h('div', { class: 'bomb-bar-fill' });
+    this.bombBarText = h('div', { class: 'bomb-bar-text' });
+    this.bombBar = h(
+      'div',
+      { class: 'bomb-bar' },
+      this.bombBarText,
+      h('div', { class: 'bomb-bar-track' }, this.bombBarFill),
+    );
     this.banner = h('div', { class: 'match-banner' });
     this.bannerSub = h('div', { class: 'match-banner-sub' });
     this.board = h('div', { class: 'scoreboard' });
@@ -72,7 +122,9 @@ export class MatchFeature implements ClientFeature {
       'div',
       { class: 'match-ui' },
       this.bar,
-      h('div', { class: 'match-banner-wrap' }, this.banner, this.bannerSub),
+      h('div', { class: 'match-banner-wrap' }, this.wordmark, this.banner, this.bannerSub),
+      this.zoneWarn,
+      this.bombBar,
       this.board,
       this.results,
     );
@@ -121,7 +173,26 @@ export class MatchFeature implements ClientFeature {
       this.dropped.push(m);
       this.group.add(m);
     }
+    this.bombMesh.add(
+      new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.16, 0.3),
+        new THREE.MeshBasicMaterial({ color: 0x2b303a }),
+      ),
+      new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 0.02, 0.14),
+        new THREE.MeshBasicMaterial({ color: 0x7cff9a }),
+      ).translateY(0.09),
+    );
+    this.bombLight.position.set(0.14, 0.11, 0);
+    this.bombMesh.add(this.bombLight);
+    this.bombMesh.visible = false;
+    this.group.add(this.bombMesh);
+    this.zone.visible = false;
+    this.zone.renderOrder = 5;
+    this.group.add(this.zone);
     c.scene.add(this.group);
+    this.sky = new SkyArenaView(c.session.level.def, TEAM_HEX, effects.decoration);
+    c.scene.add(this.sky.group);
   }
 
   private myTeam(s: Session): 0 | 1 {
@@ -151,7 +222,11 @@ export class MatchFeature implements ClientFeature {
             e.suddenDeath
               ? 'Half timer · bigger Tower zones · everyone revealed'
               : swapped
-                ? 'Sides swapped — attack the other Tower now'
+                ? s.match?.()?.objective === 'bomb'
+                  ? mine === s.match?.()?.attackers
+                    ? 'Sides swapped — you are now T (orange): plant the bomb'
+                    : 'Sides swapped — you are now CT (cyan): defend the sites'
+                  : 'Sides swapped — attack the other Tower now · team colors swapped too'
                 : 'Get ready',
             swapped ? 4 : 3,
             e.suddenDeath ? '#ff5b5b' : '#fff',
@@ -159,6 +234,52 @@ export class MatchFeature implements ClientFeature {
           a.play('roundStart');
           break;
         }
+        case 'bombPlanted':
+          this.showBanner(
+            `BOMB PLANTED AT ${e.site}`,
+            this.myTeam(s) === this.last?.attackers ? 'Protect it' : 'Defuse it: hold G next to it',
+            3,
+            '#ff5a6a',
+          );
+          a.play('controllerPickup');
+          break;
+        case 'bombDefused':
+          this.showBanner('BOMB DEFUSED', '', 3, '#19e3ff');
+          break;
+        case 'bombExploded':
+          a.play('grenadePop', { volume: 1.2, rate: 0.55 });
+          a.play('killWindup', { volume: 0.9, rate: 0.6 });
+          c.shake = Math.max(c.shake, 1.2);
+          break;
+        case 'defuseStart':
+          // attackers hear a defuse start (a ninja defuse is possible but risky)
+          a.play('recallTelegraph', { volume: 0.6, rate: 1.4 });
+          break;
+        case 'bombDrop':
+          if (this.myTeam(s) === this.last?.attackers)
+            this.showBanner('BOMB DROPPED', 'Walk over it to pick it up', 2, '#ff8a1f');
+          break;
+        case 'overtime':
+          if (e.kind === 'sky') {
+            const secs = Math.round(s.config.rules.skyOvertimeSec);
+            this.showBanner(
+              `SKY DUEL — ${secs} s, don't fall`,
+              'Jetpack sped up · fall off the platforms = eliminated',
+              3.5,
+              '#7fd6ff',
+            );
+            // you were teleported up to the arena: look at the other end (team 0 starts at -x)
+            const me = s.local();
+            if (me?.alive) c.fps.reset(yawToView(me.team === 0 ? -90 : 90), v3(0, 1, 0));
+          } else
+            this.showBanner(
+              'OVERTIME',
+              'The ship is breaking up: get to the middle. Outside the zone for 3 s = eliminated',
+              3.5,
+              '#ffe45c',
+            );
+          a.play('revealPulse');
+          break;
         case 'roundLive':
           this.showBanner('GO!', '', 1);
           break;
@@ -171,6 +292,7 @@ export class MatchFeature implements ClientFeature {
             4,
             e.winner === null ? '#fff' : TEAM_COLOR[e.winner],
           );
+          this.wordmarkUntil = this.time + 4;
           if (e.winner !== null) a.play(won ? 'roundWin' : 'roundLose');
           break;
         }
@@ -224,8 +346,10 @@ export class MatchFeature implements ClientFeature {
   frame(c: GameClient, dt: number): void {
     this.time += dt;
     const s = c.session;
+    this.sky?.update(c.scene, c.camera.position, this.time);
     const m = s.match?.() ?? null;
     this.last = m;
+    setSidesSwapped(!!m?.sideSwapped);
     if (!m) {
       this.root.style.display = 'none';
       this.group.visible = false;
@@ -241,6 +365,10 @@ export class MatchFeature implements ClientFeature {
     // ---- score bar ----
     this.scoreA.textContent = String(m.scores[0]);
     this.scoreB.textContent = String(m.scores[1]);
+    this.scoreA.style.color = TEAM_COLOR[0];
+    this.scoreB.style.color = TEAM_COLOR[1];
+    for (const t of [0, 1] as const)
+      (this.dropped[t].material as THREE.MeshBasicMaterial).color.setHex(TEAM_HEX[t]);
     let centerText = '';
     let subText = '';
     let urgent = false;
@@ -264,7 +392,32 @@ export class MatchFeature implements ClientFeature {
         const sec = (m.roundEnds - tick) / 60;
         centerText = fmtTime(sec);
         urgent = sec <= rules.lastSecondsRevealAll;
-        subText = `Round ${m.round}${m.suddenDeath ? ' · SUDDEN DEATH' : ''}`;
+        subText = `Round ${m.round}`;
+        if (m.objective === 'bomb') {
+          const iAttack = mine === m.attackers;
+          const b = m.bomb;
+          subText = iAttack
+            ? b?.carrier === s.localId
+              ? 'T SIDE · YOU HAVE THE BOMB · hold G in site A or B to plant'
+              : 'T SIDE (orange) · ATTACK · plant the bomb at A or B'
+            : 'CT SIDE (cyan) · DEFEND · stop the plant at A and B';
+          if (b?.planted) {
+            // the fuse replaces the round timer
+            centerText = fmtTime((b.planted.explodeAt - tick) / 60);
+            urgent = true;
+            subText = iAttack
+              ? `BOMB PLANTED AT ${b.planted.site} · protect it`
+              : `BOMB PLANTED AT ${b.planted.site} · hold G next to it to defuse`;
+          }
+        }
+        if (m.overtime) {
+          centerText = fmtTime((m.overtime.ends - tick) / 60);
+          urgent = true;
+          subText =
+            m.overtime.kind === 'sky'
+              ? "SKY DUEL · don't fall · jetpack sped up"
+              : 'OVERTIME · the ship is collapsing · get to the middle';
+        }
         break;
       }
       case 'roundEnd':
@@ -275,8 +428,25 @@ export class MatchFeature implements ClientFeature {
         centerText = 'MATCH OVER';
         break;
     }
-    if (m.carriers.includes(s.localId) && m.phase === 'live')
+    // (in the sky duel the Tower is out of reach: no Controller talk)
+    const skyDuel = m.phase === 'live' && m.overtime?.kind === 'sky';
+    if (skyDuel) {
+      // keep the sky duel line
+    } else if (m.carriers.includes(s.localId) && m.phase === 'live')
       subText = 'You carry the Controller — touch the enemy Tower';
+    else if (m.phase === 'live' && m.carriers.length > 0) {
+      // who has which Controller, for both teams
+      const names = s.names();
+      const who = (id: number) => names[id] ?? `Player ${id}`;
+      const teamOf = (id: number) =>
+        s.world().players.find((p) => p.id === id)?.team ?? s.teams?.()[id];
+      const parts = m.carriers.map((id) =>
+        teamOf(id) === mine
+          ? `◆ ${who(id)} has YOUR Controller`
+          : `◆ ${who(id)} (enemy) has theirs`,
+      );
+      subText = parts.join('   ·   ');
+    }
     this.center.textContent = centerText;
     this.center.classList.toggle('urgent', urgent);
     this.sub.textContent = subText;
@@ -286,9 +456,67 @@ export class MatchFeature implements ClientFeature {
     const bannerOn = this.time < this.bannerUntil;
     this.banner.style.opacity = bannerOn ? '1' : '0';
     this.bannerSub.style.opacity = bannerOn ? '1' : '0';
+    this.wordmark.classList.toggle('show', this.time < this.wordmarkUntil);
 
-    // ---- 3D: towers + dropped Controllers ----
+    // ---- overtime: the safe zone's edge + the out-of-zone countdown ----
+    // (the sky duel has no zone: its edge is the platform's)
+    const ot = m.phase === 'live' && m.overtime?.kind === 'collapse' ? m.overtime : null;
+    this.zone.visible = !!ot;
+    let outside = false;
+    if (ot) {
+      const radius = collapseRadius(ot, tick, { config: s.config, dt: TICK_DT });
+      this.zone.position.set(ot.center.x, ot.center.y + 10, ot.center.z);
+      this.zone.scale.set(radius, 60, radius);
+      (this.zone.material as THREE.MeshBasicMaterial).opacity =
+        0.16 + 0.08 * Math.sin(this.time * 4);
+      const me = s.local();
+      outside =
+        !!me && me.alive && Math.hypot(me.pos.x - ot.center.x, me.pos.z - ot.center.z) > radius;
+    }
+    this.outsideFor = outside ? this.outsideFor + dt : 0;
+    this.zoneWarn.classList.toggle('show', outside);
+    if (outside) {
+      const left = Math.max(0, rules.collapseOutsideSec - this.outsideFor);
+      this.zoneWarn.textContent = `OUT OF THE ZONE · ${left.toFixed(1)} s · get to the middle`;
+    }
+
+    // ---- bomb mode: the bomb, its beeps, your plant / defuse progress ----
+    const bomb = m.objective === 'bomb' && m.phase === 'live' ? m.bomb : null;
+    this.bombMesh.visible = !!bomb && bomb.carrier === null;
+    if (bomb) {
+      this.bombMesh.position.set(bomb.pos.x, bomb.pos.y - 0.82, bomb.pos.z);
+      let blink = 0.8;
+      if (bomb.planted) {
+        // beeps speed up as the fuse runs out
+        const left = Math.max(0, (bomb.planted.explodeAt - tick) / 60);
+        const every = Math.max(0.12, Math.min(1, left / 30));
+        if (this.time >= this.nextBeep) {
+          c.deps.audio.play3d('countdownTick', bomb.pos, {
+            volume: 0.9,
+            refDistance: 10,
+            maxDistance: 70,
+          });
+          this.nextBeep = this.time + every;
+        }
+        blink = this.nextBeep - this.time > every * 0.5 ? 1 : 0;
+      }
+      this.bombLight.visible = blink > 0.5;
+      const prog = bomb.plant ?? bomb.defuse;
+      const mineProg = prog && prog.player === s.localId;
+      this.bombBar.classList.toggle('show', !!mineProg);
+      if (mineProg && prog) {
+        const planting = !!bomb.plant;
+        const need = (planting ? rules.bombPlantSec : rules.bombDefuseSec) * 60;
+        const u = Math.min(1, prog.ticks / need);
+        this.bombBarFill.style.width = `${u * 100}%`;
+        this.bombBarText.textContent = `${planting ? 'PLANTING' : 'DEFUSING'} · ${((need - prog.ticks) / 60).toFixed(1)} s`;
+      }
+    } else this.bombBar.classList.remove('show');
+
+    // ---- 3D: towers + dropped Controllers (Tower mode only) ----
     for (const fx of this.towers) {
+      fx.beam.visible = m.objective !== 'bomb';
+      fx.ring.visible = m.objective !== 'bomb';
       fx.flash = Math.max(0, fx.flash - dt);
       const pulse = fx.flash > 0 ? 0.5 + 0.5 * Math.sin(this.time * 30) : 0;
       const beam = fx.beam.material as THREE.MeshBasicMaterial;
@@ -348,17 +576,29 @@ export class MatchFeature implements ClientFeature {
             h(
               'td',
               {},
-              `${m.carriers.includes(p.id) ? '◆ ' : ''}${me ? 'You' : (names[p.id] ?? `Player ${p.id}`)}`,
+              `${m.carriers.includes(p.id) ? '◆ ' : ''}${me ? 'You' : (names[p.id] ?? `Player ${p.id}`)}${mutes.has(p.id) ? ' 🔇' : ''}`,
             ),
             h('td', {}, String(st?.kills ?? 0)),
             h('td', {}, String(st?.deaths ?? 0)),
             h('td', {}, String(st?.teamKills ?? 0)),
             h('td', {}, String(st?.damage ?? 0)),
             h('td', {}, pings[p.id] ? `${pings[p.id]} ms` : '—'),
-            interactive && !me && s.report
+            interactive && !me && (s.report || mutes.canMute(p.id))
               ? h(
                   'td',
-                  {},
+                  { class: 'sb-actions' },
+                  // mute (text chat + voice) for other humans online
+                  mutes.canMute(p.id)
+                    ? (() => {
+                        const label = () => (mutes.has(p.id) ? 'Unmute' : 'Mute');
+                        const b = h('button', { class: 'btn tiny secondary' }, label());
+                        b.addEventListener('click', () => {
+                          mutes.toggle(p.id);
+                          b.textContent = label();
+                        });
+                        return b;
+                      })()
+                    : null,
                   (() => {
                     const b = h('button', { class: 'btn tiny secondary' }, 'Report');
                     b.addEventListener('click', () => {
@@ -405,7 +645,9 @@ export class MatchFeature implements ClientFeature {
               ? 'E'
               : r.reason === 'time'
                 ? '⏱'
-                : '=',
+                : r.reason === 'sky'
+                  ? '☁'
+                  : '=',
         ),
       ),
     );
@@ -441,6 +683,9 @@ export class MatchFeature implements ClientFeature {
 
   dispose(c: GameClient): void {
     this.unsub?.();
+    setSidesSwapped(false);
+    this.sky?.dispose(c.scene);
+    this.sky = null;
     this.root.remove();
     c.scene.remove(this.group);
     this.group.traverse((o) => {

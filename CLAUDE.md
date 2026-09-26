@@ -1,4 +1,4 @@
-# Space YZ — notes for Claude sessions
+# Lethal Recoil (formerly Space YZ) — notes for Claude sessions
 
 - Full design and milestones: `docs/BUILD-PLAN.md`. The owner is not a professional developer:
   explain in plain language, one command per code block, Windows-friendly steps.
@@ -26,10 +26,17 @@
 
 ## Where things are
 
-- Match rules (Controller & Tower, rounds): `packages/shared/src/rules/match.ts`; server plug-in
-  `packages/server/src/game/rules/match.ts` (anti-grief lives there too).
-- Maps: `packages/shared/src/level/maps/` (`kestrel.ts` is the competitive map; keep it
-  mirror-symmetric — `map.test.ts` checks it, and bots must be able to walk every route).
+- Match rules (Controller & Tower, rounds, collapse / sky-duel overtime):
+  `packages/shared/src/rules/match.ts`; bomb mode `rules/bomb.ts`; loadouts (Boomerang kit vs
+  CS guns) `config/loadout.ts`; server plug-in `packages/server/src/game/rules/match.ts`
+  (anti-grief lives there too).
+- Maps: `packages/shared/src/level/maps/`. `split-deck.ts` is the default competitive map and is
+  **asymmetric** — its route timings are measured and must stay balanced
+  (`tools/map/test/split-deck-timing.test.ts`, `npm run map -- split-deck`). `kestrel.ts` is
+  mirror-symmetric (`map.test.ts` checks maps flagged `symmetric`). Bots must be able to walk
+  every route.
+- Anti-cheat: server-side work is planned but comes only after the gameplay features; a
+  Chrome extension will be required for ranked later (casual play stays install-free).
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
   `packages/server/src/game/room.ts`, lag compensation `lagcomp.ts`, LOS culling `visibility.ts`.
 - Accounts/ranked/matchmaking: `packages/server/src/services/` (SQLite via `node:sqlite`).

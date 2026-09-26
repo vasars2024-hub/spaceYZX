@@ -3,6 +3,8 @@
 import type { Settings, CameraRotation, CrosshairSettings } from '../settings';
 import { saveSettings, DEFAULT_KEYBINDS, DEFAULT_SETTINGS } from '../settings';
 import { h, button, slider, select, toggle } from './menus';
+import { isTouchDevice, readDeviceEnv } from '../mobile';
+import { screenHead } from './menu-kit';
 
 /** Brightness is capped so dark corners can't be lifted to spot players (fairness). */
 export const BRIGHTNESS_MIN = 0.8;
@@ -13,16 +15,23 @@ const ACTIONS: [string, string][] = [
   ['back', 'Move back'],
   ['left', 'Strafe left'],
   ['right', 'Strafe right'],
-  ['jump', 'Jump / thruster'],
+  ['jump', 'Jump / jetpack (hold in the air) / thruster'],
   ['crouch', 'Crouch / slide'],
   ['dash', 'Dash'],
   ['fire', 'Throw (hold to aim) / Laser'],
   ['alt', 'Wind-up / steer'],
   ['melee', 'Slash / deflect'],
-  ['recall', 'Lethal Recall'],
+  ['recall', 'Lethal Recall / reload Laser'],
+  ['slot1', 'Weapon: Boomerang'],
+  ['slot2', 'Weapon: Laser'],
+  ['use', 'Plant / defuse the bomb (hold)'],
   ['grenade', 'Gravity Grenade'],
-  ['magboots', 'Mag-boots'],
+  ['magboots', 'Gravity shift (walk on walls)'],
   ['scoreboard', 'Scoreboard'],
+  ['chatTeam', 'Team chat (online)'],
+  ['chatAll', 'All chat (online)'],
+  ['voiceTeam', 'Push to talk: team (online)'],
+  ['voiceAll', 'Push to talk: everyone (online)'],
 ];
 
 /** Friendly names for key codes. */
@@ -61,14 +70,15 @@ export const bindKey = (
   return out;
 };
 
-type Tab = 'game' | 'video' | 'audio' | 'controls' | 'crosshair';
+type Tab = 'game' | 'touch' | 'video' | 'audio' | 'chat' | 'controls' | 'crosshair';
 
 export const settingsScreen = (
   s: Settings,
   onChange: () => void,
   back: () => void,
 ): HTMLElement => {
-  let tab: Tab = 'game';
+  // on a phone the touch settings matter most
+  let tab: Tab = document.documentElement.classList.contains('mobile') ? 'touch' : 'game';
   const apply = () => {
     saveSettings(s);
     onChange();
@@ -128,6 +138,19 @@ export const settingsScreen = (
       s.throwPreviewOpacity = v;
       apply();
     }),
+    select<Settings['effects']>(
+      'Effects (how busy the screen gets; surface detail changes on the next map load)',
+      [
+        ['full', 'Full (light glows and shafts, slower)'],
+        ['reduced', 'Reduced (calmer 5v5, faster)'],
+        ['minimal', 'Minimal (only what matters)'],
+      ],
+      s.effects,
+      (v) => {
+        s.effects = v;
+        apply();
+      },
+    ),
     toggle('Screen shake', s.screenShake, (v) => {
       s.screenShake = v;
       apply();
@@ -204,6 +227,100 @@ export const settingsScreen = (
       s.uiVolume = v;
       apply();
     }),
+  ];
+
+  const chatTab = () => [
+    h(
+      'div',
+      { class: 'label' },
+      'Online only. Mute single players from the scoreboard in the Esc menu (mutes their chat and voice).',
+    ),
+    toggle('Show all-chat from enemies', s.chatShowEnemyAll, (v) => {
+      s.chatShowEnemyAll = v;
+      apply();
+    }),
+    toggle(
+      'Voice chat (the microphone is only asked for when you first hold a talk key)',
+      s.voiceEnabled,
+      (v) => {
+        s.voiceEnabled = v;
+        apply();
+      },
+    ),
+    slider('Voice volume', 0, 1, 0.05, s.voiceVolume, pct, (v) => {
+      s.voiceVolume = v;
+      apply();
+    }),
+    toggle('Hear enemy team voice (when they talk to everyone)', s.voiceHearEnemy, (v) => {
+      s.voiceHearEnemy = v;
+      apply();
+    }),
+    toggle('Mute all enemies (chat and voice)', s.muteEnemies, (v) => {
+      s.muteEnemies = v;
+      apply();
+    }),
+  ];
+
+  const touchTab = () => [
+    select<Settings['touchControls']>(
+      'On-screen touch controls and phone layout',
+      [
+        [
+          'auto',
+          `Automatic (phones and tablets) — ${isTouchDevice(readDeviceEnv()) ? 'on here' : 'off here'}`,
+        ],
+        ['on', 'Always on'],
+        ['off', 'Off (keyboard and mouse)'],
+      ],
+      s.touchControls,
+      (v) => {
+        s.touchControls = v;
+        apply();
+      },
+    ),
+    h('div', { class: 'label' }, 'Switching the controls on or off takes effect in the next game.'),
+    slider(
+      'Look sensitivity (drag on the right side)',
+      0.05,
+      1.2,
+      0.01,
+      s.touchLookSensitivity,
+      (v) => `${v.toFixed(2)}°`,
+      (v) => {
+        s.touchLookSensitivity = v;
+        apply();
+      },
+    ),
+    toggle('Invert look up/down (touch and mouse)', s.invertY, (v) => {
+      s.invertY = v;
+      apply();
+    }),
+    select<Settings['touchFireDrag']>(
+      'Dragging your thumb on THROW / FIRE while holding it',
+      [
+        ['aim', 'Aims (a sideways swipe as you let go curves the throw)'],
+        ['curve', 'Only curves throws (sideways swipe, then the view turns back)'],
+        ['off', 'Nothing (curve by swiping on the right side instead)'],
+      ],
+      s.touchFireDrag,
+      (v) => {
+        s.touchFireDrag = v;
+        apply();
+      },
+    ),
+    slider('Button size', 0.7, 1.5, 0.05, s.touchButtonScale, pct, (v) => {
+      s.touchButtonScale = v;
+      apply();
+    }),
+    slider('Button opacity', 0.2, 0.9, 0.05, s.touchButtonOpacity, pct, (v) => {
+      s.touchButtonOpacity = v;
+      apply();
+    }),
+    h(
+      'div',
+      { class: 'label' },
+      'Curving a Quick Throw: hold THROW, then swipe sideways as you lift your thumb — a faster swipe curves more (watch the curve meter). Phones start on Low graphics and Minimal effects (Video / Game tabs).',
+    ),
   ];
 
   let listening: { action: string; slot: number; stop: () => void } | null = null;
@@ -368,8 +485,10 @@ export const settingsScreen = (
       ...(
         [
           ['game', 'Game'],
+          ['touch', 'Touch'],
           ['video', 'Video'],
           ['audio', 'Audio'],
+          ['chat', 'Chat & voice'],
           ['controls', 'Controls'],
           ['crosshair', 'Crosshair'],
         ] as const
@@ -388,28 +507,27 @@ export const settingsScreen = (
     const parts =
       tab === 'game'
         ? gameTab()
-        : tab === 'video'
-          ? videoTab()
-          : tab === 'audio'
-            ? audioTab()
-            : tab === 'controls'
-              ? controlsTab()
-              : crosshairTab();
+        : tab === 'touch'
+          ? touchTab()
+          : tab === 'video'
+            ? videoTab()
+            : tab === 'audio'
+              ? audioTab()
+              : tab === 'chat'
+                ? chatTab()
+                : tab === 'controls'
+                  ? controlsTab()
+                  : crosshairTab();
     body.replaceChildren(...parts);
   };
   render();
   return h(
     'div',
-    { class: 'screen interactive' },
-    h('h2', {}, 'Settings'),
+    { class: 'screen interactive flow-screen' },
+    screenHead('settings', 'Settings', () => {
+      listening?.stop();
+      back();
+    }),
     h('div', { class: 'panel wide-panel' }, tabs, body),
-    button(
-      'Back',
-      () => {
-        listening?.stop();
-        back();
-      },
-      'btn secondary',
-    ),
   );
 };

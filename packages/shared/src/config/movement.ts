@@ -87,9 +87,32 @@ export const MOVEMENT_DEFAULTS = {
   thrusterRechargeSec: 2.5,
   maxFloatSpeed: 20,
 
+  // Jetpack (everyone, in normal gravity): press and *hold* Space in the air (with no wall to
+  // jump off) to fly. While it burns you rise and steer freely with WASD, backwards too.
+  // Holding is required so mouse-wheel jump taps (bunny hops) never start it.
+  jetpackHoldSec: 0.1,
+  jetpackFuelSec: 0.8, // thrust time on a full tank
+  jetpackUpAccel: 34, // m/s² along your up (gravity is ~20: a gentle climb)
+  jetpackMaxRise: 7, // m/s: no rocketing to the ceiling
+  jetpackDirAccel: 3, // how fast you reach the steering speed (× speed per second)
+  jetpackDirSpeed: 12, // m/s you can steer to in any direction while it burns
+  jetpackRechargeDelaySec: 0.6, // rest before the tank starts refilling
+  jetpackRechargeSec: 2.5, // empty → full
+  // Sky duel overtime (up at the floating arena, level/sky-arena.ts): a sped-up jetpack
+  skyJetpackFuelMul: 3, // bigger tank
+  skyJetpackRechargeMul: 2.5, // refills this many times faster (and after half the rest)
+  skyJetpackUpMul: 1.6, // stronger up-thrust
+  skyJetpackRiseMul: 1.6, // higher climb speed limit
+  skyJetpackDirMul: 1.5, // faster steering speed
+
   // Mag-boots
-  magRange: 10,
+  magRange: 10, // zero-G: reach for the nearest surface
   magPull: 22,
+  // Gravity shift (F) in normal gravity: stick to the nearest wall or ceiling within reach of
+  // your body (you don't have to face it); F again, a jump, or the time limit lets go
+  magNearRange: 2.5,
+  magMaxSec: 10,
+  magCooldownSec: 2,
 
   // Dash (M3)
   dashSpeed: 16,

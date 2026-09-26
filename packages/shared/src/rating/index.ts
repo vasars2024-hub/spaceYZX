@@ -5,3 +5,4 @@ export * from './tiers';
 export * from './global';
 export * from './decay';
 export * from './matchmaking';
+export * from './arena';

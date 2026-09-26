@@ -90,6 +90,12 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX bans_player ON bans(player_id, until);
   `,
+  // 2: Arena 1v1 results per player (final place, duels won / lost); null for other modes
+  `
+  ALTER TABLE match_players ADD COLUMN place INTEGER;
+  ALTER TABLE match_players ADD COLUMN duel_wins INTEGER;
+  ALTER TABLE match_players ADD COLUMN duel_losses INTEGER;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

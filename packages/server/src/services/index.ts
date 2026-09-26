@@ -1,8 +1,8 @@
 // Wires accounts, ranked, matchmaking, reports and anti-grief into the game hub, and serves
 // the small JSON API (leaderboards, profiles).
 import type http from 'node:http';
-import type { RankedMode } from '@space-yz/shared';
-import { RANKED_MODES } from '@space-yz/shared';
+import type { LadderMode } from '@space-yz/shared';
+import { LADDER_MODES } from '@space-yz/shared';
 import type { HubServices } from '../game/hub';
 import { openDb, type Db } from './db';
 import { Accounts } from './accounts';
@@ -39,7 +39,7 @@ export const createServices = (opts: {
   const db = openDb(opts.dbFile);
   const accounts = new Accounts(db, now);
   const ranked = new RankedStore(db, now);
-  const queue = new RankedQueue(ranked, now);
+  const queue = new RankedQueue(ranked, now, log);
 
   const hub: HubServices = {
     login: (_conn, name, token) => {
@@ -53,9 +53,9 @@ export const createServices = (opts: {
       };
     },
     profile: (conn) => (conn.accountId !== null ? ranked.profile(conn.accountId) : null),
-    queue: (h, conn, mode) => {
+    queue: (h, conn, mode, opts) => {
       queue.start(h);
-      queue.set(conn, mode === null ? null : (mode as RankedMode));
+      queue.set(conn, mode === null ? null : (mode as LadderMode), opts?.loadout);
     },
     onDisconnect: (_h, conn) => queue.remove(conn),
     onReport: (conn, player, reason, room) => {
@@ -106,6 +106,23 @@ export const createServices = (opts: {
     },
   };
 
+  // Arena 1v1: its own ladder ('arena' in profiles and leaderboards)
+  hub.onArenaEnd = (room, result) => {
+    const deltas = ranked.recordArena({ ranked: room.ranked, map: room.map, result });
+    for (const m of room.humans) {
+      if (!m.conn || m.accountId === null) continue;
+      const profile = ranked.profile(m.accountId);
+      m.conn.sendJson({ t: 'profile', data: profile });
+      const d = deltas.get(m.accountId);
+      const tier = profile?.modes.arena?.tier.label;
+      if (d !== undefined)
+        m.conn.sendJson({
+          t: 'notice',
+          msg: `Arena rating ${d >= 0 ? '+' : ''}${Math.round(d)}${tier ? ` · Arena: ${tier}` : ''}`,
+        });
+    }
+  };
+
   const api = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (!url.pathname.startsWith('/api/')) return false;
@@ -113,12 +130,12 @@ export const createServices = (opts: {
     switch (url.pathname) {
       case '/api/leaderboard': {
         const which = url.searchParams.get('mode') ?? 'global';
-        if (which !== 'global' && !RANKED_MODES.includes(which as RankedMode))
+        if (which !== 'global' && !LADDER_MODES.includes(which as LadderMode))
           return json(res, 400, { error: 'unknown mode' });
         const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit')) || 50));
         return json(res, 200, {
           mode: which,
-          rows: ranked.leaderboard(which as RankedMode | 'global', limit),
+          rows: ranked.leaderboard(which as LadderMode | 'global', limit),
         });
       }
       case '/api/profile': {

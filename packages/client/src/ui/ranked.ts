@@ -1,7 +1,10 @@
 // Ranked UI: queue panel (in the online menu), leaderboards and the player profile with the
 // "login code" for moving an account to another PC. Names are always rendered as text.
-import type { NetCore } from '@space-yz/shared';
+import type { NetCore, RoomMode } from '@space-yz/shared';
 import { h, button } from './menus';
+import { icon } from './icons';
+import { rankedQueues } from './flow';
+import { card, iconButton, screenHead } from './menu-kit';
 
 interface Tier {
   label: string;
@@ -18,12 +21,15 @@ interface ModeInfo {
 export interface ClientProfile {
   id: number;
   name: string;
-  modes: Partial<Record<'1v1' | '2v2' | '5v5', ModeInfo>>;
+  /** 'arena': the Arena 1v1 ladder (its own rating and ranks, not in the global rank) */
+  modes: Partial<Record<'1v1' | '2v2' | '5v5' | 'arena', ModeInfo>>;
   global: { rating: number | null; tier: Tier; position: number | null };
   recent: {
     mode: string;
     ranked: boolean;
     won: boolean | null;
+    /** arena: final place */
+    place?: number | null;
     delta: number;
     kills: number;
     deaths: number;
@@ -32,7 +38,13 @@ export interface ClientProfile {
   bannedUntil?: number | null;
 }
 
-const MODES = ['1v1', '2v2', '5v5'] as const;
+const MODES = ['1v1', '2v2', '5v5', 'arena'] as const;
+const MODE_LABEL: Record<(typeof MODES)[number], string> = {
+  '1v1': '1v1',
+  '2v2': '2v2',
+  '5v5': '5v5',
+  arena: 'Arena',
+};
 
 const tierBadge = (t: Tier | undefined): HTMLElement =>
   h(
@@ -43,57 +55,92 @@ const tierBadge = (t: Tier | undefined): HTMLElement =>
 
 const fmtWait = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-/** Ranked column for the online menu: your ranks, queue buttons and status. */
-export const rankedPanel = (core: NetCore, beforeQueue: () => void = () => {}): HTMLElement => {
-  const ranks = h('div', { class: 'rank-list' });
+/** A mode's rank line for a queue card ("Gold II · 1540", or "Unranked"). */
+const rankInfo = (p: ClientProfile | null, mode: string): ModeInfo | undefined =>
+  (p?.modes as Record<string, ModeInfo | undefined> | undefined)?.[mode];
+
+export interface RankedScreenHandlers {
+  /** called before queueing (sends a changed nickname first) */
+  beforeQueue(): void;
+  back(): void;
+  status(): { text: string; ok: boolean | null };
+}
+
+/** Ranked: one card per queue with your rank there; pick one to search for a match. */
+export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLElement => {
+  const global = h('div', { class: 'rank-global' });
+  const grid = h('div', { class: 'card-grid queues' });
   const status = h('div', { class: 'queue-status' });
-  const buttons = h('div', { class: 'choice-row' });
-  const cancel = button('Cancel search', () => core.queueRanked(null), 'btn small secondary');
+  const conn = h('div', { class: 'status' });
+  const cancel = iconButton(
+    'back',
+    'Cancel search',
+    () => core.queueRanked(null),
+    'btn small secondary cancel-btn',
+  );
+  const queues = rankedQueues();
+  // the Arena has a queue per kit on the same ladder: remember which one we joined
+  let kit: string | undefined;
+  const isQueued = (q: (typeof queues)[number]) =>
+    core.queue.mode === q.mode && (q.loadout === undefined || q.loadout === (kit ?? 'lethal'));
+  const cards = queues.map((q) => {
+    const tag = h('span', { class: 'queue-rank' });
+    const c = card({
+      title: q.name,
+      desc: q.desc,
+      art: icon(q.icon),
+      cls: `queue queue-${q.mode}`,
+      onClick: () => {
+        if (isQueued(q)) return; // already searching this one
+        hd.beforeQueue();
+        kit = q.loadout;
+        core.queueRanked(q.mode as RoomMode, q.loadout);
+      },
+    });
+    c.querySelector('.card-body')?.append(tag);
+    c.style.setProperty('--i', String(queues.indexOf(q)));
+    return { q, c, tag };
+  });
+  grid.append(...cards.map((x) => x.c));
+  let last = '';
   const render = () => {
     const p = core.account as ClientProfile | null;
-    ranks.replaceChildren(
-      ...MODES.map((m) =>
-        h(
-          'div',
-          { class: 'rank-row' },
-          h('span', { class: 'rank-mode' }, m),
-          tierBadge(p?.modes[m]?.tier),
-          h('span', { class: 'rank-rating' }, p?.modes[m] ? `${p.modes[m]!.rating}` : ''),
-        ),
-      ),
-      h(
-        'div',
-        { class: 'rank-row global' },
-        h('span', { class: 'rank-mode' }, 'Global'),
-        tierBadge(p?.global.tier),
-        h('span', { class: 'rank-rating' }, p?.global.rating ? `${p.global.rating}` : ''),
-      ),
-    );
     const q = core.queue;
+    const key = JSON.stringify([p?.global, p?.modes, q.mode, q.error, q.waitSec, q.searching, kit]);
+    const st = hd.status();
+    conn.replaceChildren(
+      h('span', { class: `dot ${st.ok === null ? '' : st.ok ? 'ok' : 'bad'}` }),
+      st.text,
+    );
+    if (key === last) return;
+    last = key;
+    global.replaceChildren(
+      h('span', { class: 'rank-mode' }, 'Global rank'),
+      tierBadge(p?.global.tier),
+      h('span', { class: 'rank-rating' }, p?.global.rating ? `${p.global.rating}` : ''),
+    );
+    for (const { q: queue, c, tag } of cards) {
+      const i = rankInfo(p, queue.mode);
+      tag.replaceChildren(
+        tierBadge(i?.tier),
+        h('span', { class: 'rank-rating' }, i ? `${i.rating} · ${i.wins}/${i.games} won` : ''),
+      );
+      const searching = isQueued(queue);
+      c.classList.toggle('selected', searching);
+      c.classList.toggle('searching', searching);
+      c.disabled = !!q.mode && !searching;
+    }
     if (q.mode) {
-      status.textContent = `Searching ${q.mode} · ${fmtWait(q.waitSec)} · ${q.searching} searching`;
+      const name = queues.find(isQueued)?.name ?? q.mode;
+      status.textContent = `Searching ${name} · ${fmtWait(q.waitSec)} · ${q.searching} searching`;
       status.className = 'queue-status active';
-      cancel.style.display = '';
-      buttons.style.display = 'none';
+      cancel.hidden = false;
     } else {
       status.textContent = q.error ?? 'Matched by rating. Leaving a ranked match counts as a loss.';
       status.className = `queue-status${q.error ? ' error' : ''}`;
-      cancel.style.display = 'none';
-      buttons.style.display = '';
+      cancel.hidden = true;
     }
   };
-  buttons.append(
-    ...MODES.map((m) =>
-      button(
-        `Ranked ${m}`,
-        () => {
-          beforeQueue();
-          core.queueRanked(m);
-        },
-        'btn small',
-      ),
-    ),
-  );
   render();
   const timer = window.setInterval(() => {
     if (!status.isConnected) window.clearInterval(timer);
@@ -101,12 +148,12 @@ export const rankedPanel = (core: NetCore, beforeQueue: () => void = () => {}): 
   }, 300);
   return h(
     'div',
-    { class: 'online-col' },
-    h('div', { class: 'label' }, 'Ranked'),
-    ranks,
-    buttons,
-    cancel,
-    status,
+    { class: 'screen interactive flow-screen ranked-flow' },
+    screenHead('ranked', 'Ranked', hd.back),
+    global,
+    grid,
+    h('div', { class: 'queue-row' }, status, cancel),
+    conn,
   );
 };
 
@@ -119,7 +166,7 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
     tabs.replaceChildren(
       ...(['global', ...MODES] as const).map((m) =>
         button(
-          m === 'global' ? 'Global' : m,
+          m === 'global' ? 'Global' : MODE_LABEL[m],
           () => {
             which = m;
             void load();
@@ -171,10 +218,9 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
   void load();
   return h(
     'div',
-    { class: 'screen interactive' },
-    h('h2', {}, 'Leaderboards'),
+    { class: 'screen interactive flow-screen' },
+    screenHead('leaderboard', 'Leaderboards', back),
     h('div', { class: 'panel wide-panel' }, tabs, table),
-    button('Back', back, 'btn secondary'),
   );
 };
 
@@ -202,7 +248,7 @@ export const profileScreen = (
           return h(
             'div',
             { class: 'rank-row' },
-            h('span', { class: 'rank-mode' }, m),
+            h('span', { class: 'rank-mode' }, MODE_LABEL[m]),
             tierBadge(i?.tier),
             h(
               'span',
@@ -247,7 +293,7 @@ export const profileScreen = (
                 h(
                   'td',
                   { class: r.won ? 'win' : r.won === false ? 'loss' : '' },
-                  r.won ? 'Win' : r.won === false ? 'Loss' : 'Draw',
+                  r.place ? `#${r.place}` : r.won ? 'Win' : r.won === false ? 'Loss' : 'Draw',
                 ),
                 h('td', {}, `${r.kills}/${r.deaths}`),
                 h('td', {}, r.ranked ? `${r.delta >= 0 ? '+' : ''}${r.delta}` : ''),
@@ -276,8 +322,8 @@ export const profileScreen = (
   });
   return h(
     'div',
-    { class: 'screen interactive' },
-    h('h2', {}, 'Your profile'),
+    { class: 'screen interactive flow-screen' },
+    screenHead('profile', 'Your profile', back),
     h(
       'div',
       { class: 'panel wide-panel' },
@@ -314,6 +360,5 @@ export const profileScreen = (
         ),
       ),
     ),
-    button('Back', back, 'btn secondary'),
   );
 };

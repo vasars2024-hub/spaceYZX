@@ -1,23 +1,35 @@
-# How to play Space YZ
+# How to play Lethal Recoil
 
 ## Controls (default — change them in Settings → Controls)
 
-| Key                            | Action                                                                            |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| W A S D                        | Move (you sprint automatically)                                                   |
-| Space / mouse wheel down       | Jump · in zero-G: push off a surface, or a thruster burst                         |
-| Ctrl or C                      | Crouch · while running: slide                                                     |
-| Shift                          | Dash (works in the air and in zero-G)                                             |
-| Left mouse (hold)              | Aim the Boomerang (you see its path). Hold A/D while releasing to curve it        |
-| Left mouse (Boomerang away)    | Laser (0.2 s warning line, 3 charges)                                             |
-| Right mouse (hold 3 s)         | Wind-up Throw: one-hit kill, but everyone sees your aim line                      |
-| Right mouse (Boomerang flying) | Steer it                                                                          |
-| E                              | Slash · aimed at an incoming Boomerang right before it hits: deflect it           |
-| R                              | Lethal Recall: the Boomerang flies straight back and kills everything in its path |
-| Q                              | Gravity Grenade: pulls, then pops (you can shoot or slash it)                     |
-| F                              | Mag-boots (stick to surfaces in zero-G)                                           |
-| Tab                            | Scoreboard                                                                        |
-| Esc                            | Menu                                                                              |
+| Key                            | Action                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| W A S D                        | Move (you sprint automatically)                                                                                  |
+| Space / mouse wheel down       | Jump · in the air: press and hold for a jetpack burst (1 charge, 3 s recharge) · in zero-G: push off or thruster |
+| Ctrl or C                      | Crouch · while running: slide                                                                                    |
+| Shift                          | Dash (works in the air and in zero-G)                                                                            |
+| Left mouse (hold)              | Aim the Boomerang (you see its path). After you throw, flick the mouse sideways to tilt it in flight             |
+| Left mouse (Boomerang away)    | Laser (0.2 s warning line, 3 charges)                                                                            |
+| Right mouse (hold 1.22 s)      | Wind-up Throw: one-hit kill, but everyone sees your aim line                                                     |
+| Right mouse (Boomerang flying) | Steer it                                                                                                         |
+| E                              | Slash · aimed at an incoming Boomerang right before it hits: deflect it                                          |
+| R                              | Lethal Recall: the Boomerang flies straight back and kills everything in its path                                |
+| Q                              | Gravity Grenade: pulls, then pops (you can shoot or slash it)                                                    |
+| F                              | Gravity shift: walk on the nearest wall or ceiling within 2.5 m, anywhere (F again or jump to let go; 10 s max)  |
+| Tab                            | Scoreboard                                                                                                       |
+| Enter / Y                      | Online: chat to your team / to everyone (Enter sends, Esc cancels)                                               |
+| Hold V / B                     | Online: talk to your team / to everyone (voice chat; mute players in the Esc-menu scoreboard)                    |
+| Esc                            | Menu                                                                                                             |
+
+**Round-start shield:** in Boomerang modes everyone starts each round with a shield (a faint
+blue shell around you, 🛡 next to your health). It soaks up the **first hit completely**: a
+headshot, a Lethal Recall, even one small Laser shot. Only a charged **Wind-up Throw** goes
+straight through it. Tip: pop a shield with a quick Laser shot, then go for the kill.
+
+**Explosive throw:** every **6th Quick Throw** glows orange and explodes on the first wall
+(it doesn't bounce) or the first player it hits: **30 damage** to every enemy within 3.5 m, on
+top of the normal hit. If it comes back without hitting anything, you keep the charge for your
+next throw. The HUD shows how many throws are left ("✹ in 3") or "✹ EXPLOSIVE" when charged.
 
 ## Winning a round
 
@@ -27,20 +39,60 @@
   team**, to win the round.
 - If the carrier dies, the Controller drops. A teammate picks it up by standing on it for
   half a second; after 8 seconds untouched it returns to your base.
-- Carriers are revealed through walls for 1 second every 5 seconds. In the last 10 seconds
-  everybody is revealed.
-- When time runs out: more players alive wins, then more total health, then it's a draw.
-- Matches: 1v1 first to 5 (max 8 rounds), 2v2 first to 6 (max 11), 5v5 first to 5 (max 9).
-  Sides swap at half time; a tie goes to one **sudden death** round (half time, bigger
-  Tower zones, everyone revealed).
+- In 2v2 and 5v5 both teams always see who carries each Controller, even through walls (the
+  top of the screen names them), and in the last 20 seconds everybody is revealed. In 1v1
+  your opponent is never revealed.
+- **When time runs out there is no draw.** Usually the ship starts to **collapse**: the Tower
+  switches off and a glowing wall closes in on the middle of the map — be outside it for 3
+  seconds and you're out. One time in four you're all teleported instead to a **sky duel**:
+  floating platforms above the clouds, a much stronger jetpack, 20 seconds, and falling off
+  means you're out. If it's still undecided: more players alive, then more health, then who
+  is nearer the middle, then a coin flip.
+- Matches: 1v1 first to 5 (max 9 rounds), 2v2 first to 6 (max 11), 5v5 first to 5 (max 9).
+  Sides swap at half time. Round timers: 1v1 1:00, 2v2 1:20, 5v5 1:50.
+
+## Power-ups
+
+Twice a round a power-up appears in the **middle of the map** (10 s after the round starts,
+then 45 s in; it's marked on screen as FREEZE or DOUBLE). Run or fly into it to take it. You
+can hold one at a time, and it lasts until the round ends or its charges are used up. Not in
+CS mode.
+
+- **Freeze ×3** (icy blue crystal): your next 3 Boomerang, Laser or slash hits on an enemy who
+  survives the hit also **freeze them for 1 second**: they can't move, shoot, throw or use the
+  jetpack (they still fall, and they still take damage). The screen frosts over when it's you.
+- **Double boomerang ×3** (two gold boomerangs): your next 3 Quick Throws split in two: your
+  Boomerang plus a **twin** that curves the other way (a straight throw: the twin veers 12° to
+  the right). The twin hits as hard as a Quick Throw and bounces off one wall, but it never
+  comes back — it vanishes at the end of its flight or on its second wall. You can't steer,
+  catch or recall it.
+
+## Other modes
+
+- **Bomb** (Practice, or pick it when you create an online room): one team attacks, one
+  defends, like Counter-Strike. An attacker carries the bomb — **hold G for 3 s** inside
+  site **A** or **B** to plant. It goes off **35 s** later unless a defender **holds G next to
+  it for 7 s** (you can't move while planting/defusing; letting go starts over). Attackers
+  win if it explodes or all defenders die; defenders win by defusing, by time running out
+  before a plant, or by killing all attackers before the plant.
+  Attackers are the **T side (orange)**, defenders the **CT side (cyan)**. Teams swap sides at
+  half time and **your team's color swaps with them**, so orange always means T.
+- **CS mode**: Bomb rules with an **AK-47** (1) and a **Deagle** (2) instead of the Boomerang
+  kit, and everyone moves at 70 % of normal speed. The AK kills with 4 body shots or 1 headshot, the
+  Deagle with 2 body shots or 1 headshot. Guns have a fixed spray pattern you can learn and
+  are only accurate when you stand still (stop before you shoot), crouch for a bit more;
+  in the air they're wild. R reloads. Players are dim, not glowing.
+- **Taking over a bot**: when you're dead and watching a bot teammate, press **E** to take
+  control of it.
 
 ## What the markers mean
 
 - **Teammates** have their name above them: bright when you can see them, faded when a wall
-  is in the way. **◆** before a name = that player carries your Controller.
-- **Enemies** never show through walls. While they are revealed (carrier pulse, last 10
-  seconds) you see only **◇** (**◆** = their carrier), never a name. You also see the ◆ over
-  the enemy carrier whenever they are in sight. Put your crosshair on an enemy you can see to
+  is in the way.
+- **Carriers** get a big **◆ NAME · YOUR CARRIER / ENEMY CARRIER** marker that sticks to the
+  edge of your screen when they are out of view.
+- **Other enemies** never show through walls. While they are revealed (last 20 seconds and
+  overtime in team modes; 1v1 never reveals your opponent) you see only **◇**, never a name. Put your crosshair on an enemy you can see to
   read their name.
 - **ATTACK / DEFEND** float over the Towers and swap at half time together with the sides.
   While you carry the Controller, ATTACK sticks to the edge of the screen with an arrow when
@@ -52,7 +104,17 @@
   came from: top = ahead, bottom = behind, ▲ / ▼ = above / below you.
 - Holding **Tab** (scoreboard) hides the markers.
 
-## The map: Kestrel
+## The maps
+
+**Split Deck** (the default) is not mirrored — sides swap at half time. Cyan starts at the
+top, Orange at the bottom. In the middle is a tall glass **atrium** with a **hole** down into
+the basement pit (the power-up floats above it). **A site** is on the raised **A deck** under
+the glass ceiling (reach it by the east lane and deck run, or up the gantry from the
+atrium); **B site** is down in the **B hold** in the basement (the west lane and basement
+corridor, the stairs off mid, or drop through the hole). Both teams reach the middle within
+a twentieth of a second of each other.
+
+### Kestrel
 
 A warship, the same for both teams (mirrored). You spawn in your **hangar** (on the ready
 deck or behind the blast barricade); your Tower stands in the middle of it. Three ways lead

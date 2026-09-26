@@ -186,5 +186,7 @@ export const KILL_KINDS: KillKind[] = [
   'slash',
   'laser',
   'grenade',
+  'ak',
+  'deagle',
   'world',
 ];

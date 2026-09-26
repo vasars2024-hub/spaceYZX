@@ -18,6 +18,8 @@ export class Conn {
   private lastRefill = performance.now();
   private strikes = 0;
   closed = false;
+  /** when the client last sent anything (performance.now ms): silent connections are dropped */
+  lastHeard = performance.now();
   /** Server-side network simulator (dev): extra one-way delay applied to outgoing messages. */
   simDelayMs = 0;
   simJitterMs = 0;
@@ -32,6 +34,7 @@ export class Conn {
   /** Token bucket: ~240 messages/s sustained (60 inputs + control), burst 240. */
   allowMessage(): boolean {
     const now = performance.now();
+    this.lastHeard = now;
     this.tokens = Math.min(240, this.tokens + ((now - this.lastRefill) / 1000) * 240);
     this.lastRefill = now;
     if (this.tokens < 1) {

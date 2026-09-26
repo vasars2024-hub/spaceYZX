@@ -7,6 +7,7 @@ import {
   boomerangDuel,
   deflectDuel,
   grenadeShot,
+  gunDuel,
   laserDuel,
   slashDuel,
   type NetcheckOptions,
@@ -50,9 +51,17 @@ describe.each(pings)('hit registration at %i ms ping', (rtt) => {
     expect(r.extra['recall lines']).toBeGreaterThan(2);
     expectConsistent(r, false); // recall kills are judged on the victim's side (dodgeable)
   });
+  it('Double boomerang: twins hit what was on screen, predicted exactly', () => {
+    const r = boomerangDuel(o, 'twin');
+    expect(r.extra['twins thrown']).toBeGreaterThan(2);
+    expectConsistent(r);
+  });
   it('Slash', () => expectConsistent(slashDuel(o)));
   it('Deflect', () => expectConsistent(deflectDuel(o)));
   it('Laser at a flying grenade', () => expectConsistent(grenadeShot(o)));
+  it('CS mode AK bursts: spray + spread predicted exactly', () => expectConsistent(gunDuel(o)));
+  it('CS mode AK while strafing (moving inaccuracy)', () =>
+    expectConsistent(gunDuel({ ...o, shooterStrafes: true })));
 });
 
 describe('hit registration on uneven connections', () => {

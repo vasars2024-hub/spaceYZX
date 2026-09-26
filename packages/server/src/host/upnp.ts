@@ -446,7 +446,7 @@ export const addPortMapping = async (
     internalPort,
     internalClient,
     protocol = 'TCP',
-    description = 'Space YZ',
+    description = 'Lethal Recoil',
     leaseSeconds = 3600,
   }: PortMappingOptions,
 ): Promise<{ leaseSeconds: number }> => {

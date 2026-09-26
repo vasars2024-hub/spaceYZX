@@ -2,7 +2,7 @@
 // input sending, prediction + reconciliation, and a snapshot buffer for interpolation.
 import type { Vec3 } from '../math/vec3';
 import { v3, sub, len, add, scale } from '../math/vec3';
-import type { GameConfig } from '../config';
+import type { GameConfig, LoadoutName } from '../config';
 import { mergeConfig, defaultConfig } from '../config';
 import type { Level } from '../level/level';
 import { buildLevel } from '../level/level';
@@ -27,11 +27,13 @@ import {
   type SnapshotData,
   type SnapshotBaseline,
   type NetPlayer,
-  type GameMode,
+  type RoomMode,
   type RoomPlayerInfo,
+  type RtcSignal,
 } from './protocol';
 import { PROTOCOL_VERSION } from '../version';
 import { MAX_REWIND_MS } from './lag-limits';
+import { DEFAULT_BOT_SKILL } from '../bots/brain';
 
 export interface SocketLike {
   binaryType: string;
@@ -66,6 +68,7 @@ const PREDICTED_EVENTS = new Set([
   'railGrab',
   'railRelease',
   'thruster',
+  'jetpack',
   'pushOff',
   'mag',
   'dash',
@@ -78,6 +81,10 @@ const PREDICTED_EVENTS = new Set([
   'grenadeThrow',
   'catch',
   'pickup',
+  'twinThrow',
+  'powerupPickup',
+  'gunReload',
+  'gunDraw',
 ]);
 
 /**
@@ -92,16 +99,26 @@ const echoKey = (e: SimEvent): string | null => {
       return `hit:${e.attacker}:${e.victim}`;
     case 'laserFire':
       return `laserFire:${e.player}`;
+    case 'gunFire':
+      return `gunFire:${e.player}`;
     case 'deflect':
       return `deflect:${e.player}:${e.boomerang}`;
     case 'recallStart':
     case 'recallGo':
       return `${e.type}:${e.boomerang}`;
     case 'wallHit':
-      return `wallHit:${e.boomerang}`;
+    case 'wallBounce':
+      return `${e.type}:${e.boomerang}`;
     case 'grenadeActivate':
     case 'grenadePop':
       return `${e.type}:${e.grenade}`;
+    case 'blast':
+      return `blast:${e.boomerang}`;
+    case 'shieldBreak':
+      return `shieldBreak:${e.attacker}:${e.victim}`;
+    case 'twinBounce':
+    case 'twinEnd':
+      return `${e.type}:${e.twin}`;
     default:
       return null;
   }
@@ -118,7 +135,7 @@ export class NetCore {
   /** messages from the server to show the player (drained by the UI) */
   notices: string[] = [];
   /** ranked queue status */
-  queue: { mode: GameMode | null; waitSec: number; searching: number; error?: string } = {
+  queue: { mode: RoomMode | null; waitSec: number; searching: number; error?: string } = {
     mode: null,
     waitSec: 0,
     searching: 0,
@@ -127,7 +144,8 @@ export class NetCore {
   roomLeftReason: string | null = null;
   // room
   code = '';
-  mode: GameMode = 'practice';
+  /** the room's mode ('arena': Arena 1v1, its state arrives in `extra` with rules 'arena') */
+  mode: RoomMode = 'practice';
   map = '';
   ranked = false;
   level: Level | null = null;
@@ -181,6 +199,10 @@ export class NetCore {
   corrections = 0;
   lastLead = 0;
   onMessage: (msg: ServerMsg) => void = () => {};
+  /** extra message listeners (chat, voice), called after onMessage */
+  private listeners = new Set<(msg: ServerMsg) => void>();
+  /** power-ups your prediction picked up that the server hasn't taken away yet (id -> tick) */
+  predictedPickups = new Map<number, number>();
   /** Debug/test hook: called after each forward prediction step (not for replays). */
   onPredicted: ((world: WorldState, input: PlayerInput) => void) | null = null;
 
@@ -251,17 +273,58 @@ export class NetCore {
     }, false);
   }
 
-  /** Join (mode) or leave (null) the ranked queue. */
-  queueRanked(mode: GameMode | null): void {
-    this.sendJson(mode ? { t: 'queue', mode } : { t: 'unqueue' });
+  /**
+   * Join (mode) or leave (null) the ranked queue. 'arena' = the Arena 1v1 ladder; `loadout`
+   * picks its kit ('lethal' Boomerang, 'cs' AK + Deagle; players only meet the same kit).
+   */
+  queueRanked(mode: RoomMode | null, loadout?: LoadoutName): void {
+    this.sendJson(mode ? { t: 'queue', mode, ...(loadout ? { loadout } : {}) } : { t: 'unqueue' });
   }
 
-  createRoom(mode: GameMode, map?: string, bots = 0, botSkill = 'normal'): void {
-    this.sendJson({ t: 'createRoom', mode, map, bots, botSkill });
+  /** Create a room ('arena': an Arena 1v1 room — `map` is ignored, bots fill it up to 8). */
+  createRoom(
+    mode: RoomMode,
+    map?: string,
+    bots = 0,
+    botSkill: string = DEFAULT_BOT_SKILL,
+    objective: 'tower' | 'bomb' = 'tower',
+    loadout: LoadoutName = 'lethal',
+  ): void {
+    this.sendJson({ t: 'createRoom', mode, map, bots, botSkill, objective, loadout });
+  }
+
+  /**
+   * While dead: ask to take over a bot teammate. The server swaps the bodies; your exact own
+   * state arrives in the next snapshot with a 'takeover' event, and prediction carries on
+   * from the new body.
+   */
+  takeOver(botId: number): void {
+    this.sendJson({ t: 'takeover', target: botId });
   }
 
   joinRoom(code: string): void {
     this.sendJson({ t: 'joinRoom', code });
+  }
+
+  /** Listen to server messages (besides onMessage); returns the unsubscribe function. */
+  listen(fn: (msg: ServerMsg) => void): () => void {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  }
+
+  /** Text chat to your team (team = true) or everyone in the room. */
+  sendChat(text: string, team: boolean): void {
+    this.sendJson({ t: 'chat', text, team });
+  }
+
+  /** Voice signaling to another human in the room (relayed by the server). */
+  sendRtc(to: number, data: RtcSignal): void {
+    this.sendJson({ t: 'rtc', to, data });
+  }
+
+  /** Push-to-talk state (so others can show who's talking). */
+  sendVoice(on: boolean, all: boolean): void {
+    this.sendJson({ t: 'voice', on, all });
   }
 
   leaveRoom(): void {
@@ -283,6 +346,7 @@ export class NetCore {
     this.delayQueue = [];
     this.shownTick = null;
     this.echoes = [];
+    this.predictedPickups.clear();
   }
 
   private onData(data: unknown): void {
@@ -369,6 +433,7 @@ export class NetCore {
         break;
     }
     this.onMessage(msg);
+    for (const fn of this.listeners) fn(msg);
   }
 
   pingServer(): void {
@@ -390,6 +455,11 @@ export class NetCore {
     if (this.snapshots.length > 90) this.snapshots.shift();
     this.latest = snap;
     this.lastAck = snap.seq;
+    // a picked-up power-up is gone from the server's list: forget it (and if the server still
+    // has it a second later, the prediction was wrong: show it again)
+    for (const [id, t] of this.predictedPickups)
+      if (!snap.powerups?.some((u) => u.id === id) || snap.tick > t + 60)
+        this.predictedPickups.delete(id);
     if (snap.extra !== null && snap.extra !== undefined) this.extra = snap.extra;
     // clock: best (least delayed) offset over the last ~2 s
     const now = this.opts.now();
@@ -469,6 +539,11 @@ export class NetCore {
       .map((g) => ({ ...g }));
     if (ownGrenades)
       w.grenades.push(...ownGrenades.map((g) => ({ ...g, pos: { ...g.pos }, vel: { ...g.vel } })));
+    // your own Double-boomerang twins: exact (predicted like your Boomerang); others' twins are
+    // only drawn (interpolatedTwin), never simulated here
+    w.twins = (snap.own?.twins ?? []).map((t) => JSON.parse(JSON.stringify(t)) as typeof t);
+    // power-ups lying around (your own pick-up is predicted)
+    w.powerups = (snap.powerups ?? []).map((u) => ({ ...u, pos: { ...u.pos } }));
     for (const z of snap.zones)
       if (w.zones[z.index]) w.zones[z.index] = { override: z.dir, until: z.until };
     return w;
@@ -489,7 +564,14 @@ export class NetCore {
       if (dist > 0.01 && dist < 3) {
         this.correction = add(this.correction, d); // render-smooth the snap
         this.corrections++;
-      } else if (dist >= 3) this.correction = v3();
+      } else if (dist >= 3) {
+        // a teleport (respawn, taking over a bot): draw the eye at the new spot right away,
+        // not sliding over from the old one until the next predicted tick
+        this.correction = v3();
+        const at = { pos: after.pos, up: after.up, eye: eyePos(after, this.config.movement) };
+        this.prevLocal = at;
+        this.curLocal = at;
+      }
     }
   }
 
@@ -541,6 +623,7 @@ export class NetCore {
         for (const e of this.predWorld.events) {
           const key = echoKey(e);
           if (key) this.echoes.push({ key, tick: input.tick });
+          if (e.type === 'powerupPickup') this.predictedPickups.set(e.id, input.tick);
         }
         this.onPredicted?.(this.predWorld, input);
         const me2 = this.localPredicted();
@@ -626,6 +709,16 @@ export class NetCore {
   /** Interpolated position of another player's grenade (render time). */
   interpolatedGrenade(id: number): Vec3 | null {
     return this.grenadeAt(id, this.renderTick());
+  }
+
+  /** Interpolated position of another player's Double-boomerang twin (render time). */
+  interpolatedTwin(id: number): Vec3 | null {
+    const r = this.around(this.renderTick());
+    if (!r) return null;
+    const ta = r.a.twins?.find((t) => t.id === id);
+    const tb = r.b.twins?.find((t) => t.id === id) ?? ta;
+    if (!ta || !tb) return null;
+    return interpObjectPos(ta.pos, tb.pos, r.t);
   }
 
   /** A grenade as drawn at `tick`. */

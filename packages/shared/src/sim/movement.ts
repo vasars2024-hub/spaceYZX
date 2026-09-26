@@ -18,9 +18,12 @@ import {
   lerp,
 } from '../math/vec3';
 import { qForward, qRight, qUp, qNormalize } from '../math/quat';
+import { trackFlick } from './flick';
 import type { Capsule } from '../level/collision';
 import { capsuleContacts, capsuleOverlaps, depenetrate, nearestSurface } from '../level/collision';
 import { railClosest, railPoint, railTangent } from '../level/level';
+import { inSkyZone } from '../level/sky-arena';
+import type { LevelDef } from '../level/types';
 import type { MovementConfig } from '../config/movement';
 import type { SimContext } from './context';
 import type { PlayerInput } from './input';
@@ -30,6 +33,33 @@ import { Move } from './state';
 import { gravityAt, isZeroG } from './gravity';
 
 const DEG = Math.PI / 180;
+
+/** The jetpack's numbers where you are: sped up in the sky duel (level/sky-arena.ts). */
+export interface JetpackTuning {
+  /** full tank, seconds of thrust */
+  fuel: number;
+  /** fuel refilled per second once the rest is over */
+  refillPerSec: number;
+  /** rest before the tank refills, seconds */
+  delaySec: number;
+  upAccel: number;
+  maxRise: number;
+  dirSpeed: number;
+}
+
+export const jetpackTuning = (m: MovementConfig, def: LevelDef, pos: Vec3): JetpackTuning => {
+  const sky = inSkyZone(def, pos);
+  const fuel = m.jetpackFuelSec * (sky ? m.skyJetpackFuelMul : 1);
+  const rec = sky ? m.skyJetpackRechargeMul : 1;
+  return {
+    fuel,
+    refillPerSec: (fuel / m.jetpackRechargeSec) * rec,
+    delaySec: m.jetpackRechargeDelaySec / rec,
+    upAccel: m.jetpackUpAccel * (sky ? m.skyJetpackUpMul : 1),
+    maxRise: m.jetpackMaxRise * (sky ? m.skyJetpackRiseMul : 1),
+    dirSpeed: m.jetpackDirSpeed * (sky ? m.skyJetpackDirMul : 1),
+  };
+};
 
 export const bodyHeight = (p: PlayerState, m: MovementConfig): number =>
   p.crouched ? m.crouchHeight : m.standHeight;
@@ -400,8 +430,13 @@ export const updateMovement = (
 ): void => {
   const m = ctx.config.movement;
   const dt = ctx.dt;
-  const buttons = input.buttons;
+  // Freeze power-up stun (sim/powerups.ts): no control at all, every button reads as released
+  // (prevButtons keeps tracking the real ones, so nothing counts as a fresh press when it ends)
+  const stunned = p.stun > 0 && !p.frozen;
+  const rawButtons = input.buttons;
+  const buttons = stunned ? 0 : rawButtons;
   const pressed = buttons & ~p.prevButtons;
+  trackFlick(p, qNormalize(input.view), dt, ctx.config.combat);
   p.view = qNormalize(input.view);
 
   // timers
@@ -418,22 +453,46 @@ export const updateMovement = (
       p.thrusterRecharge = Math.round(m.thrusterRechargeSec / dt);
     }
   } else p.thrusterRecharge = Math.round(m.thrusterRechargeSec / dt);
+  // jetpack tank refills after a short rest (sped up in the sky duel)
+  const jp = jetpackTuning(m, ctx.level.def, p.pos);
+  if (!p.jetOn) {
+    if (p.jetCd > 0) p.jetCd--;
+    else p.jetFuel = Math.min(jp.fuel, p.jetFuel + jp.refillPerSec * dt);
+  }
 
   // gravity & body orientation
   let g = gravityAt(ctx, world, p.pos);
   const zoneZeroG = isZeroG(g);
-  if (p.mag && !zoneZeroG) {
+  const releaseMag = (): void => {
     p.mag = null;
+    p.magT = 0;
+    if (!zoneZeroG) p.magCd = Math.round(m.magCooldownSec / dt);
     world.events.push({ type: 'mag', player: p.id, on: false });
-  }
+  };
+  if (p.magCd > 0) p.magCd--;
+  // gravity shift in normal gravity runs out after a while
+  if (p.mag && !zoneZeroG && ++p.magT > Math.round(m.magMaxSec / dt)) releaseMag();
   if (pressed & Btn.MagBoots && !p.frozen) {
-    if (p.mag) {
-      p.mag = null;
-      world.events.push({ type: 'mag', player: p.id, on: false });
-    } else if (zoneZeroG) {
+    if (p.mag) releaseMag();
+    else if (zoneZeroG) {
       const s = nearestSurface(ctx.level, p.pos, m.magRange);
       if (s) {
         p.mag = s.normal;
+        p.magT = 0;
+        world.events.push({ type: 'mag', player: p.id, on: true });
+      }
+    } else if (p.magCd === 0) {
+      // the nearest wall or ceiling close to your body, whichever way you face (not the floor
+      // you're already standing on)
+      const s = nearestSurface(
+        ctx.level,
+        p.pos,
+        m.magNearRange + m.radius,
+        (n) => dot(n, p.up) < 0.7,
+      );
+      if (s) {
+        p.mag = s.normal;
+        p.magT = 0;
         world.events.push({ type: 'mag', player: p.id, on: true });
       }
     }
@@ -448,18 +507,27 @@ export const updateMovement = (
 
   if (p.frozen) {
     p.vel = v3();
-    p.prevButtons = buttons;
+    p.prevButtons = rawButtons;
     return;
+  }
+  if (stunned) {
+    // frozen solid: no speed of your own left, but gravity still pulls (you fall, you don't
+    // hang in mid-air); off any zip-rail. In zero-G you simply stop where you are.
+    if (p.rail) releaseRail(world, ctx, p);
+    const gl = len(g);
+    const gDir = gl > 1e-6 ? scale(g, 1 / gl) : null;
+    p.vel = gDir ? scale(gDir, Math.max(0, dot(p.vel, gDir))) : v3();
+    p.dashTicks = 0;
   }
 
   if (p.mantle) {
     advanceMantle(p);
-    p.prevButtons = buttons;
+    p.prevButtons = rawButtons;
     return;
   }
   if (p.rail) {
     advanceRail(world, ctx, p, pressed);
-    p.prevButtons = buttons;
+    p.prevButtons = rawButtons;
     return;
   }
 
@@ -482,6 +550,10 @@ export const updateMovement = (
     world.events.push({ type: 'dash', player: p.id });
   }
   if (p.dashTicks > 0) p.dashTicks--;
+  if (p.grounded) {
+    p.jetHold = -1;
+    p.jetOn = false;
+  }
 
   // ---------- zero-G float ----------
   if (gMag < 1e-6) {
@@ -510,7 +582,7 @@ export const updateMovement = (
     const s = len(p.vel);
     if (s > m.maxFloatSpeed) p.vel = scale(p.vel, m.maxFloatSpeed / s);
     moveAndCollide(ctx, p, dt);
-    p.prevButtons = buttons;
+    p.prevButtons = rawButtons;
     return;
   }
 
@@ -524,10 +596,7 @@ export const updateMovement = (
   if (p.grounded || p.coyote > 0) {
     if (p.jumpBuffer > 0 && (!p.crouched || p.move === Move.Slide || setCrouch(ctx, p, false))) {
       if (p.move === Move.Slide) setCrouch(ctx, p, false);
-      if (p.mag) {
-        p.mag = null; // jumping off a mag-boot surface floats you away
-        world.events.push({ type: 'mag', player: p.id, on: false });
-      }
+      if (p.mag) releaseMag(); // jumping off a gravity-shift surface lets go of it
       doJump(world, p, gMag, m, dt);
       jumped = true;
     }
@@ -577,6 +646,8 @@ export const updateMovement = (
       // no friction during landing grace (bhop) or the dash burst
       if (p.landGrace === 0 && p.dashTicks === 0) p.vel = applyFriction(p.vel, m, dt);
       let wishSpeed = p.crouched ? m.crouchSpeed : wish.fb > 0 ? m.sprintSpeed : m.runSpeed;
+      // on a slope, run faster along it so your pace across the map stays the same
+      wishSpeed /= Math.max(0.7, dot(n, p.up));
       if (p.speedCap > 0) wishSpeed = Math.min(wishSpeed, p.speedCap);
       if (hasWish) {
         const wishG = normalize(projectOnPlane(wish.dir, n));
@@ -595,10 +666,13 @@ export const updateMovement = (
     if (crouchHeld && !p.crouched) setCrouch(ctx, p, true);
     else if (!crouchHeld && p.crouched) setCrouch(ctx, p, false);
 
-    // wall-jump
+    // wall-jump, or else the jetpack
     if (pressed & Btn.Jump && !jumped) {
       const wall = nearbyWall(ctx, p, m.wallJumpReach);
-      if (wall && p.wallJumpsLeft > 0 && (!p.lastWallNormal || dot(p.lastWallNormal, wall) < 0.9)) {
+      const canWallJump =
+        !!wall && p.wallJumpsLeft > 0 && (!p.lastWallNormal || dot(p.lastWallNormal, wall) < 0.9);
+      if (!canWallJump) p.jetHold = 0; // arm: fires if Space stays down (see below)
+      if (wall && canWallJump) {
         const planar = scale(projectOnPlane(planarOf(p.vel, p.up), wall), m.wallJumpSpeedKeep);
         p.vel = add(add(planar, scale(wall, m.wallJumpOut)), scale(p.up, m.wallJumpUp));
         p.wallJumpsLeft--;
@@ -609,7 +683,40 @@ export const updateMovement = (
       }
     }
 
+    // jetpack: armed by a fresh Space press in the air, lights once Space has been held long
+    // enough, and burns while Space stays down and there's fuel
+    if (p.jetHold >= 0) {
+      if (!(buttons & Btn.Jump) || p.jetFuel <= 0) p.jetHold = -1;
+      else if (++p.jetHold >= Math.max(1, Math.round(m.jetpackHoldSec / dt))) {
+        p.jetHold = -1;
+        p.jetOn = true;
+        const vUp = dot(p.vel, p.up);
+        if (vUp < 0) p.vel = madd(p.vel, p.up, -vUp); // catch the fall
+        p.jumpBuffer = 0; // the press was used up here, not as a jump on landing
+        world.events.push({ type: 'jetpack', player: p.id });
+      }
+    }
+    if (p.jetOn && (!(buttons & Btn.Jump) || p.jetFuel <= 0)) {
+      p.jetOn = false;
+      p.jetCd = Math.round(jp.delaySec / dt);
+    }
+
     p.vel = madd(p.vel, g, dt);
+    if (p.jetOn) {
+      p.jetFuel = Math.max(0, p.jetFuel - dt);
+      const vUp = dot(p.vel, p.up);
+      const rise = Math.min(jp.upAccel * dt, Math.max(0, jp.maxRise - vUp));
+      p.vel = madd(p.vel, p.up, rise);
+      // steer freely in any direction (backwards too), up to the jetpack's own speed
+      if (hasWish) {
+        const planar = planarOf(p.vel, p.up);
+        const want = scale(wish.dir, jp.dirSpeed);
+        const diff = sub(want, planar);
+        const dl = len(diff);
+        const step = m.jetpackDirAccel * jp.dirSpeed * dt;
+        if (dl > 1e-6) p.vel = madd(p.vel, diff, Math.min(1, step / dl));
+      }
+    }
     if (hasWish)
       p.vel = airAccelerate(p.vel, wish.dir, m.sprintSpeed, m.airWishCap, m.airAccel, dt);
 
@@ -629,10 +736,10 @@ export const updateMovement = (
         p.vel = madd(scale(d, s), p.up, dot(p.vel, p.up));
       }
     }
-    if (p.dashTicks === 0) p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
+    if (p.dashTicks === 0 && !p.jetOn) p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
 
     if (tryGrabRail(world, ctx, p)) {
-      p.prevButtons = buttons;
+      p.prevButtons = rawButtons;
       return;
     }
   }
@@ -654,7 +761,9 @@ export const updateMovement = (
 
   // ground detection
   const vUp = dot(p.vel, p.up);
-  let ground = vUp <= 1.0 ? probeGround(ctx, p) : null;
+  // running up a ramp moves you upward too: if you were walking (not jumping), keep looking for
+  // ground, or the slope would count as air and eat your speed
+  let ground = vUp <= 1.0 || (wasGrounded && !jumped) ? probeGround(ctx, p) : null;
   if (
     !ground &&
     wasGrounded &&
@@ -723,7 +832,7 @@ export const updateMovement = (
     p.move = p.grounded ? Move.Ground : Move.Air;
   }
 
-  p.prevButtons = buttons;
+  p.prevButtons = rawButtons;
 };
 
 const tryStepUp = (

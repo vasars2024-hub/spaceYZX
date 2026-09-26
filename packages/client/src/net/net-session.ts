@@ -10,8 +10,17 @@ import type {
   WorldState,
   BoomerangState,
   GrenadeState,
+  PowerupPickup,
 } from '@space-yz/shared';
-import { lerp, add, normalize, netToBoomerang, Phase } from '@space-yz/shared';
+import {
+  lerp,
+  add,
+  normalize,
+  netToBoomerang,
+  newBoomerang,
+  Phase,
+  canTakeOver as canTakeOverInSim,
+} from '@space-yz/shared';
 import type { MatchInfo, RenderPlayer, Session, TickInput } from '../game/session';
 
 export class NetSession implements Session {
@@ -82,6 +91,10 @@ export class NetSession implements Session {
         aiming: np.aiming,
         laserWarn: np.laserWarn,
         slashTicks: np.slashTicks,
+        weapon: np.weapon,
+        stun: np.stun,
+        shield: np.shield,
+        powerup: np.powerup,
         carrier: carriers.has(id),
         revealed: revealed.has(id),
       });
@@ -118,6 +131,16 @@ export class NetSession implements Session {
 
   report(playerId: number, reason: string): void {
     this.core.sendJson({ t: 'report', player: playerId, reason });
+  }
+
+  canTakeOver(id: number): boolean {
+    const w = this.core.predWorld;
+    const bot = this.core.roster.find((p) => p.id === id)?.bot ?? false;
+    return !!w && bot && this.match()?.phase === 'live' && canTakeOverInSim(w, this.localId, id);
+  }
+
+  takeOver(id: number): void {
+    this.core.takeOver(id);
   }
 
   pings(): Record<number, number> {
@@ -162,6 +185,24 @@ export class NetSession implements Session {
       out.push({ ...g, pos: this.core.interpolatedGrenade(g.id) ?? g.pos });
     }
     return out;
+  }
+
+  /** Twins as drawn: your own predicted (now), everyone else's interpolated. */
+  twins(): BoomerangState[] {
+    const me = this.localId;
+    const out: BoomerangState[] = (this.core.predWorld?.twins ?? []).filter((t) => t.owner === me);
+    for (const t of this.core.latest?.twins ?? []) {
+      if (t.owner === me) continue;
+      const pos = this.core.interpolatedTwin(t.id);
+      if (!pos) continue;
+      out.push({ ...newBoomerang(t.owner, pos), id: t.id, phase: Phase.Out });
+    }
+    return out;
+  }
+
+  /** Power-ups lying around (minus one your prediction just picked up). */
+  powerups(): PowerupPickup[] {
+    return (this.core.latest?.powerups ?? []).filter((u) => !this.core.predictedPickups.has(u.id));
   }
 
   world(): WorldState {

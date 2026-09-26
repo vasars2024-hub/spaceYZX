@@ -72,23 +72,62 @@ describe('Boomerang: Quick Throw', () => {
     }
     expect(caught).toBe(true);
     expect(b.phase).toBe(Phase.Held);
-    // ~45 m/s for ~0.42 s out => roughly 15-20 m
-    expect(maxDist).toBeGreaterThan(12);
-    expect(maxDist).toBeLessThan(25);
+    // ~45 m/s for ~0.63 s out => roughly 28-34 m (+50 % after the first playtest)
+    expect(maxDist).toBeGreaterThan(24);
+    expect(maxDist).toBeLessThan(38);
   });
 
-  it('A/D on release curves the throw left/right', () => {
-    const left = makeSim(flatLevel());
-    settle(left);
-    quickThrow(left, 1, Btn.Left);
-    tick(left, {}, 8);
-    const right = makeSim(flatLevel());
-    settle(right);
-    quickThrow(right, 1, Btn.Right);
-    tick(right, {}, 8);
-    // facing -Z: left is -X, right is +X
-    expect(boomerangOf(left, 1).pos.x).toBeLessThan(-0.5);
-    expect(boomerangOf(right, 1).pos.x).toBeGreaterThan(0.5);
+  it('flicking the mouse while a Quick Throw flies out tilts it; slow aiming does not', () => {
+    // throw straight at yaw 0, then turn the view by `perTick` degrees for `turnTicks` ticks
+    const fly = (perTick: number, turnTicks: number, keys = 0) => {
+      const sim = makeSim(flatLevel());
+      settle(sim);
+      sim.config.movement.runSpeed = 0;
+      sim.config.movement.sprintSpeed = 0;
+      tick(sim, { 1: { buttons: Btn.Fire, view: view(0) } }, 5);
+      tick(sim, { 1: { buttons: 0, view: view(0) } }, 1);
+      const b = boomerangOf(sim, 1);
+      expect(b.curve).toBe(0); // the release itself throws straight
+      let yaw = 0;
+      let peak = 0;
+      for (let i = 0; i < turnTicks; i++) {
+        yaw += perTick;
+        tick(sim, { 1: { buttons: keys, view: view(yaw) } }, 1);
+        if (Math.abs(b.curve) > Math.abs(peak)) peak = b.curve;
+      }
+      // hold the new aim
+      for (let i = 0; i < 10; i++) {
+        tick(sim, { 1: { buttons: keys, view: view(yaw) } }, 1);
+        if (Math.abs(b.curve) > Math.abs(peak)) peak = b.curve;
+      }
+      return { peak, x: b.pos.x, sim, b, yaw, keys };
+    };
+    // a quick flick right (yaw goes down: facing -Z, right is +X) tilts right, hard
+    const right = fly(-10, 3);
+    expect(right.peak).toBeGreaterThan(0.8);
+    expect(right.x).toBeGreaterThan(fly(0, 3).x + 0.5);
+    // … and left
+    expect(fly(10, 3).peak).toBeLessThan(-0.8);
+    // a slow pan (60 deg/s) never builds up a tilt: aiming doesn't bend it
+    expect(fly(-1, 20).peak).toBe(0);
+    // strafing alone doesn't either
+    expect(fly(0, 3, Btn.Right).peak).toBe(0);
+  });
+
+  it('the tilt of a flick fades once you stop turning', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    sim.config.movement.runSpeed = 0;
+    sim.config.movement.sprintSpeed = 0;
+    tick(sim, { 1: { buttons: Btn.Fire, view: view(0) } }, 5);
+    tick(sim, { 1: { buttons: 0, view: view(0) } }, 1);
+    tick(sim, { 1: { buttons: 0, view: view(-15) } }, 1);
+    tick(sim, { 1: { buttons: 0, view: view(-30) } }, 1);
+    const b = boomerangOf(sim, 1);
+    expect(b.curve).toBeGreaterThan(0.5);
+    tick(sim, { 1: { buttons: 0, view: view(-30) } }, 24); // 0.4 s later
+    expect(b.phase).toBe(Phase.Out);
+    expect(b.curve).toBe(0);
   });
 
   it('hits a body for 50 on the way out, and again on the way back (2 hits kill)', () => {
@@ -126,6 +165,7 @@ describe('Boomerang: Quick Throw', () => {
     const sim = makeSim(flatLevel([wall]));
     settle(sim);
     const ev = quickThrow(sim, 1);
+    boomerangOf(sim, 1).bounced = true; // its one bounce is used up: the wall drops it
     for (let i = 0; i < 30; i++) ev.push(...tick(sim));
     const b = boomerangOf(sim, 1);
     expect(ev.some((e) => e.type === 'wallHit')).toBe(true);
@@ -139,13 +179,16 @@ describe('Boomerang: Quick Throw', () => {
   it('the preview matches the real flight path exactly', () => {
     const sim = makeSim(flatLevel([{ c: v3(8, 2, -12), h: v3(1, 2, 1) }]));
     settle(sim);
-    // the preview assumes the thrower stays put: hold them still (D also strafes)
+    // the preview assumes the thrower stays put: hold them still
     sim.config.movement.runSpeed = 0;
     sim.config.movement.sprintSpeed = 0;
-    tick(sim, { 1: { buttons: Btn.Fire, view: view(10, 2) } }, 5);
-    const pred = predictThrow(sim.world, sim.ctx, sim.p, 1, 200);
-    tick(sim, { 1: { buttons: Btn.Right, view: view(10, 2) } }, 1);
+    tick(sim, { 1: { buttons: Btn.Fire, view: view(16, 2) } }, 5);
+    // release without turning: the throw flies straight (it only tilts when you flick in flight)
+    tick(sim, { 1: { buttons: 0, view: view(16, 2) } }, 1);
     const b = boomerangOf(sim, 1);
+    expect(b.curve).toBe(0);
+    // the preview from the release pose is the path the throw is now taking
+    const pred = predictThrow(sim.world, sim.ctx, sim.p, 0, 200);
     const real = [{ ...b.pos }];
     for (let i = 0; i < 200 && b.phase !== Phase.Held && b.phase !== Phase.Dropped; i++) {
       tick(sim);
@@ -171,12 +214,13 @@ describe('Boomerang: Quick Throw', () => {
 });
 
 describe('Wind-up Throw', () => {
-  it('takes 3 s, slows you to a walk, then kills in one body hit', () => {
+  it('takes windupSec, slows you to a walk, then kills in one body hit', () => {
     const sim = makeSim(flatLevel());
     settle(sim);
     const enemy = addOther(sim, 2, 1, v3(0, 0, -40));
     settle(sim);
-    const ev = tick(sim, { 1: { buttons: Btn.Alt | Btn.Forward } }, 179);
+    const full = Math.round(sim.config.combat.windupSec * 60);
+    const ev = tick(sim, { 1: { buttons: Btn.Alt | Btn.Forward } }, full - 1);
     expect(ev.some((e) => e.type === 'windupReady')).toBe(false);
     expect(Math.hypot(sim.p.vel.x, sim.p.vel.z)).toBeLessThanOrEqual(
       sim.config.combat.windupWalkSpeed + 0.01,
@@ -263,14 +307,14 @@ describe('Lethal Recall', () => {
 });
 
 describe('Slash & deflect', () => {
-  it('slash deals 50 at close range (friendly fire included)', () => {
+  it('slash deals 34 at close range, 3 kill (friendly fire included)', () => {
     const sim = makeSim(flatLevel());
     settle(sim);
     const mate = addOther(sim, 2, 0, v3(0, 0, -1.8));
     settle(sim);
     const ev = tick(sim, { 1: { buttons: Btn.Melee, view: view(0, -10) } }, 1);
-    expect(ev.some((e) => e.type === 'hit' && e.victim === 2 && e.damage === 50)).toBe(true);
-    expect(mate.hp).toBe(50);
+    expect(ev.some((e) => e.type === 'hit' && e.victim === 2 && e.damage === 34)).toBe(true);
+    expect(mate.hp).toBe(66);
   });
 
   const incoming = (angleOffDeg: number) => {
@@ -320,7 +364,7 @@ describe('Clashes, Laser, Grenade', () => {
     expect(boomerangOf(sim, 2).phase).toBe(Phase.Dropped);
   });
 
-  it('Laser: warning delay, 3 charges, 20 body / 35 head', () => {
+  it('Laser: warning delay, 20 body / 35 head, a pause between shots', () => {
     const sim = makeSim(flatLevel());
     settle(sim);
     const enemy = addOther(sim, 2, 1, v3(0, 0, -10));
@@ -336,17 +380,61 @@ describe('Clashes, Laser, Grenade', () => {
     const ev2 = tick(sim, { 1: { view: view(0, chestPitch) } }, 12);
     expect(ev2.some((e) => e.type === 'laserFire')).toBe(true);
     expect(enemy.hp).toBe(80);
+    // too soon: the shot pause blocks it
+    const early = tick(sim, { 1: { buttons: Btn.Fire, view: view(0, chestPitch) } }, 1);
+    expect(early.some((e) => e.type === 'laserWarn')).toBe(false);
+    tick(sim, { 1: { view: view(0, chestPitch) } }, 30);
     // headshot
     const head = eyePos(enemy, sim.config.movement);
     const headPitch = (Math.atan2(head.y - eye.y, 10) * 180) / Math.PI;
     tick(sim, { 1: { buttons: Btn.Fire, view: view(0, headPitch) } }, 1);
     tick(sim, { 1: { view: view(0, headPitch) } }, 12);
     expect(enemy.hp).toBe(45);
-    tick(sim, { 1: { buttons: Btn.Fire, view: view(0, headPitch) } }, 1);
-    tick(sim, { 1: { view: view(0, headPitch) } }, 12);
+    expect(sim.p.laserCharges).toBe(sim.config.combat.laserCharges - 2);
+  });
+
+  it('Laser magazine: runs dry, reloads by itself from the reserve; R reloads early', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    const c = sim.config.combat;
+    const b = boomerangOf(sim, 1);
+    b.phase = Phase.Dropped;
+    b.pos = v3(30, 0.3, 30);
+    const gap = Math.round((c.laserWarnSec + c.laserFireCdSec) * 60) + 1;
+    for (let i = 0; i < c.laserCharges; i++) {
+      tick(sim, { 1: { buttons: Btn.Fire } }, 1);
+      tick(sim, {}, gap);
+    }
     expect(sim.p.laserCharges).toBe(0);
-    const ev3 = tick(sim, { 1: { buttons: Btn.Fire } }, 1);
-    expect(ev3.some((e) => e.type === 'laserWarn')).toBe(false); // out of charges
+    expect(sim.p.laserReload).toBeGreaterThan(0); // reloading by itself
+    tick(sim, {}, Math.round(c.laserReloadSec * 60) + 1);
+    expect(sim.p.laserCharges).toBe(c.laserCharges);
+    expect(sim.p.laserReserve).toBe(c.laserReserve - c.laserCharges);
+    // one shot, then R with the Laser chosen reloads (and does not recall the Boomerang)
+    tick(sim, { 1: { buttons: Btn.Slot2 } }, 1);
+    tick(sim, {}, 1);
+    tick(sim, { 1: { buttons: Btn.Fire } }, 1);
+    tick(sim, {}, gap);
+    const ev = tick(sim, { 1: { buttons: Btn.Recall } }, 1);
+    expect(ev.some((e) => e.type === 'laserReload')).toBe(true);
+    expect(ev.some((e) => e.type === 'recallStart')).toBe(false);
+  });
+
+  it('switching: 2 takes out the Laser with the Boomerang in hand, 1 puts it back', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    tick(sim, { 1: { buttons: Btn.Slot2 } }, 1);
+    expect(sim.p.weapon).toBe(1);
+    // LMB now fires the Laser instead of aiming a throw
+    const ev = tick(sim, { 1: { buttons: Btn.Fire } }, 1);
+    expect(ev.some((e) => e.type === 'laserWarn')).toBe(true);
+    expect(sim.p.aiming).toBe(false);
+    expect(boomerangOf(sim, 1).phase).toBe(Phase.Held);
+    tick(sim, {}, 40);
+    tick(sim, { 1: { buttons: Btn.Slot1 } }, 1);
+    expect(sim.p.weapon).toBe(0);
+    tick(sim, { 1: { buttons: Btn.Fire } }, 5);
+    expect(sim.p.aiming).toBe(true);
   });
 
   it('a grenade can be shot out of the air and detonates there', () => {
@@ -520,5 +608,68 @@ describe('Boomerang preview in gravity zones', () => {
     for (let i = 0; i < n; i++) expect(len(sub(real[i], pred.points[i + 1]))).toBeLessThan(1e-9);
     // the zone really bends it (sideways: drifts +x)
     if (gravity.x > 0) expect(Math.max(...real.map((p) => p.x))).toBeGreaterThan(0.5);
+  });
+});
+
+describe('dropped Boomerang', () => {
+  it('falls to the floor instead of hanging where it hit a wall', () => {
+    // a wall 6 m ahead: the throw hits it at eye height and drops
+    const sim = makeSim(flatLevel([{ c: v3(0, 3, -8), h: v3(6, 3, 0.5) }]));
+    settle(sim);
+    tick(sim, { 1: { buttons: Btn.Fire } }, 5);
+    const ev = tick(sim, { 1: { buttons: 0 } }, 1);
+    const b = sim.world.boomerangs.find((x) => x.owner === 1)!;
+    b.bounced = true; // its one bounce is used up: the wall drops it
+    ev.push(...tick(sim, { 1: { buttons: 0 } }, 29));
+    expect(ev.some((e) => e.type === 'wallHit')).toBe(true);
+    expect(b.phase).toBe(Phase.Dropped);
+    tick(sim, {}, 90);
+    expect(b.pos.y).toBeLessThan(0.3); // on the floor (y = 0)
+    const rest = { ...b.pos };
+    tick(sim, {}, 30);
+    expect(b.pos).toEqual(rest); // and stays there
+  });
+});
+
+describe('Quick Throw wall bounce', () => {
+  it('bounces off the first wall and keeps flying, the preview shows the same path', () => {
+    // a wall 8 m ahead, angled throw: hits it and banks off to the side
+    const sim = makeSim(flatLevel([{ c: v3(0, 3, -9), h: v3(12, 3, 0.5) }]));
+    settle(sim);
+    sim.config.movement.runSpeed = 0;
+    sim.config.movement.sprintSpeed = 0;
+    tick(sim, { 1: { buttons: Btn.Fire, view: view(-35, 0) } }, 5);
+    const pred = predictThrow(sim.world, sim.ctx, sim.p, 0, 200);
+    expect(pred.bouncePoint).not.toBeNull();
+    const ev = tick(sim, { 1: { buttons: 0, view: view(-35, 0) } }, 1);
+    const b = boomerangOf(sim, 1);
+    const real = [{ ...b.pos }];
+    for (let i = 0; i < 40; i++) {
+      ev.push(...tick(sim, { 1: { buttons: 0, view: view(-35, 0) } }, 1));
+      real.push({ ...b.pos });
+    }
+    expect(ev.some((e) => e.type === 'wallBounce')).toBe(true);
+    expect(ev.some((e) => e.type === 'wallHit')).toBe(false);
+    expect(b.bounced).toBe(true);
+    expect(b.phase === Phase.Out || b.phase === Phase.Return).toBe(true);
+    // banked back toward +Z after the bounce, and matched by the preview
+    expect(real[real.length - 1].z).toBeGreaterThan(-8);
+    for (let i = 0; i < real.length - 1; i++)
+      expect(len(sub(real[i], pred.points[i + 1]))).toBeLessThan(1e-9);
+  });
+
+  it('drops on the second wall, and wind-ups never bounce', () => {
+    // a narrow corridor: the throw bounces off one wall and then hits the other
+    const sim = makeSim(
+      flatLevel([
+        { c: v3(-2.5, 3, -20), h: v3(0.5, 3, 20) },
+        { c: v3(2.5, 3, -20), h: v3(0.5, 3, 20) },
+      ]),
+    );
+    settle(sim);
+    const ev = tick(sim, { 1: { buttons: Btn.Fire, view: view(-60, 0) } }, 5);
+    ev.push(...tick(sim, { 1: { buttons: 0, view: view(-60, 0) } }, 40));
+    expect(ev.filter((e) => e.type === 'wallBounce').length).toBe(1);
+    expect(ev.some((e) => e.type === 'wallHit')).toBe(true);
   });
 });

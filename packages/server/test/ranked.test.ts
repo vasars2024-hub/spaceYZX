@@ -168,6 +168,27 @@ describe('accounts & ranked store', () => {
     expect(s.ranked.bannedUntil(id)).toBeNull();
   });
 
+  it('one account searches once: a second tab gets a clear message instead of waiting forever', () => {
+    const id = s.accounts.login('Twin').account.id;
+    const sent: unknown[] = [];
+    const tab = () =>
+      ({
+        accountId: id,
+        roomCode: null,
+        closed: false,
+        rttMs: 0,
+        sendJson: (m: unknown) => sent.push(m),
+      }) as unknown as Conn;
+    const a = tab();
+    const b = tab();
+    expect(s.queue.set(a, '1v1')).toBeNull();
+    expect(s.queue.set(b, '1v1')).toMatch(/another tab/);
+    expect(s.queue.size('1v1')).toBe(1);
+    s.queue.set(a, null);
+    expect(s.queue.set(b, '1v1')).toBeNull(); // fine once the first tab stops searching
+    s.queue.set(b, null);
+  });
+
   it('stores reports for the host to review', () => {
     s.ranked.report({
       reporterId: 1,

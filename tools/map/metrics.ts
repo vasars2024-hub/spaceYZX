@@ -49,6 +49,7 @@ import {
 } from '@space-yz/shared';
 import { RayIndex, rayBoxExit } from './rays';
 import type { ChokepointDef, MapAnalysisConfig, Team } from './maps';
+import { measureRoutes, type TimingReport } from './timing';
 
 // ------------------------------------------------------------------------------------------
 // options
@@ -536,7 +537,13 @@ const markReachable = (an: Analyzer): void => {
           } else if (dh > 0) {
             if (dh > maxClimb) continue;
             const cap = standingCapsule(an, madd(a.feet, a.up, dh), a.up);
-            if (!capsuleOverlaps(level, cap) && rays.los(cap.center, b.centre))
+            // the way up must be clear too (not just the top): no climbing through a thin
+            // ceiling onto the roof above it
+            if (
+              !capsuleOverlaps(level, cap) &&
+              rays.los(a.centre, cap.center) &&
+              rays.los(cap.center, b.centre)
+            )
               edges[a.id].push(b.id);
           } else {
             const cap = standingCapsule(an, madd(b.feet, b.up, -dh), b.up);
@@ -1027,7 +1034,9 @@ export const routeTimings = (an: Analyzer): RouteReport => {
       lead: def0 && att ? r2(att.time - def0.time) : null,
     });
   }
-  // mirror check: both teams should need the same time for mirrored targets
+  // mirror check: both teams should need the same time for mirrored targets (asymmetric maps
+  // are balanced with measured routes instead: see timing.ts)
+  if (!an.config.mirrorX) return report;
   const eq = (a: Timing | null, b: Timing | null) =>
     (a === null && b === null) || (!!a && !!b && Math.abs(a.time - b.time) <= 0.05);
   for (const lane of an.config.lanes) {
@@ -2409,6 +2418,8 @@ export interface MapReport {
   options: Omit<AnalysisOptions, 'log'>;
   samples: SampleSummary;
   routes: RouteReport;
+  /** measured route timings + balance checks (maps with named routes) */
+  walks: TimingReport | null;
   regionLinks: RegionLink[];
   sightlines: SightReport;
   spawns: SpawnReport;
@@ -2465,6 +2476,9 @@ export const analyzeMap = (
     chokeView: new Float32Array(n),
   };
   const routes = time('routes', () => routeTimings(an));
+  const walks = config.routes?.length
+    ? time('walks', () => measureRoutes(level, config.routes!, an.game))
+    : null;
   const links = regionLinks(an);
   const sight = time('sightlines', () => sightlines(an, layers.sight));
   const spawns = time('spawns', () => spawnSafety(an, layers.spawnView));
@@ -2496,6 +2510,7 @@ export const analyzeMap = (
       options: optsOut,
       samples,
       routes,
+      walks,
       regionLinks: links,
       sightlines: sight,
       spawns,

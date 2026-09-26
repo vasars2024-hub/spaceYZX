@@ -40,3 +40,40 @@ describe('level lighting', () => {
     m.dispose();
   });
 });
+
+describe('Split Deck look', () => {
+  const drawables = (group: THREE.Object3D): THREE.Object3D[] => {
+    const out: THREE.Object3D[] = [];
+    group.traverse((o) => {
+      const d = o as THREE.Object3D & { isMesh?: boolean; isPoints?: boolean; isSprite?: boolean };
+      if (d.isMesh || d.isPoints || d.isSprite) out.push(o);
+    });
+    return out;
+  };
+
+  it('bakes fixtures, moonlight under the glass and team accents into the level light', () => {
+    const def = mapDef('split-deck');
+    const lights = collectLights(def);
+    expect(lights.length).toBeGreaterThan(150);
+    const glass = mapDef('split-deck').boxes.filter((b) => b.mat === 'skyglass');
+    // moonlight: cool lights just under the glass ceiling (y 14)
+    expect(lights.filter((l) => l.color === 0xa9c4ff && l.pos.y > 12.5).length).toBeGreaterThan(5);
+    expect(glass.length).toBeGreaterThan(3);
+  });
+
+  it('draws the whole level (glass, stars, moons included) in a handful of draw calls', () => {
+    // effects 'reduced' (the default) and 'minimal': no decoration layer
+    const m = buildLevelMeshes(mapDef('split-deck'), { atmosphere: false, dust: false });
+    const d = drawables(m.group);
+    expect(d.length).toBeLessThanOrEqual(14);
+    // the glass is see-through and drawn after the level; the sky ignores the fog
+    const glassMesh = d.find(
+      (o) => ((o as THREE.Mesh).material as THREE.Material).transparent === true,
+    ) as THREE.Mesh;
+    expect(glassMesh).toBeDefined();
+    expect((glassMesh.material as THREE.Material).depthWrite).toBe(false);
+    const stars = d.find((o) => (o as THREE.Points).isPoints) as THREE.Points;
+    expect((stars.material as THREE.PointsMaterial).fog).toBe(false);
+    m.dispose();
+  });
+});

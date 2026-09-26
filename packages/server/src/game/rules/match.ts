@@ -1,6 +1,6 @@
 // Match rules for 1v1 / 2v2 / 5v5 rooms: warmup until both teams are full (or the host
 // starts early), then rounds with the Controller & Tower objective (shared/rules/match).
-import type { MatchState, RankedMode } from '@space-yz/shared';
+import type { LoadoutName, MatchState, RankedMode } from '@space-yz/shared';
 import {
   createMatch,
   startMatch,
@@ -10,6 +10,7 @@ import {
   benchPlayer,
   playerLeft,
   forfeitMatch,
+  takeOverInMatch,
 } from '@space-yz/shared';
 import type { Member, Room, Rules } from '../room';
 
@@ -61,8 +62,13 @@ export class MatchRules implements Rules {
   onFinished: ((room: Room) => void) | null = null;
   private grief = new Map<number, { teamKills: number; warned: Set<string> }>();
 
-  constructor(readonly mode: RankedMode) {
-    this.ms = createMatch(mode);
+  constructor(
+    readonly mode: RankedMode,
+    objective: 'tower' | 'bomb' = 'tower',
+    loadout: LoadoutName = 'lethal',
+  ) {
+    // CS mode is always played with the bomb (the room's config must be csConfig: see hub)
+    this.ms = createMatch(mode, loadout === 'cs' ? 'bomb' : objective, loadout);
   }
 
   private full(room: Room): boolean {
@@ -191,6 +197,11 @@ export class MatchRules implements Rules {
 
   revealed(): readonly number[] {
     return this.ms.revealed;
+  }
+
+  /** Dead players may take over a bot teammate while the round is live (the Controller too). */
+  takeOver(room: Room, humanId: number, botId: number): boolean {
+    return takeOverInMatch(this.ms, room.world, humanId, botId);
   }
 
   onJoin(room: Room, m: Member): void {

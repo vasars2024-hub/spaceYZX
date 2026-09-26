@@ -6,6 +6,8 @@
 //   not hitch. A sound requested before its turn is rendered on the spot, so playback is never
 //   delayed.
 // - Routing: voice -> [panner] -> sfx|ui bus -> master -> limiter -> speakers.
+// - Proximity: 3D sounds fade linearly to silence at their `maxDistance` (default 40 m); a
+//   one-shot farther away than that is not played at all.
 
 import { SOUND_DEFS, SOUND_NAMES, UI_SOUNDS } from './sounds';
 import type { SoundName } from './sounds';
@@ -30,9 +32,9 @@ export interface PlayOptions {
 export interface SpatialOptions extends PlayOptions {
   /** Distance (m) at which the sound plays at full volume. Default 4. */
   refDistance?: number;
-  /** Distance (m) beyond which it gets no quieter. Default 180 (the map length). */
+  /** Hearing range (m): the sound fades out linearly and is silent beyond it. Default 40. */
   maxDistance?: number;
-  /** How fast the volume falls off with distance (inverse model). Default 1. */
+  /** How fast the volume falls off with distance (1 = silent exactly at maxDistance). */
   rolloff?: number;
 }
 
@@ -63,6 +65,9 @@ const NOOP_LOOP: LoopHandle = {
   stop: () => {},
 };
 
+/** Default hearing range (m) of a 3D sound. */
+export const DEFAULT_HEARING_RANGE = 40;
+
 /** Time constant (s) for smoothing parameter changes (avoids zipper noise and clicks). */
 const SMOOTH = 0.015;
 
@@ -90,6 +95,9 @@ export class AudioEngine {
   private readonly pending: SoundName[] = [];
   private readonly maxVoices: number;
   private renderScheduled = false;
+  private listenerPos: Vec3 | null = null;
+  /** Game sounds (sfx bus) silenced while a menu is open; UI sounds keep playing. */
+  private sfxPaused = false;
 
   constructor(options: AudioEngineOptions = {}) {
     this.maxVoices = Math.max(1, options.maxVoicesPerSound ?? 6);
@@ -142,7 +150,17 @@ export class AudioEngine {
     const v = clamp01(finite(value, 1));
     this.volumes[kind] = v;
     const node = kind === 'master' ? this.master : this.buses[kind];
-    if (node && this.ctx) node.gain.setTargetAtTime(v, this.ctx.currentTime, SMOOTH);
+    const target = kind === 'sfx' && this.sfxPaused ? 0 : v;
+    if (node && this.ctx) node.gain.setTargetAtTime(target, this.ctx.currentTime, SMOOTH);
+  }
+
+  /** Fades game sounds (incl. loops) out while a menu is open, and back in on resume. */
+  setSfxPaused(paused: boolean): void {
+    if (paused === this.sfxPaused) return;
+    this.sfxPaused = paused;
+    const bus = this.buses.sfx;
+    if (bus && this.ctx)
+      bus.gain.setTargetAtTime(paused ? 0 : this.volumes.sfx, this.ctx.currentTime, 0.05);
   }
 
   getVolume(kind: VolumeKind): number {
@@ -162,6 +180,7 @@ export class AudioEngine {
   /** Plays a positional sound at `position` (world metres) with HRTF panning. */
   play3d(name: SoundName, position: Vec3, opts: SpatialOptions = {}): void {
     try {
+      if (!this.inHearingRange(position, opts)) return;
       const panner = this.createPanner(position, opts);
       if (!panner) return;
       const voice = this.startVoice(name, opts, false, panner);
@@ -195,6 +214,7 @@ export class AudioEngine {
 
   /** Updates the listener (the local player's head): position and facing, in world space. */
   setListener(position: Vec3, forward: Vec3, up: Vec3): void {
+    this.listenerPos = { x: position.x, y: position.y, z: position.z };
     const ctx = this.ctx;
     if (!ctx) return;
     try {
@@ -229,6 +249,17 @@ export class AudioEngine {
 
   // -------------------------------------------------------------------------------- internals
 
+  /** Is `position` close enough to the listener to be heard at all? */
+  private inHearingRange(position: Vec3, opts: SpatialOptions): boolean {
+    const l = this.listenerPos;
+    if (!l) return true;
+    const range = opts.maxDistance ?? DEFAULT_HEARING_RANGE;
+    const dx = position.x - l.x;
+    const dy = position.y - l.y;
+    const dz = position.z - l.z;
+    return dx * dx + dy * dy + dz * dz <= range * range;
+  }
+
   private init(): void {
     const Ctor = findAudioContext();
     if (!Ctor) {
@@ -248,7 +279,7 @@ export class AudioEngine {
     master.connect(limiter);
     for (const kind of ['sfx', 'ui'] as const) {
       const bus = ctx.createGain();
-      bus.gain.value = this.volumes[kind];
+      bus.gain.value = kind === 'sfx' && this.sfxPaused ? 0 : this.volumes[kind];
       bus.connect(master);
       this.buses[kind] = bus;
     }
@@ -302,10 +333,11 @@ export class AudioEngine {
     if (!ctx) return null;
     const p = ctx.createPanner();
     p.panningModel = 'HRTF';
-    p.distanceModel = 'inverse';
+    // linear: full volume up to refDistance, then fading to silence at maxDistance
+    p.distanceModel = 'linear';
     p.refDistance = Math.max(0.01, opts.refDistance ?? 4);
-    p.maxDistance = Math.max(p.refDistance, opts.maxDistance ?? 180);
-    p.rolloffFactor = Math.max(0, opts.rolloff ?? 1);
+    p.maxDistance = Math.max(p.refDistance + 1, opts.maxDistance ?? DEFAULT_HEARING_RANGE);
+    p.rolloffFactor = Math.min(1, Math.max(0, opts.rolloff ?? 1));
     setPannerPosition(ctx, p, position, false);
     return p;
   }

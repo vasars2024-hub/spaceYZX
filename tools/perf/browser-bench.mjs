@@ -1,5 +1,6 @@
 // Frame-time benchmark in a real browser, simulating a weak laptop: Chrome's CPU throttling
-// plus software rendering (SwiftShader), running a scripted 5v5 bot match on Kestrel.
+// plus software rendering (SwiftShader), running a scripted 5v5 bot match on the default match
+// map (or --map kestrel / --map split-deck).
 //
 //   npm start                      (in another window)
 //   node tools/perf/browser-bench.mjs --url http://localhost:7777 --cpu 4 --quality potato
@@ -13,6 +14,7 @@ const url = arg('url', 'http://localhost:7777');
 const cpu = Number(arg('cpu', '4'));
 const quality = arg('quality', 'medium');
 const seconds = Number(arg('seconds', '20'));
+const map = arg('map', '');
 
 let playwright;
 try {
@@ -38,7 +40,7 @@ await page.addInitScript((q) => {
 }, quality);
 const cdp = await page.context().newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
-await page.goto(`${url}/?autotest&bench=${seconds}`);
+await page.goto(`${url}/?autotest&bench=${seconds}${map ? `&map=${encodeURIComponent(map)}` : ''}`);
 await page.waitForFunction(() => window.__spaceyz?.bench, null, { timeout: (seconds + 60) * 1000 });
 const r = await page.evaluate(() => window.__spaceyz.bench);
 console.log(

@@ -452,6 +452,10 @@ table.controls td.key {
   background: linear-gradient(90deg, #3dff9a, #19e3ff);
   transition: width 0.12s;
 }
+.hp-bar.shielded {
+  border-color: #7fd8ff;
+  box-shadow: 0 0 8px rgba(127, 216, 255, 0.7);
+}
 .hp-fill.low {
   background: linear-gradient(90deg, #ff3b4f, #ff8a1f);
 }
@@ -557,13 +561,120 @@ table.controls td.key {
 .center-msg.warn {
   color: #ff8a1f;
 }
+/* the weapon LMB uses right now */
+.kit-row.active {
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(25, 227, 255, 0.6);
+}
+/* bomb mode: plant / defuse progress */
+.bomb-bar {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 70px);
+  transform: translateX(-50%);
+  width: 260px;
+  display: grid;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.bomb-bar.show {
+  opacity: 1;
+}
+.bomb-bar-text {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+.bomb-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.bomb-bar-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #ff5a6a, #ffe45c);
+}
+/* overtime: you're outside the safe zone */
+.zone-warn {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: rgba(120, 10, 20, 0.75);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.zone-warn.show {
+  opacity: 1;
+}
+/* while dead: whose eyes you're watching */
+.spectate-label {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(8, 14, 26, 0.7);
+  color: #e8f1ff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+.spectate-label.hidden {
+  display: none;
+}
+/* first few aims: how to curve a throw */
+.flick-tip {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 86px);
+  transform: translateX(-50%);
+  max-width: 440px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(8, 14, 26, 0.75);
+  color: #e8f1ff;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+.flick-tip.show {
+  opacity: 1;
+}
+/* pixelated red edge when hurt: a tiny canvas stretched with hard pixels */
+.hurt-vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .hitmark {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
   opacity: 0;
 }
 .hitmark::before,
@@ -572,10 +683,10 @@ table.controls td.key {
   position: absolute;
   left: 50%;
   top: 0;
-  width: 2px;
+  width: 3px;
   height: 100%;
   background: #fff;
-  box-shadow: 0 0 2px #000;
+  box-shadow: 0 0 3px #000;
 }
 .hitmark::before {
   transform: rotate(45deg);
@@ -588,14 +699,19 @@ table.controls td.key {
   background: #ff3b4f;
 }
 .hitmark.kill {
-  width: 40px;
-  height: 40px;
-  margin: -20px 0 0 -20px;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
 }
 .hitmark.kill::before,
 .hitmark.kill::after {
-  width: 3px;
+  width: 4px;
   background: #ffe45c;
+}
+/* you broke a shield (no damage) */
+.hitmark.shield::before,
+.hitmark.shield::after {
+  background: #7fd8ff;
 }
 /* you hit a teammate */
 .hitmark.team::before,
@@ -603,16 +719,24 @@ table.controls td.key {
   background: #ff8a1f;
 }
 .hitmark.anim {
-  animation: hitmark 0.28s ease-out;
+  animation: hitmark 0.42s ease-out;
 }
+/* pops in big, snaps to size, holds, then fades */
 @keyframes hitmark {
   0% {
     opacity: 1;
-    transform: scale(1.3);
+    transform: scale(1.7);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: scale(1);
+    transform: scale(0.95);
   }
 }
 .death {
@@ -738,6 +862,33 @@ table.controls td.key {
   right: 0;
   text-align: center;
   text-shadow: 0 2px 8px #000;
+}
+.match-wordmark {
+  font-size: 72px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  background: linear-gradient(90deg, #19e3ff, #ffffff 50%, #ff8a1f);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.6));
+  opacity: 0;
+  transform: scale(1.15);
+  transition:
+    opacity 0.35s,
+    transform 0.5s ease-out;
+  margin-bottom: 6px;
+}
+.match-wordmark.show {
+  opacity: 1;
+  transform: scale(1);
+}
+@media (max-width: 700px) {
+  .match-wordmark {
+    font-size: 40px;
+  }
 }
 .match-banner {
   font-size: 46px;
@@ -1091,4 +1242,114 @@ table.binds .btn.tiny {
   to {
     transform: scale(1.2);
   }
+}
+
+/* ---------------- chat & voice (online) ---------------- */
+.chat {
+  position: absolute;
+  left: 24px;
+  bottom: 170px;
+  width: min(460px, 42vw);
+  pointer-events: none;
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-line {
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #e8f1ff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  transition: opacity 0.6s;
+}
+.chat-line.faded {
+  opacity: 0;
+}
+.chat.open .chat-feed {
+  background: rgba(4, 8, 16, 0.55);
+  border-radius: 4px;
+  padding: 4px 0;
+}
+.chat-name {
+  font-weight: 700;
+}
+.chat-you {
+  color: var(--muted);
+  font-size: 12px;
+}
+.chat-team {
+  color: #9fd8ff;
+  font-weight: 700;
+}
+.chat-dead {
+  color: #ff5b5b;
+  font-weight: 700;
+}
+.chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  background: rgba(4, 8, 16, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  padding: 2px 8px;
+}
+.chat-tag {
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+#ui .chat-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 6px 0;
+  outline: none;
+  user-select: text;
+}
+.voice-box {
+  position: absolute;
+  left: 20px;
+  top: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.voice-row {
+  background: rgba(4, 8, 16, 0.55);
+  padding: 2px 8px;
+  border-radius: 4px;
+  width: fit-content;
+  max-width: min(420px, 60vw);
+}
+.voice-row.me {
+  border-left: 3px solid var(--ok);
+}
+.voice-row.note {
+  font-weight: 500;
+  font-size: 12px;
+  color: #ffd27a;
+}
+.voice-tag {
+  color: #e8f1ff;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.sb-actions {
+  white-space: nowrap;
+}
+.sb-actions .btn + .btn {
+  margin-left: 4px;
 }

@@ -5,10 +5,13 @@ import type { Quat } from '../math/quat';
 export type Material =
   | 'hull' // dark metal walls
   | 'floor'
+  | 'plate' // plated floor (lanes)
+  | 'grate' // open grating (gantries, catwalks)
   | 'panel' // lighter wall panels
   | 'crate'
   | 'pillar'
   | 'glass' // visual only
+  | 'skyglass' // see-through glass to space (glass ceilings, hull windows); collides like a wall
   | 'engine'
   | 'teamA'
   | 'teamB'
@@ -62,6 +65,26 @@ export interface TowerDef {
 export interface WaypointDef {
   pos: Vec3;
   links: number[]; // outgoing links (usually both ways; drops into gravity areas are one-way)
+  /** optional label (map tools and tests refer to waypoints by name) */
+  name?: string;
+}
+
+/** A bomb site (Bomb mode, not playable yet): the area where the bomb can be planted. */
+export interface BombSiteDef {
+  name: 'A' | 'B';
+  min: Vec3;
+  max: Vec3;
+}
+
+/** Open space outside the ship: stars plus a few moons (drawn far away, never collide). */
+export interface SkyDef {
+  moons: {
+    /** direction from the map centre toward the moon */
+    dir: Vec3;
+    /** apparent radius in degrees */
+    sizeDeg: number;
+    color: number;
+  }[];
 }
 
 /** A light baked into the level's surfaces (plus a glow, and optionally a light shaft). */
@@ -72,6 +95,36 @@ export interface LightDef {
   intensity: number; // ~0.5 subtle .. 2 strong
   /** draw a soft volumetric cone down to the floor (hall/base ceiling lights) */
   shaft?: boolean;
+}
+
+/**
+ * The "sky duel" overtime arena: floating platforms far above the ship, open on every side
+ * (see level/sky-arena.ts). Its boxes are kept apart from `boxes` (map tools, the mirror
+ * check and the ship's renderer only look at the ship) and joined into the collision by
+ * `buildLevel`.
+ */
+export interface SkyArenaDef {
+  /** middle of the main platform's top surface */
+  center: Vec3;
+  /** horizontal half-size of the whole arena (all platforms), metres */
+  radius: number;
+  boxes: BoxDef[];
+  /** where each team starts the duel (feet), facing the other end */
+  spawns: SpawnDef[];
+}
+
+/**
+ * One copy ("pit") of a duel arena (Arena 1v1, rules/arena.ts): a sealed room where two
+ * players fight. Maps built for the Arena hold several pits far apart so duels run side by side.
+ */
+export interface ArenaPitDef {
+  /** middle of the pit's floor */
+  center: Vec3;
+  /** the open volume inside the walls */
+  min: Vec3;
+  max: Vec3;
+  /** [team 0 end (-x), team 1 end (+x)], facing each other */
+  spawns: [SpawnDef, SpawnDef];
 }
 
 export interface LevelDef {
@@ -95,4 +148,14 @@ export interface LevelDef {
   lights?: LightDef[];
   /** Overall ambient light level (default 1); lower = moodier, lights stand out more. */
   ambient?: number;
+  /** Bomb mode data (no gameplay yet): the two plant sites. */
+  bombSites?: BombSiteDef[];
+  /** Power-up spawn points (rules/powerups.ts): where power-ups float during a round. */
+  powerups?: Vec3[];
+  /** Space outside the ship (visible through 'skyglass'). */
+  sky?: SkyDef;
+  /** Sky duel overtime arena high above the ship (competitive maps; level/sky-arena.ts). */
+  skyArena?: SkyArenaDef;
+  /** Arena 1v1 maps: the duel pits, top pit first (rules/arena.ts). */
+  arenaPits?: ArenaPitDef[];
 }

@@ -184,24 +184,38 @@ export const quickSettings = (s: Settings, onChange: () => void): HTMLElement =>
 
 export const CONTROLS_HELP: [string, string][] = [
   ['W A S D', 'Move (you sprint automatically)'],
-  ['Space', 'Jump · wall-jump · push off in zero-G · thruster in zero-G'],
+  [
+    'Space',
+    'Jump · wall-jump · in the air: hold for a jetpack burst · push off / thruster in zero-G',
+  ],
   ['Ctrl / C', 'Crouch · slide when sprinting'],
   ['Shift', 'Dash'],
-  ['F', 'Mag-boots (zero-G): stick to the nearest surface'],
-  ['Left mouse', 'Hold to aim a Quick Throw, release to throw · Laser when your Boomerang is away'],
+  [
+    'F',
+    'Gravity shift: walk on the nearest wall or ceiling within 2.5 m (F again or jump to let go)',
+  ],
+  ['Left mouse', 'Hold to aim a Quick Throw, release to throw · fire the Laser when it is out'],
   ['Right mouse', 'Hold: Wind-up Throw · while your Boomerang flies: steer it'],
-  ['A / D on release', 'Curve the Quick Throw left / right'],
+  [
+    'Flick mouse in flight',
+    'Tilt your Quick Throw left / right while it flies out (faster flick = sharper curve)',
+  ],
   ['E', 'Slash / deflect'],
   ['Q', 'Gravity Grenade'],
-  ['R', 'Lethal Recall'],
+  ['1 / 2', 'Switch weapon: Boomerang / Laser'],
+  ['G (hold)', 'Bomb mode: plant in site A or B (3 s) · defuse next to the bomb (7 s)'],
+  ['R', 'Lethal Recall (Boomerang) · reload (Laser)'],
   ['Tab', 'Scoreboard'],
+  ['Enter / Y', 'Online: chat to your team / to everyone (Enter sends, Esc cancels)'],
+  ['Hold V / B', 'Online: talk to your team / to everyone (voice chat)'],
   ['`', 'Tuning panel (dev)'],
   ['Esc', 'Menu'],
 ];
 
-export const controlsTable = (): HTMLElement =>
+/** Controls help table: the keyboard + mouse rows, or other rows (the touch controls). */
+export const controlsTable = (rows: [string, string][] = CONTROLS_HELP): HTMLElement =>
   h(
     'table',
     { class: 'controls' },
-    ...CONTROLS_HELP.map(([k, d]) => h('tr', {}, h('td', { class: 'key' }, k), h('td', {}, d))),
+    ...rows.map(([k, d]) => h('tr', {}, h('td', { class: 'key' }, k), h('td', {}, d))),
   );

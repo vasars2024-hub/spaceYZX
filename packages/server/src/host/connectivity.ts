@@ -109,7 +109,7 @@ export const setupConnectivity = async (
         internalPort: port,
         internalClient,
         protocol: 'TCP',
-        description: 'Space YZ',
+        description: 'Lethal Recoil',
         leaseSeconds: 3600,
         log,
       });

@@ -2,8 +2,9 @@
 // player, bots, rules, and delta-compressed snapshots to every client.
 import type {
   BotMemory,
+  BotSkillName,
   GameConfig,
-  GameMode,
+  RoomMode,
   Level,
   PlayerInput,
   RoomPlayerInfo,
@@ -22,6 +23,7 @@ import {
   botThink,
   createBotMemory,
   BOT_SKILLS,
+  botSkillName,
   mapDef,
   encodeSnapshot,
   publicState,
@@ -77,6 +79,13 @@ export interface Rules {
   finished?(room: Room): boolean;
   /** Players everyone may see through walls right now (never culled). */
   revealed?(room: Room): readonly number[];
+  /** A dead human takes over a bot teammate (both checked to be human / bot); false = no. */
+  takeOver?(room: Room, humanId: number, botId: number): boolean;
+  /**
+   * Extra culling on top of line of sight: may `viewer` be sent player `target` (and their
+   * Boomerang) at all? Arena rooms send only the pit you're in or watching.
+   */
+  canSee?(room: Room, viewer: number, target: number): boolean;
 }
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -86,7 +95,7 @@ export const makeRoomCode = (rand: () => number = Math.random): string =>
 
 export interface RoomOptions {
   code: string;
-  mode: GameMode;
+  mode: RoomMode;
   map: string;
   config?: GameConfig;
   ranked?: boolean;
@@ -101,9 +110,15 @@ export interface RoomOptions {
   losCulling?: boolean;
 }
 
+/** Bot fill: bots keep the room at `size` players and give up their slots to humans. */
+export interface BotFill {
+  size: number;
+  skill: BotSkillName;
+}
+
 export class Room {
   readonly code: string;
-  readonly mode: GameMode;
+  readonly mode: RoomMode;
   readonly map: string;
   readonly ranked: boolean;
   readonly level: Level;
@@ -115,8 +130,12 @@ export class Room {
   snapshotEvery: number;
   privateEvery: number;
   maxPlayers: number;
+  /** empty slots are filled with bots (null = off) */
+  botFill: BotFill | null = null;
   private nextPlayerId = 1;
   private pendingEvents: SimEvent[] = [];
+  /** players whose exact own state goes out in the next snapshot, whatever the rate */
+  private forceOwn = new Set<number>();
   private tickCounter = 0;
   createdAt = Date.now();
   closed = false;
@@ -144,7 +163,9 @@ export class Room {
     this.world = createWorld(this.level, opts.seed ?? Math.floor(Math.random() * 1e9));
     this.snapshotEvery = opts.snapshotEvery ?? 1;
     this.privateEvery = opts.privateEvery ?? 3;
-    this.maxPlayers = opts.maxPlayers ?? (opts.mode === '1v1' ? 2 : opts.mode === '2v2' ? 4 : 10);
+    this.maxPlayers =
+      opts.maxPlayers ??
+      (opts.mode === '1v1' ? 2 : opts.mode === '2v2' ? 4 : opts.mode === 'arena' ? 8 : 10);
     if (opts.lagComp !== false) {
       this.ctx.rewindHitboxes = (id) => {
         const tick = this.rewindTick(id);
@@ -180,6 +201,63 @@ export class Room {
     return c;
   }
 
+  /** Can another human join? Bots don't count: they give up their slot. */
+  hasRoomForHuman(): boolean {
+    return this.humans.length < this.maxPlayers;
+  }
+
+  /**
+   * Turn bot fill on: `bots` bots now, leaving one slot for the creator. From then on bots
+   * keep the room at (least) that many players: a human who joins a full room takes a bot's
+   * slot, and a bot takes the slot of a human who leaves.
+   */
+  setBotFill(bots: number, skill: string): void {
+    const size = Math.max(1, Math.min(this.maxPlayers, this.members.size + bots + 1));
+    this.botFill = { size, skill: botSkillName(skill) };
+    this.refill(size - 1);
+  }
+
+  /** Bot fill: top the room back up to its size (a human left). */
+  private refill(size = this.botFill?.size ?? 0): void {
+    const fill = this.botFill;
+    if (!fill || this.closed) return;
+    while (this.members.size < size) {
+      const used = new Set([...this.members.values()].map((m) => m.name));
+      let n = 1;
+      while (used.has(`Bot ${n}`)) n++;
+      this.addMember(`Bot ${n}`, null, { botSkill: fill.skill });
+    }
+  }
+
+  /** A human joins: balance humans across the teams (then total players), cyan first. */
+  private humanTeam(): 0 | 1 {
+    const humans: [number, number] = [0, 0];
+    for (const m of this.humans) humans[m.team]++;
+    if (humans[0] !== humans[1]) return humans[0] < humans[1] ? 0 : 1;
+    const [a, b] = this.teamCounts();
+    return a <= b ? 0 : 1;
+  }
+
+  /**
+   * Make space for a human joining `team`: if the room is full, a bot leaves — one from the
+   * human's team if there is one (so teams stay balanced), a dead one if possible.
+   */
+  private freeSlotFor(team: 0 | 1): void {
+    while (this.members.size >= this.maxPlayers) {
+      const bots = [...this.members.values()].filter((m) => m.bot);
+      if (!bots.length) return;
+      const [a, b] = this.teamCounts();
+      const bigger: 0 | 1 = a >= b ? 0 : 1;
+      const alive = (m: Member) => !!this.world.players.find((p) => p.id === m.id)?.alive;
+      const pick = (list: Member[]) => list.find((m) => !alive(m)) ?? list[list.length - 1] ?? null;
+      const bot =
+        pick(bots.filter((m) => m.team === team)) ??
+        pick(bots.filter((m) => m.team === bigger)) ??
+        pick(bots)!;
+      this.removeMember(bot.id);
+    }
+  }
+
   private spawnFor(team: 0 | 1) {
     const spawns = this.level.def.spawns.filter((s) => s.team === undefined || s.team === team);
     return spawns[Math.floor(Math.random() * spawns.length)] ?? this.level.def.spawns[0];
@@ -192,7 +270,8 @@ export class Room {
     opts: { team?: 0 | 1; botSkill?: string; accountId?: number | null } = {},
   ): Member {
     const [a, b] = this.teamCounts();
-    const team = opts.team ?? (a <= b ? 0 : 1);
+    const team = opts.team ?? (conn ? this.humanTeam() : a <= b ? 0 : 1);
+    if (conn) this.freeSlotFor(team);
     const id = this.nextPlayerId++;
     const s = this.spawnFor(team);
     addPlayer(this.world, createPlayer(id, team, s.pos, s.yawDeg, this.ctx.config));
@@ -203,11 +282,7 @@ export class Room {
       conn,
       bot: conn
         ? null
-        : createBotMemory(
-            id,
-            BOT_SKILLS[(opts.botSkill as keyof typeof BOT_SKILLS) ?? 'normal'] ?? BOT_SKILLS.normal,
-            id * 31 + this.world.tick,
-          ),
+        : createBotMemory(id, BOT_SKILLS[botSkillName(opts.botSkill)], id * 31 + this.world.tick),
       inputs: new Map(),
       last: null,
       lastProcessed: 0,
@@ -241,7 +316,28 @@ export class Room {
     this.members.delete(id);
     removePlayer(this.world, id);
     if (this.hostId === id) this.hostId = this.humans[0]?.id ?? 0;
+    // a human left a bot-filled room: a bot takes the slot (the room closes if nobody's left)
+    if (m.conn && this.humans.length) this.refill();
     this.onChanged();
+  }
+
+  /**
+   * A dead human takes over a living bot teammate's body (between ticks). The bot's brain
+   * keeps driving the bot's id — now the dead body — and the human's inputs drive the new one.
+   */
+  takeOver(humanId: number, botId: number): boolean {
+    const h = this.members.get(humanId);
+    const b = this.members.get(botId);
+    if (!h?.conn || !b?.bot || this.closed) return false;
+    const n = this.world.events.length;
+    if (!this.rules?.takeOver?.(this, humanId, botId)) return false;
+    // step() clears world events: send the takeover event with the next snapshot
+    this.pendingEvents.push(...this.world.events.slice(n));
+    this.onEvents?.(this.world.events.slice(n));
+    // the client reconciles onto its new body as soon as the event arrives
+    this.forceOwn.add(humanId);
+    h.activeTick = this.world.tick;
+    return true;
   }
 
   /** Accept inputs from a client (validated by the caller's decoder). */
@@ -336,13 +432,24 @@ export class Room {
       const own = this.world.players.find((p) => p.id === m.id) ?? null;
       // line-of-sight culling: leave out enemies this player's team can't see
       let players = pub.players;
+      let boomerangs = pub.boomerangs;
       if (this.vision.enabled) {
         players = new Map();
         for (const [id, np] of pub.players)
           if (this.vision.visible(m.team, id, np.team as 0 | 1, this.world.tick))
             players.set(id, np);
       }
+      // rules culling (Arena: only the pit you're in or watching)
+      const canSee = this.rules?.canSee;
+      if (canSee) {
+        const seen: typeof players = new Map();
+        for (const [id, np] of players)
+          if (canSee.call(this.rules, this, m.id, id)) seen.set(id, np);
+        players = seen;
+        boomerangs = new Map([...pub.boomerangs].filter(([owner]) => players.has(owner)));
+      }
       const ownB = this.world.boomerangs.find((b) => b.owner === m.id) ?? null;
+      const forced = this.forceOwn.delete(m.id);
       const sendExtra = rulesJson !== '' && (rulesJson !== m.sentExtra || seq % 60 === 0);
       if (sendExtra) m.sentExtra = rulesJson;
       const bytes = encodeSnapshot(
@@ -353,15 +460,18 @@ export class Room {
           lead: m.leads.length ? Math.min(...m.leads) : 0,
           baseline: baseline ? m.ack : 0,
           players,
-          boomerangs: pub.boomerangs,
+          boomerangs,
           grenades: this.world.grenades,
+          twins: this.world.twins,
+          powerups: this.world.powerups,
           zones,
           own:
-            own && seq % this.privateEvery === 0
+            own && (seq % this.privateEvery === 0 || forced)
               ? {
                   player: own,
                   boomerang: ownB,
                   grenades: this.world.grenades.filter((g) => g.owner === m.id),
+                  twins: this.world.twins.filter((t) => t.owner === m.id),
                 }
               : null,
           events,
@@ -369,7 +479,7 @@ export class Room {
         },
         baseline,
       );
-      m.history.set(seq, { players, boomerangs: pub.boomerangs });
+      m.history.set(seq, { players, boomerangs });
       if (m.history.size > 90) m.history.delete(seq - 90);
       m.conn.sendBinary(bytes);
       this.bytesOut += bytes.length;

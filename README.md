@@ -1,4 +1,4 @@
-# Space YZ
+# Lethal Recoil
 
 A free, fast, first-person arena shooter set inside spaceships, where **gravity changes how you
 move and shoot**. It runs in Google Chrome. Players never install anything; they open a link.
@@ -65,7 +65,7 @@ with an invite link and QR code:
 npm run host
 ```
 
-Or download **SpaceYZ-Host.exe** from the Releases page — see [`docs/HOSTING.md`](docs/HOSTING.md).
+Or download **LethalRecoil-Host.exe** from the Releases page — see [`docs/HOSTING.md`](docs/HOSTING.md).
 
 To get the newest version later, run `git pull` and then `npm install` again.
 
@@ -76,7 +76,7 @@ To get the newest version later, run `git pull` and then `npm install` again.
 | `npm start`          | Builds the client and runs one server (game files + WebSocket) on port 7777         |
 | `npm run dev`        | Hot-reload dev mode: Vite on http://localhost:5173 plus the game server             |
 | `npm run host`       | The host app from source: server + Host Dashboard + UPnP / Cloudflare tunnel        |
-| `npm run build:host` | Builds `build/host/SpaceYZ-Host(.exe)` (one file, game embedded)                    |
+| `npm run build:host` | Builds `build/host/LethalRecoil-Host(.exe)` (one file, game embedded)               |
 | `npm run check`      | Lint + typecheck + tests (run before pushing)                                       |
 | `npm test`           | Unit tests (Vitest)                                                                 |
 | `npm run format`     | Format all files with Prettier                                                      |

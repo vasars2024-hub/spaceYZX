@@ -24,6 +24,7 @@ import { Room } from '../src/game/room';
 import type { Conn } from '../src/game/conn';
 import { LagHistory } from '../src/game/lagcomp';
 import { TeamVision } from '../src/game/visibility';
+import { flatLevel } from '../../shared/test/helpers';
 import { GameHub } from '../src/game/hub';
 
 const fakeConn = (rttMs = 0) => {
@@ -156,6 +157,47 @@ describe('line-of-sight culling', () => {
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
     world.tick = 60;
     vis.updateAll(world, ctx, []);
+    expect(vis.visible(0, e.id, 1, world.tick)).toBe(false);
+  });
+});
+
+describe('line-of-sight culling: partly covered enemies', () => {
+  // A wall ends at x = 0 (it covers x < 0), 10 m in front of the viewer. An enemy 20 m away
+  // stands just behind its edge: the middle of their body is hidden, a shoulder sticks out.
+  const setup = (enemyX: number) => {
+    const config = defaultConfig();
+    const def = flatLevel([{ c: v3(-10, 2, -10), h: v3(10, 2, 0.5) }]);
+    const ctx = { level: buildLevel(def), config, dt: TICK_DT };
+    const world = createWorld(ctx.level, 1);
+    addPlayer(world, createPlayer(1, 0, v3(0, 0, 0), 0, config));
+    const e = addPlayer(world, createPlayer(2, 1, v3(enemyX, 0, -20), 180, config));
+    const vis = new TeamVision();
+    world.tick = 8;
+    vis.updateAll(world, ctx, []);
+    return { vis, e, world };
+  };
+
+  it('sends an enemy whose shoulder shows past a wall edge (holding an angle)', () => {
+    const { vis, e, world } = setup(-0.15);
+    expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
+  });
+
+  it('sends an enemy you are about to peek (you are a step behind the corner)', () => {
+    // viewer 0.4 m behind the wall's edge; the enemy stands 1 m past it, far away
+    const config = defaultConfig();
+    const def = flatLevel([{ c: v3(-10, 2, -10), h: v3(10, 2, 0.5) }]);
+    const ctx = { level: buildLevel(def), config, dt: TICK_DT };
+    const world = createWorld(ctx.level, 1);
+    addPlayer(world, createPlayer(1, 0, v3(-0.4, 0, -8.5), 0, config));
+    const e = addPlayer(world, createPlayer(2, 1, v3(-1.5, 0, -30), 180, config));
+    const vis = new TeamVision();
+    world.tick = 8;
+    vis.updateAll(world, ctx, []);
+    expect(vis.visible(0, e.id, 1, world.tick)).toBe(true);
+  });
+
+  it('still hides an enemy fully behind the wall', () => {
+    const { vis, e, world } = setup(-2);
     expect(vis.visible(0, e.id, 1, world.tick)).toBe(false);
   });
 });

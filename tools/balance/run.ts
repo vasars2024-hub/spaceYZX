@@ -102,7 +102,7 @@ const main = (): void => {
     ['Laser hit %', fmt(r.laserHitPct), '(info)', true],
   ];
   console.log(
-    `\nSpace YZ balance report — ${matches} × ${minutes} min, ${size}v${size}, ${skill} bots (${secs.toFixed(1)} s)\n`,
+    `\nLethal Recoil balance report — ${matches} × ${minutes} min, ${size}v${size}, ${skill} bots (${secs.toFixed(1)} s)\n`,
   );
   const w = Math.max(...rows.map((x) => x[0].length));
   for (const [name, val, target, ok] of rows)

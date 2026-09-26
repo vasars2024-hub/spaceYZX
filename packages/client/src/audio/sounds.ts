@@ -562,6 +562,108 @@ const defs = {
     );
   },
 
+  // ----------------------------------------------------------------------- guns (CS mode)
+  // AK-47: a sharp supersonic crack over a punchy mid "chug" and a short room tail
+  akShot: (sr) => {
+    const d = 0.55;
+    return finish(
+      softClip(
+        mix(sr, d, [
+          { sig: crack(sr, d, 201, 0.012, 3200), gain: 0.9 },
+          { sig: thump(sr, d, 210, 55, 0.07), gain: 1.1 },
+          {
+            sig: applyEnv(bandpass(whiteNoise(sr, d, 202), sr, 1100, 0.9), sr, percFn(0.045)),
+            gain: 1,
+          },
+          {
+            sig: applyEnv(
+              lowpass(whiteNoise(sr, d, 203), sr, expSweep(3500, 500, 0.3)),
+              sr,
+              percFn(0.16, 0.004),
+            ),
+            gain: 0.45,
+            at: 0.01,
+          },
+        ]),
+        2.6,
+      ),
+      sr,
+      0.95,
+    );
+  },
+  // Desert Eagle: a heavier, deeper boom with a longer tail
+  deagleShot: (sr) => {
+    const d = 0.9;
+    return finish(
+      softClip(
+        echo(
+          mix(sr, d, [
+            { sig: crack(sr, d, 204, 0.016, 2600), gain: 0.9 },
+            { sig: thump(sr, d, 160, 38, 0.13), gain: 1.4 },
+            {
+              sig: applyEnv(bandpass(whiteNoise(sr, d, 205), sr, 700, 0.8), sr, percFn(0.07)),
+              gain: 1,
+            },
+            {
+              sig: applyEnv(
+                lowpass(brownNoise(sr, d, 206), sr, expSweep(1800, 250, 0.5)),
+                sr,
+                percFn(0.3, 0.006),
+              ),
+              gain: 0.8,
+              at: 0.01,
+            },
+          ]),
+          sr,
+          0.11,
+          0.25,
+          0.25,
+        ),
+        2.8,
+      ),
+      sr,
+      0.98,
+    );
+  },
+  // magazine out, magazine in, charging handle
+  gunReload: (sr) => {
+    const d = 1.1;
+    const clack = (seed: number, f: number) =>
+      mix(sr, 0.12, [
+        { sig: crack(sr, 0.12, seed, 0.006, 2500), gain: 0.8 },
+        { sig: bell(sr, 0.12, f, 1.9, 3, 0.03), gain: 0.35 },
+        { sig: thump(sr, 0.12, 240, 120, 0.02), gain: 0.4 },
+      ]);
+    return finish(
+      mix(sr, d, [
+        { sig: clack(207, 900), gain: 0.7 },
+        {
+          sig: whoosh(sr, 0.3, 208, expSweep(800, 2000, 0.2), 1.2, swell(0.05, 0.08)),
+          gain: 0.25,
+          at: 0.1,
+        },
+        { sig: clack(209, 700), gain: 1, at: 0.55 },
+        { sig: clack(210, 1300), gain: 0.8, at: 0.86 },
+        { sig: clack(211, 1100), gain: 0.7, at: 0.95 },
+      ]),
+      sr,
+      0.6,
+    );
+  },
+  // pulling out a gun
+  gunDraw: (sr) => {
+    const d = 0.25;
+    return finish(
+      mix(sr, d, [
+        { sig: whoosh(sr, d, 212, expSweep(600, 2500, 0.12), 1, swell(0.02, 0.05)), gain: 0.5 },
+        { sig: crack(sr, d, 213, 0.005, 3000), gain: 0.6, at: 0.1 },
+        { sig: bell(sr, d, 1500, 1.9, 2, 0.03), gain: 0.25, at: 0.1 },
+      ]),
+      sr,
+      0.5,
+    );
+  },
+
   // -------------------------------------------------------------------------------- grenade
   grenadeThrow: (sr) => {
     const d = 0.32;
@@ -616,29 +718,41 @@ const defs = {
   },
 
   // ------------------------------------------------------------------------------- feedback
+  // body hit: a bright metallic "ting" that rings out, on top of a short punchy thud
   hitMarker: (sr) => {
-    const d = 0.07;
+    const d = 0.42;
     return finish(
-      mix(sr, d, [
-        { sig: tone(sr, d, 'sine', 3200, 0.014), gain: 0.8 },
-        { sig: tone(sr, d, 'sine', 4800, 0.008), gain: 0.4 },
-        { sig: crack(sr, d, 52, 0.002, 6000), gain: 0.5 },
-      ]),
+      softClip(
+        mix(sr, d, [
+          { sig: tone(sr, d, 'sine', 2093, 0.16), gain: 0.55 },
+          { sig: bell(sr, d, 2093, 2.76, 2.2, 0.14), gain: 0.45 },
+          { sig: tone(sr, d, 'sine', 4186, 0.05), gain: 0.2 },
+          { sig: thump(sr, d, 190, 70, 0.055), gain: 0.75 },
+          { sig: crack(sr, d, 52, 0.003, 5000), gain: 0.45 },
+        ]),
+        1.3,
+      ),
       sr,
-      0.75,
+      0.95,
     );
   },
+  // headshot: a higher double "tink-TING" that rings longer
   hitHead: (sr) => {
-    const d = 0.18;
+    const d = 0.6;
     return finish(
-      mix(sr, d, [
-        { sig: tone(sr, d, 'sine', 2600, 0.03), gain: 0.7 },
-        { sig: tone(sr, d, 'sine', 3900, 0.04), gain: 0.5, at: 0.03 },
-        { sig: bell(sr, d, 5200, 1.41, 1.5, 0.04), gain: 0.3 },
-        { sig: crack(sr, d, 53, 0.003, 6000), gain: 0.6 },
-      ]),
+      softClip(
+        mix(sr, d, [
+          { sig: tone(sr, d, 'sine', 2637, 0.05), gain: 0.45 },
+          { sig: tone(sr, d, 'sine', 3520, 0.24), gain: 0.55, at: 0.055 },
+          { sig: bell(sr, d, 3520, 2.76, 2.6, 0.22), gain: 0.4, at: 0.055 },
+          { sig: tone(sr, d, 'sine', 7040, 0.04), gain: 0.15, at: 0.055 },
+          { sig: thump(sr, d, 220, 90, 0.04), gain: 0.5 },
+          { sig: crack(sr, d, 53, 0.003, 6000), gain: 0.55 },
+        ]),
+        1.3,
+      ),
       sr,
-      0.85,
+      0.98,
     );
   },
   killConfirm: (sr) => finish(softClip(killPunch(sr, 0.5, 54, 880), 1.6), sr, 0.95),
@@ -941,6 +1055,55 @@ const defs = {
       ),
       sr,
       0.75,
+    );
+  },
+  // power-ups: one appears in the middle (a shimmer), you pick one up (a bright rising chime),
+  // a Freeze hit locks someone in ice (a glassy crackle)
+  powerupSpawn: (sr) => {
+    const d = 0.9;
+    return finish(
+      echo(
+        mix(sr, d, [
+          { sig: bell(sr, d, 1318.5, 2.01, 1.2, 0.18), gain: 0.35 },
+          { sig: pluck(sr, d, 783.99, 0.1, 2), gain: 0.35, at: 0.05 },
+          { sig: pluck(sr, d, 1174.66, 0.12, 2), gain: 0.35, at: 0.13 },
+          { sig: pluck(sr, d, 1567.98, 0.22, 2), gain: 0.35, at: 0.21 },
+        ]),
+        sr,
+        0.12,
+        0.35,
+        0.35,
+      ),
+      sr,
+      0.75,
+    );
+  },
+  powerupPickup: (sr) => {
+    const d = 0.55;
+    return finish(
+      mix(sr, d, [
+        { sig: whoosh(sr, d, 81, expSweep(900, 7000, 0.2), 1.3, swell(0.03, 0.08)), gain: 0.35 },
+        { sig: pluck(sr, d, 523.25, 0.06), gain: 0.5 },
+        { sig: pluck(sr, d, 783.99, 0.06), gain: 0.5, at: 0.05 },
+        { sig: pluck(sr, d, 1046.5, 0.2), gain: 0.55, at: 0.1 },
+        { sig: bell(sr, d, 2093, 1.5, 1.4, 0.16), gain: 0.25, at: 0.1 },
+      ]),
+      sr,
+      0.85,
+    );
+  },
+  freeze: (sr) => {
+    const d = 0.6;
+    return finish(
+      mix(sr, d, [
+        { sig: crack(sr, d, 91, 0.03, 5000), gain: 0.7 },
+        { sig: whoosh(sr, d, 92, expSweep(8000, 2500, 0.4), 2, percFn(0.18, 0.002)), gain: 0.4 },
+        { sig: bell(sr, d, 2637, 2.76, 2.5, 0.14), gain: 0.35 },
+        { sig: bell(sr, d, 3520, 3.1, 2, 0.1), gain: 0.25, at: 0.02 },
+        { sig: thump(sr, d, 220, 90, 0.05), gain: 0.4 },
+      ]),
+      sr,
+      0.85,
     );
   },
   uiClick: (sr) => {

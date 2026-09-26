@@ -1,0 +1,505 @@
+/* ---------- phone / tablet layout (html.mobile, see src/mobile.ts) ----------
+   Everything here only applies with the touch layout on; desktop is unchanged.
+   Target: a 390×844 phone held sideways (844×390), 16 px edge gutter + notch insets. */
+
+html.mobile {
+  --gl: calc(16px + env(safe-area-inset-left, 0px));
+  --gr: calc(16px + env(safe-area-inset-right, 0px));
+  --gt: calc(16px + env(safe-area-inset-top, 0px));
+  --gb: calc(16px + env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html.mobile body {
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---------- menus: big tap targets, scrollable screens ---------- */
+html.mobile .screen {
+  justify-content: safe center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: var(--gt) var(--gr) var(--gb) var(--gl);
+  gap: 12px;
+}
+html.mobile .screen > * {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+html.mobile .btn {
+  min-height: 48px;
+  touch-action: manipulation;
+}
+html.mobile .btn.small {
+  min-height: 44px;
+  padding: 8px 14px;
+}
+html.mobile .btn.tiny {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+html.mobile .choice-row {
+  flex-wrap: wrap;
+}
+html.mobile .panel {
+  padding: 12px 14px;
+  max-width: 100%;
+}
+html.mobile .wide-panel {
+  max-height: none;
+  overflow: visible;
+  min-width: min(720px, 100%);
+}
+html.mobile .settings-list {
+  min-width: min(520px, 100%);
+}
+html.mobile .setting {
+  grid-template-columns: 1fr minmax(120px, 200px) 48px;
+  min-height: 44px;
+}
+html.mobile .setting input[type='checkbox'] {
+  width: 28px;
+  height: 28px;
+}
+html.mobile .setting input[type='range'] {
+  height: 32px;
+}
+html.mobile select,
+html.mobile input[type='text'],
+html.mobile input[type='number'] {
+  min-height: 44px;
+  font-size: 16px; /* 16 px: phones don't zoom into the field */
+}
+html.mobile table.controls td {
+  padding: 8px 10px;
+}
+html.mobile .online-panel {
+  min-width: min(760px, 100%);
+}
+/* a phone held sideways is short: title and menus side by side in two columns */
+@media (max-height: 560px) {
+  html.mobile .title {
+    font-size: 40px;
+  }
+  html.mobile .menu {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+    gap: 8px;
+  }
+  html.mobile .online-cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  html.mobile h2 {
+    font-size: 20px;
+  }
+}
+@media (max-width: 560px) {
+  html.mobile .menu {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
+  }
+  html.mobile .setting {
+    grid-template-columns: 1fr 44px;
+  }
+  html.mobile .setting input[type='range'],
+  html.mobile .setting select {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- HUD: smaller, clear of the thumbs ---------- */
+html.mobile .hud-tl {
+  left: var(--gl);
+  top: var(--gt);
+  font-size: 10px;
+}
+html.mobile .hud-grav {
+  gap: 6px;
+  margin-bottom: 2px;
+}
+html.mobile .hud-grav-arrow {
+  width: 18px;
+  height: 18px;
+}
+html.mobile .hud-grav-arrow::after {
+  border-width: 4px;
+  border-top-width: 7px;
+}
+/* movement counters are for keyboard tuning; the kit line shows dash/jet */
+html.mobile .hud-counters {
+  display: none;
+}
+/* speed: top-left under the gravity line (the stick owns the bottom-left) */
+html.mobile .hud-bl {
+  left: var(--gl);
+  top: calc(var(--gt) + 24px);
+  bottom: auto;
+}
+html.mobile .hud-speed {
+  font-size: 18px;
+}
+html.mobile .hud-speed-sub,
+html.mobile .hud-graph {
+  display: none;
+}
+html.mobile .hud-state {
+  font-size: 9px;
+}
+html.mobile .hud-fps {
+  top: var(--gt);
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  white-space: normal;
+  text-align: center;
+}
+html.mobile .hud-hint {
+  top: 26%;
+  max-width: 56vw;
+  font-size: 12px;
+  background: rgba(4, 8, 16, 0.55);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+html.mobile .hud-hint.faded {
+  opacity: 0;
+}
+
+/* health bottom-centre, kit line just above it */
+html.mobile .hp {
+  bottom: var(--gb);
+  gap: 6px;
+}
+html.mobile .hp-bar {
+  width: 150px;
+  height: 8px;
+}
+html.mobile .hp-text {
+  font-size: 16px;
+  min-width: 28px;
+}
+html.mobile .kit {
+  right: auto;
+  left: 50%;
+  bottom: calc(var(--gb) + 22px);
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+html.mobile .kit-row {
+  margin-top: 1px;
+}
+html.mobile .kit-row.boomerang {
+  font-size: 11px;
+}
+/* kill feed: top-right, under the button row, left of the button column; 3 newest */
+html.mobile .killfeed {
+  top: calc(var(--gt) + 56px);
+  right: calc(var(--gr) + 64px);
+  font-size: 11px;
+  gap: 2px;
+}
+html.mobile .killfeed .kill-row:nth-child(n + 4) {
+  display: none;
+}
+html.mobile .kill-row {
+  padding: 1px 6px;
+}
+html.mobile .banner {
+  font-size: 18px;
+  letter-spacing: 0.15em;
+}
+html.mobile .banner.big {
+  font-size: 32px;
+}
+html.mobile .center-msg {
+  font-size: 14px;
+  top: 60%;
+}
+html.mobile .death {
+  font-size: 18px;
+}
+html.mobile .bomb-bar {
+  width: 180px;
+  top: calc(50% + 48px);
+}
+html.mobile .zone-warn {
+  font-size: 14px;
+  padding: 5px 10px;
+}
+html.mobile .spectate-label {
+  bottom: calc(var(--gb) + 64px);
+  font-size: 12px;
+}
+html.mobile .flick-tip {
+  top: calc(50% + 56px);
+  max-width: 50vw;
+  font-size: 11px;
+}
+html.mobile .combat-stats {
+  top: calc(var(--gt) + 80px);
+  left: var(--gl);
+  font-size: 10px;
+}
+
+/* match bar: top-centre, a bit smaller, below the FPS line */
+html.mobile .match-bar {
+  top: calc(var(--gt) + 12px);
+  transform: translateX(-50%) scale(0.78);
+  transform-origin: top center;
+}
+html.mobile .match-banner-wrap {
+  top: 22%;
+}
+html.mobile .match-wordmark {
+  font-size: 36px;
+}
+html.mobile .match-banner {
+  font-size: 26px;
+}
+html.mobile .match-banner-sub {
+  font-size: 13px;
+}
+html.mobile .scoreboard,
+html.mobile .match-results {
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  min-width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+}
+html.mobile .sb-team {
+  min-width: 240px;
+}
+html.mobile .sb table {
+  font-size: 12px;
+}
+html.mobile .mr-title {
+  font-size: 30px;
+}
+html.mobile .mr-score {
+  font-size: 22px;
+}
+html.mobile .room-panel {
+  top: calc(var(--gt) + 58px);
+  bottom: auto;
+  font-size: 9px;
+  max-width: 44vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+html.mobile .toasts {
+  top: calc(var(--gt) + 56px);
+  bottom: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+/* markers and sound arrows: smaller on a small screen */
+html.mobile .wm {
+  font-size: 11px;
+  line-height: 14px;
+}
+html.mobile .wm-icon {
+  font-size: 20px;
+  line-height: 20px;
+}
+html.mobile .wm-aim,
+html.mobile .wm-objective {
+  font-size: 10px;
+  line-height: 13px;
+}
+html.mobile .sr-item {
+  font-size: 10px;
+}
+
+/* chat + voice: top-left under the speed (the phone keyboard covers the bottom) */
+html.mobile .voice-box {
+  left: var(--gl);
+  top: calc(var(--gt) + 76px);
+  font-size: 11px;
+}
+html.mobile .chat {
+  left: var(--gl);
+  top: calc(var(--gt) + 120px);
+  bottom: auto;
+  width: min(360px, 38vw);
+  font-size: 12px;
+}
+html.mobile .chat.open {
+  top: var(--gt);
+  width: min(560px, 60vw);
+  z-index: 20;
+}
+html.mobile #ui .chat-input {
+  font-size: 16px;
+  min-height: 40px;
+}
+html.mobile .chat-tag {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 10px 4px;
+}
+/* send button: phones only (desktop sends with Enter) */
+.chat-send {
+  display: none;
+}
+html.mobile .chat-send {
+  display: block;
+  min-width: 44px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: #19e3ff;
+  font-size: 20px;
+}
+
+/* ---------- on-screen controls (game/touch-controls.ts) ---------- */
+.touch-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  z-index: 10;
+  --tb: 1;
+  --tb-alpha: 0.55;
+  /* fallbacks if the layout is forced on before html.mobile applies */
+  --gl: calc(16px + env(safe-area-inset-left, 0px));
+  --gr: calc(16px + env(safe-area-inset-right, 0px));
+  --gt: calc(16px + env(safe-area-inset-top, 0px));
+  --gb: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.tc-btn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(8, 14, 26, 0.45);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.05;
+  text-shadow: 0 1px 2px #000;
+  opacity: var(--tb-alpha);
+  transition:
+    transform 0.06s,
+    background 0.06s;
+}
+.tc-btn.down {
+  opacity: min(1, calc(var(--tb-alpha) + 0.3));
+  background: rgba(25, 227, 255, 0.35);
+  transform: scale(0.94);
+}
+/* toggles that are on (crouch, wind-up/steer latch, scoreboard) */
+.tc-btn.on {
+  opacity: min(1, calc(var(--tb-alpha) + 0.3));
+  border-color: #19e3ff;
+  background: rgba(25, 227, 255, 0.28);
+  box-shadow: 0 0 10px rgba(25, 227, 255, 0.5);
+}
+.tc-btn[data-tb='fire'] {
+  border-color: rgba(255, 138, 31, 0.8);
+  background: rgba(60, 24, 4, 0.45);
+}
+.tc-btn[data-tb='fire'].down {
+  background: rgba(255, 138, 31, 0.45);
+}
+.tc-top {
+  position: absolute;
+  top: var(--gt);
+  right: var(--gr);
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 8px;
+}
+.tc-top .tc-btn {
+  position: static;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  font-size: 9px;
+  padding: 2px;
+}
+.tc-top .tc-btn[data-tb='pause'] {
+  font-size: 16px;
+  letter-spacing: -0.1em;
+}
+.tc-stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(8, 14, 26, 0.25);
+  pointer-events: none;
+  opacity: min(1, calc(var(--tb-alpha) + 0.2));
+}
+.tc-stick.idle {
+  opacity: calc(var(--tb-alpha) * 0.45);
+}
+.tc-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  background: rgba(232, 241, 255, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+/* portrait while playing: ask to turn the phone (landscape lock isn't allowed everywhere) */
+.rotate-overlay {
+  display: none;
+}
+@media (orientation: portrait) {
+  html.mobile .rotate-overlay:not(.hidden) {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 32px;
+    background: rgba(5, 7, 13, 0.94);
+    color: #e8f1ff;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    pointer-events: auto;
+  }
+}
+.rotate-phone {
+  width: 44px;
+  height: 76px;
+  border: 3px solid #19e3ff;
+  border-radius: 9px;
+  animation: rotate-phone 1.8s ease-in-out infinite;
+}
+@keyframes rotate-phone {
+  0%,
+  25% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}

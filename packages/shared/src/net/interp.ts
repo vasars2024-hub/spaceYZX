@@ -65,6 +65,7 @@ export const netToPlayer = (id: number, np: NetPlayer, config: GameConfig): Play
     aiming: np.aiming,
     laserWarn: np.laserWarn,
     laserCharges: np.laserCharges,
+    weapon: np.weapon as 0 | 1,
     slashTicks: np.slashTicks,
     mag: np.magOn ? v3(0, 1, 0) : null,
     grenadesLeft: np.grenadesLeft,
@@ -73,6 +74,9 @@ export const netToPlayer = (id: number, np: NetPlayer, config: GameConfig): Play
     teamKills: np.teamKills,
     frozen: np.frozen,
     dashTicks: np.dashTicks,
+    powerup: np.powerup,
+    stun: np.stun,
+    shield: np.shield,
   });
   return p;
 };
@@ -86,11 +90,14 @@ export const netToBoomerang = (owner: number, nb: NetBoomerang): BoomerangState 
     vel: nb.vel,
     windup: nb.windup,
     recallLethal: nb.recallLethal,
+    bounced: false, // not sent: only the thrower's own flight uses it (exact private state)
     recallFrom: nb.phase >= 4 ? nb.recallFrom : null,
     recallTo: nb.phase >= 4 ? nb.recallTo : null,
     steerLeft: nb.steerLeft,
     throwId: nb.throwId,
     t: nb.t,
+    curve: nb.curve / 32 - 1,
+    explosive: nb.explosive,
   });
   return b;
 };

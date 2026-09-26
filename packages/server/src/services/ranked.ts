@@ -1,17 +1,21 @@
 // Ranked data: Glicko-2 ratings per mode, match history, leaderboards, profiles, reports and
 // anti-grief bans. All rating maths lives in @space-yz/shared (rating/*).
-import type { Rating, RankedMode, ModeRatings, TierInfo } from '@space-yz/shared';
+import type { Rating, RankedMode, LadderMode, ModeRatings, TierInfo } from '@space-yz/shared';
 import {
   newRating,
   updateTeamMatch,
+  updateArenaRatings,
   applyInactivity,
   globalRating,
   tierFor,
   RANKED_MODES,
+  LADDER_MODES,
   PLACEMENT_GAMES,
+  ARENA_DEFAULTS,
 } from '@space-yz/shared';
 import type { Db } from './db';
 import type { MatchResult } from '../game/rules/match';
+import type { ArenaResult } from '../game/rules/arena';
 
 const DAY = 86_400_000;
 
@@ -34,9 +38,10 @@ export interface LeaderRow {
 export interface Profile {
   id: number;
   name: string;
+  /** one entry per ladder played: '1v1', '2v2', '5v5' and 'arena' (Arena 1v1, its own ranks) */
   modes: Partial<
     Record<
-      RankedMode,
+      LadderMode,
       {
         rating: number;
         rd: number;
@@ -47,11 +52,15 @@ export interface Profile {
       }
     >
   >;
+  /** the headline rank: 1v1 / 2v2 / 5v5 combined (the arena ladder stays separate) */
   global: { rating: number | null; tier: TierInfo; position: number | null };
   recent: {
     mode: string;
     ranked: boolean;
+    /** arena: placed first */
     won: boolean | null;
+    /** arena: final place (1 = won the arena), else null */
+    place: number | null;
     delta: number;
     kills: number;
     deaths: number;
@@ -82,7 +91,7 @@ export class RankedStore {
     private now: () => number = Date.now,
   ) {}
 
-  rating(playerId: number, mode: RankedMode): StoredRating {
+  rating(playerId: number, mode: LadderMode): StoredRating {
     const row = this.db
       .prepare(
         'SELECT rating, rd, vol, games, wins, last_played FROM ratings WHERE player_id = ? AND mode = ?',
@@ -104,7 +113,7 @@ export class RankedStore {
     return { rating, games: row.games, wins: row.wins, lastPlayed: row.last_played };
   }
 
-  private save(playerId: number, mode: RankedMode, r: StoredRating): void {
+  private save(playerId: number, mode: LadderMode, r: StoredRating): void {
     this.db
       .prepare(
         `INSERT INTO ratings (player_id, mode, rating, rd, vol, games, wins, last_played)
@@ -242,9 +251,100 @@ export class RankedStore {
     return deltas;
   }
 
-  /** Ranked (placed) players of a mode, best first. */
+  /**
+   * Store a finished Arena 1v1 match. Ranked: every duel is a game against that opponent's
+   * arena rating (rating/arena.ts), all of a player's duels in the match one rating period;
+   * placements count more, leaving costs extra. Games/wins count arena matches (a win = 1st
+   * place). Private arenas are only recorded. Returns rating changes by account id.
+   */
+  recordArena(input: { ranked: boolean; map: string; result: ArenaResult }): Map<number, number> {
+    const { result } = input;
+    const t = this.now();
+    const deltas = new Map<number, number>();
+    this.db.exec('BEGIN');
+    try {
+      if (input.ranked) {
+        const rows = result.standings.filter(
+          (r, i, all) =>
+            r.accountId !== null &&
+            !r.bot &&
+            all.findIndex((x) => x.accountId === r.accountId) === i,
+        );
+        const stored = rows.map((r) => this.rating(r.accountId!, 'arena'));
+        const index = new Map(rows.map((r, i) => [r.id, i]));
+        const duels = result.duels.flatMap((d) => {
+          const a = index.get(d.a);
+          const b = index.get(d.b);
+          const w = index.get(d.winner);
+          return a !== undefined && b !== undefined && w !== undefined ? [{ a, b, winner: w }] : [];
+        });
+        const updates = updateArenaRatings(
+          stored.map((s, i) => ({
+            rating: s.rating,
+            placementGamesLeft: Math.max(0, PLACEMENT_GAMES - s.games),
+            left: rows[i].left,
+          })),
+          duels,
+          { placementFactor: PLACEMENT_BOOST, leaverPenalty: ARENA_DEFAULTS.leaverPenalty },
+        );
+        rows.forEach((r, i) => {
+          this.save(r.accountId!, 'arena', {
+            rating: updates[i].rating,
+            games: stored[i].games + 1,
+            wins: stored[i].wins + (r.place === 1 && !r.left ? 1 : 0),
+            lastPlayed: t,
+          });
+          deltas.set(r.accountId!, updates[i].delta);
+        });
+      }
+      const top = result.standings[0];
+      const m = this.db
+        .prepare(
+          `INSERT INTO matches (mode, ranked, map, winner, score_a, score_b, reason, duration_sec, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'arena',
+          input.ranked ? 1 : 0,
+          input.map,
+          null,
+          top?.wins ?? 0,
+          top?.losses ?? 0,
+          result.reason,
+          result.durationSec,
+          t,
+        );
+      const matchId = Number(m.lastInsertRowid);
+      const ins = this.db.prepare(
+        `INSERT INTO match_players (match_id, player_id, name, team, bot, kills, deaths, team_kills, damage, rating_delta, left_early, place, duel_wins, duel_losses)
+         VALUES (?, ?, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const r of result.standings)
+        ins.run(
+          matchId,
+          r.accountId,
+          r.name,
+          r.bot ? 1 : 0,
+          r.kills,
+          r.deaths,
+          r.damage,
+          r.accountId !== null ? (deltas.get(r.accountId) ?? 0) : 0,
+          r.left ? 1 : 0,
+          r.place,
+          r.wins,
+          r.losses,
+        );
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return deltas;
+  }
+
+  /** Ranked (placed) players of a ladder, best first. */
   private modeRows(
-    mode: RankedMode,
+    mode: LadderMode,
   ): { playerId: number; name: string; rating: number; games: number }[] {
     return (
       this.db
@@ -280,7 +380,8 @@ export class RankedStore {
     const rows = this.db
       .prepare(
         `SELECT r.player_id AS playerId, p.name AS name, r.mode AS mode, r.rating AS rating, r.rd AS rd, r.games AS games
-         FROM ratings r JOIN players p ON p.id = r.player_id`,
+         FROM ratings r JOIN players p ON p.id = r.player_id
+         WHERE r.mode IN ('1v1', '2v2', '5v5')`,
       )
       .all() as {
       playerId: number;
@@ -306,7 +407,7 @@ export class RankedStore {
     return out.sort((a, b) => b.rating - a.rating || a.playerId - b.playerId);
   }
 
-  leaderboard(which: RankedMode | 'global', limit = 50): LeaderRow[] {
+  leaderboard(which: LadderMode | 'global', limit = 50): LeaderRow[] {
     const rows = which === 'global' ? this.globalRows() : this.modeRows(which);
     return rows.slice(0, limit).map((r, i) => ({
       position: i + 1,
@@ -323,7 +424,7 @@ export class RankedStore {
     if (!p) return null;
     const modes: Profile['modes'] = {};
     const mr: ModeRatings = {};
-    for (const mode of RANKED_MODES) {
+    for (const mode of LADDER_MODES) {
       const s = this.rating(playerId, mode);
       if (s.games === 0) continue;
       const placed = s.games >= PLACEMENT_GAMES;
@@ -342,7 +443,9 @@ export class RankedStore {
           leaderboardPosition: pos ?? undefined,
         }),
       };
-      mr[mode] = { rating: s.rating.rating, rd: s.rating.rd, games: s.games };
+      // (the arena ladder is not part of the global rank)
+      if ((RANKED_MODES as readonly string[]).includes(mode))
+        mr[mode as RankedMode] = { rating: s.rating.rating, rd: s.rating.rd, games: s.games };
     }
     const g = globalRating(mr);
     const totalGames = Object.values(mr).reduce((s, m) => s + (m?.games ?? 0), 0);
@@ -352,7 +455,8 @@ export class RankedStore {
       this.db
         .prepare(
           `SELECT m.mode AS mode, m.ranked AS ranked, m.winner AS winner, mp.team AS team, mp.rating_delta AS delta,
-                  mp.kills AS kills, mp.deaths AS deaths, m.created_at AS at, mp.left_early AS left
+                  mp.kills AS kills, mp.deaths AS deaths, m.created_at AS at, mp.left_early AS left,
+                  mp.place AS place
            FROM match_players mp JOIN matches m ON m.id = mp.match_id
            WHERE mp.player_id = ? ORDER BY m.id DESC LIMIT 10`,
         )
@@ -366,11 +470,19 @@ export class RankedStore {
         deaths: number;
         at: number;
         left: number;
+        place: number | null;
       }[]
     ).map((r) => ({
       mode: r.mode,
       ranked: !!r.ranked,
-      won: r.left ? false : r.winner === null ? null : r.winner === r.team,
+      won: r.left
+        ? false
+        : r.place !== null
+          ? r.place === 1
+          : r.winner === null
+            ? null
+            : r.winner === r.team,
+      place: r.place ?? null,
       delta: Math.round(r.delta),
       kills: r.kills,
       deaths: r.deaths,

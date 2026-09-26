@@ -143,6 +143,129 @@ export class LevelBuilder {
 
 export type Face = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
 
+/** Look of one kind of generated surface. */
+export interface SurfaceStyle {
+  mat: Material;
+  color?: number;
+}
+
+/** An open volume for `shellAround` (a room, a doorway, a hole in a floor...). */
+export interface OpenVolume {
+  min: Vec3;
+  max: Vec3;
+  /** false: no ceiling slab (a glass lid or open sky goes there instead) */
+  lid?: boolean;
+  /** false: only carves (doorways, windows, floor holes): it adds no walls of its own */
+  walls?: boolean;
+  /** surfaces of the slabs around it (defaults: 'floor' floor, 'hull' walls and ceiling) */
+  floor?: SurfaceStyle;
+  wall?: SurfaceStyle;
+  ceiling?: SurfaceStyle;
+}
+
+/**
+ * Solid walls, floors and ceilings `t` thick around a set of open volumes: everything within
+ * `t` of a volume that is not inside any volume. Volumes that touch or overlap open into each
+ * other; volumes 1 wall apart get one shared wall (no doubled, z-fighting faces), and a thin
+ * volume across that wall is a doorway. The solid is split on the volumes' own coordinates and
+ * merged greedily into few boxes (one style per box: the floor of the room above wins, then
+ * the ceiling of the room below, then the wall of the first room it borders).
+ */
+export const shellAround = (b: LevelBuilder, vols: OpenVolume[], t = 1): void => {
+  const grown = vols.map((v) =>
+    v.walls === false
+      ? null
+      : {
+          min: v3(v.min.x - t, v.min.y - t, v.min.z - t),
+          max: v3(v.max.x + t, v.lid === false ? v.max.y : v.max.y + t, v.max.z + t),
+        },
+  );
+  const coords = (k: 'x' | 'y' | 'z'): number[] => {
+    const s = new Set<number>();
+    for (const v of vols) s.add(v.min[k]).add(v.max[k]);
+    for (const g of grown) if (g) s.add(g.min[k]).add(g.max[k]);
+    return [...s].sort((a, c) => a - c);
+  };
+  const xs = coords('x');
+  const ys = coords('y');
+  const zs = coords('z');
+  const nx = xs.length - 1;
+  const ny = ys.length - 1;
+  const nz = zs.length - 1;
+  const inBox = (min: Vec3, max: Vec3, x: number, y: number, z: number) =>
+    x > min.x && x < max.x && y > min.y && y < max.y && z > min.z && z < max.z;
+  // cell style: 0 = open/outside, else 1 + index into `styles`
+  const styles: SurfaceStyle[] = [];
+  const styleId = (st: SurfaceStyle): number => {
+    let i = styles.findIndex((o) => o.mat === st.mat && o.color === st.color);
+    if (i < 0) i = styles.push(st) - 1;
+    return 1 + i;
+  };
+  const FLOOR: SurfaceStyle = { mat: 'floor' };
+  const HULL: SurfaceStyle = { mat: 'hull' };
+  const cells = new Int16Array(nx * ny * nz);
+  const at = (i: number, j: number, k: number) => i + nx * (j + ny * k);
+  for (let k = 0; k < nz; k++) {
+    const z = (zs[k] + zs[k + 1]) / 2;
+    for (let j = 0; j < ny; j++) {
+      const y = (ys[j] + ys[j + 1]) / 2;
+      for (let i = 0; i < nx; i++) {
+        const x = (xs[i] + xs[i + 1]) / 2;
+        if (vols.some((v) => inBox(v.min, v.max, x, y, z))) continue;
+        let wall: OpenVolume | null = null;
+        let floor: OpenVolume | null = null;
+        let ceiling: OpenVolume | null = null;
+        vols.forEach((v, vi) => {
+          const g = grown[vi];
+          if (!g || !inBox(g.min, g.max, x, y, z)) return;
+          wall ??= v;
+          if (x <= v.min.x || x >= v.max.x || z <= v.min.z || z >= v.max.z) return;
+          if (y < v.min.y && (!floor || v.min.y < floor.min.y)) floor = v;
+          else if (y > v.max.y && (!ceiling || v.max.y > ceiling.max.y)) ceiling = v;
+        });
+        if (!wall) continue;
+        const f = floor as OpenVolume | null;
+        const c = ceiling as OpenVolume | null;
+        const w = wall as OpenVolume;
+        cells[at(i, j, k)] = styleId(
+          f ? (f.floor ?? FLOOR) : c ? (c.ceiling ?? HULL) : (w.wall ?? HULL),
+        );
+      }
+    }
+  }
+  // greedy merge: grow each box along x, then z, then y over cells of the same style
+  const done = new Uint8Array(cells.length);
+  const same = (i: number, j: number, k: number, m: number) =>
+    cells[at(i, j, k)] === m && !done[at(i, j, k)];
+  for (let j = 0; j < ny; j++)
+    for (let k = 0; k < nz; k++)
+      for (let i = 0; i < nx; i++) {
+        const m = cells[at(i, j, k)];
+        if (m === 0 || done[at(i, j, k)]) continue;
+        let i1 = i + 1;
+        while (i1 < nx && same(i1, j, k, m)) i1++;
+        let k1 = k + 1;
+        const rowOk = (kk: number, jj: number) => {
+          for (let ii = i; ii < i1; ii++) if (!same(ii, jj, kk, m)) return false;
+          return true;
+        };
+        while (k1 < nz && rowOk(k1, j)) k1++;
+        let j1 = j + 1;
+        const slabOk = (jj: number) => {
+          for (let kk = k; kk < k1; kk++) if (!rowOk(kk, jj)) return false;
+          return true;
+        };
+        while (j1 < ny && slabOk(j1)) j1++;
+        for (let jj = j; jj < j1; jj++)
+          for (let kk = k; kk < k1; kk++) for (let ii = i; ii < i1; ii++) done[at(ii, jj, kk)] = 1;
+        const st = styles[m - 1];
+        b.box(v3(xs[i], ys[j], zs[k]), v3(xs[i1], ys[j1], zs[k1]), {
+          mat: st.mat,
+          ...(st.color !== undefined ? { color: st.color } : {}),
+        });
+      }
+};
+
 interface Rect {
   u0: number;
   u1: number;

@@ -24,6 +24,8 @@ import {
   respawnPlayer,
   matchView,
   startMatch,
+  canTakeOverInMatch,
+  takeOverInMatch,
   TICK_DT,
 } from '@space-yz/shared';
 import type { MatchInfo, RenderPlayer, Session, TickInput } from './session';
@@ -73,10 +75,15 @@ export class LocalSession implements Session {
     this.snapshot(this.prev);
   }
 
-  private snapshot(into: Map<number, Snap>): void {
-    into.clear();
+  private snapshot(into: Map<number, Snap>, ids?: number[]): void {
+    if (!ids) into.clear();
     for (const p of this.w.players)
-      into.set(p.id, { pos: clone(p.pos), up: clone(p.up), eye: eyePos(p, this.config.movement) });
+      if (!ids || ids.includes(p.id))
+        into.set(p.id, {
+          pos: clone(p.pos),
+          up: clone(p.up),
+          eye: eyePos(p, this.config.movement),
+        });
   }
 
   update(frameDt: number, sample: () => TickInput): void {
@@ -150,6 +157,10 @@ export class LocalSession implements Session {
         aiming: p.aiming,
         laserWarn: p.laserWarn,
         slashTicks: p.slashTicks,
+        weapon: p.weapon,
+        stun: p.stun,
+        shield: p.shield,
+        powerup: p.powerup,
         carrier: carriers.has(p.id),
         revealed: revealed.has(p.id),
       }));
@@ -188,6 +199,14 @@ export class LocalSession implements Session {
     return this.w.grenades;
   }
 
+  twins() {
+    return this.w.twins;
+  }
+
+  powerups() {
+    return this.w.powerups;
+  }
+
   world(): WorldState {
     return this.w;
   }
@@ -200,6 +219,23 @@ export class LocalSession implements Session {
 
   names(): Record<number, string> {
     return this.opts.names ?? {};
+  }
+
+  // offline everyone else is a bot
+  canTakeOver(id: number): boolean {
+    const ms = this.opts.match;
+    return !!ms && canTakeOverInMatch(ms, this.w, this.localId, id);
+  }
+
+  takeOver(id: number): void {
+    const ms = this.opts.match;
+    const n = this.w.events.length;
+    if (!ms || !takeOverInMatch(ms, this.w, this.localId, id)) return;
+    // between ticks: step() would clear the takeover event before anyone saw it
+    this.events.push(...this.w.events.slice(n));
+    // both bodies jumped: don't draw them sliding from the old spots
+    this.snapshot(this.cur, [this.localId, id]);
+    this.snapshot(this.prev, [this.localId, id]);
   }
 
   teleport(areaIndex: number): void {

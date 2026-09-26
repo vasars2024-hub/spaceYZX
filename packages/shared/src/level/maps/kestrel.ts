@@ -629,6 +629,9 @@ export const buildKestrel = (): LevelDef => {
     towers,
     controllerHomes: homes,
     waypoints: wps,
+    // power-ups float on the reactor floor in the middle (x = 0: mirror-symmetric), one each
+    // side of the core platform, next to the mid waypoints (M0n / M0s)
+    powerups: [v3(0, 1.2, -9), v3(0, 1.2, 9)],
     areas: [
       { name: 'Cyan hangar', pos: v3(-86, 0, 0), yawDeg: -90 },
       { name: 'Orange hangar', pos: v3(86, 0, 0), yawDeg: 90 },

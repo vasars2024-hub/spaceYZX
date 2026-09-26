@@ -1,0 +1,926 @@
+/* ---------- menu flow: cards, steps, headers and transitions (ui/menu-kit.ts) ----------
+   Desktop first; the html.mobile block at the end adapts it to phones. */
+
+:root {
+  --card-bg: rgba(9, 14, 27, 0.8);
+  --card-border: rgba(120, 200, 255, 0.16);
+  --violet: #a46bff;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fx-in: 260ms;
+  --fx-out: 200ms;
+  --flow-w: min(1000px, 100%);
+}
+
+/* ---------- screens ---------- */
+.flow-screen {
+  justify-content: safe center;
+  overflow-x: hidden; /* sliding steps never add a sideways scrollbar */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 28px 24px;
+  gap: 16px;
+}
+.flow-screen > * {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.flow-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: var(--flow-w);
+}
+.flow-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 26px;
+}
+.head-icon {
+  color: var(--team-a);
+}
+.head-icon .icon {
+  width: 30px;
+  height: 30px;
+}
+.icon-wrap {
+  display: inline-flex;
+  line-height: 0;
+  flex-shrink: 0;
+}
+.icon-wrap .icon {
+  display: block;
+}
+.flow-screen > .panel,
+.flow-screen > .wide-panel {
+  width: var(--flow-w);
+}
+
+/* ---------- buttons with icons ---------- */
+.btn.icon-btn,
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn .icon {
+  width: 18px;
+  height: 18px;
+}
+.back-btn {
+  font-size: 13px;
+  padding: 8px 14px 8px 10px;
+}
+.btn.primary {
+  color: #03121c;
+  font-weight: 800;
+  background: linear-gradient(180deg, #5ff0ff, var(--team-a));
+  border-color: #9ff6ff;
+  box-shadow: 0 0 18px rgba(25, 227, 255, 0.35);
+}
+.btn.primary:hover {
+  background: linear-gradient(180deg, #8ff5ff, #3ce9ff);
+  box-shadow: 0 0 26px rgba(25, 227, 255, 0.55);
+}
+.btn:focus-visible,
+.card:focus-visible,
+.crumb:focus-visible,
+.seg button:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- breadcrumbs ---------- */
+.crumb-box,
+.tab-box {
+  width: var(--flow-w);
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.crumb {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 12px 5px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.crumb .num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.crumb.done {
+  color: var(--text);
+  cursor: pointer;
+}
+.crumb.done:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.crumb.done .num {
+  color: var(--team-a);
+  background: rgba(25, 227, 255, 0.16);
+  border-color: var(--team-a);
+}
+.crumb.current {
+  color: var(--team-a);
+  background: rgba(25, 227, 255, 0.1);
+  font-weight: 700;
+}
+.crumb.current .num {
+  color: #03121c;
+  background: var(--team-a);
+  border-color: var(--team-a);
+}
+.crumb:disabled {
+  cursor: default;
+}
+.crumb-sep {
+  opacity: 0.35;
+  font-size: 16px;
+}
+
+/* ---------- steps (stacked in one grid cell so they can slide over each other) ---------- */
+.stage {
+  display: grid;
+  width: var(--flow-w);
+}
+.stage > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.step {
+  display: flex;
+  flex-direction: column;
+}
+.step-title {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-grid + .step-title {
+  margin-top: 18px;
+}
+
+/* ---------- cards ---------- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.card-grid.maps {
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+}
+.card-grid.small-maps {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.card-grid.compact,
+.card-grid.toggles {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.card-grid.bots {
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+}
+.card-grid.wide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 340px));
+  justify-content: center;
+  width: var(--flow-w);
+}
+.card-grid.bots.off .card:not(.selected) {
+  opacity: 0.5;
+}
+.card-grid.bots.off .card.selected {
+  opacity: 0.7;
+}
+
+.card {
+  --accent: var(--team-a);
+  --accent-soft: rgba(25, 227, 255, 0.16);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01)), var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition:
+    transform 0.16s var(--ease-out),
+    border-color 0.16s,
+    background 0.16s,
+    box-shadow 0.16s,
+    opacity 0.16s;
+}
+.card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--accent-soft) inset;
+}
+.card:active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 0.05s;
+}
+.card.selected {
+  border-color: var(--accent);
+  background:
+    linear-gradient(180deg, var(--accent-soft), rgba(255, 255, 255, 0.01)), var(--card-bg);
+  box-shadow:
+    0 0 0 1px var(--accent) inset,
+    0 0 24px var(--accent-soft);
+}
+.card.selected::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2303121c' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E")
+    center / 13px no-repeat;
+  box-shadow: 0 0 10px var(--accent-soft);
+}
+.card:disabled {
+  cursor: default;
+  opacity: 0.4;
+  transform: none;
+  box-shadow: none;
+}
+.card-art {
+  color: var(--accent);
+  line-height: 0;
+}
+.card-art .icon {
+  width: 34px;
+  height: 34px;
+}
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.card-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding-right: 22px; /* room for the check mark */
+}
+.card-desc {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #cfe3ff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* accents: modes and tiles get their own color, the rest stay team cyan */
+.card.mode-bomb {
+  --accent: #ff5a6a;
+  --accent-soft: rgba(255, 90, 106, 0.16);
+}
+.card.mode-cs,
+.card.mode-arena,
+.tile.ranked,
+.card.queue {
+  --accent: var(--team-b);
+  --accent-soft: rgba(255, 138, 31, 0.16);
+}
+.card.mode-deathmatch,
+.tile.training {
+  --accent: var(--violet);
+  --accent-soft: rgba(164, 107, 255, 0.18);
+}
+.tile.online {
+  --accent: #5aa9ff;
+  --accent-soft: rgba(90, 169, 255, 0.16);
+}
+
+/* map cards: the top-down picture fills the top */
+.card.map {
+  padding: 10px 10px 14px;
+}
+.card.map .card-art {
+  width: 100%;
+  border-radius: 7px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, #0c1830, #050912);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.card.map .card-body {
+  padding: 0 6px;
+}
+.map-art,
+.map-mini {
+  display: block;
+  line-height: 0;
+}
+.map-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.card.map:hover .map-thumb {
+  transform: scale(1.03);
+}
+.map-thumb {
+  transition: transform 0.3s var(--ease-out);
+}
+.card.map.selected::after {
+  top: 16px;
+  right: 16px;
+}
+
+/* bot difficulty cards: badge beside the name */
+.card.bot {
+  padding: 14px;
+}
+.card.bot .icon {
+  width: 34px;
+  height: 34px;
+}
+
+/* compact choice cards (team size, toggles) */
+.card.size,
+.card.toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.card.size .card-art .icon,
+.card.toggle .card-art .icon {
+  width: 26px;
+  height: 26px;
+}
+.card.size .card-title {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- title screen ---------- */
+.title-screen {
+  gap: 20px;
+}
+.card-grid.tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  width: var(--flow-w);
+  margin-top: 8px;
+}
+.card.tile {
+  min-height: 190px;
+  justify-content: flex-end;
+  padding: 20px 18px;
+  overflow: hidden;
+}
+.card.tile .card-art {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+}
+.card.tile .card-art .icon {
+  width: 46px;
+  height: 46px;
+}
+.card.tile::before {
+  /* soft glow in the tile's color */
+  content: '';
+  position: absolute;
+  inset: auto -30% -60% -30%;
+  height: 120%;
+  background: radial-gradient(ellipse at center, var(--accent-soft), transparent 65%);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.card.tile:hover::before,
+.card.tile:focus-visible::before {
+  opacity: 1;
+}
+.card.tile .card-title {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.card.tile.play {
+  border-color: rgba(25, 227, 255, 0.45);
+}
+.icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+@media (max-width: 820px) {
+  .card-grid.tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .card.tile {
+    min-height: 150px;
+  }
+}
+
+/* ---------- summary bar ---------- */
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  width: var(--flow-w);
+  padding: 10px 10px 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+.stage + .summary-bar {
+  margin-top: 4px;
+}
+.sum-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sum-item > .icon-wrap {
+  color: var(--team-a);
+}
+.sum-item .icon {
+  width: 22px;
+  height: 22px;
+}
+.sum-item .bot-badge .icon {
+  width: 26px;
+  height: 26px;
+}
+.map-mini {
+  width: 56px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #050912;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.summary-bar .spacer {
+  flex: 1;
+}
+.summary-bar .btn {
+  padding: 12px 26px;
+}
+
+/* ---------- online ---------- */
+.online-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  width: var(--flow-w);
+}
+.name-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.create-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+.seg button {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.seg button .icon {
+  width: 18px;
+  height: 18px;
+}
+.seg button:hover {
+  color: var(--text);
+}
+.seg button[aria-selected='true'] {
+  color: var(--text);
+  background: rgba(25, 227, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(25, 227, 255, 0.55) inset;
+}
+.join-panel {
+  align-items: center;
+  gap: 12px;
+  justify-self: center;
+  width: min(420px, 100%);
+  padding: 26px 22px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  text-align: center;
+}
+.join-art {
+  color: var(--team-b);
+}
+.join-art .icon {
+  width: 40px;
+  height: 40px;
+}
+.join-panel .code-input {
+  width: 100%;
+}
+.join-panel .join-btn {
+  width: 100%;
+}
+.join-panel .hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- ranked ---------- */
+.rank-global {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: var(--flow-w);
+  font-size: 15px;
+}
+.card-grid.queues {
+  width: var(--flow-w);
+}
+.queue-rank {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+.card.searching {
+  animation: queue-pulse 1.4s ease-in-out infinite;
+}
+@keyframes queue-pulse {
+  50% {
+    box-shadow:
+      0 0 0 1px var(--accent) inset,
+      0 0 34px rgba(255, 138, 31, 0.4);
+  }
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: var(--flow-w);
+}
+
+/* ---------- in-game menu: compact, icons in front ---------- */
+.pause-menu {
+  min-width: 280px;
+  gap: 8px;
+}
+.pause-menu .btn.icon-btn {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 11px 18px;
+}
+.pause-title {
+  font-size: 22px;
+}
+
+/* ---------- transitions: forward slides in from the right, back from the left ----------
+   A whole screen animates its contents (its dim background stays put); a step animates itself. */
+.fx-enter.fx-forward:not(.screen),
+.screen.fx-enter.fx-forward > * {
+  animation: fx-in-fwd var(--fx-in) var(--ease-out) both;
+}
+.fx-enter.fx-back:not(.screen),
+.screen.fx-enter.fx-back > * {
+  animation: fx-in-back var(--fx-in) var(--ease-out) both;
+}
+/* opening a menu (or over the game): the whole screen fades in, its contents grow slightly */
+.fx-enter.fx-fade {
+  animation: fx-opacity-in 180ms ease-out both;
+}
+.screen.fx-enter.fx-fade > * {
+  animation: fx-in-fade 220ms var(--ease-out) both;
+}
+.fx-leave.fx-forward:not(.screen),
+.screen.fx-leave.fx-forward > * {
+  animation: fx-out-fwd var(--fx-out) ease-in both;
+}
+.fx-leave.fx-back:not(.screen),
+.screen.fx-leave.fx-back > * {
+  animation: fx-out-back var(--fx-out) ease-in both;
+}
+.fx-leave.fx-fade:not(.screen),
+.screen.fx-leave.fx-fade > * {
+  animation: fx-out-fade 160ms ease-in both;
+}
+#ui .fx-leave,
+#ui .fx-leave * {
+  pointer-events: none;
+}
+.screen.fx-leave {
+  background: transparent;
+}
+/* cards of a new step arrive one after another */
+.fx-enter .card-grid > .card {
+  animation: fx-card-in 320ms var(--ease-out) both;
+  animation-delay: calc(60ms + var(--i, 0) * 35ms);
+}
+@keyframes fx-in-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(56px);
+  }
+}
+@keyframes fx-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-56px);
+  }
+}
+@keyframes fx-in-fade {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes fx-out-fwd {
+  to {
+    opacity: 0;
+    transform: translateX(-56px);
+  }
+}
+@keyframes fx-out-back {
+  to {
+    opacity: 0;
+    transform: translateX(56px);
+  }
+}
+@keyframes fx-out-fade {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes fx-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes fx-opacity-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-enter,
+  .fx-enter *,
+  .fx-leave,
+  .fx-leave *,
+  .card.searching {
+    animation: none !important;
+  }
+  .card,
+  .crumb,
+  .seg button,
+  .map-thumb {
+    transition: none;
+  }
+  .card:hover,
+  .card:active,
+  .card.map:hover .map-thumb {
+    transform: none;
+  }
+}
+
+/* ---------- phones (html.mobile): finger-size targets, 1–2 columns, scrolling steps ---------- */
+html.mobile .flow-screen {
+  padding: var(--gt) var(--gr) var(--gb) var(--gl);
+  gap: 12px;
+}
+html.mobile .card {
+  min-height: 56px;
+  padding: 12px;
+  gap: 8px;
+  touch-action: manipulation;
+  backdrop-filter: none;
+}
+/* (no sticky hover lift on touch screens) */
+html.mobile .card:hover {
+  transform: none;
+  box-shadow: none;
+}
+html.mobile .card.selected:hover {
+  box-shadow:
+    0 0 0 1px var(--accent) inset,
+    0 0 24px var(--accent-soft);
+}
+html.mobile .card-grid,
+html.mobile .card-grid.maps,
+html.mobile .card-grid.small-maps,
+html.mobile .card-grid.bots,
+html.mobile .card-grid.compact,
+html.mobile .card-grid.toggles,
+html.mobile .card-grid.wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+html.mobile .card-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+html.mobile .card-title {
+  font-size: 15px;
+}
+html.mobile .card-desc {
+  font-size: 12px;
+}
+html.mobile .card-art .icon {
+  width: 28px;
+  height: 28px;
+}
+html.mobile .card.size {
+  flex-direction: column;
+  align-items: flex-start;
+}
+html.mobile .card.size .card-desc {
+  display: none;
+}
+html.mobile .card-grid.tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 0;
+}
+html.mobile .card.tile {
+  min-height: 96px;
+  padding: 12px 14px 12px 64px;
+  justify-content: center;
+}
+html.mobile .card.tile .card-art {
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+}
+html.mobile .card.tile .card-art .icon {
+  width: 36px;
+  height: 36px;
+}
+html.mobile .card.tile .card-title {
+  font-size: 18px;
+}
+html.mobile .crumb {
+  min-height: 40px;
+}
+html.mobile .seg button {
+  min-height: 44px;
+}
+html.mobile .flow-head {
+  gap: 10px;
+}
+html.mobile .flow-head h2 {
+  font-size: 20px;
+}
+html.mobile .back-btn {
+  min-height: 44px;
+}
+/* the summary bar and its Start button stay on screen while the step scrolls */
+html.mobile .summary-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  gap: 8px 14px;
+  background: rgba(8, 12, 22, 0.95);
+}
+html.mobile .summary-bar .btn {
+  min-height: 48px;
+}
+html.mobile .map-mini {
+  width: 44px;
+}
+html.mobile .pause-menu {
+  min-width: min(280px, 100%);
+}
+/* a phone held sideways is short: title tiles in one row, smaller cards */
+@media (max-height: 560px) {
+  html.mobile .card-grid.tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  html.mobile .card.tile {
+    min-height: 88px;
+    padding: 10px 10px 10px 54px;
+  }
+  html.mobile .card.tile .card-art {
+    left: 10px;
+  }
+  html.mobile .card.tile .card-desc {
+    display: none;
+  }
+  html.mobile .card-grid.bots,
+  html.mobile .card-grid.modes {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  html.mobile .card-grid.maps {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  }
+  html.mobile .title-screen {
+    gap: 10px;
+  }
+}
+/* narrow (portrait) phones: one card per row, except the small choices */
+@media (max-width: 560px) {
+  html.mobile .card-grid,
+  html.mobile .card-grid.maps,
+  html.mobile .card-grid.small-maps,
+  html.mobile .card-grid.bots,
+  html.mobile .card-grid.toggles,
+  html.mobile .card-grid.wide,
+  html.mobile .card-grid.modes {
+    grid-template-columns: 1fr;
+  }
+  html.mobile .card-grid.tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  html.mobile .card-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  html.mobile .card.bot,
+  html.mobile .card.mode {
+    flex-direction: row;
+    align-items: center;
+  }
+}

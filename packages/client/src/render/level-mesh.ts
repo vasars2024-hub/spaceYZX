@@ -18,10 +18,13 @@ import {
   lineOfSight,
 } from '@space-yz/shared';
 import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
+import { buildSky } from './sky';
 
 export const MATERIAL_COLORS: Record<Material, number> = {
   hull: 0x3a4660,
   floor: 0x4b5670,
+  plate: 0x4e586c,
+  grate: 0x5a6478,
   panel: 0x5d6b88,
   crate: 0x7c6242,
   pillar: 0x4d5a78,
@@ -29,12 +32,15 @@ export const MATERIAL_COLORS: Record<Material, number> = {
   teamA: 0x2a8296,
   teamB: 0x96602a,
   glass: 0xffffff,
+  skyglass: 0x9fd0ff,
   trim: 0xffffff,
 };
 
 const TEX_OF: Record<Material, TexKind | null> = {
   hull: 'hull',
   floor: 'floor',
+  plate: 'plate',
+  grate: 'grate',
   panel: 'panel',
   crate: 'crate',
   pillar: 'pillar',
@@ -42,6 +48,7 @@ const TEX_OF: Record<Material, TexKind | null> = {
   teamA: 'team',
   teamB: 'team',
   glass: 'stars',
+  skyglass: null,
   trim: null,
 };
 
@@ -298,6 +305,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     return b;
   };
   const trims = new GeoBuilder();
+  const glassGeo = new GeoBuilder();
   const level = buildLevel(def);
   const lightDefs = collectLights(def);
   const lightAt = makeLightAt(
@@ -316,6 +324,15 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     if (b.noRender) return;
     const mat = b.mat ?? 'hull';
     const base = new THREE.Color(b.color ?? MATERIAL_COLORS[mat]);
+    if (mat === 'skyglass') {
+      // see-through glass to space: one flat tint, blended over the sky (drawn after the level)
+      const c = base.clone().multiplyScalar(brightness);
+      for (const f of FACES) {
+        const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
+        glassGeo.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
+      }
+      return;
+    }
     if (def.sideTint && mat !== 'trim' && mat !== 'teamA' && mat !== 'teamB' && mat !== 'glass') {
       // fade from neutral in the middle to the team color on each half
       const k = Math.min(1, Math.abs(b.c.x) / 30) * def.sideTint.amount;
@@ -365,6 +382,29 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     trimMesh.matrixAutoUpdate = false;
     group.add(trimMesh);
     disposables.push(trimGeo, trimMat);
+  }
+
+  if (!glassGeo.empty) {
+    const geo = glassGeo.build();
+    // front faces only: looking through a glass slab tints once, not twice
+    const mat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.13,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    mesh.renderOrder = 1;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
+  // space outside the ship: stars + moons (2 draws; shown in every effects level, it's scenery
+  // players look at through the glass, not decoration)
+  if (def.sky) {
+    const sky = buildSky(def, def.sky);
+    group.add(sky.group);
+    disposables.push(sky);
   }
 
   const extras = buildExtras(def, opts.dust ?? true);

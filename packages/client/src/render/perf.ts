@@ -45,6 +45,12 @@ export const QUALITY: Record<Settings['quality'], QualityProfile> = {
   high: { maxScale: 1, minScale: 0.6, antialias: true, particles: 1, dust: true, atmosphere: true },
 };
 
+/** Highest device pixel ratio rendered (lowered on phones: small, very dense screens). */
+let pixelRatioCap = 1.5;
+export const setPixelRatioCap = (cap: number): void => {
+  pixelRatioCap = Math.max(0.5, cap);
+};
+
 /** Current decorative particle factor (read by effects). */
 export let particleDensity = 1;
 export const setParticleDensity = (d: number): void => {
@@ -80,7 +86,7 @@ export class DynamicResolution {
   }
 
   private dpr(): number {
-    return Math.min(globalThis.devicePixelRatio || 1, 1.5);
+    return Math.min(globalThis.devicePixelRatio || 1, pixelRatioCap);
   }
 
   /** Apply the current scale to the renderer. */

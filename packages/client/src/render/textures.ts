@@ -3,7 +3,8 @@
 // baked vertex colors, so one texture serves every tint of a material.
 import * as THREE from 'three';
 
-export type TexKind = 'hull' | 'floor' | 'panel' | 'crate' | 'pillar' | 'engine' | 'team' | 'stars';
+export type TexKind =
+  'hull' | 'floor' | 'plate' | 'grate' | 'panel' | 'crate' | 'pillar' | 'engine' | 'team' | 'stars';
 
 const SIZE = 256;
 
@@ -121,6 +122,44 @@ const draw: Record<TexKind, (g: Ctx, r: () => number) => void> = {
     seam(g, 0, 0, SIZE, 0, 3);
     seam(g, 0, 0, 0, SIZE, 3);
     seam(g, 0, SIZE / 2, SIZE, SIZE / 2, 2);
+  },
+  // deck plating: big welded plates, alternating slightly in tone, bolts along the seams
+  plate: (g, r) => {
+    grime(g, r, 0.8, 0.04);
+    const s = SIZE / 2;
+    for (let x = 0; x < 2; x++)
+      for (let y = 0; y < 2; y++) {
+        g.fillStyle = (x + y) % 2 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.04)';
+        g.fillRect(x * s, y * s, s, s);
+        for (let i = 12; i < s; i += 29) {
+          bolt(g, x * s + i, y * s + 7, 1.8);
+          bolt(g, x * s + 7, y * s + i, 1.8);
+        }
+      }
+    seam(g, 0, 0, SIZE, 0, 3);
+    seam(g, 0, 0, 0, SIZE, 3);
+    seam(g, 0, s, SIZE, s, 2);
+    seam(g, s, 0, s, SIZE, 2);
+    // a worn walking line down the middle of each plate
+    g.fillStyle = 'rgba(255,255,255,0.05)';
+    g.fillRect(s / 2 - 10, 0, 20, SIZE);
+    g.fillRect(s + s / 2 - 10, 0, 20, SIZE);
+  },
+  // open grating: bright bars over a dark gap (catwalks, gantries)
+  grate: (g, r) => {
+    grime(g, r, 0.35, 0.05);
+    const step = 16;
+    for (let x = 0; x < SIZE; x += step) {
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.fillRect(x, 0, 4, SIZE);
+      g.fillStyle = 'rgba(0,0,0,0.3)';
+      g.fillRect(x + 4, 0, 1, SIZE);
+    }
+    for (let y = 0; y < SIZE; y += step * 4) {
+      g.fillStyle = 'rgba(255,255,255,0.5)';
+      g.fillRect(0, y, SIZE, 6);
+    }
+    seam(g, 0, 0, SIZE, 0, 3);
   },
   // lighter wall panel with an inset and horizontal ribs
   panel: (g, r) => {
@@ -250,6 +289,8 @@ const draw: Record<TexKind, (g: Ctx, r: () => number) => void> = {
 export const TEX_SCALE: Record<TexKind, number | null> = {
   hull: 5,
   floor: 2.5,
+  plate: 4,
+  grate: 2,
   panel: 3,
   crate: null,
   pillar: 2.5,
@@ -259,6 +300,32 @@ export const TEX_SCALE: Record<TexKind, number | null> = {
 };
 
 const cache = new Map<TexKind, THREE.Texture | null>();
+
+/** Contrast of the fine detail (0..1); textures made after a change use it (next level load). */
+let detail = 1;
+export const setTextureDetail = (d: number): void => {
+  const v = Math.min(1, Math.max(0, d));
+  if (v === detail) return;
+  detail = v;
+  for (const t of cache.values()) t?.dispose();
+  cache.clear();
+};
+
+/** Pulls every pixel toward the texture's average grey: same shapes, much less busy. */
+const calm = (g: Ctx, k: number) => {
+  if (k >= 1) return;
+  const img = g.getImageData(0, 0, SIZE, SIZE);
+  const d = img.data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+  const mean = sum / (d.length * 0.75);
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = mean + (d[i] - mean) * k;
+    d[i + 1] = mean + (d[i + 1] - mean) * k;
+    d[i + 2] = mean + (d[i + 2] - mean) * k;
+  }
+  g.putImageData(img, 0, 0);
+};
 
 /** The texture for a surface kind (null when there is no DOM, e.g. in tests). */
 export const surfaceTexture = (kind: TexKind): THREE.Texture | null => {
@@ -276,6 +343,8 @@ export const surfaceTexture = (kind: TexKind): THREE.Texture | null => {
     return null;
   }
   draw[kind](g, rng(kind.length * 7919 + kind.charCodeAt(0)));
+  // the starfield stays crisp (windows), everything else follows the Effects setting
+  if (kind !== 'stars') calm(g, detail);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;

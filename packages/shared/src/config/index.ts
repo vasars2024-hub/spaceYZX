@@ -35,3 +35,6 @@ export const mergeConfig = (base: GameConfig, patch: unknown): GameConfig => {
 export { MOVEMENT_DEFAULTS, COMBAT_DEFAULTS, RULES_DEFAULTS };
 export type { MovementConfig, CombatConfig, RulesConfig };
 export * from './rules';
+export * from './guns';
+export * from './loadout';
+export * from './arena';

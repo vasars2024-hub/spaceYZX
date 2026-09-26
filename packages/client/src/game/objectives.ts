@@ -4,8 +4,8 @@
 import type { LevelDef, Vec3 } from '@space-yz/shared';
 import { v3, sub, len, TICK_DT, TICK_RATE } from '@space-yz/shared';
 
-export const TEAM_COLOR = ['#19e3ff', '#ff8a1f'] as const;
-export const TEAM_HEX = [0x19e3ff, 0xff8a1f] as const;
+// team colors follow the side (T orange, CT cyan) and swap at half time
+export { TEAM_COLOR, TEAM_COLORS as TEAM_HEX } from '../render/team-palette';
 
 /** Which team owns the Tower built on map side `mapSide` this round, and do you attack it? */
 export const towerRole = (

@@ -25,6 +25,7 @@ import {
   whiteNoise,
 } from './dsp';
 import type { Envelope, Freq, Layer, Signal, Wave } from './dsp';
+import { COMBAT_DEFAULTS } from '@space-yz/shared';
 
 export type SoundDef = (sampleRate: number) => Signal;
 
@@ -354,8 +355,9 @@ const defs = {
     );
   },
   throwWindupCharge: (sr) => {
-    // 3 s: loud, rising, tremolo accelerates from 5 Hz to ~30 Hz so everyone hears it coming.
-    const d = 3;
+    // as long as the wind-up itself: loud, rising, tremolo accelerates from 5 Hz to ~30 Hz so
+    // everyone hears it coming (stopped early if the wind-up is cancelled)
+    const d = COMBAT_DEFAULTS.windupSec;
     const pitch = expSweep(110, 440, d);
     const rate = (t: number): number => 5 * t + (25 / (2 * d)) * t * t; // integral of 5->30 Hz
     const rise: Envelope = (t) => 0.35 + 0.65 * (t / d) * (t / d);

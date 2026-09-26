@@ -72,7 +72,13 @@ export class CombatFeature implements ClientFeature {
   viewmodel = new Viewmodel();
   hud!: CombatHud;
   private whistles = new Map<number, LoopHandle>();
-  private windupSounds = new Map<number, boolean>();
+  /** each player's wind-up charge sound, stopped when the wind-up ends in any way */
+  private windupSounds = new Map<number, { h: LoopHandle; at: number }>();
+
+  private stopWindupSound(id: number, fade: number): void {
+    this.windupSounds.get(id)?.h.stop(fade);
+    this.windupSounds.delete(id);
+  }
   private pullLoops = new Map<number, LoopHandle>();
   private myKills: { t: number; throwId: number }[] = [];
   private streakCount = 0;
@@ -143,6 +149,7 @@ export class CombatFeature implements ClientFeature {
     for (const e of events) {
       switch (e.type) {
         case 'throw':
+          if (e.windup) this.stopWindupSound(e.player, 0.03);
           a.play3d(e.windup ? 'windupFire' : 'throw', posOf(e.player), {
             volume: e.windup ? 1 : 0.7,
             refDistance: 6,
@@ -150,14 +157,16 @@ export class CombatFeature implements ClientFeature {
           if (e.player === me) c.shake = Math.max(c.shake, e.windup ? 0.5 : 0.15);
           break;
         case 'windupStart':
-          if (!this.windupSounds.get(e.player)) {
-            a.play3d('throwWindupCharge', posOf(e.player), {
+          // (a fresh start replaces an old charge: never two at once, never stuck silent)
+          this.stopWindupSound(e.player, 0.03);
+          this.windupSounds.set(e.player, {
+            h: a.play3dHandle('throwWindupCharge', posOf(e.player), {
               volume: 1,
               refDistance: 14,
               maxDistance: DANGER_RANGE,
-            });
-            this.windupSounds.set(e.player, true);
-          }
+            }),
+            at: this.time,
+          });
           break;
         case 'windupReady':
           a.play3d('windupReady', posOf(e.player), {
@@ -166,7 +175,7 @@ export class CombatFeature implements ClientFeature {
           });
           break;
         case 'windupCancel':
-          this.windupSounds.delete(e.player);
+          this.stopWindupSound(e.player, 0.08);
           break;
         case 'catch':
           if (e.player === me) a.play('catch', { volume: 0.8 });
@@ -459,6 +468,15 @@ export class CombatFeature implements ClientFeature {
     const me = s.local();
     const others = s.others();
     const world = s.world();
+    // charge sounds follow their player, and stop if the wind-up ended without an event we saw
+    // (death, a hit that cancelled it, the player going out of sight)
+    // (others are drawn a few ticks in the past: give a fresh charge a moment to show up)
+    for (const [id, w] of this.windupSounds) {
+      const p = world.players.find((q) => q.id === id);
+      const ended = !p || !p.alive || p.windup === 0;
+      if (ended && this.time - w.at > 0.3) this.stopWindupSound(id, 0.08);
+      else if (p) w.h.setPosition(p.pos);
+    }
     // CS mode (from the config the sim runs with, or the match): guns, dim players
     this.cs = loadoutOf(s.config).guns || s.match?.()?.loadout === 'cs';
     this.models.setCsMode(this.cs);

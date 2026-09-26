@@ -89,7 +89,7 @@ const REQUIRED: SoundName[] = [
 
 /** Allowed duration in seconds per sound. */
 function durationRange(name: SoundName): [number, number] {
-  if (name === 'throwWindupCharge') return [2.5, 3.5];
+  if (name === 'throwWindupCharge') return [1, 1.6]; // as long as the wind-up (1.22 s)
   if (LOOP_SOUNDS.has(name)) return [0.5, 3];
   return [0.02, 1.25];
 }

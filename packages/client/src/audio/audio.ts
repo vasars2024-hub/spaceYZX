@@ -190,6 +190,24 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * A positional one-shot that can be moved and stopped early (e.g. a wind-up charge that may be
+   * cancelled). Out of hearing range when it starts: a no-op handle.
+   */
+  play3dHandle(name: SoundName, position: Vec3, opts: SpatialOptions = {}): LoopHandle {
+    try {
+      if (!this.inHearingRange(position, opts)) return NOOP_LOOP;
+      const panner = this.createPanner(position, opts);
+      if (!panner) return NOOP_LOOP;
+      const voice = this.startVoice(name, opts, false, panner);
+      if (!voice) return NOOP_LOOP;
+      this.track(name, voice);
+      return this.loopHandle(voice, panner);
+    } catch (_err) {
+      return NOOP_LOOP;
+    }
+  }
+
   /** Starts a looping non-positional sound (e.g. wind while moving fast). */
   loop2d(name: SoundName, opts: PlayOptions = {}): LoopHandle {
     try {

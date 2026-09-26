@@ -21,6 +21,9 @@ export const quietSqliteWarning = (): void => {
   }) as typeof process.emitWarning;
 };
 
+/** Migration 3 moves old 5v5 ratings onto Premier's scale by this much. */
+export const PREMIER_MIGRATION_SHIFT = -500;
+
 const MIGRATIONS: string[] = [
   // 1: accounts, ratings, matches, reports, bans
   `
@@ -96,6 +99,51 @@ const MIGRATIONS: string[] = [
   ALTER TABLE match_players ADD COLUMN duel_wins INTEGER;
   ALTER TABLE match_players ADD COLUMN duel_losses INTEGER;
   `,
+  // 3: ranked = Premier + Duels (rating/ladders.ts). The old ladders' rows ('1v1', '2v2', '5v5',
+  // 'arena') stay in `ratings` untouched but are no longer read.
+  // - Premier starts from the old 5v5 rating, moved from the old scale (a new player was 1500)
+  //   to Premier's (a new player is 1000): old - 500. Placement starts over (5 wins).
+  // - Duels starts from the better of the old 1v1 / 2v2 ratings (same scale), with the games
+  //   and wins of both.
+  // - Seasons (Premier): season 1 starts now; season_results archives each finished season.
+  // - settings: small server settings (Premier opening hours).
+  `
+  ALTER TABLE ratings ADD COLUMN season_wins INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE ratings ADD COLUMN season_games INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE matches ADD COLUMN ladder TEXT;
+  CREATE TABLE seasons (
+    number INTEGER PRIMARY KEY,
+    started_at INTEGER NOT NULL
+  );
+  INSERT INTO seasons (number, started_at) VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+  CREATE TABLE season_results (
+    season INTEGER NOT NULL,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    ladder TEXT NOT NULL,
+    rating REAL NOT NULL,
+    games INTEGER NOT NULL,
+    wins INTEGER NOT NULL,
+    placed INTEGER NOT NULL,
+    PRIMARY KEY (season, player_id, ladder)
+  );
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  INSERT INTO ratings (player_id, mode, rating, rd, vol, games, wins, last_played)
+    SELECT player_id, 'premier', rating + (${PREMIER_MIGRATION_SHIFT}), rd, vol, games, wins, last_played
+    FROM ratings WHERE mode = '5v5';
+  INSERT INTO ratings (player_id, mode, rating, rd, vol, games, wins, last_played)
+    SELECT r.player_id, 'duels', r.rating, r.rd, r.vol,
+      (SELECT SUM(x.games) FROM ratings x WHERE x.player_id = r.player_id AND x.mode IN ('1v1', '2v2')),
+      (SELECT SUM(x.wins) FROM ratings x WHERE x.player_id = r.player_id AND x.mode IN ('1v1', '2v2')),
+      (SELECT MAX(x.last_played) FROM ratings x WHERE x.player_id = r.player_id AND x.mode IN ('1v1', '2v2'))
+    FROM ratings r
+    WHERE r.mode IN ('1v1', '2v2') AND NOT EXISTS (
+      SELECT 1 FROM ratings b WHERE b.player_id = r.player_id AND b.mode IN ('1v1', '2v2')
+        AND (b.rating > r.rating OR (b.rating = r.rating AND b.mode < r.mode))
+    );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -106,8 +154,14 @@ export const openDb = (file: string): Db => {
   const db = new (sqlite().DatabaseSync)(file);
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 2000;');
+  migrate(db);
+  return db;
+};
+
+/** Run the migrations the database hasn't had yet, up to version `upTo` (tests stop early). */
+export const migrate = (db: Db, upTo = MIGRATIONS.length): void => {
   const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  for (let v = row.user_version; v < MIGRATIONS.length; v++) {
+  for (let v = row.user_version; v < Math.min(upTo, MIGRATIONS.length); v++) {
     db.exec('BEGIN');
     try {
       db.exec(MIGRATIONS[v]);
@@ -118,7 +172,6 @@ export const openDb = (file: string): Db => {
       throw err;
     }
   }
-  return db;
 };
 
 /** Daily backup: copy the live database into data/backups/ (keeps the last 7). */

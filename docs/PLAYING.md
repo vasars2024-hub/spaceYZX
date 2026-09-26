@@ -93,6 +93,68 @@ CS mode.
 - **Taking over a bot**: when you're dead and watching a bot teammate, press **E** to take
   control of it.
 
+## Parkour races
+
+**Race** (Practice → Race, or pick **Race** when you create an online room): no weapons, just
+movement. Up to 8 racers start together from a grid; the first over the finish line wins.
+Each track takes about **3 minutes**.
+
+- **Start**: in the lobby you can run the track freely. Then everyone is put on the grid for
+  **3 – 2 – 1 – GO** (the host can start early from the Esc menu; offline it starts right
+  away). Practice with **1 racer** is a **time trial**; with more, bot racers join you.
+- **Nobody can hurt anybody.** Other racers are drawn **see-through** with their name and
+  place ("Nova · 2nd") and you run straight through each other — nobody can block you.
+- **Checkpoints**: numbered gates (1, 2, 3 … FINISH) you must pass **in order**; the next one
+  is marked on your screen with its distance, and floor arrows show the way. **Fall off**
+  (into a river, a crevasse, the valley) or **hold R** and you're put back at your last
+  checkpoint, frozen for **1.5 s**.
+- **SURGE** (Shift, the dash key): a burst of speed, +60 % for about a second — only **3 per
+  race**. Use them on long straights, or to clear a gap no normal jump reaches.
+- **Jetpack fuel**: in a race your tank is bigger but **never refills by itself**. Glowing
+  blue **fuel cells** on the track fill it up (each once per race, and only if it isn't
+  full); a checkpoint respawn fills it too.
+- **Forks**: every track splits several times into a **safe, longer way** (normal floor
+  arrows) and a **risky shortcut** (red arrows): narrow beams, drops, gaps that need the
+  jetpack or a surge, walls you run along with the **gravity boots** (press **F** next to the
+  wall, run along it, jump off at the end). Fall off a shortcut and the penalty eats the
+  time you hoped to save — so plan where to spend your surges and your fuel.
+- **Time limit**: a racer still out at twice the track's par time (6 minutes) is **DNF**.
+  When everyone else is done, the last racer gets **30 more seconds**.
+- **HUD**: race clock, your place (2/6), checkpoints (CP 3/7), SURGE charges and fuel (bottom
+  left), and at each checkpoint your **split** against your personal best — **green** =
+  faster, **red** = slower. Your **personal best** and its **ghost** (a faint orange racer
+  running your best line) are kept in this browser for each track.
+- **Results**: places, times and gaps; the next race starts by itself.
+- **Race ladder**: races will get their **own rank** (separate from Premier and Duels), rated
+  from finishing order. The rating is ready; the ranked race queue comes later.
+
+### Cliffline
+
+An alpine ridge at sunrise: snow paths on rock ridges, pine forests far below, the low sun in
+the east. 7 checkpoints.
+
+- Hut terrace and the ridge run → **switchbacks** down the cliff (shortcut: five **drops** onto
+  small ledges) → **boulder hops** over the crevasse and a climb to Peak One → a **zip-rail** to
+  Peak Two, round the notch (shortcut: **jetpack** straight across it) → a **launch pad** onto
+  the high ridge, zigzag (shortcut: **gravity boots** along the cliff face over the chasm) →
+  the **ice-cave portal** through the mountain and the long zip-rail down to the valley →
+  round the lake on the causeway (shortcut: **ice floes**, with one open lead only a
+  **surge-jump** clears) → up to the lodge and the finish arch. Fuel cells before the notch
+  and on the high ridge.
+
+### Canopy Run
+
+Jungle treetops in warm sunbeams: plank walkways along giant branches, rope zip-rails, red
+mushroom launch pads, a river gorge and temple ruins. 7 checkpoints.
+
+- The great tree's deck and the branches → a **rope zip-rail** and **mushroom pads** up the
+  canopy → rope bridges between the tree decks (shortcut: the bare **branch beams**) → the
+  **spiral stair** round the fig trunk down to the river → the boardwalk (shortcut:
+  **stepping stones** over the rapids) → a spring up the waterfall cliff into the ruins →
+  round the temple (shortcut: **gravity boots** along the temple wall over the collapse) →
+  the long rope rail down through the canopy → the twin trees (shortcut: **jetpack** across
+  the gap) → a mushroom up to the finish in the last tree's hollow.
+
 ## What the markers mean
 
 - **Teammates** have their name above them: bright when you can see them, faded when a wall
@@ -171,13 +233,72 @@ site** on the west side, halfway between the spawns.
 - **Rift portals**: a glowing portal at the back of each site. Walk into A's and you come out
   of B's (and back) — the fastest rotation on the map, but everyone hears it at both ends.
 
+### Canyon Relay
+
+The first map in the open air: desert mesas at sunset, the same for both teams (mirrored north
+↔ south). Cyan's camp is at the top, Orange's at the bottom; **A site** is in the east basin,
+**B site** in the west basin, halfway between the camps.
+
+- **Camps**: walled, open to the sky, the Tower in the middle. A gate on each side leads out to
+  an **outer path**; right beside it a **cliff ramp** climbs onto your mesa.
+- **Mesas**: two raised plateaus facing each other across **the gorge**. Each has a **rock
+  spire** in the middle (ramps up both sides) with a long laser line over the gorge, and
+  boulders along the edge. About 9 s from the camp to the gorge edge.
+- **The gorge**: a deep drop across the middle of the map — **fall in and you die**. Ways
+  across: the **launch pads** on each mesa edge throw you over it onto the other mesa (fast,
+  but you land in the open), or the two narrow **rock bridges** near the ends (about 10 s from
+  the camp). In the middle stands the **relay rock**, a little lower than the mesas: the
+  power-up sits on it, and in the collapse it is the last safe spot. Drop down onto it; getting
+  back up takes a jump and a climb.
+- **Slot canyons** (east and west): narrow and winding, with angled rock walls that are good for
+  Boomerang bank shots. They run from the outer paths down into the **basins** past the ends of
+  the gorge, where the bomb sites are, under a natural rock arch. A **passage** links each
+  canyon to each mesa. About 10 s from a camp to a site; site to site takes about 14 s.
+
+### Sakura Hold
+
+A small cherry-blossom castle at dusk for **1v1–3v3** Elimination and small Bomb games (not in
+the Premier map pool). Mirrored north ↔ south: each team spawns in a covered **gatehouse**;
+**A site** is in the east courtyard, **B site** in the west one.
+
+- **The moat**: a shallow ring of water around the courtyard. You can wade through it anywhere,
+  but it **slows you to half speed**. The bridge at each gate (under the red torii) and the wall
+  ramps cross it dry.
+- **Castle walls** (east and west): walk up the ramp at either end and along the top, 4 m up;
+  in the middle a ramp leads down over the moat straight into the site.
+- **The keep** (middle): three floors and a roof. Doors on the east and west side, ramps inside
+  zig-zag up to the roof; windows on every floor. A **launch pad** in front of each side of the
+  keep throws you up onto the roof, where the power-up floats over the hatch.
+- **Paper walls (shoji)**: the pale screens in the courtyard block players, bullets, lasers and
+  sight like any wall — **but the Boomerang flies straight through them**. Throw at an enemy
+  you know is behind one.
+
 ## Ranked
 
-- **Play online → Ranked 1v1 / 2v2 / 5v5** finds opponents of your level.
-- Your first 5 matches in a mode are placements. After that you get a rank: **Asteroid → Moon
-  → Planet → Gas Giant → Star → Supergiant** (each in III, II, I), and the very best players
-  on the server are **Galaxy**. Your **global rank** combines all modes.
+Ranked has two ladders, both played with the Boomerang kit. Solo queue: everyone searches on
+their own (there are no parties).
+
+- **Premier** — the main rank. **5v5 Bomb.** When a match is found, the two teams take turns
+  **banning maps** (any player can ban for their team; 15 seconds per turn, or a random map is
+  banned for you) until one map is left, and that one is played. The pool is every map with
+  bomb sites, so new maps join by themselves. If only a few people are searching, a **4v4**
+  can start after about 90 seconds.
+  - Your Premier rank is **one number**, starting at 1000, with a colour: grey under 1000,
+    light blue from 1000, blue 1200, purple 1400, pink 1600, red 1800 and gold from 2000
+    (named Asteroid, Moon, Planet, Gas Giant, Star, Supergiant, Galaxy).
+  - The number stays hidden until you have **5 wins** ("Placement 2/5 wins").
+  - **Seasons**: when the host starts a new season, every Premier rating moves 40 % of the way
+    back to 1000 and everyone plays 5 placement wins again. Last season's final rating stays
+    on your profile and on the leaderboard.
+  - The host can give Premier **opening hours** (for example Fri–Sun 18:00–23:00) while there
+    aren't many players; the Ranked screen then shows when it opens ("Premier opens in 2h 13m").
+- **Duels** — **1v1 or 2v2** on Tower rules. Both queues share **one** rating. After 5 games
+  you get a rank: **Asteroid → Moon → Planet → Gas Giant → Star → Supergiant** (each in III,
+  II, I), and the very best Duels players on the server are **Galaxy**.
+- Arena 1v1 and 3v3 are casual only (online rooms and Practice).
 - Leaving a ranked match counts as a loss. Team killing, attacking your own carrier, or
   standing still (AFK) gets a warning, then a kick and a temporary ranked ban.
-- **Profile** shows your ranks and recent matches, and your **login code**. Copy it to play
-  as yourself on another PC ("Use this code" there). Keep it secret: it is your password.
+- **Leaderboards**: Premier (this season and past seasons) and Duels.
+- **Profile** shows your Premier number and colour (or your placement progress), your Duels
+  rating, past seasons, your recent matches, and your **login code**. Copy it to play as
+  yourself on another PC ("Use this code" there). Keep it secret: it is your password.

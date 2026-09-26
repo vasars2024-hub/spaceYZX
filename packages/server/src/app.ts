@@ -13,6 +13,8 @@ export interface GameServerOptions {
   services?: HubServices;
   /** Extra HTTP routes (JSON API); return true if handled. */
   api?: (req: http.IncomingMessage, res: http.ServerResponse) => boolean | Promise<boolean>;
+  /** The player's real address when behind a trusted reverse proxy ('' = use the default). */
+  clientIp?: (req: http.IncomingMessage) => string;
 }
 
 export interface GameServer {
@@ -69,7 +71,7 @@ export const startGameServer = (opts: GameServerOptions): Promise<GameServer> =>
     // Behind the Cloudflare tunnel every player arrives from cloudflared on this PC; only then
     // is its header (the player's real address) trusted. Direct players can't fake it.
     const fwd = isLoopback(remote) ? String(req.headers['cf-connecting-ip'] ?? '') : '';
-    const ip = fwd || remote;
+    const ip = opts.clientIp?.(req) || fwd || remote;
     hub.accept(ws, ip);
   });
 

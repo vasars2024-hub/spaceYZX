@@ -2,6 +2,7 @@
 import './styles.css';
 import './ui/mobile.css';
 import './ui/menu-flow.css';
+import './ui/race.css';
 import type { Vec3 } from '@space-yz/shared';
 import { yawToView, qFromBasis, normalize, cross, sub, v3, dot } from '@space-yz/shared';
 import { App } from './app';

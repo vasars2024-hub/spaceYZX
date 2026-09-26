@@ -15,7 +15,13 @@ export type Material =
   | 'engine'
   | 'teamA'
   | 'teamB'
-  | 'trim'; // emissive strip
+  | 'trim' // emissive strip
+  // natural, untextured surfaces (outdoor maps: flat low-poly colour + baked light)
+  | 'rock'
+  | 'sand'
+  | 'wood'
+  | 'paper' // shoji screens (see BoxDef.boomerangPasses)
+  | 'leaf'; // foliage (blossom canopies, shrubs)
 
 export interface BoxDef {
   c: Vec3; // center
@@ -26,6 +32,12 @@ export interface BoxDef {
   trim?: number; // emissive edge trim color
   noCollide?: boolean; // decoration only
   noRender?: boolean; // invisible collider
+  /**
+   * The Boomerang flies straight through it (paper screens); players, bullets, lasers and
+   * grenades still collide, and it still blocks line of sight (bots, the server's visibility
+   * culling, baked light). Only the Boomerang's flight raycasts skip it (sim/combat.ts).
+   */
+  boomerangPasses?: boolean;
 }
 
 export interface GravityZoneDef {
@@ -111,6 +123,39 @@ export interface SkyDef {
   }[];
 }
 
+/** A deadly volume (a gorge, a pit): a living player whose body centre enters it dies. */
+export interface KillVolumeDef {
+  min: Vec3;
+  max: Vec3;
+}
+
+/**
+ * A volume that slows players (wading through a moat): while the body centre is inside,
+ * horizontal speed is capped at `speedMul` × sprint speed (sim/movement.ts).
+ */
+export interface SlowZoneDef {
+  min: Vec3;
+  max: Vec3;
+  speedMul: number;
+}
+
+/**
+ * An open-air sky (outdoor maps): a gradient dome drawn behind everything, an optional sun
+ * disc, and a coloured key light baked into the level. The fog should use the horizon colour so
+ * far terrain melts into the sky.
+ */
+export interface OutdoorSkyDef {
+  /** straight up */
+  top: number;
+  /** at the horizon */
+  horizon: number;
+  /** below the horizon */
+  ground: number;
+  sun?: { dir: Vec3; color: number; sizeDeg: number };
+  /** colour of the baked key light (default white) */
+  sunLight?: number;
+}
+
 /** A light baked into the level's surfaces (plus a glow, and optionally a light shaft). */
 export interface LightDef {
   pos: Vec3;
@@ -182,8 +227,83 @@ export interface LevelDef {
   powerups?: Vec3[];
   /** Space outside the ship (visible through 'skyglass'). */
   sky?: SkyDef;
+  /** Open-air sky for outdoor maps (render only). */
+  outdoor?: OutdoorSkyDef;
+  /** Deadly volumes (falling into a gorge): sim/world.ts kills whoever enters one. */
+  killVolumes?: KillVolumeDef[];
+  /** Volumes that slow players down (a moat): sim/movement.ts. */
+  slowZones?: SlowZoneDef[];
   /** Sky duel overtime arena high above the ship (competitive maps; level/sky-arena.ts). */
   skyArena?: SkyArenaDef;
   /** Arena 1v1 maps: the duel pits, top pit first (rules/arena.ts). */
   arenaPits?: ArenaPitDef[];
+  /** Race tracks: the course (start, checkpoints, finish, fuel cells...; sim/race.ts). */
+  race?: RaceDef;
+}
+
+/** A race gate (checkpoint or finish): the body centre passing through `min..max` counts. */
+export interface RaceGateDef {
+  min: Vec3;
+  max: Vec3;
+  /** where you come back (feet) after a fall or the respawn key, facing `yawDeg` */
+  respawn: Vec3;
+  yawDeg: number;
+}
+
+/**
+ * One point of a track's racing line: the safe route, in order. Bot racers and the timing test
+ * drive along it; it also orders racers between gates.
+ */
+export interface RaceLineNode {
+  /** feet position */
+  pos: Vec3;
+  /** jump here (a take-off edge, or under a zip-rail's start to grab it) */
+  jump?: boolean;
+  /** a portal: walk into it; the next node is where you come out */
+  portal?: boolean;
+  /** risky lines: after this node's jump keep Space held this many ticks (a jetpack burn) */
+  jet?: number;
+  /** risky lines: SURGE here (just before a long jump) */
+  surge?: boolean;
+  /** risky lines: switch the gravity boots on here (stick to the wall beside you) */
+  mag?: boolean;
+  /** gates passed before reaching this node (0 = before checkpoint 1) */
+  cp: number;
+}
+
+/** A fork in a track: a safe longer path and a risky shortcut (shown in docs and tests). */
+export interface RaceForkDef {
+  name: string;
+  /** checkpoint section it is in (gates passed before it) */
+  cp: number;
+  safe: string;
+  risky: string;
+  /**
+   * the risky shortcut's line, from the fork to where it rejoins (with the moves it needs:
+   * jumps, jetpack burns, surges, gravity boots) — the track tests drive it
+   */
+  riskyLine: RaceLineNode[];
+}
+
+/**
+ * A race track (rules/race.ts, sim/race.ts): start grid, numbered checkpoint gates in order,
+ * the finish arch, fuel cells that refill the jetpack, and what counts as falling off.
+ */
+export interface RaceDef {
+  /** a good run, seconds (the DNF limit is a multiple of it) */
+  parSec: number;
+  /** respawn point before checkpoint 1 (feet), facing the course */
+  start: { respawn: Vec3; yawDeg: number };
+  /** start slots, up to 8 (feet) */
+  grid: SpawnDef[];
+  checkpoints: RaceGateDef[];
+  finish: RaceGateDef;
+  /** below this height you fell off: back to your last checkpoint */
+  killY: number;
+  /** more fall-off volumes (a river, a crevasse) */
+  killVolumes?: { min: Vec3; max: Vec3 }[];
+  /** fuel cells (body centre): each refills your jetpack once per race */
+  fuelCells?: Vec3[];
+  line: RaceLineNode[];
+  forks?: RaceForkDef[];
 }

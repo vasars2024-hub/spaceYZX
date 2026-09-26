@@ -6,6 +6,7 @@ import { h, slider } from './menus';
 import { icon, botBadge } from './icons';
 import {
   ARENA_ROOM_SIZES,
+  RACE_ROOM_SIZES,
   ROOM_OBJECTIVES,
   ROOM_SIZES,
   ROOM_STEPS,
@@ -13,6 +14,7 @@ import {
   botSkillChoices,
   initialRoom,
   isArenaObjective,
+  isRaceObjective,
   pickRoomMap,
   pickRoomObjective,
   roomBack,
@@ -40,7 +42,7 @@ export interface OnlineMenuHandlers {
   getName(): string;
   setName(n: string): void;
   create(
-    /** 'arena': an Arena 1v1 room */
+    /** 'arena': an Arena 1v1 room; 'race': a parkour race room */
     mode: RoomMode,
     map: string,
     bots: number,
@@ -58,6 +60,14 @@ export interface OnlineMenuHandlers {
   /** extra panels shown under Join (kept for plug-ins) */
   columns?: HTMLElement[];
 }
+
+/** Arena and race rooms: the size cards count players in all. */
+const sizeCard = (o: RoomState['objective'], z: RoomSize): { label: string; desc: string } =>
+  isArenaObjective(o)
+    ? ARENA_ROOM_SIZES[z]
+    : isRaceObjective(o)
+      ? RACE_ROOM_SIZES[z]
+      : { label: z, desc: SIZE_DESC[z] };
 
 const SIZE_DESC: Record<RoomSize, string> = {
   '1v1': 'A duel: you and one friend.',
@@ -234,9 +244,9 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
         (z) => z === s.size,
         (z, selected, p) =>
           card({
-            // (Arena rooms: how many players in all, each duel is 1v1)
-            title: isArenaObjective(s.objective) ? ARENA_ROOM_SIZES[z].label : z,
-            desc: isArenaObjective(s.objective) ? ARENA_ROOM_SIZES[z].desc : SIZE_DESC[z],
+            // (Arena and race rooms: how many players in all)
+            title: sizeCard(s.objective, z).label,
+            desc: sizeCard(s.objective, z).desc,
             art: icon(z === '1v1' ? 'profile' : 'team'),
             selected,
             cls: 'size',
@@ -259,10 +269,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
     summary.replaceChildren(
       sumItem(icon(o.icon), o.name),
       sumItem(mapMini(s.map), getMap(s.map).name, 'sum-map'),
-      sumItem(
-        icon(s.size === '1v1' ? 'profile' : 'team'),
-        isArenaObjective(s.objective) ? ARENA_ROOM_SIZES[s.size].label : s.size,
-      ),
+      sumItem(icon(s.size === '1v1' ? 'profile' : 'team'), sizeCard(s.objective, s.size).label),
       sumItem(
         s.bots ? botBadge(s.skill) : icon('bot'),
         s.bots ? `${BOT_SKILL_LABELS[s.skill]} bots` : 'No bots',

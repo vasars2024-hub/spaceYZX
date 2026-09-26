@@ -44,6 +44,12 @@ export type SimEvent =
   | { type: 'launch'; player: number; pad: number }
   | { type: 'portal'; player: number; portal: number; from: Vec3; to: Vec3 }
   | { type: 'dash'; player: number }
+  // races (sim/race.ts): a SURGE, a gate passed (`cp` = gates passed now), back to a
+  // checkpoint (a fall or the respawn key; `penalty`: frozen for a moment), a fuel cell used
+  | { type: 'surge'; player: number }
+  | { type: 'raceCp'; player: number; cp: number; finish: boolean }
+  | { type: 'raceRespawn'; player: number; cp: number; reason: 'fall' | 'key'; penalty: boolean }
+  | { type: 'raceFuel'; player: number; cell: number }
   | { type: 'throw'; player: number; boomerang: number; windup: boolean }
   | { type: 'catch'; player: number; boomerang: number }
   | { type: 'pickup'; player: number; boomerang: number }

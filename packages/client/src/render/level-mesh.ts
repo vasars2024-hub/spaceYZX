@@ -18,7 +18,7 @@ import {
   lineOfSight,
 } from '@space-yz/shared';
 import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
-import { buildSky } from './sky';
+import { buildOutdoorSky, buildSky } from './sky';
 
 export const MATERIAL_COLORS: Record<Material, number> = {
   hull: 0x3a4660,
@@ -34,6 +34,11 @@ export const MATERIAL_COLORS: Record<Material, number> = {
   glass: 0xffffff,
   skyglass: 0x9fd0ff,
   trim: 0xffffff,
+  rock: 0xb5653b,
+  sand: 0xd8b27a,
+  wood: 0x6b4a34,
+  paper: 0xede3d1,
+  leaf: 0xf4b8c8,
 };
 
 const TEX_OF: Record<Material, TexKind | null> = {
@@ -50,6 +55,12 @@ const TEX_OF: Record<Material, TexKind | null> = {
   glass: 'stars',
   skyglass: null,
   trim: null,
+  // natural surfaces: flat colour + baked light (the low-poly outdoor look)
+  rock: null,
+  sand: null,
+  wood: null,
+  paper: null,
+  leaf: null,
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -174,14 +185,23 @@ const shade = (
   variation: number,
   bottom: boolean,
   ambient: number,
+  /** coloured key light (outdoor maps: a sunset sun); null = white */
+  sun: THREE.Color | null = null,
 ): THREE.Color => {
   const diffuse = Math.max(0, dot(n, LIGHT));
   const fill = Math.max(0, -dot(n, LIGHT)) * 0.15;
   const up = n.y > 0.5 ? 0.06 : 0;
-  let k = (0.34 + 0.4 * diffuse + fill + up) * ambient;
+  let k = (0.34 + (sun ? 0 : 0.4 * diffuse) + fill + up) * ambient;
   k *= 0.94 + variation * 0.12;
   if (bottom) k *= 0.72; // darker toward the bottom of walls
-  return base.clone().multiplyScalar(k);
+  const out = base.clone().multiplyScalar(k);
+  if (sun) {
+    const s = 0.4 * diffuse * ambient * (0.94 + variation * 0.12) * (bottom ? 0.72 : 1);
+    out.r += base.r * sun.r * s;
+    out.g += base.g * sun.g * s;
+    out.b += base.b * sun.b * s;
+  }
+  return out;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -319,6 +339,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   );
   const tintNeg = def.sideTint ? new THREE.Color(def.sideTint.neg) : null;
   const tintPos = def.sideTint ? new THREE.Color(def.sideTint.pos) : null;
+  const sun = def.outdoor?.sunLight !== undefined ? new THREE.Color(def.outdoor.sunLight) : null;
 
   def.boxes.forEach((b, bi) => {
     if (b.noRender) return;
@@ -356,7 +377,9 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       }
       const variation = hash(bi * 7 + fi);
       const vertical = Math.abs(n.y) < 0.5;
-      const cols = f.corners.map(([, y]) => shade(base, n, variation, vertical && y < 0, ambient));
+      const cols = f.corners.map(([, y]) =>
+        shade(base, n, variation, vertical && y < 0, ambient, sun),
+      );
       tiledQuad(builder(tex ?? 'none'), pts, cols, n, bi * 31 + fi, tex, base, lightAt, brightness);
     });
     if (b.trim !== undefined)
@@ -403,6 +426,12 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   // players look at through the glass, not decoration)
   if (def.sky) {
     const sky = buildSky(def, def.sky);
+    group.add(sky.group);
+    disposables.push(sky);
+  }
+  // open air (outdoor maps): a gradient sky dome and the sun (2 draws)
+  if (def.outdoor) {
+    const sky = buildOutdoorSky(def, def.outdoor);
     group.add(sky.group);
     disposables.push(sky);
   }

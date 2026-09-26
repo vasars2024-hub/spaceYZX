@@ -33,7 +33,6 @@ describe('Arena 1v1 over WebSocket', () => {
       api: services.api,
     });
     services.queue.start(server.hub);
-    services.queue.arenaGatherMs = 1500;
   });
   afterAll(async () => {
     for (const b of bots) b.stop();
@@ -79,73 +78,43 @@ describe('Arena 1v1 over WebSocket', () => {
     expect(room.members.get(host.core.localId)!.team).toBe(side);
   }, 20000);
 
-  it('queueing arena with several players starts one ranked arena room for all of them', async () => {
-    const names = ['Q1', 'Q2', 'Q3'];
-    const qs = names.map((n) => bot(`Arena${n}`, (core) => core.queueRanked('arena')));
-    await until(() => qs.every((b) => b.core.state === 'room'), 10000);
-    const code = qs[0].core.code;
-    for (const b of qs) {
-      expect(b.core.code).toBe(code);
-      expect(b.core.mode).toBe('arena');
-      expect(b.core.ranked).toBe(true);
-    }
-    const room = server.hub.rooms.get(code)!;
-    expect(room.rules).toBeInstanceOf(ArenaRules);
-    expect(room.humans.length).toBe(3);
-    // a different kit queues separately: one player alone never starts
-    const cs = bot('ArenaCS', (core) => core.queueRanked('arena', 'cs'));
-    await wait(2500);
-    expect(cs.core.state).toBe('lobby');
-    expect(cs.core.queue.mode).toBe('arena');
-    cs.core.queueRanked(null);
-    // unknown queue names are refused
-    const bad = bot('ArenaBad', (core) => core.queueRanked('practice'));
-    await until(() => !!bad.core.queue.error);
-    expect(bad.core.queue.error).toMatch(/Unknown mode/);
-  }, 20000);
+  it('the Arena has no ranked queue any more (it stays a casual room mode)', async () => {
+    const q = bot('ArenaQ', (core) => core.sendJson({ t: 'queue', mode: 'arena' as never }));
+    await until(() => !!q.core.queue.error);
+    expect(q.core.queue.error).toMatch(/Unknown ranked queue/);
+    expect(q.core.queue.mode).toBeNull();
+    expect(q.core.state).toBe('lobby');
+  });
 
-  it('a ranked arena rates each duel on the arena ladder, apart from 1v1', async () => {
-    const pair = ['R1', 'R2'].map((n) => bot(`Arena${n}`, (core) => core.queueRanked('arena')));
-    await until(() => pair.every((b) => b.core.state === 'room'), 10000);
-    const room = server.hub.rooms.get(pair[0].core.code)!;
-    const rules = room.rules as ArenaRules;
-    // a short arena: one round
-    Object.assign(rules.st.settings, {
-      matchMin: 0.02,
-      duelSec: 3,
-      breakSec: 0.5,
-      afterDuelSec: 0.2,
+  it('a finished arena is recorded in the match history without any rating', () => {
+    const a = services.accounts.login('ArenaHist1').account.id;
+    const b = services.accounts.login('ArenaHist2').account.id;
+    const row = (id: number, accountId: number, place: number) => ({
+      id,
+      accountId,
+      name: `P${id}`,
+      bot: false,
+      place,
+      wins: place === 1 ? 1 : 0,
+      losses: place === 1 ? 0 : 1,
+      kills: 1,
+      deaths: 1,
+      damage: 100,
+      left: false,
     });
-    let result: ArenaResult | null = null;
-    const record = rules.onResult!;
-    rules.onResult = (r, x) => {
-      result = x;
-      record(r, x);
+    const result: ArenaResult = {
+      mode: 'arena',
+      loadout: 'lethal',
+      reason: 'time',
+      rounds: 1,
+      durationSec: 60,
+      standings: [row(1, a, 1), row(2, b, 2)],
+      duels: [{ round: 1, a: 1, b: 2, winner: 1, reason: 'kill' as never }],
     };
-    await until(() => result !== null, 15000);
-    const res = result as unknown as ArenaResult;
-    expect(res.duels.length).toBe(1);
-    expect(res.standings[0].place).toBe(1);
-    expect(res.standings[0].wins).toBe(1);
-    const ids = res.standings.map((s) => s.accountId!);
-    const winner = ids[0];
-    const loser = ids[1];
-    const w = services.ranked.rating(winner, 'arena');
-    const l = services.ranked.rating(loser, 'arena');
-    expect(w.games).toBe(1);
-    expect(w.wins).toBe(1);
-    expect(w.rating.rating).toBeGreaterThan(1500);
-    expect(l.rating.rating).toBeLessThan(1500);
-    // the normal 1v1 ladder is untouched
-    expect(services.ranked.rating(winner, '1v1').games).toBe(0);
-    const profile = services.ranked.profile(winner)!;
-    expect(profile.modes.arena?.games).toBe(1);
-    expect(profile.modes['1v1']).toBeUndefined();
-    expect(profile.global.rating).toBeNull(); // the arena isn't part of the global rank
-    expect(profile.recent[0]).toMatchObject({ mode: 'arena', ranked: true, won: true, place: 1 });
-    // the leaderboard API knows the arena ladder
-    const lb = await fetch(`http://127.0.0.1:${server.port}/api/leaderboard?mode=arena`);
-    expect(lb.status).toBe(200);
-    // the room closes after the results screen (12 s): not waited for here
-  }, 30000);
+    services.ranked.recordArena({ map: 'arena', result });
+    const p = services.ranked.profile(a)!;
+    expect(p.recent[0]).toMatchObject({ mode: 'arena', ranked: false, won: true, place: 1 });
+    expect(p.ladders.duels.games).toBe(0);
+    expect(p.ladders.premier.games).toBe(0);
+  });
 });

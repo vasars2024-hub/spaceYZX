@@ -2,6 +2,8 @@
 
 Your PC can be the game server for you and your friends. There is nothing to install.
 
+(Want a fixed address like https://yourgame.com that works 24/7? See [DEPLOY.md](DEPLOY.md).)
+
 ## 1. Get the host app
 
 1. Open the repository on GitHub and click **Releases** (on the right).

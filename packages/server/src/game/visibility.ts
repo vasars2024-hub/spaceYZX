@@ -2,6 +2,9 @@
 // (so wall-hack cheats have nothing to show). Vision is shared per team, generous (several
 // sample points, a short look-ahead, a close-range bubble) and sticky for a moment so enemies
 // never pop in late. Revealed players (Controller pulses, last seconds) are always sent.
+// Paper walls (BoxDef.boomerangPasses, Sakura Hold's shoji) block sight like any wall here:
+// only the Boomerang's flight passes through them, so a throw at someone hidden behind one
+// is aimed from memory, never from culled positions leaking through.
 import type { SimContext, WorldState, Vec3 } from '@space-yz/shared';
 import { eyePos, lineOfSight, madd, len, sub, cross, normalize, v3 } from '@space-yz/shared';
 

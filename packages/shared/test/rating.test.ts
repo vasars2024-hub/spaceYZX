@@ -8,8 +8,18 @@ import {
   tierThreshold,
   galaxyThreshold,
   RANK_TIERS,
-  globalRating,
-  globalRd,
+  premierBand,
+  PREMIER_BANDS,
+  seasonResetRating,
+  ladderForMode,
+  ladderRank,
+  LADDER_IDS,
+  LADDERS,
+  RANKED_QUEUES,
+  createVeto,
+  vetoBan,
+  vetoTick,
+  vetoRemaining,
   applyInactivity,
   findMatches,
   searchWindow,
@@ -143,22 +153,106 @@ describe('tiers', () => {
   });
 });
 
-describe('global rating', () => {
-  it('weights modes by games + 1 and ignores unplayed modes', () => {
-    expect(globalRating({})).toBeNull();
-    expect(globalRating({ '1v1': { rating: 1600, rd: 50, games: 0 } })).toBeNull();
-    expect(globalRd({})).toBeNull();
-    const g = globalRating({
-      '1v1': { rating: 1600, rd: 50, games: 9 },
-      '2v2': { rating: 1400, rd: 100, games: 4 },
-      '5v5': { rating: 2000, rd: 80, games: 0 },
+describe('ladders: Premier + Duels only', () => {
+  it('has exactly two ladders; 5v5 counts for Premier, 1v1 and 2v2 share Duels', () => {
+    expect(LADDER_IDS).toEqual(['premier', 'duels']);
+    expect(RANKED_QUEUES.map((q) => q.id)).toEqual(['premier', 'duels-1v1', 'duels-2v2']);
+    expect(ladderForMode('5v5')).toBe('premier');
+    expect(ladderForMode('1v1')).toBe('duels');
+    expect(ladderForMode('2v2')).toBe('duels');
+    expect(ladderForMode('3v3')).toBeNull();
+    expect(ladderForMode('arena')).toBeNull();
+    const premier = RANKED_QUEUES.find((q) => q.id === 'premier')!;
+    expect(premier).toMatchObject({ mode: '5v5', objective: 'bomb', veto: true });
+    expect(premier.smaller).toEqual({ teamSize: 4, afterSec: 90 });
+    expect(LADDERS.premier).toMatchObject({
+      startRating: 1000,
+      placement: { count: 5, unit: 'wins' },
+      hideWhilePlacing: true,
+      seasonal: true,
     });
-    expect(g).toBeCloseTo((1600 * 10 + 1400 * 5) / 15, 9);
-    const rd = globalRd({
-      '1v1': { rating: 1600, rd: 50, games: 9 },
-      '2v2': { rating: 1400, rd: 100, games: 4 },
-    });
-    expect(rd).toBeCloseTo(Math.sqrt((2500 * 10 + 10000 * 5) / 15), 9);
+  });
+
+  it('Premier shows one number in 7 colour bands', () => {
+    expect(PREMIER_BANDS.length).toBe(7);
+    const c = (x: number) => premierBand(x).color;
+    expect(c(999)).toBe('#9aa6b8');
+    expect(c(1000)).toBe('#8fd3ff');
+    expect(c(1199)).toBe('#8fd3ff');
+    expect(c(1200)).toBe('#4f8dff');
+    expect(c(1400)).toBe('#a77bff');
+    expect(c(1600)).toBe('#ff7ad9');
+    expect(c(1800)).toBe('#ff5a5a');
+    expect(c(2000)).toBe('#ffd24a');
+    expect(c(3000)).toBe('#ffd24a');
+    expect(ladderRank('premier', 2100)).toEqual({ label: 'Galaxy', color: '#ffd24a' });
+    // Duels keeps the space tiers
+    expect(ladderRank('duels', 1750).label).toBe('Gas Giant II');
+  });
+
+  it('a new season pulls every rating 40% toward 1000', () => {
+    expect(seasonResetRating(1000)).toBe(1000);
+    expect(seasonResetRating(2000)).toBeCloseTo(1600, 9);
+    expect(seasonResetRating(1500)).toBeCloseTo(1300, 9);
+    expect(seasonResetRating(500)).toBeCloseTo(700, 9);
+  });
+});
+
+describe('Premier map veto', () => {
+  const maps = ['split-deck', 'kestrel', 'orbital-ring', 'canyon'];
+
+  it('teams alternate bans until one map is left, which is played', () => {
+    const v = createVeto(maps, 0, { banMs: 15_000 });
+    expect(v.turn).toBe(0);
+    expect(vetoBan(v, 1, 'kestrel', 1000)).toMatch(/other team/);
+    expect(vetoBan(v, 0, 'nowhere', 1000)).toMatch(/not in the veto/);
+    expect(vetoBan(v, 0, 'kestrel', 1000)).toBeNull();
+    expect(v.turn).toBe(1);
+    expect(v.turnEndsMs).toBe(16_000);
+    expect(vetoBan(v, 1, 'kestrel', 2000)).toMatch(/not in the veto/); // already banned
+    expect(vetoBan(v, 1, 'canyon', 2000)).toBeNull();
+    expect(v.turn).toBe(0);
+    expect(v.picked).toBeNull();
+    expect(vetoBan(v, 0, 'split-deck', 3000)).toBeNull();
+    expect(v.picked).toBe('orbital-ring');
+    expect(v.banned.map((b) => [b.map, b.team])).toEqual([
+      ['kestrel', 0],
+      ['canyon', 1],
+      ['split-deck', 0],
+    ]);
+    expect(vetoBan(v, 1, 'orbital-ring', 4000)).toMatch(/already decided/);
+  });
+
+  it('a turn that runs out bans a random map for that team', () => {
+    const v = createVeto(maps.slice(0, 3), 0, { banMs: 15_000 });
+    expect(vetoTick(v, 14_999, () => 0)).toBe(false);
+    expect(vetoTick(v, 15_000, () => 0.99)).toBe(true);
+    expect(v.banned).toEqual([{ map: 'orbital-ring', team: 0, auto: true }]);
+    expect(v.turn).toBe(1);
+    expect(vetoRemaining(v)).toEqual(['split-deck', 'kestrel']);
+    expect(vetoTick(v, 30_000, () => 0)).toBe(true);
+    expect(v.picked).toBe('kestrel');
+    expect(vetoTick(v, 99_000, () => 0)).toBe(false);
+  });
+
+  it('a pool of one map needs no bans', () => {
+    expect(createVeto(['kestrel'], 0, { banMs: 1 }).picked).toBe('kestrel');
+  });
+});
+
+describe('matchmaking team size override', () => {
+  it('Premier can start 4v4 from 8 players (5v5 needs 10)', () => {
+    const q: QueueEntry[] = Array.from({ length: 8 }, (_, i) => ({
+      id: `p${i}`,
+      rating: 1000 + i * 10,
+      pingMs: 30,
+      joinedAtMs: 0,
+    }));
+    expect(findMatches(q, 100_000, '5v5').matches).toEqual([]);
+    const m = findMatches(q, 100_000, '5v5', { teamSize: 4 }).matches;
+    expect(m.length).toBe(1);
+    expect(m[0].teams[0].length).toBe(4);
+    expect(m[0].teams[1].length).toBe(4);
   });
 });
 

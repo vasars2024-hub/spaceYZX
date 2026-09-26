@@ -6,6 +6,10 @@ import { buildKestrel } from './kestrel';
 import { buildSplitDeck } from './split-deck';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
+import { buildCanyonRelay } from './canyon-relay';
+import { buildSakuraHold } from './sakura-hold';
+import { buildCliffline } from './race-cliffline';
+import { buildCanopyRun } from './race-canopy';
 import { withSkyArena } from '../sky-arena';
 
 export interface MapInfo {
@@ -17,6 +21,13 @@ export interface MapInfo {
   symmetric?: boolean;
   /** an Arena 1v1 map (duel pits, rules/arena.ts): only for the Arena, never for other modes */
   arena?: boolean;
+  /**
+   * false: kept out of Premier's map veto pool (5v5 Bomb) even with bomb sites — a small map
+   * built for 1v1–3v3 (the pool: server services/queue.ts premierMapPool)
+   */
+  premier?: boolean;
+  /** a parkour race track (LevelDef.race, rules/race.ts): only for races, never other modes */
+  race?: boolean;
 }
 
 export const MAPS: MapInfo[] = [
@@ -26,6 +37,16 @@ export const MAPS: MapInfo[] = [
   { id: 'kestrel', name: 'Kestrel', build: buildKestrel, competitive: true, symmetric: true },
   // mirror-symmetric north ↔ south (orbital-ring.test.ts checks it; `symmetric` means across x)
   { id: 'orbital-ring', name: 'Orbital Ring', build: buildOrbitalRing, competitive: true },
+  // outdoor, mirrored north ↔ south like Orbital Ring (canyon-relay.test.ts checks it)
+  { id: 'canyon-relay', name: 'Canyon Relay', build: buildCanyonRelay, competitive: true },
+  // small (1v1–3v3 Elimination / Bomb): kept out of Premier's 5v5 map pool
+  {
+    id: 'sakura-hold',
+    name: 'Sakura Hold',
+    build: buildSakuraHold,
+    competitive: true,
+    premier: false,
+  },
   { id: 'proving-grounds', name: 'Proving Grounds', build: buildTestShip, competitive: false },
   {
     id: 'arena',
@@ -35,7 +56,21 @@ export const MAPS: MapInfo[] = [
     symmetric: true,
     arena: true,
   },
+  // parkour race tracks (rules/race.ts): never competitive, never in a combat mode's pool
+  {
+    id: 'race-cliffline',
+    name: 'Cliffline',
+    build: buildCliffline,
+    competitive: false,
+    race: true,
+  },
+  { id: 'race-canopy', name: 'Canopy Run', build: buildCanopyRun, competitive: false, race: true },
 ];
+
+/** The race tracks (race rooms and race practice only). */
+export const raceMaps = (): MapInfo[] => MAPS.filter((m) => m.race);
+/** The track race rooms use unless the players pick another one. */
+export const DEFAULT_RACE_MAP = 'race-cliffline';
 
 /** The map Arena 1v1 rooms and practice run on. */
 export const ARENA_MAP_ID = 'arena';

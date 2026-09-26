@@ -47,6 +47,20 @@ const sizeDesc = (n: number): string =>
 const arenaSizeDesc = (n: number): string =>
   `You + ${n - 1} bot${n > 2 ? 's' : ''}, ${n / 2} duel${n > 2 ? 's' : ''} at a time`;
 const sizeTitle = (arena: boolean, n: number): string => (arena ? `${n} players` : `${n}v${n}`);
+/** Races: how many racers in all (1 = a time trial). */
+const raceSizeTitle = (n: number): string => (n === 1 ? 'Time trial' : `${n} racers`);
+const raceSizeDesc = (n: number): string =>
+  n === 1
+    ? 'Just you and the ghost of your best run.'
+    : `You + ${n - 1} bot racer${n > 2 ? 's' : ''}.`;
+/** The size card's title and description for a mode. */
+const sizeText = (mode: string, n: number): { title: string; desc: string } =>
+  mode === 'race'
+    ? { title: raceSizeTitle(n), desc: raceSizeDesc(n) }
+    : {
+        title: sizeTitle(mode === 'arena', n),
+        desc: mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
+      };
 
 export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
   let s: PracticeState = { ...hd.state, step: 'mode' };
@@ -121,15 +135,14 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
 
   const setupStep = () =>
     stepPanel(
-      s.mode === 'arena' ? 'Players' : 'Team size',
+      s.mode === 'arena' ? 'Players' : s.mode === 'race' ? 'Racers' : 'Team size',
       pickGrid(
         'compact sizes',
         sizesFor(s.mode),
         (n) => n === s.size,
         (n, selected, pick) =>
           card({
-            title: sizeTitle(s.mode === 'arena', n),
-            desc: s.mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
+            ...sizeText(s.mode, n),
             art: icon(n === 1 ? 'profile' : 'team'),
             selected,
             cls: 'size',
@@ -174,7 +187,7 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
       ...(showMap
         ? [sumItem(mapMini(practiceMapId(s)), getMap(practiceMapId(s)).name, 'sum-map')]
         : []),
-      sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeTitle(s.mode === 'arena', s.size)),
+      sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeText(s.mode, s.size).title),
       ...(hasKitChoice(s.mode)
         ? [
             sumItem(

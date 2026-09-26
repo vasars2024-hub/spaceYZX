@@ -14,7 +14,8 @@ import {
 } from './upnp';
 import { ensureCloudflared, startQuickTunnel, type QuickTunnel } from './tunnel';
 
-export type ConnectivityMethod = 'upnp' | 'tunnel' | 'lan-only';
+/** 'server': a rented server with a fixed domain (main.ts), nothing to set up. */
+export type ConnectivityMethod = 'upnp' | 'tunnel' | 'lan-only' | 'server';
 
 export interface ConnectivityStatus {
   /** Links for players on the same network, e.g. http://192.168.1.20:7777 */

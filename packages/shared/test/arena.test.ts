@@ -26,10 +26,8 @@ import {
   lineOfSight,
   mapDef,
   MAPS,
-  newRating,
   nextLadder,
   pairLadder,
-  pickArenaGroup,
   pickSitter,
   qForward,
   raycast,
@@ -38,7 +36,6 @@ import {
   step,
   TICK_DT,
   updateArena,
-  updateArenaRatings,
   v3,
   waypointRoute,
   yawToView,
@@ -602,59 +599,5 @@ describe('Arena rules: duels and the match', () => {
     const b = play(21);
     expect(b.hash).toBe(a.hash);
     expect(b.st.history).toEqual(a.st.history);
-  });
-});
-
-describe('Arena ladder rating and queue', () => {
-  it('rates per duel: wins raise, losses lower, beating stronger players counts more', () => {
-    const r = (rating: number) => ({ ...newRating(), rating, rd: 80 });
-    const players = [r(1500), r(1500), r(1700), r(1300)].map((rating) => ({
-      rating,
-      placementGamesLeft: 0,
-      left: false,
-    }));
-    const up = updateArenaRatings(players, [
-      { a: 0, b: 2, winner: 0 }, // 0 beats the strong one
-      { a: 1, b: 3, winner: 1 }, // 1 beats the weak one
-    ]);
-    expect(up[0].delta).toBeGreaterThan(up[1].delta);
-    expect(up[1].delta).toBeGreaterThan(0);
-    expect(up[2].delta).toBeLessThan(0);
-    expect(up[3].delta).toBeLessThan(0);
-    // more wins in a match move you more
-    const many = updateArenaRatings(players, [
-      { a: 0, b: 1, winner: 0 },
-      { a: 0, b: 3, winner: 0 },
-      { a: 0, b: 2, winner: 0 },
-    ]);
-    expect(many[0].delta).toBeGreaterThan(up[0].delta);
-    // leaving costs extra
-    const left = updateArenaRatings(
-      [players[0], { ...players[1], left: true }],
-      [{ a: 0, b: 1, winner: 0 }],
-      { leaverPenalty: 15 },
-    );
-    expect(left[1].delta).toBeLessThan(-15);
-  });
-
-  it('the queue gathers 2–8 players: full rooms go at once, else after the gather window', () => {
-    const e = (id: string, rating: number, joinedAtMs: number) => ({
-      id,
-      rating,
-      pingMs: 20,
-      joinedAtMs,
-    });
-    const opts = { minPlayers: 2, maxPlayers: 8, gatherMs: 15_000 };
-    expect(pickArenaGroup([e('a', 1500, 0)], 60_000, opts)).toBeNull();
-    const two = [e('a', 1500, 0), e('b', 1500, 5_000)];
-    expect(pickArenaGroup(two, 10_000, opts)).toBeNull();
-    expect(pickArenaGroup(two, 20_000, opts)).toEqual(['a', 'b']);
-    const ten = Array.from({ length: 10 }, (_, i) => e(`p${i}`, 1000 + i * 100, i));
-    const group = pickArenaGroup(ten, 20, opts)!;
-    expect(group.length).toBe(8);
-    expect(group[0]).toBe('p0');
-    // nearest to the longest waiter's rating: the two strongest wait for the next room
-    expect(group).not.toContain('p9');
-    expect(group).not.toContain('p8');
   });
 });

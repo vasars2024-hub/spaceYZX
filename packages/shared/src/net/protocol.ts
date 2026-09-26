@@ -19,6 +19,8 @@ import type { PlayerState, WorldState } from '../sim/state';
 import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
+import type { RankedQueueId } from '../rating/ladders';
+import type { VetoView } from '../rating/veto';
 import { createPlayer, newBoomerang } from '../sim/world';
 import { defaultConfig } from '../config';
 
@@ -34,8 +36,17 @@ export type GameMode = '1v1' | '2v2' | '3v3' | '5v5' | 'practice';
  * What a room plays: a GameMode, or Arena 1v1 ('arena': rotating 1v1 duels in separate pits,
  * rules/arena.ts). Kept apart from GameMode so menus listing the match modes stay unchanged.
  */
-export type RoomMode = GameMode | 'arena';
-export const ROOM_MODES: readonly RoomMode[] = ['1v1', '2v2', '3v3', '5v5', 'practice', 'arena'];
+export type RoomMode = GameMode | 'arena' | 'race';
+/** ('race': a parkour race room on a race track, rules/race.ts) */
+export const ROOM_MODES: readonly RoomMode[] = [
+  '1v1',
+  '2v2',
+  '3v3',
+  '5v5',
+  'practice',
+  'arena',
+  'race',
+];
 
 export interface RoomPlayerInfo {
   id: number;
@@ -65,9 +76,11 @@ export type ClientMsg =
   | { t: 'profile' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }
-  /** Ranked queue: '1v1' / '2v2' / '5v5', or 'arena' (with the kit to play it with). */
-  | { t: 'queue'; mode: RoomMode; loadout?: 'lethal' | 'cs' }
+  /** Ranked queue: 'premier', 'duels-1v1' or 'duels-2v2' (rating/ladders.ts). */
+  | { t: 'queue'; mode: RankedQueueId }
   | { t: 'unqueue' }
+  /** Premier map veto: ban this map (your team's turn). */
+  | { t: 'veto'; map: string }
   | { t: 'report'; player: number; reason: string }
   /** While dead: take over this bot teammate's body (Counter-Strike style). */
   | { t: 'takeover'; target: number }
@@ -77,6 +90,20 @@ export type ClientMsg =
   | { t: 'rtc'; to: number; data: RtcSignal }
   /** Push-to-talk state: talking or not, and on which channel. */
   | { t: 'voice'; on: boolean; all: boolean };
+
+/** Ranked facts every player needs (season number, Premier opening hours). */
+export interface RankedInfo {
+  season: number;
+  premier: {
+    open: boolean;
+    /** closed: seconds until it opens (null = no opening scheduled) */
+    opensInSec: number | null;
+    /** open on a schedule: seconds until it closes (null = always open) */
+    closesInSec: number | null;
+    /** the opening hours in words, e.g. "Fri–Sun 18:00–23:00" ('' = always open) */
+    hours: string;
+  };
+}
 
 /** Voice signaling payload: SDP offers/answers (ICE candidates included), bye/hi. */
 export interface RtcSignal {
@@ -120,7 +147,11 @@ export type ServerMsg =
   /** The server took you out of your room (match over, kicked for griefing…). */
   | { t: 'roomLeft'; reason: string }
   /** Ranked queue status (mode null = not queued). */
-  | { t: 'queue'; mode: RoomMode | null; waitSec: number; searching: number; error?: string }
+  | { t: 'queue'; mode: RankedQueueId | null; waitSec: number; searching: number; error?: string }
+  /** Premier map veto in progress (null = over / cancelled). */
+  | { t: 'veto'; data: VetoView | null }
+  /** Season and Premier opening hours. */
+  | { t: 'rankedInfo'; data: RankedInfo }
   /** Your account profile (ratings, ranks, recent matches). */
   | { t: 'profile'; data: unknown }
   /** Ping equalization: extra input delay (ticks) this client should apply. */

@@ -21,7 +21,7 @@ import { qForward, qRight, qUp, qNormalize } from '../math/quat';
 import { trackFlick } from './flick';
 import type { Capsule } from '../level/collision';
 import { capsuleContacts, capsuleOverlaps, depenetrate, nearestSurface } from '../level/collision';
-import { railClosest, railPoint, railTangent } from '../level/level';
+import { pointInAabb, railClosest, railPoint, railTangent } from '../level/level';
 import { inSkyZone } from '../level/sky-arena';
 import type { LevelDef } from '../level/types';
 import type { MovementConfig } from '../config/movement';
@@ -48,6 +48,17 @@ export interface JetpackTuning {
 }
 
 export const jetpackTuning = (m: MovementConfig, def: LevelDef, pos: Vec3): JetpackTuning => {
+  // race tracks: a bigger tank that never refills on its own (fuel cells and checkpoint
+  // respawns fill it: sim/race.ts)
+  if (def.race)
+    return {
+      fuel: m.raceJetpackFuelSec,
+      refillPerSec: 0,
+      delaySec: m.jetpackRechargeDelaySec,
+      upAccel: m.jetpackUpAccel,
+      maxRise: m.jetpackMaxRise,
+      dirSpeed: m.jetpackDirSpeed,
+    };
   const sky = inSkyZone(def, pos);
   const fuel = m.jetpackFuelSec * (sky ? m.skyJetpackFuelMul : 1);
   const rec = sky ? m.skyJetpackRechargeMul : 1;
@@ -126,6 +137,14 @@ const applyFriction = (vel: Vec3, m: MovementConfig, dt: number): Vec3 => {
   const drop = control * m.friction * dt;
   const ns = Math.max(0, speed - drop);
   return scale(vel, ns / speed);
+};
+
+/** Speed multiplier of the slow zone the point is in (1 = none; the slowest one wins). */
+export const slowZoneMul = (def: LevelDef, pos: Vec3): number => {
+  let k = 1;
+  for (const z of def.slowZones ?? [])
+    if (pointInAabb(pos, z.min, z.max)) k = Math.min(k, z.speedMul);
+  return k;
 };
 
 /** Keep the planar speed from rising above max(previous, cap). */
@@ -535,8 +554,28 @@ export const updateMovement = (
   const hasWish = lenSq(wish.dir) > 0.5;
   const crouchHeld = (buttons & Btn.Crouch) !== 0;
 
-  // Dash: short burst in the movement direction (works in air and zero-G)
-  if (pressed & Btn.Dash && p.dashCd === 0) {
+  // Race tracks: the dash key is SURGE — a few per race, only while racing: +60 % of sprint
+  // speed at once, and for a second no friction, faster running and no air speed limit
+  const race = ctx.level.def.race;
+  if (race) {
+    if (
+      pressed & Btn.Dash &&
+      p.surgeLeft > 0 &&
+      p.surgeTicks === 0 &&
+      p.raceCp >= 0 &&
+      p.raceCp <= race.checkpoints.length
+    ) {
+      const dir = hasWish ? wish.dir : wish.fwdP;
+      const along = dot(p.vel, dir);
+      const target = Math.max(along, m.sprintSpeed) + m.sprintSpeed * (m.raceSurgeMul - 1);
+      p.vel = madd(p.vel, dir, target - along);
+      p.surgeLeft--;
+      p.surgeTicks = Math.max(1, Math.round(m.raceSurgeSec / dt));
+      world.events.push({ type: 'surge', player: p.id });
+    }
+  }
+  // Dash: short burst in the movement direction (works in air and zero-G); not in races
+  else if (pressed & Btn.Dash && p.dashCd === 0) {
     let dir: Vec3;
     if (zoneZeroG && !p.mag) {
       const f3 = qForward(p.view);
@@ -550,6 +589,7 @@ export const updateMovement = (
     world.events.push({ type: 'dash', player: p.id });
   }
   if (p.dashTicks > 0) p.dashTicks--;
+  if (p.surgeTicks > 0) p.surgeTicks--;
   if (p.grounded) {
     p.jetHold = -1;
     p.jetOn = false;
@@ -643,9 +683,11 @@ export const updateMovement = (
       p.move = Move.Ground;
       if (crouchHeld) setCrouch(ctx, p, true);
       else if (p.crouched) setCrouch(ctx, p, false);
-      // no friction during landing grace (bhop) or the dash burst
-      if (p.landGrace === 0 && p.dashTicks === 0) p.vel = applyFriction(p.vel, m, dt);
+      // no friction during landing grace (bhop), the dash burst or a race surge
+      if (p.landGrace === 0 && p.dashTicks === 0 && p.surgeTicks === 0)
+        p.vel = applyFriction(p.vel, m, dt);
       let wishSpeed = p.crouched ? m.crouchSpeed : wish.fb > 0 ? m.sprintSpeed : m.runSpeed;
+      if (p.surgeTicks > 0) wishSpeed *= m.raceSurgeMul;
       // on a slope, run faster along it so your pace across the map stays the same
       wishSpeed /= Math.max(0.7, dot(n, p.up));
       if (p.speedCap > 0) wishSpeed = Math.min(wishSpeed, p.speedCap);
@@ -736,13 +778,18 @@ export const updateMovement = (
         p.vel = madd(scale(d, s), p.up, dot(p.vel, p.up));
       }
     }
-    if (p.dashTicks === 0 && !p.jetOn) p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
+    if (p.dashTicks === 0 && p.surgeTicks === 0 && !p.jetOn)
+      p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
 
     if (tryGrabRail(world, ctx, p)) {
       p.prevButtons = rawButtons;
       return;
     }
   }
+
+  // wading through a slow zone (LevelDef slowZones, e.g. a moat): planar speed capped
+  const slow = slowZoneMul(ctx.level.def, p.pos);
+  if (slow < 1) p.vel = softCap(p.vel, p.up, 0, m.sprintSpeed * slow);
 
   // global speed limit
   const total = len(p.vel);

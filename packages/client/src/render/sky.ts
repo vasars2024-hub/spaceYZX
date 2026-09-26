@@ -3,7 +3,7 @@
 // no textures, no lights: moons are shaded once into vertex colors (a lit half and a dark
 // half), stars are single pixels. The level geometry hides them except through 'skyglass'.
 import * as THREE from 'three';
-import type { LevelDef, SkyDef, Vec3 } from '@space-yz/shared';
+import type { LevelDef, OutdoorSkyDef, SkyDef, Vec3 } from '@space-yz/shared';
 
 /** Distance of the sky from the map centre (the camera's far plane is 600 m). */
 const SKY_R = 430;
@@ -113,6 +113,62 @@ export const buildSky = (def: LevelDef, sky: SkyDef): SkyMeshes => {
     moons.matrixAutoUpdate = false;
     group.add(moons);
     disposables.push(merged, moonMat);
+  }
+  group.updateMatrixWorld(true);
+  return { group, dispose: () => disposables.forEach((x) => x.dispose()) };
+};
+
+/**
+ * Open-air sky (outdoor maps, LevelDef.outdoor): one low-poly sphere seen from inside, its
+ * vertex colours running ground → horizon → top, plus an optional sun disc. Two draw calls, no
+ * textures, not fogged (the fog uses the horizon colour, so the far terrain melts into it).
+ * Named like the space sky so the sky duel arena hides it while you are up there.
+ */
+export const buildOutdoorSky = (def: LevelDef, sky: OutdoorSkyDef): SkyMeshes => {
+  const group = new THREE.Group();
+  group.name = SPACE_SKY_NAME;
+  const c = centreOf(def);
+  group.position.set(c.x, c.y, c.z);
+  const disposables: { dispose(): void }[] = [];
+  const top = new THREE.Color(sky.top);
+  const horizon = new THREE.Color(sky.horizon);
+  const ground = new THREE.Color(sky.ground);
+  const g = new THREE.SphereGeometry(SKY_R, 24, 16).toNonIndexed();
+  const p = g.getAttribute('position');
+  const cols = new Float32Array(p.count * 3);
+  const col = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i) / SKY_R;
+    if (y >= 0) col.copy(horizon).lerp(top, Math.pow(y, 0.55));
+    else col.copy(horizon).lerp(ground, Math.min(1, -y * 5));
+    cols[i * 3] = col.r;
+    cols[i * 3 + 1] = col.g;
+    cols[i * 3 + 2] = col.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.BackSide,
+    fog: false,
+    depthWrite: false,
+  });
+  const dome = new THREE.Mesh(g, mat);
+  dome.frustumCulled = false;
+  dome.renderOrder = -2;
+  group.add(dome);
+  disposables.push(g, mat);
+  if (sky.sun) {
+    const d = new THREE.Vector3(sky.sun.dir.x, sky.sun.dir.y, sky.sun.dir.z).normalize();
+    const r = SKY_R * 0.95 * Math.tan(((sky.sun.sizeDeg / 2) * Math.PI) / 180);
+    const sg = new THREE.CircleGeometry(r, 20);
+    const sm = new THREE.MeshBasicMaterial({ color: sky.sun.color, fog: false, depthWrite: false });
+    const sun = new THREE.Mesh(sg, sm);
+    sun.position.copy(d.multiplyScalar(SKY_R * 0.95));
+    sun.lookAt(0, 0, 0);
+    sun.renderOrder = -1;
+    sun.frustumCulled = false;
+    group.add(sun);
+    disposables.push(sg, sm);
   }
   group.updateMatrixWorld(true);
   return { group, dispose: () => disposables.forEach((x) => x.dispose()) };

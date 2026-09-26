@@ -55,6 +55,13 @@ import { effects, setEffects } from './render/effects';
 import { setTextureDetail } from './render/textures';
 import { createPracticeSession, isCsKind, type PracticeKind } from './game/practice';
 import { startArenaPractice, arenaOnlineFeatures } from './game/arena-entry';
+import {
+  RACE_HINT,
+  RaceNetSession,
+  isRaceLobby,
+  raceOnlineFeatures,
+  startRacePractice,
+} from './game/race-entry';
 import { createRangeSession } from './game/range';
 import {
   createPractice,
@@ -485,6 +492,12 @@ export class App {
         back: () => this.showTitle(),
         start: (st) => {
           if (st.mode === 'arena') this.startArenaPractice(st);
+          else if (st.mode === 'race')
+            startRacePractice(this, {
+              track: practiceMapId(st),
+              bots: Math.max(0, st.size - 1),
+              skill: st.skill,
+            });
           else
             this.startPractice(
               st.size,
@@ -739,6 +752,7 @@ export class App {
   }
 
   startOnline(core: NetCore): void {
+    if (core.mode === 'race') return this.startOnlineRace(core);
     const session = new NetSession(core);
     const combat = new CombatFeature();
     const match = new MatchFeature();
@@ -764,6 +778,25 @@ export class App {
     client.hud.setHint(
       `Room ${core.code} — share the code or the invite link · Esc menu · ${ChatFeature.hint(this.settings)}`,
     );
+  }
+
+  /** An online race room: the race HUD, see-through racers, no weapons. */
+  private startOnlineRace(core: NetCore): void {
+    const session = new RaceNetSession(core);
+    const chat = new ChatFeature(core, this.settings);
+    const client = this.startGame(session, [...raceOnlineFeatures(core), chat], { tuning: false });
+    this.roomPanel = new RoomPanel(this.ui, core);
+    client.addFeature({
+      frame: () => {
+        this.roomPanel?.update();
+        client.hud.netText = this.settings.showNetStats ? `${Math.round(core.rttMs)} ms` : '';
+      },
+      dispose: () => {
+        this.roomPanel?.dispose();
+        this.roomPanel = null;
+      },
+    });
+    client.hud.setHint(`Room ${core.code} — share the code · ${RACE_HINT}`, 16);
   }
 
   /**
@@ -866,8 +899,8 @@ export class App {
             'btn secondary',
           )
         : null,
-      match?.phase === 'warmup' && s.canStart?.()
-        ? iconButton('next', 'Start match now', () => {
+      (match?.phase === 'warmup' || isRaceLobby(s)) && s.canStart?.()
+        ? iconButton('next', isRaceLobby(s) ? 'Start race now' : 'Start match now', () => {
             s.startMatch?.();
             this.pause(false);
           })

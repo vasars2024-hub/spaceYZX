@@ -15,6 +15,8 @@ export interface BoxShape {
   min: Vec3; // world AABB
   max: Vec3;
   collide: boolean;
+  /** the Boomerang flies through it (BoxDef.boomerangPasses) */
+  boomerangPasses: boolean;
 }
 
 export interface RailShape {
@@ -64,6 +66,7 @@ export const buildLevel = (def: LevelDef): Level => {
       min: v3(b.c.x - ex, b.c.y - ey, b.c.z - ez),
       max: v3(b.c.x + ex, b.c.y + ey, b.c.z + ez),
       collide: !b.noCollide,
+      boomerangPasses: !!b.boomerangPasses,
     };
   });
 

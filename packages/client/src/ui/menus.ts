@@ -189,7 +189,7 @@ export const CONTROLS_HELP: [string, string][] = [
     'Jump · wall-jump · in the air: hold for a jetpack burst · push off / thruster in zero-G',
   ],
   ['Ctrl / C', 'Crouch · slide when sprinting'],
-  ['Shift', 'Dash'],
+  ['Shift', 'Dash · in races: SURGE (a burst of speed, 3 per race)'],
   [
     'F',
     'Gravity shift: walk on the nearest wall or ceiling within 2.5 m (F again or jump to let go)',
@@ -204,7 +204,10 @@ export const CONTROLS_HELP: [string, string][] = [
   ['Q', 'Gravity Grenade'],
   ['1 / 2', 'Switch weapon: Boomerang / Laser'],
   ['G (hold)', 'Bomb mode: plant in site A or B (3 s) · defuse next to the bomb (7 s)'],
-  ['R', 'Lethal Recall (Boomerang) · reload (Laser)'],
+  [
+    'R',
+    'Lethal Recall (Boomerang) · reload (Laser) · in races: hold to go back to your checkpoint',
+  ],
   ['Tab', 'Scoreboard'],
   ['Enter / Y', 'Online: chat to your team / to everyone (Enter sends, Esc cancels)'],
   ['Hold V / B', 'Online: talk to your team / to everyone (voice chat)'],

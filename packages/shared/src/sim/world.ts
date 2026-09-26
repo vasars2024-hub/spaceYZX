@@ -16,8 +16,9 @@ import type { BoomerangState } from './combat-state';
 import { updateMovement } from './movement';
 import { updateGravityPads } from './gravity';
 import { updateDevices } from './devices';
-import { updateCombat } from './combat';
+import { applyDamage, updateCombat } from './combat';
 import { updatePowerupPickups } from './powerups';
+import { updateRaceBody, updateRaceInput } from './race';
 
 export const DEG = Math.PI / 180;
 
@@ -149,6 +150,12 @@ export const createPlayer = (
     deaths: 0,
     teamKills: 0,
     damageDealt: 0,
+    surgeLeft: m.raceSurgeCharges,
+    surgeTicks: 0,
+    raceCp: -1,
+    racePenalty: 0,
+    raceFuel: 0,
+    raceHold: 0,
   };
 };
 
@@ -210,8 +217,21 @@ export const step = (
       p.view = input.view;
       continue;
     }
+    // race tracks: the respawn key, then (after moving) falls, gates and fuel cells
+    const race = !!ctx.level.def.race;
+    if (race) updateRaceInput(world, ctx, p, input);
     updateMovement(world, ctx, p, input);
     updateDevices(world, ctx, p);
+    if (race) updateRaceBody(world, ctx, p);
+    // fell into a deadly volume (a gorge): gone, like falling off the sky duel arena
+    const kills = ctx.level.def.killVolumes;
+    if (kills)
+      for (const k of kills)
+        if (pointInAabb(p.pos, k.min, k.max)) {
+          applyDamage(world, ctx, p.id, p, 9999, 'world', false, clone(p.pos), clone(p.pos));
+          break;
+        }
+    if (!p.alive) continue;
     // fell out of the ship: bounce back into bounds (not up at the sky duel arena: falling off
     // it is deadly, the match rules end you there)
     const d = ctx.level.def;
@@ -227,6 +247,8 @@ export const step = (
       respawnPlayer(world, p, s.pos, s.yawDeg, ctx.config);
     }
   }
+  // races: no weapons, no damage, no power-ups
+  if (ctx.level.def.race) return;
   updateCombat(world, ctx, inputs, prevButtons);
   updatePowerupPickups(world, ctx);
 };
@@ -246,13 +268,17 @@ export const stepPredict = (
   const p = world.players.find((pp) => pp.id === localId);
   if (!p) return;
   const prev = { [localId]: p.prevButtons };
+  const race = !!ctx.level.def.race;
   if (p.alive) {
+    if (race) updateRaceInput(world, ctx, p, input);
     updateMovement(world, ctx, p, input);
     updateDevices(world, ctx, p);
+    if (race) updateRaceBody(world, ctx, p);
   } else {
     p.prevButtons = input.buttons;
     p.view = input.view;
   }
+  if (race) return;
   updateCombat(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, { only: localId });
   updatePowerupPickups(world, ctx, localId);
 };

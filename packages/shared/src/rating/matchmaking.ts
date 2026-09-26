@@ -23,6 +23,8 @@ export interface MatchmakingOptions {
    * by ping difference first (so similar-ping players are preferred among similar ratings).
    */
   ratingBucket?: number;
+  /** Players per team (default: the mode's size; Premier may start 4v4 when few search). */
+  teamSize?: number;
 }
 
 export interface FoundMatch {
@@ -37,7 +39,7 @@ export interface MatchmakingResult {
 
 export const TEAM_SIZE: Record<RankedMode, number> = { '1v1': 1, '2v2': 2, '5v5': 5 };
 
-const DEFAULTS: Required<MatchmakingOptions> = {
+const DEFAULTS: Required<Omit<MatchmakingOptions, 'teamSize'>> = {
   baseWindow: 100,
   widenBy: 50,
   widenEveryMs: 10_000,
@@ -102,7 +104,7 @@ export const findMatches = (
   opts: MatchmakingOptions = {},
 ): MatchmakingResult => {
   const o = { ...DEFAULTS, ...opts };
-  const size = TEAM_SIZE[mode] * 2;
+  const size = (opts.teamSize ?? TEAM_SIZE[mode]) * 2;
   const windows = new Map(queue.map((p) => [p.id, searchWindow(p, nowMs, o)]));
   const byWait = [...queue].sort((x, y) => x.joinedAtMs - y.joinedAtMs || byId(x.id, y.id));
   const taken = new Set<string>();

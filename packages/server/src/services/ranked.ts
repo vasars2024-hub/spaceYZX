@@ -1,28 +1,43 @@
-// Ranked data: Glicko-2 ratings per mode, match history, leaderboards, profiles, reports and
+// Ranked data: the ladders (Premier + Duels, shared rating/ladders.ts) with Glicko-2 ratings,
+// Premier seasons and opening hours, match history, leaderboards, profiles, reports and
 // anti-grief bans. All rating maths lives in @space-yz/shared (rating/*).
-import type { Rating, RankedMode, LadderMode, ModeRatings, TierInfo } from '@space-yz/shared';
+//
+// A ladder's ratings are rows of `ratings` with mode = the ladder id. Adding a ladder (the
+// planned 'race' rank) needs no new table: record its results with save() under its id, and
+// profile() / leaderboard() pick it up from LADDER_IDS.
+import type { LadderId, RankDisplay, Rating } from '@space-yz/shared';
 import {
-  newRating,
-  updateTeamMatch,
-  updateArenaRatings,
   applyInactivity,
-  globalRating,
-  tierFor,
-  RANKED_MODES,
-  LADDER_MODES,
-  PLACEMENT_GAMES,
-  ARENA_DEFAULTS,
+  DEFAULT_RD,
+  DEFAULT_VOL,
+  LADDER_IDS,
+  LADDERS,
+  ladderForMode,
+  ladderRank,
+  seasonResetRating,
+  updateTeamMatch,
 } from '@space-yz/shared';
 import type { Db } from './db';
 import type { MatchResult } from '../game/rules/match';
 import type { ArenaResult } from '../game/rules/arena';
+import {
+  DEFAULT_SCHEDULE,
+  describeSchedule,
+  scheduleStatus,
+  type PremierSchedule,
+  type ScheduleStatus,
+} from './schedule';
 
 const DAY = 86_400_000;
 
 export interface StoredRating {
   rating: Rating;
+  /** all-time games / wins on this ladder */
   games: number;
   wins: number;
+  /** this season (seasonal ladders; the others count all-time here too) */
+  seasonGames: number;
+  seasonWins: number;
   lastPlayed: number;
 }
 
@@ -32,30 +47,39 @@ export interface LeaderRow {
   name: string;
   rating: number;
   games: number;
-  tier: TierInfo;
+  wins: number;
+  rank: RankDisplay;
+}
+
+/** One ladder in a profile. */
+export interface LadderStanding {
+  ladder: LadderId;
+  name: string;
+  /** null while placing on a ladder that hides it (Premier) */
+  rating: number | null;
+  games: number;
+  wins: number;
+  placed: boolean;
+  /** placement progress, e.g. 2 of 5 wins */
+  placement: { done: number; need: number; unit: 'wins' | 'games' };
+  /** null while the rating is hidden */
+  rank: RankDisplay | null;
+  position: number | null;
 }
 
 export interface Profile {
   id: number;
   name: string;
-  /** one entry per ladder played: '1v1', '2v2', '5v5' and 'arena' (Arena 1v1, its own ranks) */
-  modes: Partial<
-    Record<
-      LadderMode,
-      {
-        rating: number;
-        rd: number;
-        games: number;
-        wins: number;
-        tier: TierInfo;
-        position: number | null;
-      }
-    >
-  >;
-  /** the headline rank: 1v1 / 2v2 / 5v5 combined (the arena ladder stays separate) */
-  global: { rating: number | null; tier: TierInfo; position: number | null };
+  /** current season number (Premier) */
+  season: number;
+  /** every ladder (rating/ladders.ts), in LADDER_IDS order */
+  ladders: Record<LadderId, LadderStanding>;
+  /** Premier's finished seasons, newest first (rating only if placed that season) */
+  pastSeasons: { season: number; rating: number | null; rank: RankDisplay | null }[];
   recent: {
     mode: string;
+    /** the ladder a ranked match counted for (null: casual, or an old removed ladder) */
+    ladder: LadderId | null;
     ranked: boolean;
     /** arena: placed first */
     won: boolean | null;
@@ -76,7 +100,6 @@ export interface MatchRecordInput {
   map: string;
   result: MatchResult;
   names: Record<number, string>;
-  /** leavers' account ids (their ratings are updated as losses) */
 }
 
 /** Extra weight on placement games (on top of Glicko's own uncertainty). */
@@ -85,68 +108,112 @@ export const PLACEMENT_BOOST = 1.2;
 /** Escalating ranked bans for grief kicks: 10 min, 1 h, 1 day, then 7 days. */
 export const BAN_STEPS_MS = [10 * 60_000, 60 * 60_000, DAY, 7 * DAY];
 
+const SCHEDULE_KEY = 'premier_schedule';
+
+const newLadderRating = (ladder: LadderId): Rating => ({
+  rating: LADDERS[ladder].startRating,
+  rd: DEFAULT_RD,
+  vol: DEFAULT_VOL,
+});
+
+/** Placement progress on a ladder. */
+const placementOf = (ladder: LadderId, s: StoredRating) => {
+  const p = LADDERS[ladder].placement;
+  const done = p.unit === 'wins' ? s.seasonWins : s.games;
+  return { done: Math.min(done, p.count), need: p.count, unit: p.unit, placed: done >= p.count };
+};
+
 export class RankedStore {
   constructor(
     private db: Db,
     private now: () => number = Date.now,
   ) {}
 
-  rating(playerId: number, mode: LadderMode): StoredRating {
+  // ---------------- ratings ----------------
+
+  rating(playerId: number, ladder: LadderId): StoredRating {
     const row = this.db
       .prepare(
-        'SELECT rating, rd, vol, games, wins, last_played FROM ratings WHERE player_id = ? AND mode = ?',
+        `SELECT rating, rd, vol, games, wins, season_games, season_wins, last_played
+         FROM ratings WHERE player_id = ? AND mode = ?`,
       )
-      .get(playerId, mode) as
+      .get(playerId, ladder) as
       | {
           rating: number;
           rd: number;
           vol: number;
           games: number;
           wins: number;
+          season_games: number;
+          season_wins: number;
           last_played: number;
         }
       | undefined;
-    if (!row) return { rating: newRating(), games: 0, wins: 0, lastPlayed: this.now() };
-    // top tiers slowly decay while inactive (applied when read)
+    if (!row)
+      return {
+        rating: newLadderRating(ladder),
+        games: 0,
+        wins: 0,
+        seasonGames: 0,
+        seasonWins: 0,
+        lastPlayed: this.now(),
+      };
+    // top ratings slowly decay while inactive (applied when read)
     const days = (this.now() - row.last_played) / DAY;
-    const rating = applyInactivity({ rating: row.rating, rd: row.rd, vol: row.vol }, days);
-    return { rating, games: row.games, wins: row.wins, lastPlayed: row.last_played };
+    const rating = applyInactivity({ rating: row.rating, rd: row.rd, vol: row.vol }, days, {
+      floor: LADDERS[ladder].decayFloor,
+    });
+    return {
+      rating,
+      games: row.games,
+      wins: row.wins,
+      seasonGames: row.season_games,
+      seasonWins: row.season_wins,
+      lastPlayed: row.last_played,
+    };
   }
 
-  private save(playerId: number, mode: LadderMode, r: StoredRating): void {
+  /** Is this player past placement on the ladder? */
+  placed(playerId: number, ladder: LadderId): boolean {
+    return placementOf(ladder, this.rating(playerId, ladder)).placed;
+  }
+
+  save(playerId: number, ladder: LadderId, r: StoredRating): void {
     this.db
       .prepare(
-        `INSERT INTO ratings (player_id, mode, rating, rd, vol, games, wins, last_played)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO ratings (player_id, mode, rating, rd, vol, games, wins, last_played, season_games, season_wins)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(player_id, mode) DO UPDATE SET rating = excluded.rating, rd = excluded.rd,
-           vol = excluded.vol, games = excluded.games, wins = excluded.wins, last_played = excluded.last_played`,
+           vol = excluded.vol, games = excluded.games, wins = excluded.wins, last_played = excluded.last_played,
+           season_games = excluded.season_games, season_wins = excluded.season_wins`,
       )
       .run(
         playerId,
-        mode,
+        ladder,
         r.rating.rating,
         r.rating.rd,
         r.rating.vol,
         r.games,
         r.wins,
         r.lastPlayed,
+        r.seasonGames,
+        r.seasonWins,
       );
   }
 
   /**
-   * Store a finished match. Ranked matches update ratings (placements count more, team kills
-   * and leaving cost extra); private matches are only recorded. Returns rating changes by
-   * account id.
+   * Store a finished match. Ranked matches update the ladder of their team size (5v5 Premier,
+   * 1v1 / 2v2 Duels): placements count more, team kills and leaving cost extra. Private
+   * matches are only recorded. Returns rating changes by account id.
    */
   recordMatch(input: MatchRecordInput): Map<number, number> {
     const { result } = input;
     const t = this.now();
     const deltas = new Map<number, number>();
-    // (ranked rooms are only ever 1v1 / 2v2 / 5v5: 3v3 is casual and never reaches the ratings)
-    const mode = result.mode as RankedMode;
+    const ladder = input.ranked ? ladderForMode(result.mode) : null;
     this.db.exec('BEGIN');
     try {
-      if (input.ranked) {
+      if (ladder) {
         // everyone with an account who played or left counts
         const entries: { accountId: number; team: 0 | 1; teamKills: number; left: boolean }[] = [];
         for (const p of result.players)
@@ -165,17 +232,18 @@ export class RankedStore {
           entries.filter((e) => e.team === 1),
         ];
         if (teams[0].length && teams[1].length) {
-          const stored = teams.map((tm) => tm.map((e) => this.rating(e.accountId, mode)));
+          const stored = teams.map((tm) => tm.map((e) => this.rating(e.accountId, ladder)));
+          const left = (s: StoredRating) => {
+            const p = placementOf(ladder, s);
+            return Math.max(0, p.need - p.done);
+          };
           const updates = updateTeamMatch({
             teams: [stored[0].map((s) => s.rating), stored[1].map((s) => s.rating)],
             winner: result.winner,
             options: {
               // Glicko-2 already moves new players a lot (high RD); keep the placement boost mild
               placementFactor: PLACEMENT_BOOST,
-              placementGamesLeft: [
-                stored[0].map((s) => Math.max(0, PLACEMENT_GAMES - s.games)),
-                stored[1].map((s) => Math.max(0, PLACEMENT_GAMES - s.games)),
-              ],
+              placementGamesLeft: [stored[0].map(left), stored[1].map(left)],
               teamKills: [teams[0].map((e) => e.teamKills), teams[1].map((e) => e.teamKills)],
               leftEarly: [teams[0].map((e) => e.left), teams[1].map((e) => e.left)],
             },
@@ -184,10 +252,13 @@ export class RankedStore {
             teams[side].forEach((e, i) => {
               const u = updates[side][i];
               const s = stored[side][i];
-              this.save(e.accountId, mode, {
+              const won = result.winner === side && !e.left ? 1 : 0;
+              this.save(e.accountId, ladder, {
                 rating: u.rating,
                 games: s.games + 1,
-                wins: s.wins + (result.winner === side && !e.left ? 1 : 0),
+                wins: s.wins + won,
+                seasonGames: s.seasonGames + 1,
+                seasonWins: s.seasonWins + won,
                 lastPlayed: t,
               });
               deltas.set(e.accountId, u.delta);
@@ -196,8 +267,8 @@ export class RankedStore {
       }
       const m = this.db
         .prepare(
-          `INSERT INTO matches (mode, ranked, map, winner, score_a, score_b, reason, duration_sec, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO matches (mode, ranked, map, winner, score_a, score_b, reason, duration_sec, created_at, ladder)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.mode,
@@ -209,6 +280,7 @@ export class RankedStore {
           result.reason,
           result.durationSec,
           t,
+          ladder,
         );
       const matchId = Number(m.lastInsertRowid);
       const ins = this.db.prepare(
@@ -253,60 +325,22 @@ export class RankedStore {
   }
 
   /**
-   * Store a finished Arena 1v1 match. Ranked: every duel is a game against that opponent's
-   * arena rating (rating/arena.ts), all of a player's duels in the match one rating period;
-   * placements count more, leaving costs extra. Games/wins count arena matches (a win = 1st
-   * place). Private arenas are only recorded. Returns rating changes by account id.
+   * Store a finished Arena 1v1 match (casual only: the Arena has no ranked queue any more).
+   * Kept in the match history with each player's place and duels.
    */
-  recordArena(input: { ranked: boolean; map: string; result: ArenaResult }): Map<number, number> {
+  recordArena(input: { map: string; result: ArenaResult }): void {
     const { result } = input;
     const t = this.now();
-    const deltas = new Map<number, number>();
     this.db.exec('BEGIN');
     try {
-      if (input.ranked) {
-        const rows = result.standings.filter(
-          (r, i, all) =>
-            r.accountId !== null &&
-            !r.bot &&
-            all.findIndex((x) => x.accountId === r.accountId) === i,
-        );
-        const stored = rows.map((r) => this.rating(r.accountId!, 'arena'));
-        const index = new Map(rows.map((r, i) => [r.id, i]));
-        const duels = result.duels.flatMap((d) => {
-          const a = index.get(d.a);
-          const b = index.get(d.b);
-          const w = index.get(d.winner);
-          return a !== undefined && b !== undefined && w !== undefined ? [{ a, b, winner: w }] : [];
-        });
-        const updates = updateArenaRatings(
-          stored.map((s, i) => ({
-            rating: s.rating,
-            placementGamesLeft: Math.max(0, PLACEMENT_GAMES - s.games),
-            left: rows[i].left,
-          })),
-          duels,
-          { placementFactor: PLACEMENT_BOOST, leaverPenalty: ARENA_DEFAULTS.leaverPenalty },
-        );
-        rows.forEach((r, i) => {
-          this.save(r.accountId!, 'arena', {
-            rating: updates[i].rating,
-            games: stored[i].games + 1,
-            wins: stored[i].wins + (r.place === 1 && !r.left ? 1 : 0),
-            lastPlayed: t,
-          });
-          deltas.set(r.accountId!, updates[i].delta);
-        });
-      }
       const top = result.standings[0];
       const m = this.db
         .prepare(
           `INSERT INTO matches (mode, ranked, map, winner, score_a, score_b, reason, duration_sec, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           'arena',
-          input.ranked ? 1 : 0,
           input.map,
           null,
           top?.wins ?? 0,
@@ -318,7 +352,7 @@ export class RankedStore {
       const matchId = Number(m.lastInsertRowid);
       const ins = this.db.prepare(
         `INSERT INTO match_players (match_id, player_id, name, team, bot, kills, deaths, team_kills, damage, rating_delta, left_early, place, duel_wins, duel_losses)
-         VALUES (?, ?, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, 0, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?)`,
       );
       for (const r of result.standings)
         ins.run(
@@ -329,7 +363,6 @@ export class RankedStore {
           r.kills,
           r.deaths,
           r.damage,
-          r.accountId !== null ? (deltas.get(r.accountId) ?? 0) : 0,
           r.left ? 1 : 0,
           r.place,
           r.wins,
@@ -340,28 +373,36 @@ export class RankedStore {
       this.db.exec('ROLLBACK');
       throw err;
     }
-    return deltas;
   }
 
-  /** Ranked (placed) players of a ladder, best first. */
-  private modeRows(
-    mode: LadderMode,
-  ): { playerId: number; name: string; rating: number; games: number }[] {
+  // ---------------- leaderboards & profiles ----------------
+
+  /** Placed players of a ladder (current season), best first. */
+  private ladderRows(ladder: LadderId): {
+    playerId: number;
+    name: string;
+    rating: number;
+    games: number;
+    wins: number;
+  }[] {
+    const p = LADDERS[ladder].placement;
+    const col = p.unit === 'wins' ? 'r.season_wins' : 'r.games';
     return (
       this.db
         .prepare(
           `SELECT r.player_id AS playerId, p.name AS name, r.rating AS rating, r.rd AS rd, r.vol AS vol,
-                  r.games AS games, r.last_played AS lastPlayed
+                  r.games AS games, r.wins AS wins, r.last_played AS lastPlayed
            FROM ratings r JOIN players p ON p.id = r.player_id
-           WHERE r.mode = ? AND r.games >= ?`,
+           WHERE r.mode = ? AND ${col} >= ?`,
         )
-        .all(mode, PLACEMENT_GAMES) as {
+        .all(ladder, p.count) as {
         playerId: number;
         name: string;
         rating: number;
         rd: number;
         vol: number;
         games: number;
+        wins: number;
         lastPlayed: number;
       }[]
     )
@@ -369,53 +410,73 @@ export class RankedStore {
         playerId: r.playerId,
         name: r.name,
         games: r.games,
+        wins: r.wins,
         rating: applyInactivity(
           { rating: r.rating, rd: r.rd, vol: r.vol },
           (this.now() - r.lastPlayed) / DAY,
+          { floor: LADDERS[ladder].decayFloor },
         ).rating,
       }))
       .sort((a, b) => b.rating - a.rating || a.playerId - b.playerId);
   }
 
-  private globalRows(): { playerId: number; name: string; rating: number; games: number }[] {
-    const rows = this.db
+  /** A finished season's final standings (placed players only). */
+  private seasonRows(ladder: LadderId, season: number) {
+    return this.db
       .prepare(
-        `SELECT r.player_id AS playerId, p.name AS name, r.mode AS mode, r.rating AS rating, r.rd AS rd, r.games AS games
-         FROM ratings r JOIN players p ON p.id = r.player_id
-         WHERE r.mode IN ('1v1', '2v2', '5v5')`,
+        `SELECT s.player_id AS playerId, p.name AS name, s.rating AS rating, s.games AS games, s.wins AS wins
+         FROM season_results s JOIN players p ON p.id = s.player_id
+         WHERE s.ladder = ? AND s.season = ? AND s.placed = 1
+         ORDER BY s.rating DESC, s.player_id ASC`,
       )
-      .all() as {
+      .all(ladder, season) as {
       playerId: number;
       name: string;
-      mode: RankedMode;
       rating: number;
-      rd: number;
       games: number;
+      wins: number;
     }[];
-    const by = new Map<number, { name: string; modes: ModeRatings }>();
-    for (const r of rows) {
-      const e = by.get(r.playerId) ?? { name: r.name, modes: {} };
-      e.modes[r.mode] = { rating: r.rating, rd: r.rd, games: r.games };
-      by.set(r.playerId, e);
-    }
-    const out: { playerId: number; name: string; rating: number; games: number }[] = [];
-    for (const [playerId, e] of by) {
-      const games = Object.values(e.modes).reduce((s, m) => s + (m?.games ?? 0), 0);
-      const g = globalRating(e.modes);
-      if (g !== null && games >= PLACEMENT_GAMES)
-        out.push({ playerId, name: e.name, rating: g, games });
-    }
-    return out.sort((a, b) => b.rating - a.rating || a.playerId - b.playerId);
   }
 
-  leaderboard(which: LadderMode | 'global', limit = 50): LeaderRow[] {
-    const rows = which === 'global' ? this.globalRows() : this.modeRows(which);
+  /** Leaderboard of a ladder; `season` = a finished season's final standings (seasonal ladders). */
+  leaderboard(ladder: LadderId, limit = 50, season?: number): LeaderRow[] {
+    const rows =
+      season !== undefined && season !== this.season()
+        ? this.seasonRows(ladder, season)
+        : this.ladderRows(ladder);
     return rows.slice(0, limit).map((r, i) => ({
       position: i + 1,
       ...r,
       rating: Math.round(r.rating),
-      tier: tierFor(r.rating, { placementDone: true, leaderboardPosition: i + 1 }),
+      rank: ladderRank(ladder, r.rating, { position: i + 1 }),
     }));
+  }
+
+  private standing(playerId: number, ladder: LadderId): LadderStanding {
+    const def = LADDERS[ladder];
+    const s = this.rating(playerId, ladder);
+    const p = placementOf(ladder, s);
+    const position = p.placed
+      ? this.ladderRows(ladder).findIndex((r) => r.playerId === playerId) + 1 || null
+      : null;
+    const hidden = def.hideWhilePlacing && !p.placed;
+    return {
+      ladder,
+      name: def.name,
+      rating: hidden ? null : Math.round(s.rating.rating),
+      games: s.games,
+      wins: s.wins,
+      placed: p.placed,
+      placement: { done: p.done, need: p.need, unit: p.unit },
+      rank: hidden
+        ? null
+        : ladderRank(ladder, s.rating.rating, {
+            placed: p.placed,
+            placementPlayed: p.done,
+            position: position ?? undefined,
+          }),
+      position,
+    };
   }
 
   profile(playerId: number): Profile | null {
@@ -423,47 +484,34 @@ export class RankedStore {
       .prepare('SELECT id, name, warnings FROM players WHERE id = ?')
       .get(playerId) as { id: number; name: string; warnings: number } | undefined;
     if (!p) return null;
-    const modes: Profile['modes'] = {};
-    const mr: ModeRatings = {};
-    for (const mode of LADDER_MODES) {
-      const s = this.rating(playerId, mode);
-      if (s.games === 0) continue;
-      const placed = s.games >= PLACEMENT_GAMES;
-      const pos = placed
-        ? this.modeRows(mode).findIndex((r) => r.playerId === playerId) + 1 || null
-        : null;
-      modes[mode] = {
-        rating: Math.round(s.rating.rating),
-        rd: Math.round(s.rating.rd),
-        games: s.games,
-        wins: s.wins,
-        position: pos,
-        tier: tierFor(s.rating.rating, {
-          placementDone: placed,
-          placementGamesPlayed: s.games,
-          leaderboardPosition: pos ?? undefined,
-        }),
-      };
-      // (the arena ladder is not part of the global rank)
-      if ((RANKED_MODES as readonly string[]).includes(mode))
-        mr[mode as RankedMode] = { rating: s.rating.rating, rd: s.rating.rd, games: s.games };
-    }
-    const g = globalRating(mr);
-    const totalGames = Object.values(mr).reduce((s, m) => s + (m?.games ?? 0), 0);
-    const gPos =
-      g !== null ? this.globalRows().findIndex((r) => r.playerId === playerId) + 1 || null : null;
+    const ladders = Object.fromEntries(
+      LADDER_IDS.map((l) => [l, this.standing(playerId, l)]),
+    ) as Record<LadderId, LadderStanding>;
+    const pastSeasons = (
+      this.db
+        .prepare(
+          `SELECT season, rating, placed FROM season_results
+           WHERE player_id = ? AND ladder = 'premier' ORDER BY season DESC`,
+        )
+        .all(playerId) as { season: number; rating: number; placed: number }[]
+    ).map((r) => ({
+      season: r.season,
+      rating: r.placed ? Math.round(r.rating) : null,
+      rank: r.placed ? ladderRank('premier', r.rating) : null,
+    }));
     const recent = (
       this.db
         .prepare(
-          `SELECT m.mode AS mode, m.ranked AS ranked, m.winner AS winner, mp.team AS team, mp.rating_delta AS delta,
-                  mp.kills AS kills, mp.deaths AS deaths, m.created_at AS at, mp.left_early AS left,
-                  mp.place AS place
+          `SELECT m.mode AS mode, m.ranked AS ranked, m.ladder AS ladder, m.winner AS winner, mp.team AS team,
+                  mp.rating_delta AS delta, mp.kills AS kills, mp.deaths AS deaths, m.created_at AS at,
+                  mp.left_early AS left, mp.place AS place
            FROM match_players mp JOIN matches m ON m.id = mp.match_id
            WHERE mp.player_id = ? ORDER BY m.id DESC LIMIT 10`,
         )
         .all(playerId) as {
         mode: string;
         ranked: number;
+        ladder: string | null;
         winner: number | null;
         team: number;
         delta: number;
@@ -475,6 +523,9 @@ export class RankedStore {
       }[]
     ).map((r) => ({
       mode: r.mode,
+      ladder: (LADDER_IDS as readonly string[]).includes(r.ladder ?? '')
+        ? (r.ladder as LadderId)
+        : null,
       ranked: !!r.ranked,
       won: r.left
         ? false
@@ -492,19 +543,120 @@ export class RankedStore {
     return {
       id: p.id,
       name: p.name,
-      modes,
-      global: {
-        rating: g === null ? null : Math.round(g),
-        position: gPos,
-        tier: tierFor(g ?? 0, {
-          placementDone: g !== null && totalGames >= PLACEMENT_GAMES,
-          placementGamesPlayed: totalGames,
-          leaderboardPosition: gPos ?? undefined,
-        }),
-      },
+      season: this.season(),
+      ladders,
+      pastSeasons,
       recent,
       bannedUntil: this.bannedUntil(playerId),
       warnings: p.warnings,
+    };
+  }
+
+  // ---------------- seasons ----------------
+
+  season(): number {
+    const row = this.db.prepare('SELECT MAX(number) AS n FROM seasons').get() as {
+      n: number | null;
+    };
+    return row.n ?? 1;
+  }
+
+  /**
+   * Start a new season: archive every seasonal ladder's final ratings (season_results), pull
+   * each rating 40% toward the start (rating/ladders.ts seasonResetRating) and start placement
+   * over. Returns the new season number and how many ratings were reset.
+   */
+  startNewSeason(): { season: number; players: number } {
+    const old = this.season();
+    let players = 0;
+    this.db.exec('BEGIN');
+    try {
+      for (const ladder of LADDER_IDS) {
+        const def = LADDERS[ladder];
+        if (!def.seasonal) continue;
+        const placedCol = def.placement.unit === 'wins' ? 'season_wins' : 'games';
+        this.db
+          .prepare(
+            `INSERT OR REPLACE INTO season_results (season, player_id, ladder, rating, games, wins, placed)
+             SELECT ?, player_id, mode, rating, season_games, season_wins, CASE WHEN ${placedCol} >= ? THEN 1 ELSE 0 END
+             FROM ratings WHERE mode = ? AND season_games > 0`,
+          )
+          .run(old, def.placement.count, ladder);
+        const rows = this.db
+          .prepare('SELECT player_id AS id, rating FROM ratings WHERE mode = ?')
+          .all(ladder) as { id: number; rating: number }[];
+        const upd = this.db.prepare(
+          'UPDATE ratings SET rating = ?, season_wins = 0, season_games = 0 WHERE player_id = ? AND mode = ?',
+        );
+        for (const r of rows) upd.run(seasonResetRating(r.rating), r.id, ladder);
+        players += rows.length;
+      }
+      this.db
+        .prepare('INSERT INTO seasons (number, started_at) VALUES (?, ?)')
+        .run(old + 1, this.now());
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return { season: old + 1, players };
+  }
+
+  // ---------------- settings: Premier opening hours ----------------
+
+  private setting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  private setSetting(key: string, value: string): void {
+    this.db
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value);
+  }
+
+  schedule(): PremierSchedule {
+    try {
+      const v = JSON.parse(this.setting(SCHEDULE_KEY) ?? 'null') as PremierSchedule | null;
+      if (v && (v.mode === 'always' || v.mode === 'scheduled') && Array.isArray(v.windows))
+        return v;
+    } catch {
+      /* fall back to the default */
+    }
+    return DEFAULT_SCHEDULE;
+  }
+
+  setSchedule(s: PremierSchedule): void {
+    this.setSetting(SCHEDULE_KEY, JSON.stringify(s));
+  }
+
+  premierStatus(): ScheduleStatus {
+    return scheduleStatus(this.schedule(), new Date(this.now()));
+  }
+
+  /** What every client needs to know about ranked right now (protocol RankedInfo). */
+  info(): {
+    season: number;
+    premier: {
+      open: boolean;
+      opensInSec: number | null;
+      closesInSec: number | null;
+      hours: string;
+    };
+  } {
+    const st = this.premierStatus();
+    const sec = (ms: number | null) => (ms === null ? null : Math.ceil(ms / 1000));
+    return {
+      season: this.season(),
+      premier: {
+        open: st.open,
+        opensInSec: sec(st.opensInMs),
+        closesInSec: sec(st.closesInMs),
+        hours: describeSchedule(this.schedule()),
+      },
     };
   }
 

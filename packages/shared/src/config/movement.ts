@@ -118,6 +118,17 @@ export const MOVEMENT_DEFAULTS = {
   dashSpeed: 16,
   dashCooldownSec: 3,
   dashDurationSec: 0.15,
+
+  // Races (race tracks, sim/race.ts): the dash key is SURGE instead — a short forward burst, a
+  // few per race; the jetpack tank only refills at fuel cells and checkpoint respawns; falling
+  // off (or the respawn key) puts you back at your last checkpoint after a penalty.
+  raceSurgeCharges: 3,
+  raceSurgeMul: 1.6, // × sprint speed (at least), and running speed while it lasts
+  raceSurgeSec: 1,
+  raceJetpackFuelSec: 1.6, // a race tank (no refill on its own)
+  racePenaltySec: 1.5, // frozen at the checkpoint after a fall / respawn
+  raceFuelCellRadius: 1.6, // pick-up reach of a fuel cell (body centre)
+  raceRespawnHoldSec: 0.3, // hold the respawn key this long (no accidental resets)
 } as const;
 
 export type MovementConfig = { -readonly [K in keyof typeof MOVEMENT_DEFAULTS]: number };

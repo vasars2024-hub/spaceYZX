@@ -511,6 +511,138 @@ const orbitalRing = (): MapAnalysisConfig => {
   };
 };
 
+// Canyon Relay: outdoor, mirrored north ↔ south across z = 50 (Cyan north, Orange south) and
+// built the same east ↔ west. Coordinates from packages/shared/src/level/maps/canyon-relay.ts (the
+// CANYON_RELAY table and the waypoint names). Its routes are checked against the owner's target
+// times ('targets' rules in timing.ts).
+const canyonRelay = (): MapAnalysisConfig => {
+  const regions: RegionDef[] = [];
+  const rect = (
+    name: string,
+    side: Team | null,
+    lane: string,
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    y0 = -ALL_Y,
+    y1 = ALL_Y,
+  ) => regions.push({ name, side, lane, min: v3(x0, y0, z0), max: v3(x1, y1, z1) });
+  const halves = [
+    { T: 'north', side: 0 as Team, z: (z: number) => z },
+    { T: 'south', side: 1 as Team, z: (z: number) => 100 - z },
+  ];
+  const zr = (f: (z: number) => number, a: number, b: number): [number, number] => [
+    Math.min(f(a), f(b)),
+    Math.max(f(a), f(b)),
+  ];
+  rect('Cyan camp', 0, 'base', 45, 75, 4, 16);
+  rect('Orange camp', 1, 'base', 45, 75, 84, 96);
+  rect('relay rock', null, 'mesa', 55, 65, 44, 56);
+  rect('east bridge', null, 'mesa', 83, 87, 42, 58);
+  rect('west bridge', null, 'mesa', 33, 37, 42, 58);
+  rect('A basin', null, 'A', 98, 114, 42, 58);
+  rect('B basin', null, 'B', 6, 22, 42, 58);
+  for (const { T, side, z } of halves) {
+    rect(`${T} spire`, side, 'mesa', 46, 74, ...zr(z, 24, 30), 6);
+    rect(`${T} mesa`, side, 'mesa', 28, 92, ...zr(z, 14, 42), 2.5);
+    rect(`${T}-east outer path`, side, 'east', 75, 100, ...zr(z, 4, 18));
+    rect(`${T}-west outer path`, side, 'west', 20, 45, ...zr(z, 4, 18));
+    rect(`${T}-east slot canyon`, side, 'east', 92, 114, ...zr(z, 4, 42));
+    rect(`${T}-west slot canyon`, side, 'west', 6, 28, ...zr(z, 4, 42));
+  }
+
+  const chokepoints: ChokepointDef[] = [];
+  for (const { T, side, z } of halves) {
+    const team = side === 0 ? 'Cyan' : 'Orange';
+    const c = (
+      name: string,
+      short: string,
+      lane: string,
+      pos: Vec3,
+      across: 'x' | 'z',
+      halfWidth: number,
+      final = false,
+    ) => chokepoints.push({ name, short, side, lane, pos, across, halfWidth, final });
+    const t = T[0].toUpperCase();
+    c(`${team} camp gate (east)`, `${t} gate E`, 'east', v3(76, 1, z(11)), 'z', 2, true);
+    c(`${team} camp gate (west)`, `${t} gate W`, 'west', v3(44, 1, z(11)), 'z', 2, true);
+    for (const [e, s] of [
+      ['east', 1],
+      ['west', -1],
+    ] as const) {
+      const X = (x: number) => (s > 0 ? x : 120 - x);
+      c(`${T}-${e} cliff ramp top`, `${t}${e[0]} ramp`, 'mesa', v3(X(79), 5, z(16)), 'z', 2);
+      c(`${T}-${e} canyon passage`, `${t}${e[0]} pass`, e, v3(X(96), 3, z(30)), 'z', 2);
+      c(`${T}-${e} bridge end`, `${t}${e[0]} bridge`, 'mesa', v3(X(85), 5, z(42)), 'x', 1.6);
+      c(`${T}-${e} canyon dip`, `${t}${e[0]} dip`, e, v3(X(107), 1, z(36)), 'x', 7);
+    }
+  }
+
+  // each team's routes to the enemy Tower, both sites and the first meeting points, timed by
+  // the walker; `targetSec` are the owner's plan (sprint 9 m/s)
+  const routes: RouteSpec[] = [];
+  const r = (
+    mode: RouteSpec['mode'],
+    team: Team,
+    to: string,
+    name: string,
+    via: string[],
+    targetSec?: number,
+    anyOf?: string[],
+  ) =>
+    routes.push({
+      mode,
+      team,
+      to,
+      name,
+      via,
+      ...(targetSec !== undefined ? { targetSec } : {}),
+      ...(anyOf ? { anyOf } : {}),
+    });
+  for (const team of [0, 1] as const) {
+    const [me, them] = team === 0 ? ['N', 'S'] : ['S', 'N'];
+    const enemy = team === 0 ? 'Orange Tower' : 'Cyan Tower';
+    r('contact', team, 'gorge edge', 'cliff ramp, mesa (gorge edge)', [], 9, [`edge${me}`]);
+    r('contact', team, 'bridge', 'cliff ramp, mesa, bridge (middle)', [], 10, [
+      'bridgeMidE',
+      'bridgeMidW',
+    ]);
+    r('tower', team, enemy, 'rock bridge', ['bridgeMidE', `tower${them}`]);
+    r('tower', team, enemy, 'slot canyons, through a basin', [
+      `cOut${me}E`,
+      'siteE',
+      `tower${them}`,
+    ]);
+    for (const [site, s, dest] of [
+      ['A site', 'E', 'siteE'],
+      ['B site', 'W', 'siteW'],
+    ] as const) {
+      r('bomb', team, site, 'outer path, slot canyon', [`cOut${me}${s}`, dest], 10);
+      r('bomb', team, site, 'mesa, canyon passage', [`passTop${me}${s}`, dest], 11.5);
+    }
+  }
+
+  return {
+    id: 'canyon-relay',
+    teamNames: ['Cyan (north)', 'Orange (south)'],
+    regions,
+    baseRegion: ['Cyan camp', 'Orange camp'],
+    chokepoints,
+    lanes: [],
+    laneLabels: {
+      mesa: 'mesas, bridges and the relay rock',
+      east: 'east outer path and slot canyon',
+      west: 'west outer path and slot canyon',
+      A: 'A basin',
+      B: 'B basin',
+      base: 'camps',
+    },
+    routes,
+    timingRules: 'targets',
+  };
+};
+
 /**
  * Fallback for maps without a hand-made setup: a base box around each team's spawns and the
  * two halves of the map (x < 0 / x > 0). No chokepoints or lanes.
@@ -562,6 +694,7 @@ const CONFIGS: Record<string, () => MapAnalysisConfig> = {
   kestrel,
   'split-deck': splitDeck,
   'orbital-ring': orbitalRing,
+  'canyon-relay': canyonRelay,
 };
 
 /** Analysis setup for a map id (hand-made when available, otherwise the generic fallback). */

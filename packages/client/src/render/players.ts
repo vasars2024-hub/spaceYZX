@@ -56,6 +56,7 @@ const rimFragment = /* glsl */ `
   uniform float shade;
   uniform float flash;
   uniform float ice;
+  uniform float opacity;
   varying vec3 vN;
   varying vec3 vV;
   varying vec3 vColor;
@@ -67,7 +68,8 @@ const rimFragment = /* glsl */ `
     // Freeze power-up: iced over (pale blue body, frosty white rim)
     vec3 iceCol = vec3(0.55, 0.85, 1.0) * (0.45 + 0.55 * light) + vec3(0.85, 0.97, 1.0) * rim * 1.6;
     col = mix(col, iceCol, ice * 0.8);
-    gl_FragColor = vec4(col, 1.0);
+    // races: other racers are see-through (the rim stays bright so you still spot them)
+    gl_FragColor = vec4(col, mix(opacity, 1.0, rim * 0.55));
   }
 `;
 
@@ -88,6 +90,7 @@ export const makeRimMaterial = (team: 0 | 1): THREE.ShaderMaterial =>
       shade: { value: 1 },
       flash: { value: 0 },
       ice: { value: 0 },
+      opacity: { value: 1 },
     },
   });
 
@@ -389,6 +392,17 @@ const buildModel = (team: 0 | 1, id: number): Model => {
   };
 };
 
+/** See-through robots: blended, and not hiding what's behind them in the depth buffer. */
+const applyOpacity = (mat: THREE.ShaderMaterial, opacity: number): void => {
+  mat.uniforms.opacity.value = opacity;
+  const see = opacity < 1;
+  if (mat.transparent !== see) {
+    mat.transparent = see;
+    mat.depthWrite = !see;
+    mat.needsUpdate = true;
+  }
+};
+
 const REST = restPose();
 const WHITE = new THREE.Color(0xffffff);
 
@@ -412,6 +426,20 @@ export class PlayerModels {
   private holding = new Set<number>();
   /** CS mode: dim robots holding guns */
   private cs = false;
+  /**
+   * How opaque the robots are (1 = solid). Races draw the other racers (and your personal-best
+   * ghost) see-through so they never block your view; your own first-person view is unaffected.
+   */
+  private opacity = 1;
+
+  setOpacity(opacity: number): void {
+    this.opacity = Math.max(0.05, Math.min(1, opacity));
+  }
+
+  /** The robots' opacity (tests). */
+  get modelOpacity(): number {
+    return this.opacity;
+  }
 
   /** CS mode on/off: players drawn dim (faint rim, darker colors) and holding their guns. */
   setCsMode(on: boolean): void {
@@ -441,6 +469,7 @@ export class PlayerModels {
         this.group.add(m.root);
       }
       m.root.visible = p.alive;
+      if (m.mat.uniforms.opacity.value !== this.opacity) applyOpacity(m.mat, this.opacity);
       if (!p.alive) {
         // respawn starts from a clean slate (no half-played throw)
         m.armed = m.wasAiming = m.wasSlash = m.wasWarn = false;

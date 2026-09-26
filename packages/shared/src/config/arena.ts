@@ -1,4 +1,4 @@
-// Arena 1v1 numbers (rules/arena.ts, the ranked arena queue and ladder). All tunable.
+// Arena 1v1 numbers (rules/arena.ts; casual only: private rooms and practice). All tunable.
 // Kept out of GameConfig: only the rules (server / offline practice) read them, the client just
 // shows the arena state it is sent.
 
@@ -27,14 +27,6 @@ export const ARENA_DEFAULTS = {
   rematchCost: 40,
   /** cost per ladder step between the two, squared (keeps duels near your ladder position) */
   ladderGapCost: 1,
-  // ranked queue
-  /** once 2 players are waiting, gather more for this long (8 start at once) */
-  queueGatherSec: 15,
-  /** with more than 8 waiting: the ones nearest the longest waiter's rating go first */
-  queueMaxPlayers: 8,
-  // ranked ladder (rating/arena.ts)
-  /** rating points a leaver loses on top of forfeiting the duel */
-  leaverPenalty: 15,
 } as const;
 
 export type ArenaSettings = { -readonly [K in keyof typeof ARENA_DEFAULTS]: number };

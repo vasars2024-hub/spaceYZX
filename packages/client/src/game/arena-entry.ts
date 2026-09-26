@@ -8,19 +8,14 @@
 //   ARENA_AVAILABLE                          true: the arena can be played (offline + online)
 //   startArenaPractice(app, { loadout, bots, skill })
 //                                            offline arena vs `bots` bots (1–7) on this PC
-//   queueArena(core, loadout)                ranked arena queue (core.queueRanked('arena', …));
-//                                            core.queueRanked(null) leaves it. Needs 2+ players,
-//                                            gathers up to 8 for ~15 s. Status: core.queue.
 //   createArenaRoom(core, { loadout, bots, skill })
 //                                            private arena room (bots fill it up to 1 + bots);
 //                                            share core.code; the room starts by itself 10 s
 //                                            after 2 players are in (host: startMatch sooner)
 //   arenaOnlineFeatures(core, combat)        HUD features to add in App.startOnline when
 //                                            core.mode === 'arena' (after the match feature)
-//   ARENA_LADDER ('arena')                   the ranked ladder id: profile.modes.arena
-//                                            ({ rating, tier, games, wins, … }) and
-//                                            /api/leaderboard?mode=arena. Not part of the
-//                                            global rank. Ranks: same tiers (Asteroid → Galaxy).
+//   The Arena is casual only (private rooms and practice): it has no ranked queue or ladder
+//   (ranked = Premier + Duels, shared/rating/ladders.ts).
 import type {
   ArenaState,
   BotMemory,
@@ -58,8 +53,6 @@ import { BOT_NAMES } from './practice';
 import { loadTuning } from '../ui/tuning';
 
 export const ARENA_AVAILABLE = true;
-/** The ranked ladder / queue id of Arena 1v1. */
-export const ARENA_LADDER = 'arena';
 
 export interface ArenaPracticeOptions {
   loadout: LoadoutName;
@@ -151,10 +144,6 @@ export const startArenaPractice = (app: App, opts: ArenaPracticeOptions): void =
       : 'Arena 1v1 · Tab standings · Esc menu · LMB throw · RMB wind-up · E slash · R recall · Q grenade',
   );
 };
-
-/** Join the ranked arena queue with a kit (players only meet the same kit). */
-export const queueArena = (core: NetCore, loadout: LoadoutName = 'lethal'): void =>
-  core.queueRanked('arena', loadout);
 
 /** Create a private arena room ('bots' fill it up to 1 + bots players, max 8). */
 export const createArenaRoom = (

@@ -19,7 +19,10 @@ import {
   practiceMapId,
   practiceModes,
   practiceSteps,
-  rankedQueues,
+  rankedCards,
+  rankedQueueName,
+  countdown,
+  standingText,
   roomBack,
   roomCreateArgs,
   roomMaps,
@@ -99,7 +102,7 @@ describe('menu flow: practice wizard', () => {
 
   it('lists the five modes (Arena only behind its flag) with icons', () => {
     const ids = practiceModes(false).map((m) => m.id);
-    expect(ids).toEqual(['match', 'bomb', 'elim', 'cs', 'deathmatch']);
+    expect(ids).toEqual(['match', 'bomb', 'elim', 'cs', 'deathmatch', 'race']);
     expect(modeChoice('elim').desc).toMatch(/Last team standing wins the round/);
     expect(practiceModes(true).map((m) => m.id)).toContain('arena');
     expect(practiceModes().some((m) => m.id === 'arena')).toBe(ARENA_ENABLED);
@@ -134,7 +137,7 @@ describe('menu flow: online room wizard', () => {
 
   it('still offers every non-Arena map online (objective maps first)', () => {
     const { best, other } = roomMaps('tower');
-    const all = MAPS.filter((m) => !m.arena).map((m) => m.id);
+    const all = MAPS.filter((m) => !m.arena && !m.race).map((m) => m.id);
     expect([...best, ...other].map((m) => m.id).sort()).toEqual(all.sort());
     expect(best.every((m) => m.competitive)).toBe(true);
   });
@@ -147,6 +150,38 @@ describe('menu flow: online room wizard', () => {
       const { best, other } = roomMaps(o);
       expect([...best, ...other].some((m) => m.arena)).toBe(false);
     }
+  });
+
+  it('never offers a race track outside races, and races only on race tracks', () => {
+    for (const mode of ['match', 'bomb', 'elim', 'cs', 'deathmatch', 'arena'] as const)
+      expect(mapsForMode(mode).some((m) => m.race)).toBe(false);
+    for (const o of ['tower', 'bomb', 'elim', 'cs', 'elim-cs', 'arena'] as const) {
+      const { best, other } = roomMaps(o);
+      expect([...best, ...other].some((m) => m.race)).toBe(false);
+    }
+    const tracks = mapsForMode('race').map((m) => m.id);
+    expect(tracks).toEqual(['race-cliffline', 'race-canopy']);
+    expect(roomMaps('race')).toEqual({ best: mapsForMode('race'), other: [] });
+  });
+
+  it('race: a practice mode (time trial or bot racers) and a room objective', () => {
+    expect(sizesFor('race')).toEqual([1, 2, 4, 8]);
+    expect(hasKitChoice('race')).toBe(false);
+    expect(practiceSteps('race')).toEqual(['mode', 'map', 'setup']);
+    const p = pickPracticeMode(initialPractice(), 'race');
+    expect(p.map).toBe('race-cliffline');
+    expect(p.step).toBe('map');
+    expect(practiceMapId(pickPracticeMap(p, 'race-canopy'))).toBe('race-canopy');
+    expect(ICONS[modeChoice('race').icon]).toBeTruthy();
+    const r = pickRoomObjective(initialRoom(), 'race');
+    expect(r.map).toBe('race-cliffline');
+    expect(
+      roomCreateArgs({ ...pickRoomMap(r, 'race-canopy'), size: '5v5', bots: true }),
+    ).toMatchObject({ mode: 'race', map: 'race-canopy', bots: 7 });
+    expect(roomCreateArgs({ ...r, size: '1v1', bots: false })).toMatchObject({
+      mode: 'race',
+      bots: 0,
+    });
   });
 
   it('turns the choices into createRoom arguments (CS = bomb rules + CS loadout)', () => {
@@ -194,15 +229,39 @@ describe('menu flow: online room wizard', () => {
     ).toMatchObject({ mode: 'arena', bots: 5 });
   });
 
-  it('ranked has the three queues, plus Arena only behind its flag', () => {
-    expect(rankedQueues(false).map((q) => q.mode)).toEqual(['1v1', '2v2', '5v5']);
-    // Arena: one queue per kit, both on the 'arena' ladder
-    expect(rankedQueues(true).length).toBe(5);
+  it('ranked is two cards: Premier (one queue) and Duels (1v1 + 2v2, one rating); no Arena', () => {
+    const cards = rankedCards();
+    expect(cards.map((c) => c.ladder)).toEqual(['premier', 'duels']);
+    expect(cards[0].queues.map((q) => q.id)).toEqual(['premier']);
+    expect(cards[1].queues.map((q) => [q.id, q.label])).toEqual([
+      ['duels-1v1', '1v1'],
+      ['duels-2v2', '2v2'],
+    ]);
+    expect(cards.flatMap((c) => c.queues).some((q) => q.id.includes('arena'))).toBe(false);
+    expect(rankedQueueName('premier')).toBe('Premier');
+    expect(rankedQueueName('duels-2v2')).toBe('Duels 2v2');
+  });
+
+  it('ranked texts: countdown and placement', () => {
+    expect(countdown(2 * 3600 + 13 * 60 + 5)).toBe('2h 13m');
+    expect(countdown(13 * 60 + 5)).toBe('13m 05s');
+    expect(countdown(3 * 86400 + 4 * 3600)).toBe('3d 4h');
+    expect(countdown(-5)).toBe('0m 00s');
+    const placing = {
+      rating: null,
+      placed: false,
+      placement: { done: 2, need: 5, unit: 'wins' as const },
+      rank: null,
+    };
+    expect(standingText(placing)).toBe('Placement 2/5 wins');
     expect(
-      rankedQueues(true)
-        .filter((q) => q.mode === 'arena')
-        .map((q) => q.loadout),
-    ).toEqual(['lethal', 'cs']);
+      standingText({
+        ...placing,
+        rating: 1240,
+        placed: true,
+        rank: { label: 'Planet', color: '#4f8dff' },
+      }),
+    ).toBe('1240 · Planet');
   });
 });
 

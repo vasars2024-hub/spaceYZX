@@ -1,8 +1,8 @@
 // Wires accounts, ranked, matchmaking, reports and anti-grief into the game hub, and serves
 // the small JSON API (leaderboards, profiles).
 import type http from 'node:http';
-import type { LadderMode } from '@space-yz/shared';
-import { LADDER_MODES } from '@space-yz/shared';
+import type { LadderId } from '@space-yz/shared';
+import { LADDER_IDS, LADDERS, ladderForMode } from '@space-yz/shared';
 import type { HubServices } from '../game/hub';
 import { openDb, type Db } from './db';
 import { Accounts } from './accounts';
@@ -15,6 +15,8 @@ export interface Services {
   ranked: RankedStore;
   queue: RankedQueue;
   hub: HubServices;
+  /** Tell every connected player the season / Premier hours changed. */
+  broadcastRankedInfo(): void;
   api: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
   close(): void;
 }
@@ -53,10 +55,12 @@ export const createServices = (opts: {
       };
     },
     profile: (conn) => (conn.accountId !== null ? ranked.profile(conn.accountId) : null),
-    queue: (h, conn, mode, opts) => {
+    queue: (h, conn, id) => {
       queue.start(h);
-      queue.set(conn, mode === null ? null : (mode as LadderMode), opts?.loadout);
+      queue.set(conn, id);
     },
+    veto: (conn, map) => void queue.ban(conn, map),
+    onHello: (conn) => conn.sendJson({ t: 'rankedInfo', data: ranked.info() }),
     onDisconnect: (_h, conn) => queue.remove(conn),
     onReport: (conn, player, reason, room) => {
       const m = room.members.get(player);
@@ -91,37 +95,32 @@ export const createServices = (opts: {
         result,
         names,
       });
+      const ladder = room.ranked ? ladderForMode(result.mode) : null;
       for (const m of room.humans) {
         if (!m.conn || m.accountId === null) continue;
         const profile = ranked.profile(m.accountId);
         m.conn.sendJson({ t: 'profile', data: profile });
         const d = deltas.get(m.accountId);
-        // (3v3 is casual only: it has no ladder, and no rating change to show)
-        const tier = result.mode === '3v3' ? undefined : profile?.modes[result.mode]?.tier.label;
-        if (d !== undefined)
-          m.conn.sendJson({
-            t: 'notice',
-            msg: `Rating ${d >= 0 ? '+' : ''}${Math.round(d)}${tier ? ` · ${result.mode}: ${tier}` : ''}`,
-          });
+        const st = ladder ? profile?.ladders[ladder] : undefined;
+        if (d === undefined || !st) continue;
+        m.conn.sendJson({
+          t: 'notice',
+          msg:
+            // Premier hides the rating until 5 placement wins
+            st.rating === null
+              ? `${st.name} placement: ${st.placement.done}/${st.placement.need} ${st.placement.unit}`
+              : `${st.name} rating ${d >= 0 ? '+' : ''}${Math.round(d)} · ${st.rating}${st.rank ? ` ${st.rank.label}` : ''}`,
+        });
       }
     },
   };
 
-  // Arena 1v1: its own ladder ('arena' in profiles and leaderboards)
+  // Arena 1v1 is casual only now: its matches are just recorded in the history
   hub.onArenaEnd = (room, result) => {
-    const deltas = ranked.recordArena({ ranked: room.ranked, map: room.map, result });
-    for (const m of room.humans) {
-      if (!m.conn || m.accountId === null) continue;
-      const profile = ranked.profile(m.accountId);
-      m.conn.sendJson({ t: 'profile', data: profile });
-      const d = deltas.get(m.accountId);
-      const tier = profile?.modes.arena?.tier.label;
-      if (d !== undefined)
-        m.conn.sendJson({
-          t: 'notice',
-          msg: `Arena rating ${d >= 0 ? '+' : ''}${Math.round(d)}${tier ? ` · Arena: ${tier}` : ''}`,
-        });
-    }
+    ranked.recordArena({ map: room.map, result });
+    for (const m of room.humans)
+      if (m.conn && m.accountId !== null)
+        m.conn.sendJson({ t: 'profile', data: ranked.profile(m.accountId) });
   };
 
   const api = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
@@ -130,15 +129,27 @@ export const createServices = (opts: {
     if (req.method !== 'GET') return json(res, 405, { error: 'GET only' });
     switch (url.pathname) {
       case '/api/leaderboard': {
-        const which = url.searchParams.get('mode') ?? 'global';
-        if (which !== 'global' && !LADDER_MODES.includes(which as LadderMode))
-          return json(res, 400, { error: 'unknown mode' });
+        // ?mode=premier|duels (&season=N: a finished Premier season's final standings)
+        const which = url.searchParams.get('mode') ?? 'premier';
+        if (!LADDER_IDS.includes(which as LadderId))
+          return json(res, 400, { error: 'unknown ladder' });
+        const ladder = which as LadderId;
         const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit')) || 50));
+        const current = ranked.season();
+        const sp = Number(url.searchParams.get('season'));
+        const season =
+          LADDERS[ladder].seasonal && Number.isInteger(sp) && sp >= 1 && sp <= current
+            ? sp
+            : current;
         return json(res, 200, {
-          mode: which,
-          rows: ranked.leaderboard(which as LadderMode | 'global', limit),
+          mode: ladder,
+          season: LADDERS[ladder].seasonal ? season : null,
+          currentSeason: current,
+          rows: ranked.leaderboard(ladder, limit, season),
         });
       }
+      case '/api/ranked':
+        return json(res, 200, ranked.info());
       case '/api/profile': {
         const id = Number(url.searchParams.get('id'));
         const p = Number.isInteger(id) ? ranked.profile(id) : null;
@@ -159,6 +170,10 @@ export const createServices = (opts: {
     ranked,
     queue,
     hub,
+    broadcastRankedInfo: () => {
+      const msg = { t: 'rankedInfo' as const, data: ranked.info() };
+      for (const c of queue.hub?.conns ?? []) if (c.helloDone) c.sendJson(msg);
+    },
     api,
     close: () => {
       queue.stop();

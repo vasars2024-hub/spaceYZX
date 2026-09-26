@@ -12,6 +12,10 @@ import {
   type LevelDef,
   type MapInfo,
   type MatchObjective,
+  type LadderId,
+  type RankedQueueId,
+  LADDER_IDS,
+  LADDERS,
 } from '@space-yz/shared';
 import type { IconName } from './icons';
 
@@ -20,15 +24,15 @@ import type { IconName } from './icons';
  * are in game/arena-entry.ts). While false, no Arena cards are shown anywhere.
  */
 export const ARENA_ENABLED = true;
-/** The ranked queue id of Arena 1v1 (the server's mode name), used when ARENA_ENABLED. */
-export const ARENA_RANKED_MODE = 'arena';
 
 /** Arena maps are only for the Arena (never offered for other modes). */
 const isArenaMap = (m: MapInfo): boolean => !!m.arena;
+/** Race tracks are only for races (game/race-entry.ts), and races only run on them. */
+const isRaceMap = (m: MapInfo): boolean => !!m.race;
 
 // ---------------------------------------------------------------- modes
 
-export type PracticeMode = 'match' | 'bomb' | 'elim' | 'cs' | 'deathmatch' | 'arena';
+export type PracticeMode = 'match' | 'bomb' | 'elim' | 'cs' | 'deathmatch' | 'arena' | 'race';
 
 export interface Choice<T extends string> {
   id: T;
@@ -74,6 +78,12 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
     desc: 'Rotating 1v1 duels, each in its own pit. Most duel wins in 8 minutes takes it.',
     icon: 'arena',
   },
+  {
+    id: 'race',
+    name: 'Race',
+    desc: 'Parkour race, no weapons: a time trial vs your best ghost, or vs bot racers.',
+    icon: 'race',
+  },
 ];
 
 /** Practice modes shown in the menu (Arena only when it exists). */
@@ -100,7 +110,9 @@ export const botSkillChoices = (): { id: BotSkillName; name: string; desc: strin
  * players in all (you + bots), each duel is 1v1.
  */
 export const sizesFor = (mode: PracticeMode): number[] =>
-  mode === 'arena' ? [2, 4, 6, 8] : [1, 2, 3, 5];
+  mode === 'arena' ? [2, 4, 6, 8] : mode === 'race' ? RACE_SIZES : [1, 2, 3, 5];
+/** Races: how many racers in all (1 = a time trial: just you and your best's ghost). */
+const RACE_SIZES = [1, 2, 4, 8];
 /** The Arena's default player count in practice (you + 3 bots: duels rotate). */
 const ARENA_DEFAULT_SIZE = 4;
 
@@ -138,6 +150,7 @@ export const mapsForMode = (
 ): MapInfo[] => {
   if (mode === 'deathmatch') return maps.filter((m) => m.id === 'training-bay');
   if (mode === 'arena') return maps.filter(isArenaMap);
+  if (mode === 'race') return maps.filter(isRaceMap);
   const comp = maps.filter((m) => m.competitive && !isArenaMap(m));
   const ok = comp.filter((m) => supports(defOf(m.id), mapNeed(mode)));
   return ok.length ? ok : comp;
@@ -149,9 +162,17 @@ export const MAP_BLURBS: Record<string, string> = {
   kestrel: 'Mirror-symmetric ship: three lanes with their own gravity.',
   'orbital-ring':
     'Station around a reactor core: ring + basement ring, zip-rails, launch pads, rift portals.',
+  'canyon-relay':
+    'Desert mesas at sunset over a deadly gorge: launch pads, rock bridges, slot canyons.',
+  'sakura-hold':
+    'Small blossom castle for 1v1–3v3: slow moat, a keep to climb, paper walls the Boomerang flies through.',
   'training-bay': 'Compact combat bay for quick fights.',
   'proving-grounds': 'The movement test ship: zero-G bay, wall corridor, flip room.',
   arena: 'Sealed duel pits: crates in the middle, upper ground along the sides.',
+  'race-cliffline':
+    'Alpine ridge at sunrise: switchbacks, zip-rails between peaks, an ice-cave portal, a lake.',
+  'race-canopy':
+    'Jungle treetops: rope rails, mushroom launch pads, a river gorge and temple ruins.',
 };
 
 /** Short feature tags of a map from its layout (Towers, bomb sites, sky duel). */
@@ -162,6 +183,7 @@ export const mapTags = (def: LevelDef): string[] => {
   if (def.portals?.length) tags.push('Portals');
   if (def.launchPads?.length) tags.push('Launch pads');
   if (def.skyArena) tags.push('Sky duel');
+  if (def.race) tags.push(`${def.race.checkpoints.length} checkpoints`);
   return tags;
 };
 
@@ -260,10 +282,13 @@ export const practiceMapId = (s: PracticeState): string =>
 
 // ---------------------------------------------------------------- online room wizard
 
-export type RoomObjective = 'tower' | 'bomb' | 'elim' | 'cs' | 'elim-cs' | 'arena' | 'arena-cs';
+export type RoomObjective =
+  'tower' | 'bomb' | 'elim' | 'cs' | 'elim-cs' | 'arena' | 'arena-cs' | 'race';
 
 /** An Arena 1v1 room (Boomerang or CS kit). */
 export const isArenaObjective = (o: RoomObjective): boolean => o === 'arena' || o === 'arena-cs';
+/** A parkour race room (a race track, up to 8 racers, no weapons). */
+export const isRaceObjective = (o: RoomObjective): boolean => o === 'race';
 /** Elimination (Boomerang kit, or 'elim-cs' with the CS kit). */
 export const isElimObjective = (o: RoomObjective): boolean => o === 'elim' || o === 'elim-cs';
 export type RoomSize = '1v1' | '2v2' | '3v3' | '5v5';
@@ -308,7 +333,21 @@ export const ROOM_OBJECTIVES: Choice<RoomObjective>[] = [
         },
       ] as Choice<RoomObjective>[])
     : []),
+  {
+    id: 'race',
+    name: 'Race',
+    desc: 'Parkour race on a race track, up to 8 racers. No weapons.',
+    icon: 'race',
+  },
 ];
+
+/** Race rooms: the size cards pick how many racers there are in all (bots fill up to it). */
+export const RACE_ROOM_SIZES: Record<RoomSize, { players: number; label: string; desc: string }> = {
+  '1v1': { players: 2, label: '2 racers', desc: 'You and one friend.' },
+  '2v2': { players: 4, label: '4 racers', desc: 'A small race.' },
+  '3v3': { players: 6, label: '6 racers', desc: 'A busy start line.' },
+  '5v5': { players: 8, label: '8 racers', desc: 'A full grid.' },
+};
 
 /** Arena rooms: the size cards pick how many players there are in all (bots fill up to it). */
 export const ARENA_ROOM_SIZES: Record<RoomSize, { players: number; label: string; desc: string }> =
@@ -345,13 +384,16 @@ const objectiveMode = (o: RoomObjective): PracticeMode =>
     ? 'match'
     : isArenaObjective(o)
       ? 'arena'
-      : isElimObjective(o)
-        ? 'elim'
-        : (o as PracticeMode);
+      : isRaceObjective(o)
+        ? 'race'
+        : isElimObjective(o)
+          ? 'elim'
+          : (o as PracticeMode);
 
 /**
  * Maps for an online room: the ones made for the objective first, then every other map (rooms
- * may use any map; those have no Towers / bomb sites for it). Arena maps are left out.
+ * may use any map; those have no Towers / bomb sites for it). Arena maps and race tracks are
+ * left out (races only offer race tracks).
  */
 export const roomMaps = (
   o: RoomObjective,
@@ -359,9 +401,12 @@ export const roomMaps = (
   defOf: (id: string) => LevelDef = mapDef,
 ): { best: MapInfo[]; other: MapInfo[] } => {
   const best = mapsForMode(objectiveMode(o), maps, defOf);
-  // (the Arena only plays on its own maps)
-  if (isArenaObjective(o)) return { best, other: [] };
-  return { best, other: maps.filter((m) => !best.includes(m) && !isArenaMap(m)) };
+  // (the Arena only plays on its own maps, races only on race tracks)
+  if (isArenaObjective(o) || isRaceObjective(o)) return { best, other: [] };
+  return {
+    best,
+    other: maps.filter((m) => !best.includes(m) && !isArenaMap(m) && !isRaceMap(m)),
+  };
 };
 
 export const pickRoomObjective = (
@@ -387,64 +432,112 @@ export const roomBack = (s: RoomState): RoomState | null => {
 export const roomCreateArgs = (
   s: RoomState,
 ): {
-  mode: RoomSize | 'arena';
+  mode: RoomSize | 'arena' | 'race';
   map: string;
   bots: number;
   skill: BotSkillName;
   objective: MatchObjective;
   loadout: 'lethal' | 'cs';
 } =>
-  isArenaObjective(s.objective)
+  isRaceObjective(s.objective)
     ? {
-        mode: 'arena',
+        mode: 'race',
         map: s.map,
-        bots: s.bots ? ARENA_ROOM_SIZES[s.size].players - 1 : 0,
+        bots: s.bots ? RACE_ROOM_SIZES[s.size].players - 1 : 0,
         skill: s.skill,
         objective: 'tower',
-        loadout: s.objective === 'arena-cs' ? 'cs' : 'lethal',
+        loadout: 'lethal',
       }
-    : {
-        mode: s.size,
-        map: s.map,
-        bots: s.bots ? ROOM_PLAYERS[s.size] - 1 : 0,
-        skill: s.skill,
-        objective:
-          s.objective === 'tower' ? 'tower' : isElimObjective(s.objective) ? 'elim' : 'bomb',
-        loadout: s.objective === 'cs' || s.objective === 'elim-cs' ? 'cs' : 'lethal',
-      };
+    : isArenaObjective(s.objective)
+      ? {
+          mode: 'arena',
+          map: s.map,
+          bots: s.bots ? ARENA_ROOM_SIZES[s.size].players - 1 : 0,
+          skill: s.skill,
+          objective: 'tower',
+          loadout: s.objective === 'arena-cs' ? 'cs' : 'lethal',
+        }
+      : {
+          mode: s.size,
+          map: s.map,
+          bots: s.bots ? ROOM_PLAYERS[s.size] - 1 : 0,
+          skill: s.skill,
+          objective:
+            s.objective === 'tower' ? 'tower' : isElimObjective(s.objective) ? 'elim' : 'bomb',
+          loadout: s.objective === 'cs' || s.objective === 'elim-cs' ? 'cs' : 'lethal',
+        };
 
 // ---------------------------------------------------------------- ranked
 
-export interface RankedQueue {
-  /** the server's queue id */
-  mode: string;
-  /** Arena: the kit this queue plays with (players only meet the same kit) */
-  loadout?: 'lethal' | 'cs';
+// Ranked = two ladders (shared rating/ladders.ts): Premier and Duels. One card per ladder, with
+// a button per queue. A new ladder needs its entry in RANKED_CARD_INFO (TypeScript insists).
+
+export interface RankedCardDef {
+  ladder: LadderId;
   name: string;
   desc: string;
   icon: IconName;
+  /** one button per queue of the ladder */
+  queues: { id: RankedQueueId; label: string }[];
 }
 
-export const rankedQueues = (arena = ARENA_ENABLED): RankedQueue[] => [
-  { mode: '1v1', name: 'Ranked 1v1', desc: 'Duel on a Tower map. Pure skill.', icon: 'ranked' },
-  { mode: '2v2', name: 'Ranked 2v2', desc: 'Two-player teams, Tower rules.', icon: 'team' },
-  { mode: '5v5', name: 'Ranked 5v5', desc: 'Full teams, Tower rules.', icon: 'team' },
-  ...(arena
-    ? [
-        {
-          mode: ARENA_RANKED_MODE,
-          loadout: 'lethal' as const,
-          name: 'Arena 1v1',
-          desc: 'Rotating 1v1 duels, Boomerang kit. Its own ladder.',
-          icon: 'arena' as const,
-        },
-        {
-          mode: ARENA_RANKED_MODE,
-          loadout: 'cs' as const,
-          name: 'Arena 1v1 CS',
-          desc: 'Rotating 1v1 duels, AK + Deagle. Same arena ladder.',
-          icon: 'cs' as const,
-        },
-      ]
-    : []),
-];
+const RANKED_CARD_INFO: Record<
+  LadderId,
+  { desc: string; icon: IconName; labels: Partial<Record<RankedQueueId, string>> }
+> = {
+  premier: {
+    desc: '5v5 Bomb · Boomerang kit · map veto. The main rank.',
+    icon: 'bomb',
+    labels: { premier: 'Find match' },
+  },
+  duels: {
+    desc: '1v1 and 2v2 on Tower rules · one rating for both.',
+    icon: 'ranked',
+    labels: { 'duels-1v1': '1v1', 'duels-2v2': '2v2' },
+  },
+};
+
+export const rankedCards = (): RankedCardDef[] =>
+  LADDER_IDS.map((id) => ({
+    ladder: id,
+    name: LADDERS[id].name,
+    desc: RANKED_CARD_INFO[id].desc,
+    icon: RANKED_CARD_INFO[id].icon,
+    queues: LADDERS[id].queues.map((q) => ({ id: q, label: RANKED_CARD_INFO[id].labels[q] ?? q })),
+  }));
+
+/** The name of a ranked queue for status lines ("Premier", "Duels 2v2"). */
+export const rankedQueueName = (id: string): string => {
+  for (const c of rankedCards()) {
+    const q = c.queues.find((x) => x.id === id);
+    if (q) return c.queues.length > 1 ? `${c.name} ${q.label}` : c.name;
+  }
+  return id;
+};
+
+/** "2h 13m", "13m 05s", "3d 4h": time until something opens / ends. */
+export const countdown = (sec: number): string => {
+  const s = Math.max(0, Math.ceil(sec));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${String(s % 60).padStart(2, '0')}s`;
+};
+
+/** A ladder standing as the server sends it in the profile (server services/ranked.ts). */
+export interface LadderStandingView {
+  rating: number | null;
+  placed: boolean;
+  placement: { done: number; need: number; unit: 'wins' | 'games' };
+  rank: { label: string; color: string; top?: boolean } | null;
+}
+
+/** The rank line under a ladder: "1240 · Planet" or "Placement 2/5 wins". */
+export const standingText = (st: LadderStandingView | undefined): string => {
+  if (!st) return 'Placement 0/5';
+  if (st.rating === null)
+    return `Placement ${st.placement.done}/${st.placement.need} ${st.placement.unit}`;
+  return `${st.rating}${st.rank ? ` · ${st.rank.label}` : ''}`;
+};

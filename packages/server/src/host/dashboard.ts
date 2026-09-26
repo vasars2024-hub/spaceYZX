@@ -12,6 +12,7 @@ import type { Services } from '../services';
 import type { ConnectivityStatus } from './connectivity';
 import { capacity } from '../perf-budget';
 import { MatchRules } from '../game/rules/match';
+import { describeSchedule, formatWindow, parseWindows } from '../services/schedule';
 
 export interface DashboardOptions {
   hub: GameHub;
@@ -23,6 +24,12 @@ export interface DashboardOptions {
   /** measure upload speed (Mbit/s); injectable for tests */
   speedTest?: () => Promise<number>;
   version?: string;
+  /** Rented server: fixed address/port (default: 127.0.0.1 on a random port). */
+  listen?: { host: string; port: number };
+  /** Rented server: fixed secret from DASHBOARD_TOKEN (default: new random one per start). */
+  token?: string;
+  /** Where the Play button goes (default http://localhost:<gamePort>). */
+  localUrl?: string;
 }
 
 export interface Dashboard {
@@ -72,7 +79,7 @@ const readJson = (req: http.IncomingMessage): Promise<Record<string, unknown>> =
   });
 
 export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
-  const token = randomBytes(24).toString('base64url');
+  const token = opts.token || randomBytes(24).toString('base64url');
   const tokenBuf = Buffer.from(token);
   const log = opts.log ?? (() => {});
   const { hub, services } = opts;
@@ -114,7 +121,7 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
       version: opts.version ?? 'dev',
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       gamePort: opts.gamePort,
-      localUrl: `http://localhost:${opts.gamePort}`,
+      localUrl: opts.localUrl ?? `http://localhost:${opts.gamePort}`,
       connectivity: conn
         ? {
             method: conn.method,
@@ -127,7 +134,17 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
       rooms,
       matches: rooms.filter((r) => r.phase !== 'warmup' && r.phase !== 'practice').length,
       ranked: services.queue.enabled,
-      queued: services.queue.size(),
+      queued: services.queue.size() + services.queue.vetoing(),
+      season: services.ranked.season(),
+      premier: (() => {
+        const s = services.ranked.schedule();
+        return {
+          mode: s.mode,
+          open: services.ranked.premierStatus().open,
+          hours: describeSchedule({ ...s, mode: 'scheduled' }),
+          windowsText: s.windows.map(formatWindow).join('; '),
+        };
+      })(),
       uploadMbps,
       speedError,
       testing,
@@ -202,6 +219,34 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
           services.queue.enabled = !!body.on;
           log(`Ranked ${services.queue.enabled ? 'on' : 'off'}`);
           return json(res, 200, { ok: true, ranked: services.queue.enabled });
+        case '/api/season': {
+          // the page asks "are you sure?" itself; this must say which season it confirms
+          if (Number(body.from) !== services.ranked.season())
+            return json(res, 409, { error: 'The season changed meanwhile — refresh.' });
+          const r = services.ranked.startNewSeason();
+          log(`Host started Premier season ${r.season} (${r.players} ratings reset)`);
+          services.broadcastRankedInfo();
+          return json(res, 200, { ok: true, ...r });
+        }
+        case '/api/premier-hours': {
+          const cur = services.ranked.schedule();
+          const mode = body.mode === 'scheduled' ? 'scheduled' : 'always';
+          let windows = cur.windows;
+          if (typeof body.windows === 'string') {
+            const w = parseWindows(body.windows);
+            if (!w)
+              return json(res, 400, {
+                error: 'Could not read the hours. Example: Fri-Sun 18:00-23:00; Wed 20:00-22:00',
+              });
+            windows = w;
+          }
+          services.ranked.setSchedule({ mode, windows });
+          log(
+            `Premier hours: ${mode === 'always' ? 'always open' : describeSchedule({ mode, windows })}`,
+          );
+          services.broadcastRankedInfo();
+          return json(res, 200, { ok: true });
+        }
         case '/api/restart': {
           for (const r of [...hub.rooms.values()]) {
             for (const m of r.humans)
@@ -247,7 +292,7 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(opts.listen?.port ?? 0, opts.listen?.host ?? '127.0.0.1', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       resolve({
@@ -295,6 +340,13 @@ button.warn{border-color:var(--orange);background:#3a2410}button.small{padding:3
 <div id="cap" class="dim"></div></section>
 <section><h2>Controls</h2>
 <div class="row"><label><input type="checkbox" id="ranked"> Ranked matchmaking on</label></div>
+<div class="row"><b id="season"></b><button class="small" id="newSeason">Start new season</button></div>
+<div class="row" id="seasonConfirm" hidden><span class="dim" id="seasonText"></span>
+<button class="small warn" id="seasonYes">Yes, start it</button><button class="small" id="seasonNo">Cancel</button></div>
+<div class="row">Premier: <label><input type="radio" name="phours" value="always" id="hAlways"> always open</label>
+<label><input type="radio" name="phours" value="scheduled" id="hSched"> opening hours</label><span id="hState" class="dim"></span></div>
+<div class="row"><input id="hours" style="flex:1;min-width:200px" placeholder="Fri-Sun 18:00-23:00"><button class="small" id="hoursSave">Save hours</button></div>
+<div class="dim" id="hoursMsg">Local time of this PC. Example: Fri-Sun 18:00-23:00; Wed 20:00-22:00</div>
 <div class="row"><button class="warn" id="restart">Restart all matches</button><button class="warn" id="stop">Stop server</button></div>
 <div class="dim">Closing this window does not stop the server — use Stop, or close the black Lethal Recoil window.</div></section>
 <section style="grid-column:1/-1"><h2>Players</h2><table id="players"></table></section>
@@ -314,7 +366,7 @@ async function refresh() {
   try { st = await api('/status'); } catch (e) { $('invite').textContent = e === 401 ? 'This page is out of date — use the link the Lethal Recoil window printed.' : 'The server is not running.'; return; }
   $('uptime').textContent = 'running ' + Math.floor(st.uptimeSec / 60) + ' min';
   const c = st.connectivity;
-  $('method').replaceChildren(el('span', '', 'light ' + (!c ? 'warn' : c.publicUrl ? 'ok' : 'bad')), el('span', !c ? 'Checking…' : c.method === 'upnp' ? 'Direct (router port opened)' : c.method === 'tunnel' ? 'Cloudflare tunnel' : 'Only your network'));
+  $('method').replaceChildren(el('span', '', 'light ' + (!c ? 'warn' : c.publicUrl ? 'ok' : 'bad')), el('span', !c ? 'Checking…' : c.method === 'server' ? 'Rented server (fixed address)' : c.method === 'upnp' ? 'Direct (router port opened)' : c.method === 'tunnel' ? 'Cloudflare tunnel' : 'Only your network'));
   $('reason').textContent = c ? c.reason : 'Trying automatic port opening, then a Cloudflare tunnel…';
   const invite = c && c.publicUrl ? c.publicUrl : (c && c.lanUrls[0]) || st.localUrl;
   $('invite').textContent = invite;
@@ -331,6 +383,10 @@ async function refresh() {
   $('lights').replaceChildren(...lights.map(([k, v, cls]) => { const d = el('div', '', 'row'); d.append(el('span', '', 'light ' + cls), el('span', k + ': '), el('b', v)); return d; }));
   $('cap').textContent = st.capacity ? 'Your PC can host about: ' + Object.entries(st.capacity).map(([m, x]) => x.matches + ' × ' + m + ' (' + x.players + ' players)').join(', ') + '. Upload speed is usually the limit.' : 'Measure the upload speed to see how many matches you can host.';
   $('ranked').checked = st.ranked;
+  $('season').textContent = 'Premier season ' + st.season;
+  $('hAlways').checked = st.premier.mode === 'always'; $('hSched').checked = st.premier.mode === 'scheduled';
+  $('hState').textContent = st.premier.open ? ' · open now' : ' · closed now';
+  if (document.activeElement !== $('hours') && !hoursDirty) $('hours').value = st.premier.windowsText;
   const pt = $('players'); pt.replaceChildren(head(['Name', 'Room', 'Ping', '']));
   for (const p of st.players) { const k = el('button', 'Kick', 'small warn'); k.onclick = () => confirm('Kick ' + p.name + '?') && api('/kick', { id: p.id }).then(refresh); pt.append(row([p.name, p.room || 'menu', p.ping + ' ms', k])); }
   const rt = $('rooms'); rt.replaceChildren(head(['Code', 'Mode', 'Type', 'Phase', 'Score', 'Bots']));
@@ -346,6 +402,15 @@ $('copy').onclick = () => navigator.clipboard.writeText($('invite').textContent)
 $('speed').onclick = () => api('/speedtest', {}).then(refresh);
 $('mbps').onchange = () => { const v = Number($('mbps').value); if (v > 0) api('/speedtest', { mbps: v }).then(refresh); };
 $('ranked').onchange = () => api('/ranked', { on: $('ranked').checked });
+let hoursDirty = false;
+$('hours').oninput = () => { hoursDirty = true; };
+$('newSeason').onclick = () => { if (!st) return; $('seasonText').textContent = 'Start season ' + (st.season + 1) + '? Every Premier rating moves 40% toward 1000 and everyone plays 5 placement wins again. Season ' + st.season + ' is archived.'; $('seasonConfirm').hidden = false; };
+$('seasonNo').onclick = () => { $('seasonConfirm').hidden = true; };
+$('seasonYes').onclick = () => { $('seasonConfirm').hidden = true; api('/season', { from: st.season }).then(refresh).catch(() => refresh()); };
+const saveHours = (mode, withText) => api('/premier-hours', withText ? { mode, windows: $('hours').value } : { mode }).then(() => { hoursDirty = false; $('hoursMsg').textContent = 'Saved.'; refresh(); }).catch(() => { $('hoursMsg').textContent = 'Could not read the hours. Example: Fri-Sun 18:00-23:00; Wed 20:00-22:00'; });
+$('hAlways').onchange = () => saveHours('always', false);
+$('hSched').onchange = () => saveHours('scheduled', false);
+$('hoursSave').onclick = () => saveHours($('hSched').checked ? 'scheduled' : 'always', true);
 $('restart').onclick = () => confirm('End every match and send players back to the menu?') && api('/restart', {}).then(refresh);
 $('stop').onclick = () => confirm('Stop the server? Everyone will be disconnected.') && api('/stop', {}).then(() => { clearInterval(t1); clearInterval(t2); document.body.textContent = 'Server stopped. You can close this tab.'; });
 refresh(); reports(); const t1 = setInterval(refresh, 2000); const t2 = setInterval(reports, 15000);

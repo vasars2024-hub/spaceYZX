@@ -330,7 +330,8 @@ export const flightStep = (
   }
   b.vel = scale(dir, speed);
   const step = speed * dt;
-  const hit = raycast(ctx.level, from, dir, step, c.boomerangRadius);
+  // paper screens (BoxDef.boomerangPasses) don't stop it
+  const hit = raycast(ctx.level, from, dir, step, c.boomerangRadius, true);
   if (hit) {
     // a Quick Throw's first wall: bounce off it like a real throw would and keep flying (bank
     // it around cover); the next wall drops it
@@ -376,7 +377,7 @@ export const throwState = (
   const eye = eyePos(p, ctx.config.movement);
   const fwd = qForward(p.view);
   // start just in front of the eye, but never inside a wall
-  const clear = raycast(ctx.level, eye, fwd, 0.6, c.boomerangRadius);
+  const clear = raycast(ctx.level, eye, fwd, 0.6, c.boomerangRadius, true);
   b.pos = clear ? madd(eye, fwd, Math.max(0, clear.t - 0.05)) : madd(eye, fwd, 0.6);
   b.bounced = false;
   b.explosive = false;

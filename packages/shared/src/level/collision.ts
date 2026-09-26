@@ -320,10 +320,13 @@ export const raycast = (
   dir: Vec3,
   maxDist: number,
   radius = 0,
+  /** a Boomerang's flight: skip boxes it flies through (BoxDef.boomerangPasses) */
+  boomerang = false,
 ): RayHit | null => {
   // the nearest hit; on an exact tie the lowest box index (the same answer in any visit order)
   const r: { best: RayHit | null } = { best: null };
   const test = (i: number): void => {
+    if (boomerang && level.boxes[i].boomerangPasses) return;
     const best = r.best;
     const h = rayBox(level.boxes[i], origin, dir, best ? best.t : maxDist, radius);
     if (h && (!best || h.t < best.t || (h.t === best.t && i < best.box)))

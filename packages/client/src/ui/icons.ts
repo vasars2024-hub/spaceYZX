@@ -79,6 +79,10 @@ export const ICONS = {
     '<path d="M3 10v4M21 10v4M6 7v10M18 7v10"/><rect x="6" y="10.5" width="12" height="3" rx="1"/>',
   ),
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+  // parkour race: a chequered flag
+  race: svg(
+    '<path d="M5 21V4"/><path d="M5 4h13l-2.5 4.5L18 13H5"/><path d="M8.5 4v9M12 4v9M5 8.5h11" stroke-width="1.2"/>',
+  ),
 } as const;
 
 export type IconName = keyof typeof ICONS;

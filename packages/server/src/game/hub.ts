@@ -20,6 +20,7 @@ import {
   getMap,
   MAPS,
   ARENA_MAP_ID,
+  DEFAULT_RACE_MAP,
   defaultConfig,
   configForLoadout,
   loadoutName,
@@ -32,6 +33,7 @@ import { relayChat, relayRtc, relayVoice } from './chat';
 import { PracticeRules } from './rules/practice';
 import { MatchRules, type MatchResult } from './rules/match';
 import { ArenaRules, type ArenaResult } from './rules/arena';
+import { RaceRules, type RaceRecord } from './rules/race';
 
 export interface HubServices {
   /** Authenticate / create an account from a hello message; returns display name + token. */
@@ -42,13 +44,22 @@ export interface HubServices {
   ): { name: string; accountId: number; token: string; account: unknown } | null;
   /** Rules for a room (M5 match rules). Defaults to practice. */
   rulesFor?(room: Room, opts: { bots: number }): Rules;
-  /** Ranked queue (M8); 'arena' = the Arena 1v1 ladder (with the kit to play it with). */
-  queue?(hub: GameHub, conn: Conn, mode: RoomMode | null, opts?: { loadout?: LoadoutName }): void;
+  /** Ranked queue: a queue id from rating/ladders.ts ('premier', 'duels-1v1'…), null = leave. */
+  queue?(hub: GameHub, conn: Conn, queue: string | null): void;
+  /** Premier map veto: this player bans a map. */
+  veto?(conn: Conn, map: string): void;
+  /** Right after a successful hello (the server sends ranked facts: season, opening hours). */
+  onHello?(conn: Conn): void;
   onDisconnect?(hub: GameHub, conn: Conn): void;
   /** Called for every finished match (M8 records results). */
   onMatchEnd?(room: Room, result: MatchResult): void;
-  /** Called for every finished Arena 1v1 match (ranked: the arena ladder). */
+  /** Called for every finished Arena 1v1 match (casual: recorded in the match history). */
   onArenaEnd?(room: Room, result: ArenaResult): void;
+  /**
+   * Called for every finished parkour race (rules/race.ts): the record the Race ladder
+   * (shared rating/race.ts) and personal bests will be built from. Not stored yet.
+   */
+  onRaceEnd?(room: Room, result: RaceRecord): void;
   /** Anti-grief: a warning was given / a player was kicked (ranked bans live here). */
   onGrief?(conn: Conn, action: 'warn' | 'kick', reason: string, room: Room): void;
   /** The player's profile (ratings, ranks) for the client. */
@@ -150,6 +161,7 @@ export class GameHub {
           account: login?.account,
           token: login?.token,
         });
+        this.services.onHello?.(conn);
         return;
       }
     }
@@ -157,10 +169,13 @@ export class GameHub {
     switch (msg.t) {
       case 'createRoom': {
         const mode: RoomMode = ROOM_MODES.includes(msg.mode) ? msg.mode : 'practice';
-        // (arena maps only for the Arena, which picks its own)
-        const map = MAPS.some((m) => m.id === msg.map && !m.arena)
+        // (arena maps only for the Arena, which picks its own; race tracks only for races)
+        const race = mode === 'race';
+        const map = MAPS.some((m) => m.id === msg.map && !m.arena && !!m.race === race)
           ? (msg.map as string)
-          : getMap('').id;
+          : race
+            ? DEFAULT_RACE_MAP
+            : getMap('').id;
         const bots = Math.max(0, Math.min(9, Math.floor(Number(msg.bots) || 0)));
         const room = this.createRoom({
           mode,
@@ -194,11 +209,16 @@ export class GameHub {
         return;
       case 'profile':
         conn.sendJson({ t: 'profile', data: this.services.profile?.(conn) ?? null });
+        this.services.onHello?.(conn);
         return;
       case 'startMatch': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
         if (!room || room.hostId !== conn.playerId || room.ranked) return;
-        if (room.rules instanceof MatchRules || room.rules instanceof ArenaRules) {
+        if (
+          room.rules instanceof MatchRules ||
+          room.rules instanceof ArenaRules ||
+          room.rules instanceof RaceRules
+        ) {
           const err = room.rules.requestStart(room);
           if (err) conn.sendJson({ t: 'error', msg: err });
         }
@@ -206,9 +226,10 @@ export class GameHub {
       }
       case 'queue':
       case 'unqueue':
-        this.services.queue?.(this, conn, msg.t === 'queue' ? msg.mode : null, {
-          loadout: msg.t === 'queue' ? loadoutName(msg.loadout) : undefined,
-        });
+        this.services.queue?.(this, conn, msg.t === 'queue' ? String(msg.mode) : null);
+        return;
+      case 'veto':
+        if (typeof msg.map === 'string') this.services.veto?.(conn, msg.map.slice(0, 64));
         return;
       case 'report': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
@@ -249,23 +270,30 @@ export class GameHub {
     config?: GameConfig;
     objective?: MatchObjective;
     /**
-     * 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement); never practice, and ranked
-     * only in the Arena (its ladder is played with either kit)
+     * 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement); never practice or ranked
+     * (ranked is always the Boomerang kit)
      */
     loadout?: LoadoutName;
+    /** players per team when fewer than the mode's size (Premier 4v4 in a 5v5 room) */
+    teamSize?: number;
   }): Room | null {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const arena = opts.mode === 'arena';
+    const race = opts.mode === 'race';
     const loadout: LoadoutName =
-      opts.loadout === 'cs' && (!opts.ranked || arena) && opts.mode !== 'practice'
-        ? 'cs'
-        : 'lethal';
+      opts.loadout === 'cs' && !opts.ranked && opts.mode !== 'practice' ? 'cs' : 'lethal';
     let code = makeRoomCode();
     while (this.rooms.has(code)) code = makeRoomCode();
     const room = new Room({
       code,
       mode: opts.mode,
-      map: arena ? ARENA_MAP_ID : opts.map,
+      map: arena
+        ? ARENA_MAP_ID
+        : race
+          ? getMap(opts.map).race
+            ? opts.map
+            : DEFAULT_RACE_MAP
+          : opts.map,
       ranked: opts.ranked,
       config: configForLoadout(opts.config ?? this.services.config?.() ?? defaultConfig(), loadout),
       lagComp: this.services.lagComp ?? true,
@@ -276,12 +304,21 @@ export class GameHub {
         ? new PracticeRules()
         : opts.mode === 'arena'
           ? new ArenaRules(loadout, { ranked: opts.ranked })
-          : new MatchRules(
-              opts.mode,
-              opts.ranked ? 'tower' : (opts.objective ?? 'tower'),
-              loadout,
-            ));
+          : opts.mode === 'race'
+            ? new RaceRules(room.map)
+            : new MatchRules(
+                opts.mode,
+                // ranked: Tower (Duels) or Bomb (Premier), never Elimination
+                opts.ranked
+                  ? opts.objective === 'bomb'
+                    ? 'bomb'
+                    : 'tower'
+                  : (opts.objective ?? 'tower'),
+                loadout,
+              ));
     room.rules = rules;
+    if (rules instanceof MatchRules && opts.teamSize && opts.teamSize < rules.ms.rules.teamSize)
+      rules.ms.rules.teamSize = Math.max(1, Math.floor(opts.teamSize));
     if (rules instanceof MatchRules) {
       rules.onGrief = (r, m, action, reason) => {
         const conn = m.conn;
@@ -315,6 +352,14 @@ export class GameHub {
         if (this.rooms.has(r.code)) this.closeRoom(r);
       };
     }
+    if (rules instanceof RaceRules)
+      rules.onResult = (r, result) => {
+        const first = result.standings[0];
+        this.log(
+          `Room ${r.code}: race ${result.race} on ${result.track} over — ${result.racers[0]?.name ?? 'nobody'}${first?.timeMs ? ` in ${(first.timeMs / 1000).toFixed(2)} s` : ' (DNF)'}`,
+        );
+        this.services.onRaceEnd?.(r, result);
+      };
     (rules as Rules).setup?.(room);
     room.onChanged = () => this.broadcastRoom(room);
     // bots fill the room (leaving a slot for the creator); humans who join take their slots

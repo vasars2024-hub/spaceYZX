@@ -7,6 +7,7 @@ import type {
   RoomMode,
   Level,
   PlayerInput,
+  PlayerState,
   RoomPlayerInfo,
   SimContext,
   SimEvent,
@@ -86,6 +87,8 @@ export interface Rules {
    * Boomerang) at all? Arena rooms send only the pit you're in or watching.
    */
   canSee?(room: Room, viewer: number, target: number): boolean;
+  /** A bot's input this tick, if the rules drive bots themselves (race bots follow the line). */
+  botInput?(room: Room, m: Member, p: PlayerState): PlayerInput;
 }
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -171,7 +174,7 @@ export class Room {
           ? 4
           : opts.mode === '3v3'
             ? 6
-            : opts.mode === 'arena'
+            : opts.mode === 'arena' || opts.mode === 'race'
               ? 8
               : 10);
     if (opts.lagComp !== false) {
@@ -390,7 +393,9 @@ export class Room {
     for (const m of this.members.values()) {
       if (m.bot) {
         const p = this.world.players.find((pp) => pp.id === m.id);
-        if (p) inputs[m.id] = botThink(this.world, this.ctx, p, m.bot);
+        if (p)
+          inputs[m.id] =
+            this.rules?.botInput?.(this, m, p) ?? botThink(this.world, this.ctx, p, m.bot);
         continue;
       }
       const inp = m.inputs.get(t);

@@ -50,6 +50,8 @@ export class Hud {
   netText = '';
   /** current dynamic render scale (shown next to the FPS when below 100%) */
   renderScale = 1;
+  /** Replaces the DASH line (races: SURGE charges and the jetpack tank). */
+  dashLine: ((p: PlayerState) => string[]) | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -141,7 +143,9 @@ export class Hud {
         `WALL-JUMPS ${pips(p.wallJumpsLeft, m.wallJumpsPerAir)}`,
         `TAP-STRAFES ${pips(p.tapStrafesLeft, m.tapStrafesPerAir)}`,
         `THRUSTERS ${pips(p.thrusterCharges, m.thrusterCharges)}`,
-        `DASH ${p.dashCd > 0 ? (p.dashCd / 60).toFixed(1) + 's' : 'READY'}`,
+        ...(this.dashLine?.(p) ?? [
+          `DASH ${p.dashCd > 0 ? (p.dashCd / 60).toFixed(1) + 's' : 'READY'}`,
+        ]),
       ];
       this.countersEl.textContent = lines.join('\n');
       this.fpsEl.textContent = this.settings.showFps

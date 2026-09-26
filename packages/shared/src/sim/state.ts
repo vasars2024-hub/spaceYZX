@@ -82,6 +82,14 @@ export interface PlayerState extends CombatPlayerState {
   prevButtons: number;
   frozen: boolean; // spawn lock: can look, can't move/act
   speedCap: number; // >0 caps planar speed this tick (wind-up slow walk)
+  // races (sim/race.ts; unused elsewhere)
+  surgeLeft: number; // SURGE charges left this race
+  surgeTicks: number; // ticks of the running surge
+  /** gates passed: -1 = not racing (lobby), 0..N checkpoints, N + 1 = finished */
+  raceCp: number;
+  racePenalty: number; // ticks frozen at the checkpoint after a fall / respawn
+  raceFuel: number; // bitmask of the fuel cells used this race
+  raceHold: number; // ticks the respawn key has been held
 }
 
 export interface ZoneRuntime {

@@ -38,3 +38,4 @@ export * from './rules';
 export * from './guns';
 export * from './loadout';
 export * from './arena';
+export * from './race';

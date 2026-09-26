@@ -31,7 +31,10 @@ import {
   type RoomMode,
   type RoomPlayerInfo,
   type RtcSignal,
+  type RankedInfo,
 } from './protocol';
+import type { RankedQueueId } from '../rating/ladders';
+import type { VetoView } from '../rating/veto';
 import { PROTOCOL_VERSION } from '../version';
 import { MAX_REWIND_MS } from './lag-limits';
 import { DEFAULT_BOT_SKILL } from '../bots/brain';
@@ -88,6 +91,11 @@ const PREDICTED_EVENTS = new Set([
   'powerupPickup',
   'gunReload',
   'gunDraw',
+  // races (sim/race.ts): your own surges, gates, respawns and fuel cells are predicted
+  'surge',
+  'raceCp',
+  'raceRespawn',
+  'raceFuel',
 ]);
 
 /**
@@ -138,11 +146,19 @@ export class NetCore {
   /** messages from the server to show the player (drained by the UI) */
   notices: string[] = [];
   /** ranked queue status */
-  queue: { mode: RoomMode | null; waitSec: number; searching: number; error?: string } = {
+  queue: { mode: RankedQueueId | null; waitSec: number; searching: number; error?: string } = {
     mode: null,
     waitSec: 0,
     searching: 0,
   };
+  /** Premier map veto in progress (null = none) */
+  veto: VetoView | null = null;
+  /** when `veto` arrived (this.opts.now() ms), for a smooth countdown */
+  vetoAt = 0;
+  /** season and Premier opening hours (null until the server sent them) */
+  rankedInfo: RankedInfo | null = null;
+  /** when `rankedInfo` arrived (this.opts.now() ms): its seconds count from here */
+  rankedInfoAt = 0;
   /** why the server took us out of the last room (null = we left ourselves) */
   roomLeftReason: string | null = null;
   // room
@@ -277,11 +293,16 @@ export class NetCore {
   }
 
   /**
-   * Join (mode) or leave (null) the ranked queue. 'arena' = the Arena 1v1 ladder; `loadout`
-   * picks its kit ('lethal' Boomerang, 'cs' AK + Deagle; players only meet the same kit).
+   * Join a ranked queue ('premier', 'duels-1v1', 'duels-2v2') or leave it (null). During a
+   * Premier map veto, leaving (null) walks out of the veto.
    */
-  queueRanked(mode: RoomMode | null, loadout?: LoadoutName): void {
-    this.sendJson(mode ? { t: 'queue', mode, ...(loadout ? { loadout } : {}) } : { t: 'unqueue' });
+  queueRanked(mode: RankedQueueId | null): void {
+    this.sendJson(mode ? { t: 'queue', mode } : { t: 'unqueue' });
+  }
+
+  /** Premier map veto: ban a map (only counts on your team's turn). */
+  vetoBan(map: string): void {
+    this.sendJson({ t: 'veto', map });
   }
 
   /** Create a room ('arena': an Arena 1v1 room — `map` is ignored, bots fill it up to 8). */
@@ -386,6 +407,7 @@ export class NetCore {
         this.resetRoom();
         this.roomLeftReason = null;
         this.queue = { mode: null, waitSec: 0, searching: 0 };
+        this.veto = null;
         this.code = msg.code;
         this.mode = msg.mode;
         this.map = msg.map;
@@ -406,6 +428,14 @@ export class NetCore {
         break;
       case 'profile':
         this.account = msg.data;
+        break;
+      case 'veto':
+        this.veto = msg.data;
+        this.vetoAt = this.opts.now();
+        break;
+      case 'rankedInfo':
+        this.rankedInfo = msg.data;
+        this.rankedInfoAt = this.opts.now();
         break;
       case 'queue':
         this.queue = {

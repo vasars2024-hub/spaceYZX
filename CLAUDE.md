@@ -44,7 +44,14 @@
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
   `packages/server/src/game/room.ts`, lag compensation `lagcomp.ts`, LOS culling `visibility.ts`.
 - Accounts/ranked/matchmaking: `packages/server/src/services/` (SQLite via `node:sqlite`).
+  Ranked is **Premier (5v5 Bomb, map veto, seasons) + Duels (1v1/2v2, one rating) only**,
+  defined in `packages/shared/src/rating/ladders.ts`; no new ladders without the owner.
+- Parkour races (owner-requested, race tracks `level/maps/race-*.ts`, `rules/race.ts`, body logic
+  `sim/race.ts`) have their own **Race ladder**: rating functions in `rating/race.ts`; DB/queue
+  integration pending (`HubServices.onRaceEnd` already gets each race's result record).
 - Host app + dashboard: `packages/server/src/host/`; exe build `tools/host/build-exe.ts`.
+- Rented server (Hetzner VPS, Docker + Caddy HTTPS, fixed domain; setup/update/DB-move scripts in
+  `scripts/deploy/`, env settings `packages/server/src/prod/config.ts`): `docs/DEPLOY.md`.
 - Reports/benchmarks: `npm run balance`, `npm run matches`, `npm run load`, `npm run size`,
   `npm run netcheck` (hit registration + Boomerang prediction on a virtual network:
   `tools/netcheck/`; its tests must stay at 100% agreement up to 150 ms ping), `npm run map`

@@ -85,6 +85,40 @@ describe('host dashboard', () => {
     expect(st.capacity['1v1'].matches).toBeGreaterThan(0);
   });
 
+  it('starts a new Premier season only for the season the page confirmed', async () => {
+    const st = (await (await api('/status')).json()) as { season: number };
+    expect(st.season).toBe(1);
+    // a stale page (confirming an older season) is refused
+    expect((await api('/season', { from: 0 })).status).toBe(409);
+    const r = await api('/season', { from: 1 });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { season: number }).season).toBe(2);
+    expect(services.ranked.season()).toBe(2);
+    // the page has its own confirm step (no browser confirm() for this)
+    const html = await (await fetch(`http://127.0.0.1:${dash.port}/`)).text();
+    expect(html).toContain('id="seasonConfirm"');
+    expect(html).not.toMatch(/confirm\([^)]*season/i);
+  });
+
+  it('switches Premier between always open and opening hours', async () => {
+    const status = async () =>
+      ((await (await api('/status')).json()) as { premier: { mode: string; hours: string } })
+        .premier;
+    expect((await status()).mode).toBe('always');
+    expect((await api('/premier-hours', { mode: 'scheduled', windows: 'nonsense' })).status).toBe(
+      400,
+    );
+    expect(
+      (await api('/premier-hours', { mode: 'scheduled', windows: 'Sat 19:00-22:00' })).status,
+    ).toBe(200);
+    expect(await status()).toMatchObject({ mode: 'scheduled', hours: 'Sat 19:00–22:00' });
+    expect(services.ranked.schedule().mode).toBe('scheduled');
+    await api('/premier-hours', { mode: 'always' });
+    expect(services.ranked.schedule()).toMatchObject({ mode: 'always' });
+    // the hours are kept for the next time it's switched on
+    expect(services.ranked.schedule().windows[0].days).toEqual([6]);
+  });
+
   it('toggles ranked, restarts and stops', async () => {
     await api('/ranked', { on: false });
     expect(services.queue.enabled).toBe(false);

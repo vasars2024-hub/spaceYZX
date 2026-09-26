@@ -161,6 +161,9 @@ describe('menu flow: map tags', () => {
     expect(tags).toContain('Towers');
     expect(tags.some((t) => t.startsWith('Bomb sites'))).toBe(true);
     expect(mapTags(mapDef('training-bay'))).toEqual([]);
+    const orbital = mapTags(mapDef('orbital-ring'));
+    for (const t of ['Towers', 'Reactor glitch', 'Portals', 'Launch pads'])
+      expect(orbital).toContain(t);
   });
 });
 

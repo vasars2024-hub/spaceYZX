@@ -292,6 +292,16 @@ export class CombatFeature implements ClientFeature {
         case 'grenadeThrow':
           a.play3d('grenadeThrow', posOf(e.player), { volume: 0.7 });
           break;
+        case 'launch':
+          if (e.player !== me) a.play3d('thruster', posOf(e.player), { volume: 0.9, rate: 0.6 });
+          break;
+        case 'portal':
+          // a rift is loud: heard at both ends
+          if (e.player !== me) {
+            a.play3d('revealPulse', e.from, { volume: 0.9, rate: 1.4, refDistance: 8 });
+            a.play3d('revealPulse', e.to, { volume: 0.9, rate: 1.4, refDistance: 8 });
+          }
+          break;
         case 'grenadeActivate':
           this.pullLoops.get(e.grenade)?.stop(0.05);
           this.pullLoops.set(

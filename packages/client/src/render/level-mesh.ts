@@ -628,7 +628,7 @@ const addTrims = (g: GeoBuilder, b: BoxDef, color: THREE.Color): void => {
   }
 };
 
-/** Rails, gravity-zone hints. */
+/** Rails, gravity-zone hints, launch pads, portals. */
 const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispose(): void } => {
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
@@ -725,6 +725,58 @@ const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispos
       mesh.count = inst.length;
       group.add(mesh);
     }
+  }
+  // launch pads: chevrons floating up along the throw
+  const padMat = new THREE.MeshBasicMaterial({
+    color: 0xffb347,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+  disposables.push(padMat);
+  for (const pad of def.launchPads ?? []) {
+    const dir = new THREE.Vector3(pad.vel.x, pad.vel.y, pad.vel.z).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(chevronGeo, padMat);
+      m.position.set(
+        (pad.min.x + pad.max.x) / 2 + dir.x * (0.5 + i * 0.6),
+        pad.min.y + 0.3 + dir.y * (0.3 + i * 0.6),
+        (pad.min.z + pad.max.z) / 2 + dir.z * (0.5 + i * 0.6),
+      );
+      m.quaternion.copy(q);
+      m.scale.setScalar(2.2);
+      group.add(m);
+    }
+  }
+
+  // portals: a glowing disc in a spinning ring, facing along the portal's thin axis
+  const ringGeo = new THREE.TorusGeometry(1.9, 0.08, 6, 40);
+  const discGeo = new THREE.CircleGeometry(1.85, 40);
+  disposables.push(ringGeo, discGeo);
+  for (const pt of def.portals ?? []) {
+    const ringMat = new THREE.MeshBasicMaterial({ color: pt.color });
+    const discMat = new THREE.MeshBasicMaterial({
+      color: pt.color,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    disposables.push(ringMat, discMat);
+    const g = new THREE.Group();
+    g.position.set(
+      (pt.min.x + pt.max.x) / 2,
+      Math.min(pt.max.y, pt.min.y + 2.1),
+      (pt.min.z + pt.max.z) / 2,
+    );
+    // the disc's normal is local +Z: turn it toward the thin axis (x or z)
+    if (pt.max.x - pt.min.x < pt.max.z - pt.min.z) g.rotation.y = Math.PI / 2;
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.userData.portalSpin = true;
+    g.add(ring, new THREE.Mesh(discGeo, discMat));
+    group.add(g);
   }
   return { group, dispose: () => disposables.forEach((d) => d.dispose()) };
 };

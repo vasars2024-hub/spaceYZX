@@ -41,6 +41,8 @@ export type SimEvent =
   | { type: 'pushOff'; player: number }
   | { type: 'mag'; player: number; on: boolean }
   | { type: 'padFlip'; pad: number; zone: number }
+  | { type: 'launch'; player: number; pad: number }
+  | { type: 'portal'; player: number; portal: number; from: Vec3; to: Vec3 }
   | { type: 'dash'; player: number }
   | { type: 'throw'; player: number; boomerang: number; windup: boolean }
   | { type: 'catch'; player: number; boomerang: number }

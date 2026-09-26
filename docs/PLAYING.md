@@ -137,6 +137,34 @@ Shortcuts: a ramp from the gallery down to the conveyor corridor, a drop from th
 into the engine corridor, and a **crawl vent** (crouch or slide) between the atrium and the
 turbine hall.
 
+### Orbital Ring
+
+A space station built around a **reactor core**, the same for both teams (mirrored north ↔
+south). Cyan spawns at the top, Orange at the bottom; **A site** is on the east side, **B
+site** on the west side, halfway between the spawns.
+
+- **The core** (middle, under a glass dome with the planet overhead): a **hole** in its floor
+  drops into the **reactor pit**. Three power-ups: one floating over the hole (jump for it —
+  and fall in if you miss) and one on each **balcony**. The **launch pads** in the core's
+  corners throw you up onto the east / west balconies; a **zip-rail** runs balcony to
+  balcony over the hole.
+- **The ring** circles the core (doors into the core on every side), and the **basement
+  ring** runs underneath it around the reactor pit. The two **launch pads** in the pit fire
+  you back up through the hole into the core.
+- **Outer corridors**: long corridors from each spawn to both sites, with a **zip-rail**
+  along the ceiling (the fast way round) and a **gate** before the site. Windows look out
+  onto the planet.
+- **Stairs and tunnels**: each spawn connector has stairwells down to the basement ring, and
+  each site has two ramps up from it.
+- **Rift portals**: a glowing portal at the back of each site. Walk into A's and you come out
+  of B's (and back) — the fastest rotation on the map, but everyone hears it at both ends.
+- **Reactor glitch** (this map only): the Tower and Bomb objectives mix. In **Tower mode** the
+  Controller carrier can also **plant the Controller at A or B** (hold **G** for 3 s). It
+  goes off 30 s later and wins the round for the planting team, unless an enemy **defuses**
+  it (hold G next to it for 5 s) — then it goes back to its team's base and the round goes
+  on. While it ticks, the round timer waits for it. One Controller can be planted at a time.
+  In **Bomb mode** the bomb carrier can also win by **touching the defenders' Tower**.
+
 ## Ranked
 
 - **Play online → Ranked 1v1 / 2v2 / 5v5** finds opponents of your level.

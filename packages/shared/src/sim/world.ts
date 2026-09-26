@@ -15,6 +15,7 @@ import { Phase } from './combat-state';
 import type { BoomerangState } from './combat-state';
 import { updateMovement } from './movement';
 import { updateGravityPads } from './gravity';
+import { updateDevices } from './devices';
 import { updateCombat } from './combat';
 import { updatePowerupPickups } from './powerups';
 
@@ -210,6 +211,7 @@ export const step = (
       continue;
     }
     updateMovement(world, ctx, p, input);
+    updateDevices(world, ctx, p);
     // fell out of the ship: bounce back into bounds (not up at the sky duel arena: falling off
     // it is deadly, the match rules end you there)
     const d = ctx.level.def;
@@ -244,8 +246,10 @@ export const stepPredict = (
   const p = world.players.find((pp) => pp.id === localId);
   if (!p) return;
   const prev = { [localId]: p.prevButtons };
-  if (p.alive) updateMovement(world, ctx, p, input);
-  else {
+  if (p.alive) {
+    updateMovement(world, ctx, p, input);
+    updateDevices(world, ctx, p);
+  } else {
     p.prevButtons = input.buttons;
     p.view = input.view;
   }

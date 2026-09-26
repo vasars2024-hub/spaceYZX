@@ -69,7 +69,31 @@ export interface WaypointDef {
   name?: string;
 }
 
-/** A bomb site (Bomb mode, not playable yet): the area where the bomb can be planted. */
+/**
+ * A launch pad (sim/devices.ts): step into its volume and you are thrown with `vel` (m/s,
+ * world space). Only players; bots never path over one.
+ */
+export interface LaunchPadDef {
+  min: Vec3;
+  max: Vec3;
+  vel: Vec3;
+}
+
+/**
+ * One side of a portal (sim/devices.ts): a player whose body centre enters `min..max` comes out
+ * at `exit` (body centre) with the same velocity and facing. Portals come in pairs, each side
+ * its own entry; an exit must lie outside every portal volume (no ping-pong).
+ */
+export interface PortalDef {
+  name: string;
+  min: Vec3;
+  max: Vec3;
+  exit: Vec3;
+  /** frame / glow color */
+  color: number;
+}
+
+/** A bomb site (Bomb mode): the area where the bomb can be planted. */
 export interface BombSiteDef {
   name: 'A' | 'B';
   min: Vec3;
@@ -148,8 +172,18 @@ export interface LevelDef {
   lights?: LightDef[];
   /** Overall ambient light level (default 1); lower = moodier, lights stand out more. */
   ambient?: number;
-  /** Bomb mode data (no gameplay yet): the two plant sites. */
+  /** Bomb mode data: the two plant sites. */
   bombSites?: BombSiteDef[];
+  /** Launch pads (sim/devices.ts). */
+  launchPads?: LaunchPadDef[];
+  /** Portals (sim/devices.ts): each entry teleports one way; pairs are two entries. */
+  portals?: PortalDef[];
+  /**
+   * The objective glitch (rules/glitch.ts): Tower mode and Bomb mode bleed into each other
+   * here. In Tower mode a Controller carrier can also plant their Controller at a bomb site;
+   * in Bomb mode the bomb carrier can also win by touching the defenders' Tower.
+   */
+  objectiveGlitch?: boolean;
   /** Power-up spawn points (rules/powerups.ts): where power-ups float during a round. */
   powerups?: Vec3[];
   /** Space outside the ship (visible through 'skyglass'). */

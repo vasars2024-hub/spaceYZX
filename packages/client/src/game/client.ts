@@ -211,6 +211,7 @@ export class GameClient {
     // animate zero-G dust
     this.levelMeshes.group.traverse((o) => {
       if (o.userData.spin) o.rotation.y += dt * 0.01;
+      if (o.userData.portalSpin) o.rotation.z += dt * 1.5;
     });
 
     const events = this.session.drainEvents();
@@ -276,6 +277,12 @@ export class GameClient {
           break;
         case 'padFlip':
           a.play('revealPulse');
+          break;
+        case 'launch':
+          a.play('thruster', { volume: 0.9, rate: 0.6 });
+          break;
+        case 'portal':
+          a.play('revealPulse', { volume: 0.8, rate: 1.4 });
           break;
       }
     }

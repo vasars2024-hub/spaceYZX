@@ -62,10 +62,11 @@ export const newBomb = (world: WorldState, attackers: 0 | 1): BombState => {
   };
 };
 
-const holdingUse = (p: PlayerState): boolean => (p.prevButtons & Btn.Use) !== 0;
+/** Is this player holding Use (G) this tick? */
+export const holdingUse = (p: PlayerState): boolean => (p.prevButtons & Btn.Use) !== 0;
 
 /** Plant/defuse roots you in place (and it ends a wind-up); cleared when you let go. */
-const root = (p: PlayerState, on: boolean): void => {
+export const useRoot = (p: PlayerState, on: boolean): void => {
   if (on) p.speedCap = 0.01;
   else if (p.windup === 0) p.speedCap = 0;
 };
@@ -96,7 +97,7 @@ export const updateBomb = (
       bomb.carrier = null;
       if (bomb.plant) {
         const p = byId(bomb.plant.player);
-        if (p) root(p, false);
+        if (p) useRoot(p, false);
       }
       bomb.plant = null;
       world.events.push({ type: 'bombDrop', pos: clone(bomb.pos) });
@@ -120,9 +121,9 @@ export const updateBomb = (
       if (site && holdingUse(c) && c.grounded) {
         if (!bomb.plant) world.events.push({ type: 'plantStart', player: c.id, site });
         bomb.plant = { player: c.id, ticks: (bomb.plant?.ticks ?? 0) + 1 };
-        root(c, true);
+        useRoot(c, true);
         if (bomb.plant.ticks >= secTicks(r.bombPlantSec, dt)) {
-          root(c, false);
+          useRoot(c, false);
           bomb.plant = null;
           bomb.carrier = null;
           bomb.pos = clone(c.pos);
@@ -135,7 +136,7 @@ export const updateBomb = (
           world.events.push({ type: 'bombPlanted', player: c.id, site, pos: clone(bomb.pos) });
         }
       } else if (bomb.plant) {
-        root(c, false);
+        useRoot(c, false);
         bomb.plant = null;
         world.events.push({ type: 'plantCancel', player: c.id });
       }
@@ -152,7 +153,7 @@ export const updateBomb = (
     d &&
     !(d.alive && holdingUse(d) && d.grounded && len(sub(d.pos, bomb.pos)) <= r.bombUseRadius)
   ) {
-    root(d, false);
+    useRoot(d, false);
     bomb.defuse = null;
     world.events.push({ type: 'defuseCancel', player: d.id });
     d = undefined;
@@ -174,33 +175,39 @@ export const updateBomb = (
   }
   // the fuse wins a tie: it has to be defused *before* the tick it goes off
   if (world.tick >= pl.explodeAt) {
-    if (d) root(d, false);
+    if (d) useRoot(d, false);
     bomb.defuse = null;
     bomb.exploded = true;
-    world.events.push({ type: 'bombExploded', pos: clone(bomb.pos) });
-    for (const p of world.players) {
-      if (!p.alive) continue;
-      const dist = len(sub(p.pos, bomb.pos));
-      if (dist >= r.bombDamageRadius) continue;
-      const dmg =
-        dist <= r.bombKillRadius
-          ? 9999
-          : 100 * (1 - (dist - r.bombKillRadius) / (r.bombDamageRadius - r.bombKillRadius));
-      applyDamage(world, ctx, pl.by, p, dmg, 'bomb', false, p.pos, bomb.pos);
-    }
+    bombBlast(world, ctx, bomb.pos, pl.by);
     return { winner: attackers, reason: 'exploded' };
   }
   if (bomb.defuse && d) {
     bomb.defuse.ticks++;
-    root(d, true);
+    useRoot(d, true);
     if (bomb.defuse.ticks >= secTicks(r.bombDefuseSec, dt)) {
-      root(d, false);
+      useRoot(d, false);
       bomb.defused = true;
       world.events.push({ type: 'bombDefused', player: d.id });
       return { winner: defenders, reason: 'defused' };
     }
   }
   return null;
+};
+
+/** The bomb goes off at `pos`: deadly close by, less damage further out (`by` gets the kills). */
+export const bombBlast = (world: WorldState, ctx: SimContext, pos: Vec3, by: number): void => {
+  const r = ctx.config.rules;
+  world.events.push({ type: 'bombExploded', pos: clone(pos) });
+  for (const p of world.players) {
+    if (!p.alive) continue;
+    const dist = len(sub(p.pos, pos));
+    if (dist >= r.bombDamageRadius) continue;
+    const dmg =
+      dist <= r.bombKillRadius
+        ? 9999
+        : 100 * (1 - (dist - r.bombKillRadius) / (r.bombDamageRadius - r.bombKillRadius));
+    applyDamage(world, ctx, by, p, dmg, 'bomb', false, p.pos, pos);
+  }
 };
 
 /** A player left mid-round: if they carried the bomb it drops where they were. */

@@ -203,17 +203,23 @@ export class WorldMarkers implements ClientFeature {
         clamp: !holding && !!s.local()?.alive,
       });
     }
-    if (m.objective === 'bomb') {
+    // Bomb mode, or the objective glitch in Tower mode (a Controller can be planted at a site)
+    if (m.objective === 'bomb' || m.glitch) {
       const iAttack = myTeam === m.attackers;
       const b = m.bomb;
-      const carrying = b?.carrier === s.localId && !!s.local()?.alive;
+      const carrying =
+        (m.objective === 'bomb'
+          ? b?.carrier === s.localId
+          : m.carriers.includes(s.localId) && !b?.planted) && !!s.local()?.alive;
       for (const site of def.bombSites ?? []) {
         const at = v3((site.min.x + site.max.x) / 2, site.min.y + 3, (site.min.z + site.max.z) / 2);
         const here = b?.planted?.site === site.name;
         this.place(c, w, hgt, out, {
           key: `site-${site.name}`,
           cls: `wm-objective wm-site ${iAttack ? 'wm-attack' : 'wm-defend'}`,
-          text: here ? `${site.name} · BOMB` : site.name,
+          text: here
+            ? `${site.name} · ${m.objective === 'bomb' ? 'BOMB' : 'CONTROLLER'}`
+            : site.name,
           pin: ' ▼',
           color: here ? '#ff5a6a' : '#e8f1ff',
           at,
@@ -225,10 +231,11 @@ export class WorldMarkers implements ClientFeature {
       if (b && b.carrier === null && (iAttack || b.planted)) {
         const now = s.tickNow?.() ?? s.world().tick;
         const left = b.planted ? Math.max(0, Math.ceil((b.planted.explodeAt - now) / 60)) : 0;
+        const what = m.objective === 'bomb' ? 'BOMB' : 'CONTROLLER';
         this.place(c, w, hgt, out, {
           key: 'bomb',
           cls: 'wm-objective wm-bomb',
-          text: b.planted ? `BOMB ${left}s` : 'BOMB · pick it up',
+          text: b.planted ? `${what} ${left}s` : 'BOMB · pick it up',
           pin: ' ▼',
           color: '#ff5a6a',
           at: add(b.pos, v3(0, 0.4, 0)),
@@ -236,7 +243,26 @@ export class WorldMarkers implements ClientFeature {
           clamp: true,
         });
       }
-      return;
+      if (m.objective === 'bomb') {
+        // the glitch: the defenders' Tower is a way to win for the bomb carrier too
+        if (m.glitch && m.phase === 'live' && !b?.planted) {
+          const t = def.towers.find(
+            (tw) => towerRole(tw.team, m.sideSwapped, myTeam).owner !== m.attackers,
+          );
+          if (t)
+            this.place(c, w, hgt, out, {
+              key: `tower-${t.team}`,
+              cls: `wm-objective wm-tower ${iAttack ? 'wm-attack' : 'wm-defend'}`,
+              text: iAttack ? 'TOWER · touch it with the bomb' : 'TOWER · guard it',
+              pin: ' ▼',
+              color: '#e8f1ff',
+              at: add(t.pos, v3(0, t.height + 1.5, 0)),
+              priority: 80,
+              clamp: carrying,
+            });
+        }
+        return;
+      }
     }
     // sky duel overtime: the Tower is off and far below, nothing to point at
     if (m.phase === 'live' && m.overtime?.kind === 'sky') return;

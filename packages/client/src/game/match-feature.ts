@@ -22,7 +22,7 @@ const REASON_TEXT: Record<string, string> = {
   draw: 'Draw',
   collapse: 'Overtime: more players alive / more health / nearer the middle',
   sky: 'Sky duel: more players alive / more health / nearer the middle',
-  exploded: 'The bomb exploded',
+  exploded: 'The bomb (or a planted Controller) exploded',
   defused: 'The bomb was defused',
 };
 
@@ -227,7 +227,11 @@ export class MatchFeature implements ClientFeature {
                     ? 'Sides swapped — you are now T (orange): plant the bomb'
                     : 'Sides swapped — you are now CT (cyan): defend the sites'
                   : 'Sides swapped — attack the other Tower now · team colors swapped too'
-                : 'Get ready',
+                : s.match?.()?.glitch
+                  ? s.match?.()?.objective === 'bomb'
+                    ? 'Reactor glitch: the bomb carrier can also touch the enemy Tower'
+                    : 'Reactor glitch: plant your Controller at A or B (hold G) — or touch their Tower'
+                  : 'Get ready',
             swapped ? 4 : 3,
             e.suddenDeath ? '#ff5b5b' : '#fff',
           );
@@ -236,7 +240,7 @@ export class MatchFeature implements ClientFeature {
         }
         case 'bombPlanted':
           this.showBanner(
-            `BOMB PLANTED AT ${e.site}`,
+            `${s.match?.()?.objective === 'tower' ? 'CONTROLLER' : 'BOMB'} PLANTED AT ${e.site}`,
             this.myTeam(s) === this.last?.attackers ? 'Protect it' : 'Defuse it: hold G next to it',
             3,
             '#ff5a6a',
@@ -244,7 +248,12 @@ export class MatchFeature implements ClientFeature {
           a.play('controllerPickup');
           break;
         case 'bombDefused':
-          this.showBanner('BOMB DEFUSED', '', 3, '#19e3ff');
+          this.showBanner(
+            s.match?.()?.objective === 'tower' ? 'CONTROLLER DEFUSED' : 'BOMB DEFUSED',
+            s.match?.()?.objective === 'tower' ? 'It went back to its home' : '',
+            3,
+            '#19e3ff',
+          );
           break;
         case 'bombExploded':
           a.play('grenadePop', { volume: 1.2, rate: 0.55 });
@@ -398,9 +407,13 @@ export class MatchFeature implements ClientFeature {
           const b = m.bomb;
           subText = iAttack
             ? b?.carrier === s.localId
-              ? 'T SIDE · YOU HAVE THE BOMB · hold G in site A or B to plant'
+              ? m.glitch
+                ? 'T SIDE · YOU HAVE THE BOMB · plant at A or B (hold G) — or touch their Tower'
+                : 'T SIDE · YOU HAVE THE BOMB · hold G in site A or B to plant'
               : 'T SIDE (orange) · ATTACK · plant the bomb at A or B'
-            : 'CT SIDE (cyan) · DEFEND · stop the plant at A and B';
+            : m.glitch
+              ? 'CT SIDE (cyan) · DEFEND · the sites and your Tower'
+              : 'CT SIDE (cyan) · DEFEND · stop the plant at A and B';
           if (b?.planted) {
             // the fuse replaces the round timer
             centerText = fmtTime((b.planted.explodeAt - tick) / 60);
@@ -428,12 +441,26 @@ export class MatchFeature implements ClientFeature {
         centerText = 'MATCH OVER';
         break;
     }
+    // the objective glitch in Tower mode: a planted Controller replaces the round timer
+    const planted =
+      m.objective === 'tower' && m.glitch && m.phase === 'live' ? m.bomb?.planted : null;
+    if (planted) {
+      centerText = fmtTime((planted.explodeAt - tick) / 60);
+      urgent = true;
+    }
     // (in the sky duel the Tower is out of reach: no Controller talk)
     const skyDuel = m.phase === 'live' && m.overtime?.kind === 'sky';
     if (skyDuel) {
       // keep the sky duel line
+    } else if (planted) {
+      subText =
+        mine === m.attackers
+          ? `YOUR CONTROLLER IS PLANTED AT ${planted.site} · protect it`
+          : `ENEMY CONTROLLER PLANTED AT ${planted.site} · hold G next to it to defuse`;
     } else if (m.carriers.includes(s.localId) && m.phase === 'live')
-      subText = 'You carry the Controller — touch the enemy Tower';
+      subText = m.glitch
+        ? 'You carry the Controller — touch the enemy Tower, or plant it at A or B (hold G)'
+        : 'You carry the Controller — touch the enemy Tower';
     else if (m.phase === 'live' && m.carriers.length > 0) {
       // who has which Controller, for both teams
       const names = s.names();
@@ -481,7 +508,7 @@ export class MatchFeature implements ClientFeature {
     }
 
     // ---- bomb mode: the bomb, its beeps, your plant / defuse progress ----
-    const bomb = m.objective === 'bomb' && m.phase === 'live' ? m.bomb : null;
+    const bomb = (m.objective === 'bomb' || m.glitch) && m.phase === 'live' ? m.bomb : null;
     this.bombMesh.visible = !!bomb && bomb.carrier === null;
     if (bomb) {
       this.bombMesh.position.set(bomb.pos.x, bomb.pos.y - 0.82, bomb.pos.z);
@@ -506,7 +533,16 @@ export class MatchFeature implements ClientFeature {
       this.bombBar.classList.toggle('show', !!mineProg);
       if (mineProg && prog) {
         const planting = !!bomb.plant;
-        const need = (planting ? rules.bombPlantSec : rules.bombDefuseSec) * 60;
+        // (a Controller planted by the objective glitch has its own, shorter times)
+        const glitch = m.objective === 'tower';
+        const need =
+          (planting
+            ? glitch
+              ? rules.glitchPlantSec
+              : rules.bombPlantSec
+            : glitch
+              ? rules.glitchDefuseSec
+              : rules.bombDefuseSec) * 60;
         const u = Math.min(1, prog.ticks / need);
         this.bombBarFill.style.width = `${u * 100}%`;
         this.bombBarText.textContent = `${planting ? 'PLANTING' : 'DEFUSING'} · ${((need - prog.ticks) / 60).toFixed(1)} s`;
@@ -515,8 +551,9 @@ export class MatchFeature implements ClientFeature {
 
     // ---- 3D: towers + dropped Controllers (Tower mode only) ----
     for (const fx of this.towers) {
-      fx.beam.visible = m.objective !== 'bomb';
-      fx.ring.visible = m.objective !== 'bomb';
+      // (the objective glitch: the Tower counts in Bomb mode too)
+      fx.beam.visible = m.objective !== 'bomb' || m.glitch;
+      fx.ring.visible = m.objective !== 'bomb' || m.glitch;
       fx.flash = Math.max(0, fx.flash - dt);
       const pulse = fx.flash > 0 ? 0.5 + 0.5 * Math.sin(this.time * 30) : 0;
       const beam = fx.beam.material as THREE.MeshBasicMaterial;

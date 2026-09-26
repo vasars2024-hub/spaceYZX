@@ -67,6 +67,8 @@ const PREDICTED_EVENTS = new Set([
   'mantle',
   'railGrab',
   'railRelease',
+  'launch',
+  'portal',
   'thruster',
   'jetpack',
   'pushOff',

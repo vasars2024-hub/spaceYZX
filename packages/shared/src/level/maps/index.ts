@@ -5,6 +5,7 @@ import { buildTrainingBay } from './training-bay';
 import { buildKestrel } from './kestrel';
 import { buildSplitDeck } from './split-deck';
 import { buildArena } from './arena';
+import { buildOrbitalRing } from './orbital-ring';
 import { withSkyArena } from '../sky-arena';
 
 export interface MapInfo {
@@ -23,6 +24,8 @@ export const MAPS: MapInfo[] = [
   // the first competitive map is the default for matches (online rooms, practice)
   { id: 'split-deck', name: 'Split Deck', build: buildSplitDeck, competitive: true },
   { id: 'kestrel', name: 'Kestrel', build: buildKestrel, competitive: true, symmetric: true },
+  // mirror-symmetric north ↔ south (orbital-ring.test.ts checks it; `symmetric` means across x)
+  { id: 'orbital-ring', name: 'Orbital Ring', build: buildOrbitalRing, competitive: true },
   { id: 'proving-grounds', name: 'Proving Grounds', build: buildTestShip, competitive: false },
   {
     id: 'arena',

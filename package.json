@@ -2,7 +2,7 @@
   "name": "space-yz",
   "private": true,
   "version": "0.1.0",
-  "description": "Space YZ — a free, fast, first-person gravity arena shooter for Chrome.",
+  "description": "Space YZ \u2014 a free, fast, first-person gravity arena shooter for Chrome.",
   "type": "module",
   "workspaces": [
     "packages/shared",
@@ -21,7 +21,31 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p packages/shared && tsc -p packages/client && tsc -p packages/server",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "typecheck": "tsc -p packages/shared && tsc -p packages/client && tsc -p packages/server && tsc -p tools",
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "balance": "tsx tools/balance/run.ts",
+    "matches": "tsx tools/balance/matches.ts",
+    "netcheck": "tsx tools/netcheck/run.ts",
+    "size": "tsx tools/perf/bundle-size.ts",
+    "load": "tsx tools/perf/server-load.ts",
+    "map": "tsx tools/map/analyze.ts",
+    "bench": "node tools/perf/browser-bench.mjs",
+    "tour": "node tools/e2e/feature-tour.mjs",
+    "indicators": "node tools/e2e/indicators.mjs",
+    "host": "tsx packages/server/src/host/host-main.ts",
+    "build:host": "npm run build && tsx tools/host/build-exe.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.6",
+    "concurrently": "10.0.5",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.1"
   }
 }

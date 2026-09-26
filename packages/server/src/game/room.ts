@@ -165,7 +165,15 @@ export class Room {
     this.privateEvery = opts.privateEvery ?? 3;
     this.maxPlayers =
       opts.maxPlayers ??
-      (opts.mode === '1v1' ? 2 : opts.mode === '2v2' ? 4 : opts.mode === 'arena' ? 8 : 10);
+      (opts.mode === '1v1'
+        ? 2
+        : opts.mode === '2v2'
+          ? 4
+          : opts.mode === '3v3'
+            ? 6
+            : opts.mode === 'arena'
+              ? 8
+              : 10);
     if (opts.lagComp !== false) {
       this.ctx.rewindHitboxes = (id) => {
         const tick = this.rewindTick(id);

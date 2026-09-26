@@ -2477,7 +2477,7 @@ export const analyzeMap = (
   };
   const routes = time('routes', () => routeTimings(an));
   const walks = config.routes?.length
-    ? time('walks', () => measureRoutes(level, config.routes!, an.game))
+    ? time('walks', () => measureRoutes(level, config.routes!, an.game, config.timingRules))
     : null;
   const links = regionLinks(an);
   const sight = time('sightlines', () => sightlines(an, layers.sight));

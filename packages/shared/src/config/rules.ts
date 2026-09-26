@@ -8,9 +8,12 @@ export interface ModeRules {
   teamSize: number;
 }
 
-export const MODE_RULES: Record<'1v1' | '2v2' | '5v5', ModeRules> = {
+// 3v3 (casual only): 2v2's first to 6, a round length between 2v2 and 5v5 that keeps the longest
+// match (11 rounds × ~100 s) as far under hardCapMin as 5v5's.
+export const MODE_RULES: Record<'1v1' | '2v2' | '3v3' | '5v5', ModeRules> = {
   '1v1': { roundSec: 60, firstTo: 5, maxRounds: 9, carrierRevealEverySec: 5, teamSize: 1 },
   '2v2': { roundSec: 80, firstTo: 6, maxRounds: 11, carrierRevealEverySec: 5, teamSize: 2 },
+  '3v3': { roundSec: 90, firstTo: 6, maxRounds: 11, carrierRevealEverySec: 5, teamSize: 3 },
   '5v5': { roundSec: 110, firstTo: 5, maxRounds: 9, carrierRevealEverySec: 5, teamSize: 5 },
 };
 

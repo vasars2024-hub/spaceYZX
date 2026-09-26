@@ -1,8 +1,16 @@
 // GameHub: connections <-> rooms. Handles control messages, rate limits and validation.
 // Accounts, ranked matchmaking and the host dashboard plug in through HubServices.
 import type { WebSocket } from 'ws';
-import type { ClientMsg, GameConfig, LoadoutName, RoomMode } from '@space-yz/shared';
+import type {
+  ClientMsg,
+  GameConfig,
+  LoadoutName,
+  MatchObjective,
+  RoomMode,
+} from '@space-yz/shared';
 import {
+  MATCH_OBJECTIVES,
+  ROOM_MODES,
   PROTOCOL_VERSION,
   GAME_NAME,
   MSG_INPUT,
@@ -148,9 +156,7 @@ export class GameHub {
     if (!conn.helloDone) return conn.strike('no hello');
     switch (msg.t) {
       case 'createRoom': {
-        const mode: RoomMode = ['1v1', '2v2', '5v5', 'practice', 'arena'].includes(msg.mode)
-          ? msg.mode
-          : 'practice';
+        const mode: RoomMode = ROOM_MODES.includes(msg.mode) ? msg.mode : 'practice';
         // (arena maps only for the Arena, which picks its own)
         const map = MAPS.some((m) => m.id === msg.map && !m.arena)
           ? (msg.map as string)
@@ -161,7 +167,7 @@ export class GameHub {
           map,
           bots,
           botSkill: botSkillName(msg.botSkill),
-          objective: msg.objective === 'bomb' ? 'bomb' : 'tower',
+          objective: MATCH_OBJECTIVES.find((o) => o === msg.objective) ?? 'tower',
           loadout: loadoutName(msg.loadout),
         });
         if (!room) return conn.sendJson({ t: 'error', msg: 'The server is full right now.' });
@@ -241,7 +247,7 @@ export class GameHub {
     botSkill?: string;
     ranked?: boolean;
     config?: GameConfig;
-    objective?: 'tower' | 'bomb';
+    objective?: MatchObjective;
     /**
      * 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement); never practice, and ranked
      * only in the Arena (its ladder is played with either kit)

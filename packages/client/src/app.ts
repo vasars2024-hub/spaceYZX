@@ -53,7 +53,7 @@ import {
 } from './render/perf';
 import { effects, setEffects } from './render/effects';
 import { setTextureDetail } from './render/textures';
-import { createPracticeSession, type PracticeKind } from './game/practice';
+import { createPracticeSession, isCsKind, type PracticeKind } from './game/practice';
 import { startArenaPractice, arenaOnlineFeatures } from './game/arena-entry';
 import { createRangeSession } from './game/range';
 import {
@@ -485,7 +485,13 @@ export class App {
         back: () => this.showTitle(),
         start: (st) => {
           if (st.mode === 'arena') this.startArenaPractice(st);
-          else this.startPractice(st.size, st.skill, st.mode, practiceMapId(st));
+          else
+            this.startPractice(
+              st.size,
+              st.skill,
+              st.mode === 'elim' && st.kit === 'cs' ? 'elim-cs' : st.mode,
+              practiceMapId(st),
+            );
         },
       }),
       dir,
@@ -522,7 +528,7 @@ export class App {
     const match = kind !== 'deathmatch' ? new MatchFeature() : null;
     // (no tuning panel in CS mode: its config is a CS copy that must not be saved as tuning)
     const client = this.startGame(session, match ? [combat, match] : [combat], {
-      tuning: kind !== 'cs',
+      tuning: !isCsKind(kind),
     });
     this.matchFeature = match;
     combat.statsText = () => {
@@ -542,8 +548,8 @@ export class App {
     };
     this.tuning?.gui.add(combat.hud, 'showStats').name('Show combat stats');
     client.hud.setHint(
-      kind === 'cs'
-        ? 'Esc menu · LMB fire · 1 AK · 2 Deagle · R reload · E knife · G plant/defuse · stop moving to shoot straight'
+      isCsKind(kind)
+        ? `Esc menu · LMB fire · 1 AK · 2 Deagle · R reload · E knife${kind === 'cs' ? ' · G plant/defuse' : ''} · stop moving to shoot straight`
         : '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
     );
   }

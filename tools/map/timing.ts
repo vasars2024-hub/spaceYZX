@@ -35,7 +35,19 @@ export interface RouteSpec {
   via: string[];
   /** alternative destinations (the route ends at whichever is reached first on the graph) */
   anyOf?: string[];
+  /** the owner's target time in seconds (checked within ±TARGET_PCT % under 'targets' rules) */
+  targetSec?: number;
 }
+
+/**
+ * Which balance checks apply: 'asymmetric' (Split Deck: the defenders' lead to each site and
+ * lanes within 25 % of each other), or 'targets' (mirrored maps like Orbital Ring, where both
+ * teams are equal by construction and the owner's plan sets a time per route instead).
+ */
+export type TimingRules = 'asymmetric' | 'targets';
+
+/** how far a measured time may be off its `targetSec` */
+export const TARGET_PCT = 20;
 
 export interface RouteTiming {
   spec: RouteSpec;
@@ -157,6 +169,7 @@ export const measureRoutes = (
   level: Level,
   specs: RouteSpec[],
   config: GameConfig = defaultConfig(),
+  rules: TimingRules = 'asymmetric',
 ): TimingReport => {
   const wps = level.def.waypoints ?? [];
   const routes = specs.map((spec): RouteTiming => {
@@ -178,7 +191,7 @@ export const measureRoutes = (
       walked: run ? r1(run.walked) : null,
     };
   });
-  return { sprintSpeed: config.movement.sprintSpeed, routes, checks: timingChecks(routes) };
+  return { sprintSpeed: config.movement.sprintSpeed, routes, checks: timingChecks(routes, rules) };
 };
 
 // ------------------------------------------------------------------------------------------
@@ -194,8 +207,13 @@ const TEAM = ['Cyan', 'Orange'];
  *    best A and B times are within ±15 % of each other.
  * 4. Lanes stay viable: no route more than 25 % faster than any other route of the same team
  *    to the same destination (slowest ≤ 1.25 × fastest).
+ * 'targets' rules (mirrored maps) keep 1 and 2 and replace 3 and 4 with: every route that has
+ * a `targetSec` is measured within ±TARGET_PCT % of it.
  */
-export const timingChecks = (routes: RouteTiming[]): TimingCheck[] => {
+export const timingChecks = (
+  routes: RouteTiming[],
+  rules: TimingRules = 'asymmetric',
+): TimingCheck[] => {
   const out: TimingCheck[] = [];
   const secs = (f: (r: RouteTiming) => boolean) =>
     routes
@@ -237,6 +255,18 @@ export const timingChecks = (routes: RouteTiming[]): TimingCheck[] => {
       pass: d <= 0.5 + 1e-9,
       detail: `Cyan ${contact[0][0]} s, Orange ${contact[1][0]} s (${r2(d)} s apart)`,
     });
+  }
+  if (rules === 'targets') {
+    for (const r of routes) {
+      if (r.spec.targetSec === undefined || r.seconds === null) continue;
+      const t = r.spec.targetSec;
+      out.push({
+        name: `Target: ${TEAM[r.spec.team]} → ${r.spec.to} (${r.spec.name}) ≈ ${t} s`,
+        pass: Math.abs(r.seconds - t) <= (TARGET_PCT / 100) * t + 1e-9,
+        detail: `measured ${r.seconds} s (target ${t} s ± ${TARGET_PCT} %)`,
+      });
+    }
+    return out;
   }
   // 3. Bomb
   const sites = [...new Set(routes.filter((r) => r.spec.mode === 'bomb').map((r) => r.spec.to))];

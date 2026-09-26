@@ -1,6 +1,6 @@
 // Online menus: nickname and connection on top, then tabs: Create room (in steps: objective →
 // map → room size + bots) or Join by code. Also the in-game room panel and network panel.
-import type { BotSkillName, NetCore, RoomMode } from '@space-yz/shared';
+import type { BotSkillName, MatchObjective, NetCore, RoomMode } from '@space-yz/shared';
 import { BOT_SKILL_LABELS, getMap } from '@space-yz/shared';
 import { h, slider } from './menus';
 import { icon, botBadge } from './icons';
@@ -45,8 +45,8 @@ export interface OnlineMenuHandlers {
     map: string,
     bots: number,
     skill: BotSkillName,
-    objective: 'tower' | 'bomb',
-    /** 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement) */
+    objective: MatchObjective,
+    /** 'cs': the CS kit (AK + Deagle, half-speed movement): bomb rules, or Elimination */
     loadout: 'lethal' | 'cs',
   ): void;
   join(code: string): void;
@@ -62,6 +62,7 @@ export interface OnlineMenuHandlers {
 const SIZE_DESC: Record<RoomSize, string> = {
   '1v1': 'A duel: you and one friend.',
   '2v2': 'Two teams of two.',
+  '3v3': 'Two teams of three.',
   '5v5': 'Full teams of five.',
 };
 

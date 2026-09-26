@@ -17,6 +17,10 @@ export const ICONS = {
   bomb: svg(
     '<rect x="3" y="10" width="18" height="9" rx="1.5"/><rect x="6" y="12.5" width="7" height="4" rx=".5"/><path d="M15.5 13h3M15.5 16h3"/><path d="M8 10V7.5a2 2 0 0 1 2-2h1.5"/><circle cx="14" cy="5.5" r="1" fill="currentColor"/>',
   ),
+  // Elimination: a skull (last team standing)
+  elim: svg(
+    '<path d="M5 11a7 7 0 0 1 14 0v3.2l-2 1.3V19H7v-3.5l-2-1.3z"/><circle cx="9.3" cy="11.6" r="1.5" fill="currentColor"/><circle cx="14.7" cy="11.6" r="1.5" fill="currentColor"/><path d="M12 14.2v1.3M10.5 19v-1.8M13.5 19v-1.8"/>',
+  ),
   cs: svg(
     '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
   ),

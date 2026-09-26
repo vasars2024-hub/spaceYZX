@@ -93,6 +93,26 @@ describe('online 1v1 over WebSocket', () => {
     await until(() => phase(a.core.extra) === 'live', 7000);
   }, 20000);
 
+  it('creates a 3v3 Elimination room with the CS kit from the menu message', async () => {
+    const url = `ws://127.0.0.1:${server.port}/ws`;
+    const e = startHeadlessBot({
+      url,
+      name: 'Foxtrot',
+      onReady: (core) => core.createRoom('3v3', 'split-deck', 0, 'normal', 'elim', 'cs'),
+    });
+    bots.push(e);
+    await until(() => e.core.state === 'room');
+    const room = server.hub.rooms.get(e.core.code)!;
+    expect(room.mode).toBe('3v3');
+    expect(room.maxPlayers).toBe(6);
+    const ms = (room.rules as unknown as { ms: { objective: string; loadout: string } }).ms;
+    expect(ms.objective).toBe('elim');
+    expect(ms.loadout).toBe('cs');
+    const view = () => e.core.extra as { objective?: string; mode?: string } | null;
+    await until(() => view()?.objective === 'elim');
+    expect(view()?.mode).toBe('3v3');
+  });
+
   it('rejects wrong room codes and out-of-date clients politely', async () => {
     const url = `ws://127.0.0.1:${server.port}/ws`;
     const c = startHeadlessBot({

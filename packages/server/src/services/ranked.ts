@@ -142,7 +142,8 @@ export class RankedStore {
     const { result } = input;
     const t = this.now();
     const deltas = new Map<number, number>();
-    const mode = result.mode;
+    // (ranked rooms are only ever 1v1 / 2v2 / 5v5: 3v3 is casual and never reaches the ratings)
+    const mode = result.mode as RankedMode;
     this.db.exec('BEGIN');
     try {
       if (input.ranked) {

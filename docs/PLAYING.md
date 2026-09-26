@@ -39,7 +39,7 @@ next throw. The HUD shows how many throws are left ("✹ in 3") or "✹ EXPLOSIV
   team**, to win the round.
 - If the carrier dies, the Controller drops. A teammate picks it up by standing on it for
   half a second; after 8 seconds untouched it returns to your base.
-- In 2v2 and 5v5 both teams always see who carries each Controller, even through walls (the
+- In 2v2, 3v3 and 5v5 both teams always see who carries each Controller, even through walls (the
   top of the screen names them), and in the last 20 seconds everybody is revealed. In 1v1
   your opponent is never revealed.
 - **When time runs out there is no draw.** Usually the ship starts to **collapse**: the Tower
@@ -48,8 +48,9 @@ next throw. The HUD shows how many throws are left ("✹ in 3") or "✹ EXPLOSIV
   floating platforms above the clouds, a much stronger jetpack, 20 seconds, and falling off
   means you're out. If it's still undecided: more players alive, then more health, then who
   is nearer the middle, then a coin flip.
-- Matches: 1v1 first to 5 (max 9 rounds), 2v2 first to 6 (max 11), 5v5 first to 5 (max 9).
-  Sides swap at half time. Round timers: 1v1 1:00, 2v2 1:20, 5v5 1:50.
+- Matches: 1v1 first to 5 (max 9 rounds), 2v2 and 3v3 first to 6 (max 11), 5v5 first to 5
+  (max 9). Sides swap at half time. Round timers: 1v1 1:00, 2v2 1:20, 3v3 1:30, 5v5 1:50.
+  3v3 is for online rooms and Practice only (there is no Ranked 3v3).
 
 ## Power-ups
 
@@ -77,6 +78,13 @@ CS mode.
   before a plant, or by killing all attackers before the plant.
   Attackers are the **T side (orange)**, defenders the **CT side (cyan)**. Teams swap sides at
   half time and **your team's color swaps with them**, so orange always means T.
+- **Elimination** (Practice, or pick it when you create an online room): **last team standing
+  wins the round.** No Towers, no Controllers, no bomb — the only way to win a round is to
+  eliminate the whole enemy team. Everything else is as in Tower mode: same round timer,
+  everybody revealed in the last 20 seconds, sides swap at half time, and with the Boomerang
+  kit the free hit at round start and the power-ups. When time runs out it goes to the same overtime (the collapse or the sky
+  duel), so there is still no draw. Play it with the Boomerang kit or the CS kit (Practice:
+  pick the kit on the last step; online: "Elimination CS").
 - **CS mode**: Bomb rules with an **AK-47** (1) and a **Deagle** (2) instead of the Boomerang
   kit, and everyone moves at 70 % of normal speed. The AK kills with 4 body shots or 1 headshot, the
   Deagle with 2 body shots or 1 headshot. Guns have a fixed spray pattern you can learn and
@@ -143,19 +151,23 @@ A space station built around a **reactor core**, the same for both teams (mirror
 south). Cyan spawns at the top, Orange at the bottom; **A site** is on the east side, **B
 site** on the west side, halfway between the spawns.
 
-- **The core** (middle, under a glass dome with the planet overhead): a **hole** in its floor
-  drops into the **reactor pit**. Three power-ups: one floating over the hole (jump for it —
-  and fall in if you miss) and one on each **balcony**. The **launch pads** in the core's
-  corners throw you up onto the east / west balconies; a **zip-rail** runs balcony to
-  balcony over the hole.
-- **The ring** circles the core (doors into the core on every side), and the **basement
-  ring** runs underneath it around the reactor pit. The two **launch pads** in the pit fire
-  you back up through the hole into the core.
-- **Outer corridors**: long corridors from each spawn to both sites, with a **zip-rail**
-  along the ceiling (the fast way round) and a **gate** before the site. Windows look out
-  onto the planet.
-- **Stairs and tunnels**: each spawn connector has stairwells down to the basement ring, and
-  each site has two ramps up from it.
+- **Spokes**: a straight corridor runs from each spawn to the ring (about 5 s to the core at
+  a sprint), and from the ring out to each site. Each spoke has a **gate** where it meets the
+  ring.
+- **The core** (middle, under a glass dome with the planet overhead): a round platform with a
+  **hole** in the middle that drops into the **reactor pit**. The two power-ups float over
+  the hole (jump for one — and fall in if you miss). The **launch pads** next to the east /
+  west **balconies** throw you up onto them; a **zip-rail** runs balcony to balcony over the
+  hole.
+- **The ring** circles the core. It is open to the core on its four straight sides and has
+  a wall with a door on each diagonal side. Crossing the core is the quick way to a site
+  (about 8 s from a spawn).
+- **The basement ring** runs underneath, further out. Take the stairs down from the ring
+  (two next to each spoke). Four tunnels with ramps lead from it down into the reactor pit,
+  and the two **launch pads** in the pit fire you back up through the hole into the core.
+- **Outer corridors**: the long way round (about 11 s). A side door in each spawn leads
+  along the edge of the station into a site, past a **gate** and a tight corner, with a
+  **zip-rail** along the long stretch. Windows look out onto the planet.
 - **Rift portals**: a glowing portal at the back of each site. Walk into A's and you come out
   of B's (and back) — the fastest rotation on the map, but everyone hears it at both ends.
 

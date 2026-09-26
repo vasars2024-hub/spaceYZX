@@ -96,7 +96,8 @@ export const createServices = (opts: {
         const profile = ranked.profile(m.accountId);
         m.conn.sendJson({ t: 'profile', data: profile });
         const d = deltas.get(m.accountId);
-        const tier = profile?.modes[result.mode]?.tier.label;
+        // (3v3 is casual only: it has no ladder, and no rating change to show)
+        const tier = result.mode === '3v3' ? undefined : profile?.modes[result.mode]?.tier.label;
         if (d !== undefined)
           m.conn.sendJson({
             t: 'notice',

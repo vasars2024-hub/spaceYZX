@@ -226,7 +226,9 @@ export class MatchFeature implements ClientFeature {
                   ? mine === s.match?.()?.attackers
                     ? 'Sides swapped — you are now T (orange): plant the bomb'
                     : 'Sides swapped — you are now CT (cyan): defend the sites'
-                  : 'Sides swapped — attack the other Tower now · team colors swapped too'
+                  : s.match?.()?.objective === 'elim'
+                    ? 'Sides swapped · team colors swapped too'
+                    : 'Sides swapped — attack the other Tower now · team colors swapped too'
                 : 'Get ready',
             swapped ? 4 : 3,
             e.suddenDeath ? '#ff5b5b' : '#fff',
@@ -393,6 +395,7 @@ export class MatchFeature implements ClientFeature {
         centerText = fmtTime(sec);
         urgent = sec <= rules.lastSecondsRevealAll;
         subText = `Round ${m.round}`;
+        if (m.objective === 'elim') subText = `Round ${m.round} · ELIMINATION · last team standing`;
         if (m.objective === 'bomb') {
           const iAttack = mine === m.attackers;
           const b = m.bomb;
@@ -515,8 +518,8 @@ export class MatchFeature implements ClientFeature {
 
     // ---- 3D: towers + dropped Controllers (Tower mode only) ----
     for (const fx of this.towers) {
-      fx.beam.visible = m.objective !== 'bomb';
-      fx.ring.visible = m.objective !== 'bomb';
+      fx.beam.visible = m.objective === 'tower';
+      fx.ring.visible = m.objective === 'tower';
       fx.flash = Math.max(0, fx.flash - dt);
       const pulse = fx.flash > 0 ? 0.5 + 0.5 * Math.sin(this.time * 30) : 0;
       const beam = fx.beam.material as THREE.MeshBasicMaterial;

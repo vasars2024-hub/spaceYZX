@@ -1,5 +1,5 @@
-// Match rules: Controller & Tower objective, rounds, spawn lock, side swap, overtime (the
-// collapse, or by a seeded roll the sky duel), hard cap. Deterministic and shared by the server and offline practice matches.
+// Match rules: Controller & Tower objective (or Elimination: no objective, last team standing),
+// rounds, spawn lock, side swap, overtime (the collapse, or by a seeded roll the sky duel), hard cap. Deterministic and shared by the server and offline practice matches.
 import type { Vec3 } from '../math/vec3';
 import { v3, clone, sub, len } from '../math/vec3';
 import { rngShuffle, rngFloat } from '../math/rng';
@@ -21,7 +21,7 @@ import {
 } from './bomb';
 import { MODE_RULES, type ModeRules } from '../config/rules';
 import type { LoadoutName } from '../config/loadout';
-import type { RankedMode } from '../rating/global';
+import type { TeamMode } from '../rating/global';
 import type { BotMemory } from '../bots/brain';
 import { clearPowerups } from '../sim/powerups';
 import { updateRoundPowerups, botPowerupGoal } from './powerups';
@@ -30,8 +30,13 @@ export type MatchPhase = 'warmup' | 'spawnLock' | 'live' | 'roundEnd' | 'matchEn
 export type RoundEndReason =
   'tower' | 'elimination' | 'time' | 'draw' | 'collapse' | 'sky' | 'exploded' | 'defused';
 
-/** What a match is played for: carry your Controller to the enemy Tower, or plant/defuse. */
-export type MatchObjective = 'tower' | 'bomb';
+/**
+ * What a match is played for: carry your Controller to the enemy Tower, plant/defuse the bomb,
+ * or 'elim' (Elimination): no Towers, Controllers or bomb, a round is won only by wiping out the
+ * enemy team (the timer runs out: the same overtime as Tower mode decides it, never a draw).
+ */
+export type MatchObjective = 'tower' | 'bomb' | 'elim';
+export const MATCH_OBJECTIVES: readonly MatchObjective[] = ['tower', 'bomb', 'elim'];
 
 /**
  * Overtime after the round timer: the ship collapses toward `center` ('collapse'), or everyone
@@ -63,7 +68,7 @@ export interface RoundResult {
 }
 
 export interface MatchState {
-  mode: RankedMode;
+  mode: TeamMode;
   rules: ModeRules;
   phase: MatchPhase;
   phaseEnds: number;
@@ -100,7 +105,7 @@ export interface MatchState {
 const secTicks = (s: number, dt: number) => Math.round(s / dt);
 
 export const createMatch = (
-  mode: RankedMode,
+  mode: TeamMode,
   objective: MatchObjective = 'tower',
   loadout: LoadoutName = 'lethal',
 ): MatchState => ({
@@ -202,10 +207,11 @@ export const beginRound = (ms: MatchState, world: WorldState, ctx: SimContext): 
   clearPowerups(world);
   ms.powerupsSpawned = 0;
   // carriers: 1v1 each player carries their own; teams rotate the carrier each round
+  // (Elimination: nobody carries anything, so the Tower touch never fires)
   for (const team of [0, 1] as const) {
     const ps = teamPlayers(world, team);
     const c = ms.controllers[team];
-    c.carrier = ps.length ? ps[(ms.round - 1) % ps.length].id : null;
+    c.carrier = ps.length && ms.objective === 'tower' ? ps[(ms.round - 1) % ps.length].id : null;
     c.droppedAt = null;
     c.pickup = null;
   }
@@ -711,7 +717,7 @@ export const matchView = (ms: MatchState): MatchView => ({
 });
 
 export interface MatchView {
-  mode: RankedMode;
+  mode: TeamMode;
   phase: MatchPhase;
   phaseEnds: number;
   round: number;
@@ -759,6 +765,7 @@ export const botObjectives = (
     for (const p of world.players) if (p.alive) out[p.id] = clone(ms.overtime.center);
     return out;
   }
+  if (ms.objective === 'elim') return elimBotObjectives(ms, world, ctx, out);
   for (const team of [0, 1] as const) {
     const mine = ms.controllers[team];
     const theirs = ms.controllers[1 - team];
@@ -780,6 +787,37 @@ export const botObjectives = (
         out[p.id] = clone(enemyTower.pos);
       }
     });
+  }
+  return out;
+};
+
+/**
+ * Elimination: every bot hunts the nearest living enemy. In the collapse it heads for the middle
+ * instead whenever that enemy is outside the safe zone (never chase someone out of it).
+ */
+const elimBotObjectives = (
+  ms: MatchState,
+  world: WorldState,
+  ctx: SimContext,
+  out: Record<number, Vec3 | null>,
+): Record<number, Vec3 | null> => {
+  const ot = ms.overtime;
+  const radius = ot ? collapseRadius(ot, world.tick, ctx) : Infinity;
+  const middle = ot ? ot.center : mapMiddle(ctx);
+  for (const p of world.players) {
+    if (!p.alive) continue;
+    let best: PlayerState | null = null;
+    let bestD = Infinity;
+    for (const q of world.players) {
+      if (!q.alive || q.team === p.team) continue;
+      const d = len(sub(q.pos, p.pos));
+      if (d < bestD) {
+        bestD = d;
+        best = q;
+      }
+    }
+    const inZone = !!best && Math.hypot(best.pos.x - middle.x, best.pos.z - middle.z) <= radius;
+    out[p.id] = clone(best && inZone ? best.pos : middle);
   }
   return out;
 };

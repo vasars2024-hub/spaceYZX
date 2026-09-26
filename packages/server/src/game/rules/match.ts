@@ -1,6 +1,7 @@
-// Match rules for 1v1 / 2v2 / 5v5 rooms: warmup until both teams are full (or the host
-// starts early), then rounds with the Controller & Tower objective (shared/rules/match).
-import type { LoadoutName, MatchState, RankedMode } from '@space-yz/shared';
+// Match rules for 1v1 / 2v2 / 3v3 / 5v5 rooms: warmup until both teams are full (or the host
+// starts early), then rounds with the room's objective: Controller & Tower, bomb or Elimination
+// (shared/rules/match).
+import type { LoadoutName, MatchObjective, MatchState, TeamMode } from '@space-yz/shared';
 import {
   createMatch,
   startMatch,
@@ -15,7 +16,7 @@ import {
 import type { Member, Room, Rules } from '../room';
 
 export interface MatchResult {
-  mode: RankedMode;
+  mode: TeamMode;
   winner: 0 | 1 | null;
   reason: string;
   scores: [number, number];
@@ -63,12 +64,17 @@ export class MatchRules implements Rules {
   private grief = new Map<number, { teamKills: number; warned: Set<string> }>();
 
   constructor(
-    readonly mode: RankedMode,
-    objective: 'tower' | 'bomb' = 'tower',
+    readonly mode: TeamMode,
+    objective: MatchObjective = 'tower',
     loadout: LoadoutName = 'lethal',
   ) {
-    // CS mode is always played with the bomb (the room's config must be csConfig: see hub)
-    this.ms = createMatch(mode, loadout === 'cs' ? 'bomb' : objective, loadout);
+    // CS mode is played with the bomb, or as Elimination (never Towers); the room's config
+    // must be csConfig: see hub
+    this.ms = createMatch(
+      mode,
+      loadout === 'cs' ? (objective === 'elim' ? 'elim' : 'bomb') : objective,
+      loadout,
+    );
   }
 
   private full(room: Room): boolean {

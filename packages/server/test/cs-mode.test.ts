@@ -31,3 +31,43 @@ describe('CS mode rooms', () => {
     expect(configLoadout(practice.ctx.config)).toBe('lethal');
   });
 });
+
+describe('Elimination and 3v3 rooms', () => {
+  it('Elimination rooms keep their objective with either kit (CS never forces the bomb)', () => {
+    const hub = new GameHub({ log: () => {} });
+    const lethal = hub.createRoom({ mode: '2v2', map: 'kestrel', objective: 'elim' })!;
+    expect((lethal.rules as MatchRules).ms.objective).toBe('elim');
+    expect((lethal.rules as MatchRules).ms.loadout).toBe('lethal');
+    const cs = hub.createRoom({ mode: '2v2', map: 'kestrel', objective: 'elim', loadout: 'cs' })!;
+    expect(configLoadout(cs.ctx.config)).toBe('cs');
+    expect((cs.rules as MatchRules).ms.objective).toBe('elim');
+    // CS with Towers is not a thing: still the bomb
+    const csTower = hub.createRoom({
+      mode: '2v2',
+      map: 'kestrel',
+      objective: 'tower',
+      loadout: 'cs',
+    })!;
+    expect((csTower.rules as MatchRules).ms.objective).toBe('bomb');
+    // ranked stays Tower rules
+    const ranked = hub.createRoom({
+      mode: '2v2',
+      map: 'kestrel',
+      objective: 'elim',
+      ranked: true,
+    })!;
+    expect((ranked.rules as MatchRules).ms.objective).toBe('tower');
+  });
+
+  it('3v3 rooms hold six players with 3v3 rules, for every objective', () => {
+    const hub = new GameHub({ log: () => {} });
+    for (const objective of ['tower', 'bomb', 'elim'] as const) {
+      const room = hub.createRoom({ mode: '3v3', map: 'split-deck', objective })!;
+      expect(room.maxPlayers).toBe(6);
+      const rules = room.rules as MatchRules;
+      expect(rules).toBeInstanceOf(MatchRules);
+      expect(rules.ms.objective).toBe(objective);
+      expect(rules.ms.rules.teamSize).toBe(3);
+    }
+  });
+});

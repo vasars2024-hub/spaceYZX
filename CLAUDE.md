@@ -34,9 +34,11 @@
   **asymmetric** — its route timings are measured and must stay balanced
   (`tools/map/test/split-deck-timing.test.ts`, `npm run map -- split-deck`). `kestrel.ts` is
   mirror-symmetric (`map.test.ts` checks maps flagged `symmetric`). `orbital-ring.ts` is
-  mirrored north ↔ south (its own test checks it) and has launch pads + portals
-  (`sim/devices.ts`) and the objective glitch (`rules/glitch.ts`: Controllers plant at sites
-  in Tower mode, the bomb touches Towers in Bomb mode). Bots must be able to walk every route.
+  built from the owner's approved plan (map drafts, Layout 3), mirrored north ↔ south around
+  z = 60 (its own test checks it), with launch pads, portals (`sim/devices.ts`) and zip-rails;
+  its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`). Modes never
+  mix: Tower mode has no plants, Bomb mode no Tower touches, Elimination neither. Bots must be
+  able to walk every route.
 - Anti-cheat: server-side work is planned but comes only after the gameplay features; a
   Chrome extension will be required for ranked later (casual play stays install-free).
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms

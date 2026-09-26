@@ -11,6 +11,7 @@ import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
 import type { SimEvent } from '../sim/events';
+import type { MatchObjective } from '../rules/match';
 import type { Hitbox } from '../sim/hitbox';
 import { interpNetPlayer, interpObjectPos, netHitbox, netToBoomerang, netToPlayer } from './interp';
 import { createWorld, stepPredict } from '../sim/world';
@@ -289,7 +290,7 @@ export class NetCore {
     map?: string,
     bots = 0,
     botSkill: string = DEFAULT_BOT_SKILL,
-    objective: 'tower' | 'bomb' = 'tower',
+    objective: MatchObjective = 'tower',
     loadout: LoadoutName = 'lethal',
   ): void {
     this.sendJson({ t: 'createRoom', mode, map, bots, botSkill, objective, loadout });

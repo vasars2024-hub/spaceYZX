@@ -3,10 +3,14 @@ import { BOT_SKILL_NAMES, MAPS, mapDef, type LevelDef, type MapInfo } from '@spa
 import {
   ARENA_ENABLED,
   BOT_SKILL_DESC,
+  ROOM_OBJECTIVES,
+  ROOM_SIZES,
+  hasKitChoice,
   initialPractice,
   initialRoom,
   mapTags,
   mapsForMode,
+  modeChoice,
   pickPracticeMap,
   pickPracticeMode,
   pickRoomMap,
@@ -19,6 +23,7 @@ import {
   roomBack,
   roomCreateArgs,
   roomMaps,
+  sizesFor,
   stepAfter,
   stepBefore,
 } from '../src/ui/flow';
@@ -69,6 +74,12 @@ describe('menu flow: practice wizard', () => {
     }
     expect(mapsForMode('deathmatch').map((m) => m.id)).toEqual(['training-bay']);
     expect(mapsForMode('match').some((m) => m.id === 'training-bay')).toBe(false);
+    // Elimination needs nothing from a map: every competitive map
+    expect(mapsForMode('elim').map((m) => m.id)).toEqual(
+      MAPS.filter((m) => m.competitive && !m.arena).map((m) => m.id),
+    );
+    for (const id of ['split-deck', 'kestrel', 'orbital-ring'])
+      expect(mapsForMode('elim').some((m) => m.id === id)).toBe(true);
   });
 
   it('keeps a valid map when switching mode, else picks the first valid one', () => {
@@ -86,12 +97,22 @@ describe('menu flow: practice wizard', () => {
     ]);
   });
 
-  it('lists the four modes (Arena only behind its flag) with icons', () => {
+  it('lists the five modes (Arena only behind its flag) with icons', () => {
     const ids = practiceModes(false).map((m) => m.id);
-    expect(ids).toEqual(['match', 'bomb', 'cs', 'deathmatch']);
+    expect(ids).toEqual(['match', 'bomb', 'elim', 'cs', 'deathmatch']);
+    expect(modeChoice('elim').desc).toMatch(/Last team standing wins the round/);
     expect(practiceModes(true).map((m) => m.id)).toContain('arena');
     expect(practiceModes().some((m) => m.id === 'arena')).toBe(ARENA_ENABLED);
     for (const m of practiceModes(true)) expect(ICONS[m.icon]).toBeTruthy();
+  });
+
+  it('offers 3v3, and a kit choice for Elimination and the Arena', () => {
+    expect(sizesFor('elim')).toContain(3);
+    expect(sizesFor('match')).toEqual([1, 2, 3, 5]);
+    expect(hasKitChoice('elim')).toBe(true);
+    expect(hasKitChoice('arena')).toBe(true);
+    expect(hasKitChoice('match')).toBe(false);
+    expect(hasKitChoice('bomb')).toBe(false);
   });
 
   it('has a description for every bot difficulty', () => {
@@ -119,10 +140,10 @@ describe('menu flow: online room wizard', () => {
   });
 
   it('never offers an Arena map outside the Arena', () => {
-    for (const mode of ['match', 'bomb', 'cs', 'deathmatch'] as const)
+    for (const mode of ['match', 'bomb', 'elim', 'cs', 'deathmatch'] as const)
       expect(mapsForMode(mode).some((m) => m.arena)).toBe(false);
     expect(mapsForMode('arena').every((m) => m.arena)).toBe(true);
-    for (const o of ['tower', 'bomb', 'cs'] as const) {
+    for (const o of ['tower', 'bomb', 'elim', 'cs', 'elim-cs'] as const) {
       const { best, other } = roomMaps(o);
       expect([...best, ...other].some((m) => m.arena)).toBe(false);
     }
@@ -141,6 +162,36 @@ describe('menu flow: online room wizard', () => {
       objective: 'tower',
       loadout: 'lethal',
     });
+  });
+
+  it('offers Elimination (both kits) next to Tower / Bomb, and 3v3 rooms', () => {
+    const ids = ROOM_OBJECTIVES.map((o) => o.id);
+    expect(ids.slice(0, 3)).toEqual(['tower', 'bomb', 'elim']);
+    expect(ids).toContain('elim-cs');
+    for (const o of ROOM_OBJECTIVES) expect(ICONS[o.icon]).toBeTruthy();
+    expect(ROOM_OBJECTIVES.find((o) => o.id === 'elim')!.desc).toBe(
+      'Last team standing wins the round.',
+    );
+    expect(ROOM_SIZES).toEqual(['1v1', '2v2', '3v3', '5v5']);
+    const s = { ...initialRoom(), objective: 'elim' as const, size: '3v3' as const, bots: true };
+    expect(roomCreateArgs(s)).toMatchObject({
+      mode: '3v3',
+      bots: 5,
+      objective: 'elim',
+      loadout: 'lethal',
+    });
+    expect(roomCreateArgs({ ...s, objective: 'elim-cs' })).toMatchObject({
+      objective: 'elim',
+      loadout: 'cs',
+    });
+    // Elimination suggests every competitive map (it needs no Towers or sites)
+    const best = roomMaps('elim').best.map((m) => m.id);
+    for (const id of ['split-deck', 'kestrel', 'orbital-ring']) expect(best).toContain(id);
+    expect(pickRoomObjective(initialRoom(), 'elim-cs').step).toBe('map');
+    // (Arena rooms: the 3v3 card means six players in all)
+    expect(
+      roomCreateArgs({ ...initialRoom(), objective: 'arena', size: '3v3', bots: true }),
+    ).toMatchObject({ mode: 'arena', bots: 5 });
   });
 
   it('ranked has the three queues, plus Arena only behind its flag', () => {
@@ -162,8 +213,7 @@ describe('menu flow: map tags', () => {
     expect(tags.some((t) => t.startsWith('Bomb sites'))).toBe(true);
     expect(mapTags(mapDef('training-bay'))).toEqual([]);
     const orbital = mapTags(mapDef('orbital-ring'));
-    for (const t of ['Towers', 'Portals', 'Launch pads'])
-      expect(orbital).toContain(t);
+    for (const t of ['Towers', 'Portals', 'Launch pads']) expect(orbital).toContain(t);
   });
 });
 

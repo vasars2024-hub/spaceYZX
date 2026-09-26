@@ -203,6 +203,8 @@ export class WorldMarkers implements ClientFeature {
         clamp: !holding && !!s.local()?.alive,
       });
     }
+    // Elimination: nothing to point at but the power-ups (no Towers, Controllers or bomb)
+    if (m.objective === 'elim') return;
     if (m.objective === 'bomb') {
       const iAttack = myTeam === m.attackers;
       const b = m.bomb;

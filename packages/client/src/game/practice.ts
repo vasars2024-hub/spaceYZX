@@ -39,21 +39,26 @@ export interface PracticeOptions {
   levelDef?: LevelDef;
   config: GameConfig;
   /**
-   * 'match': rounds + Controller & Tower; 'bomb': rounds + plant/defuse; 'cs': CS mode (bomb
-   * rules with AK + Deagle, half-speed movement); 'deathmatch': respawning.
+   * 'match': rounds + Controller & Tower; 'bomb': rounds + plant/defuse; 'elim': rounds, last
+   * team standing (Boomerang kit; 'elim-cs' with the CS kit); 'cs': CS mode (bomb rules with
+   * AK + Deagle, half-speed movement); 'deathmatch': respawning.
    */
   kind?: PracticeKind;
   /** map of a 'match' (default: the default match map, Split Deck) */
   mapId?: string;
 }
 
-export type PracticeKind = 'match' | 'bomb' | 'cs' | 'deathmatch';
+export type PracticeKind = 'match' | 'bomb' | 'elim' | 'elim-cs' | 'cs' | 'deathmatch';
+
+/** Practice kinds played with the CS kit (AK + Deagle, CS config). */
+export const isCsKind = (kind: PracticeKind | undefined): boolean =>
+  kind === 'cs' || kind === 'elim-cs';
 
 export const createPracticeSession = (
   opts: PracticeOptions,
 ): { session: LocalSession; stats: StatsTracker } => {
-  const isMatch = opts.kind === 'match' || opts.kind === 'bomb' || opts.kind === 'cs';
-  const cs = opts.kind === 'cs';
+  const isMatch = opts.kind !== undefined && opts.kind !== 'deathmatch';
+  const cs = isCsKind(opts.kind);
   // CS mode runs the sim with its own config (guns, half-speed movement)
   const config = cs ? csConfig(opts.config) : opts.config;
   const levelDef =
@@ -61,8 +66,12 @@ export const createPracticeSession = (
   const mems: BotMemory[] = [];
   const match: MatchState | undefined = isMatch
     ? createMatch(
-        opts.size <= 1 ? '1v1' : opts.size === 2 ? '2v2' : '5v5',
-        opts.kind === 'bomb' || cs ? 'bomb' : 'tower',
+        opts.size <= 1 ? '1v1' : opts.size === 2 ? '2v2' : opts.size === 3 ? '3v3' : '5v5',
+        opts.kind === 'elim' || opts.kind === 'elim-cs'
+          ? 'elim'
+          : opts.kind === 'bomb' || cs
+            ? 'bomb'
+            : 'tower',
         cs ? 'cs' : 'lethal',
       )
     : undefined;

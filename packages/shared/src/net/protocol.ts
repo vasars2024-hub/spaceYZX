@@ -18,6 +18,7 @@ import { ALL_BUTTONS, BUTTON_BITS } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
 import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
+import type { MatchObjective } from '../rules/match';
 import { createPlayer, newBoomerang } from '../sim/world';
 import { defaultConfig } from '../config';
 
@@ -27,13 +28,14 @@ export const MSG_SNAPSHOT = 2;
 // ------------------------------------------------------------------------------------------
 // JSON control messages
 
-export type GameMode = '1v1' | '2v2' | '5v5' | 'practice';
+/** Match rooms by team size (3v3 is casual only: no ranked queue), or free practice. */
+export type GameMode = '1v1' | '2v2' | '3v3' | '5v5' | 'practice';
 /**
  * What a room plays: a GameMode, or Arena 1v1 ('arena': rotating 1v1 duels in separate pits,
  * rules/arena.ts). Kept apart from GameMode so menus listing the match modes stay unchanged.
  */
 export type RoomMode = GameMode | 'arena';
-export const ROOM_MODES: readonly RoomMode[] = ['1v1', '2v2', '5v5', 'practice', 'arena'];
+export const ROOM_MODES: readonly RoomMode[] = ['1v1', '2v2', '3v3', '5v5', 'practice', 'arena'];
 
 export interface RoomPlayerInfo {
   id: number;
@@ -52,8 +54,9 @@ export type ClientMsg =
       map?: string;
       bots?: number;
       botSkill?: string;
-      objective?: 'tower' | 'bomb';
-      /** 'cs' = CS mode (AK + Deagle, bomb rules, half-speed movement) */
+      /** 'tower' (default), 'bomb' or 'elim' (Elimination: last team standing) */
+      objective?: MatchObjective;
+      /** 'cs' = CS kit (AK + Deagle, half-speed movement): bomb rules, or Elimination */
       loadout?: 'lethal' | 'cs';
     }
   | { t: 'joinRoom'; code: string }

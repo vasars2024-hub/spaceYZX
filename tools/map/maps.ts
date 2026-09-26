@@ -2,7 +2,7 @@
 // Coordinates are read from the map code (packages/shared/src/level/maps/). When the map
 // changes, update the rectangles here so the report keeps grouping samples sensibly.
 import { v3, SPLIT_DECK, type LevelDef, type Vec3 } from '@space-yz/shared';
-import type { RouteSpec } from './timing';
+import type { RouteSpec, TimingRules } from './timing';
 
 export type Team = 0 | 1;
 
@@ -55,6 +55,8 @@ export interface MapAnalysisConfig {
   mirrorX?: boolean;
   /** named routes timed by a sprinting walker (asymmetric maps: see timing.ts) */
   routes?: RouteSpec[];
+  /** which balance checks the routes get (default 'asymmetric'; see timing.ts) */
+  timingRules?: TimingRules;
 }
 
 const ALL_Y = 1e9;
@@ -339,6 +341,176 @@ const splitDeck = (): MapAnalysisConfig => {
   };
 };
 
+// Orbital Ring: mirrored north ↔ south across z = 60 (Cyan north, Orange south), laid out on
+// the owner's 120 × 120 m plan. Coordinates from packages/shared/src/level/maps/orbital-ring.ts
+// (the ORBITAL_RING table, the room list and the waypoint names). Its routes are checked against
+// the plan's target times ('targets' rules in timing.ts) instead of Split Deck's asymmetric rules.
+const orbitalRing = (): MapAnalysisConfig => {
+  const regions: RegionDef[] = [];
+  const rect = (
+    name: string,
+    side: Team | null,
+    lane: string,
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    y0 = -ALL_Y,
+    y1 = ALL_Y,
+  ) => regions.push({ name, side, lane, min: v3(x0, y0, z0), max: v3(x1, y1, z1) });
+  const halves = [
+    { T: 'north', side: 0 as Team, z: (z: number) => z },
+    { T: 'south', side: 1 as Team, z: (z: number) => 120 - z },
+  ];
+  const zr = (f: (z: number) => number, a: number, b: number): [number, number] => [
+    Math.min(f(a), f(b)),
+    Math.max(f(a), f(b)),
+  ];
+  rect('Cyan spawn', 0, 'base', 46, 74, 4, 18);
+  rect('Orange spawn', 1, 'base', 46, 74, 102, 116);
+  rect('reactor pit', null, 'core', 50, 70, 50, 70, -ALL_Y, -5);
+  rect('balconies', null, 'core', 46, 74, 54, 66, 5);
+  rect('reactor core', null, 'core', 46, 74, 46, 74, -1.5);
+  for (const { T, side, z } of halves) {
+    rect(`${T} spoke`, side, 'mid', 57, 63, ...zr(z, 18, 32.5));
+    rect(`ring (${T})`, side, 'ring', 32.5, 87.5, ...zr(z, 32.5, 60), -1.5);
+    rect(`basement ring (${T})`, side, 'basement', 21.5, 98.5, ...zr(z, 21.5, 60), -ALL_Y, -1.5);
+    rect(`${T}-east outer corridor`, side, 'outer', 74, 111, ...zr(z, 7, 41));
+    rect(`${T}-west outer corridor`, side, 'outer', 9, 46, ...zr(z, 7, 41));
+    rect(`${T} stairwells`, side, 'basement', 32.5, 87.5, ...zr(z, 26.5, 32.5));
+  }
+  rect('east spoke', null, 'A', 87.5, 98, 44, 76);
+  rect('west spoke', null, 'B', 22, 32.5, 44, 76);
+  rect('A site', null, 'A', 98, 118, 42, 78);
+  rect('B site', null, 'B', 2, 22, 42, 78);
+
+  const chokepoints: ChokepointDef[] = [];
+  for (const { T, side, z } of halves) {
+    const team = side === 0 ? 'Cyan' : 'Orange';
+    const c = (
+      name: string,
+      short: string,
+      lane: string,
+      pos: Vec3,
+      across: 'x' | 'z',
+      halfWidth: number,
+      final = false,
+    ) => chokepoints.push({ name, short, side, lane, pos, across, halfWidth, final });
+    c(
+      `${team} spawn door (spoke)`,
+      `${T[0].toUpperCase()} door`,
+      'mid',
+      v3(60, 1, z(18.5)),
+      'x',
+      1.5,
+      true,
+    );
+    c(
+      `${team} spawn door (east)`,
+      `${T[0].toUpperCase()} door E`,
+      'outer',
+      v3(74.5, 1, z(11)),
+      'z',
+      1.5,
+      true,
+    );
+    c(
+      `${team} spawn door (west)`,
+      `${T[0].toUpperCase()} door W`,
+      'outer',
+      v3(45.5, 1, z(11)),
+      'z',
+      1.5,
+      true,
+    );
+    c(`${T} spoke gate`, `${T} gate`, 'mid', v3(60, 1, z(32)), 'x', 2);
+    for (const [e, x, gx] of [
+      ['east', 91, 107],
+      ['west', 29, 13],
+    ] as const) {
+      c(`${T}-${e} corridor gate`, `${T[0]}${e[0]} gate`, 'outer', v3(x, 1, z(11)), 'z', 1.5);
+      c(`${T}-${e} site gate`, `${T[0]}${e[0]} gate 2`, 'outer', v3(gx, 1, z(28)), 'x', 1.5);
+    }
+  }
+
+  // each team's routes to the enemy Tower, both sites and the core, timed by the walker;
+  // `targetSec` are the owner's plan (sprint 9 m/s)
+  const routes: RouteSpec[] = [];
+  const r = (
+    mode: RouteSpec['mode'],
+    team: Team,
+    to: string,
+    name: string,
+    via: string[],
+    targetSec?: number,
+    anyOf?: string[],
+  ) =>
+    routes.push({
+      mode,
+      team,
+      to,
+      name,
+      via,
+      ...(targetSec !== undefined ? { targetSec } : {}),
+      ...(anyOf ? { anyOf } : {}),
+    });
+  for (const team of [0, 1] as const) {
+    const [me, them] = team === 0 ? ['N', 'S'] : ['S', 'N'];
+    const enemy = team === 0 ? 'Orange Tower' : 'Cyan Tower';
+    r('contact', team, 'core', 'spoke, core (hole rim)', [], 5, [
+      `cRim1${me}`,
+      `cRimD${me}E`,
+      `cRimD${me}W`,
+    ]);
+    r('tower', team, enemy, 'spokes, across the core', [`c1${me}`, `c1${them}`, `tower${them}`]);
+    r('tower', team, enemy, 'spokes, round the ring', [
+      `ringD${me}E`,
+      `ringD${them}E`,
+      `tower${them}`,
+    ]);
+    r('tower', team, enemy, 'stairs, basement ring', [
+      `baseSt${me}E`,
+      `baseSt${them}E`,
+      `tower${them}`,
+    ]);
+    r('tower', team, enemy, 'outer corridors through A', [
+      `sideDoor${me}E`,
+      'aCE',
+      `sideDoor${them}E`,
+      `tower${them}`,
+    ]);
+    for (const [site, s, dest] of [
+      ['A site', 'E', 'aCE'],
+      ['B site', 'W', 'aCW'],
+    ] as const) {
+      r('bomb', team, site, 'spoke, across the core', [`gate${me}`, `siteGate${s}`, dest], 8);
+      r('bomb', team, site, 'spoke, round the ring', [`ringD${me}${s}`, `siteGate${s}`, dest]);
+      r('bomb', team, site, 'outer corridor', [`sideDoor${me}${s}`, dest], 11);
+    }
+  }
+
+  return {
+    id: 'orbital-ring',
+    teamNames: ['Cyan (north)', 'Orange (south)'],
+    regions,
+    baseRegion: ['Cyan spawn', 'Orange spawn'],
+    chokepoints,
+    lanes: [],
+    laneLabels: {
+      mid: 'spokes',
+      core: 'reactor core',
+      ring: 'ring',
+      basement: 'basement ring',
+      outer: 'outer corridors',
+      A: 'A side',
+      B: 'B side',
+      base: 'spawns',
+    },
+    routes,
+    timingRules: 'targets',
+  };
+};
+
 /**
  * Fallback for maps without a hand-made setup: a base box around each team's spawns and the
  * two halves of the map (x < 0 / x > 0). No chokepoints or lanes.
@@ -386,7 +558,11 @@ export const genericConfig = (id: string, def: LevelDef): MapAnalysisConfig => {
   };
 };
 
-const CONFIGS: Record<string, () => MapAnalysisConfig> = { kestrel, 'split-deck': splitDeck };
+const CONFIGS: Record<string, () => MapAnalysisConfig> = {
+  kestrel,
+  'split-deck': splitDeck,
+  'orbital-ring': orbitalRing,
+};
 
 /** Analysis setup for a map id (hand-made when available, otherwise the generic fallback). */
 export const mapConfig = (id: string, def: LevelDef): MapAnalysisConfig =>

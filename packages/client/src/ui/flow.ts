@@ -11,6 +11,7 @@ import {
   type BotSkillName,
   type LevelDef,
   type MapInfo,
+  type MatchObjective,
 } from '@space-yz/shared';
 import type { IconName } from './icons';
 
@@ -27,7 +28,7 @@ const isArenaMap = (m: MapInfo): boolean => !!m.arena;
 
 // ---------------------------------------------------------------- modes
 
-export type PracticeMode = 'match' | 'bomb' | 'cs' | 'deathmatch' | 'arena';
+export type PracticeMode = 'match' | 'bomb' | 'elim' | 'cs' | 'deathmatch' | 'arena';
 
 export interface Choice<T extends string> {
   id: T;
@@ -48,6 +49,12 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
     name: 'Bomb match',
     desc: 'Plant the bomb at site A or B, or defuse it. Boomerang and Laser.',
     icon: 'bomb',
+  },
+  {
+    id: 'elim',
+    name: 'Elimination',
+    desc: 'Last team standing wins the round. No Towers, no bomb. Boomerang or CS kit.',
+    icon: 'elim',
   },
   {
     id: 'cs',
@@ -97,7 +104,10 @@ export const sizesFor = (mode: PracticeMode): number[] =>
 /** The Arena's default player count in practice (you + 3 bots: duels rotate). */
 const ARENA_DEFAULT_SIZE = 4;
 
-/** Arena kits: the Boomerang kit or the CS kit (AK + Deagle). */
+/** Modes whose setup step also picks the kit (Boomerang or CS): the Arena and Elimination. */
+export const hasKitChoice = (mode: PracticeMode): boolean => mode === 'arena' || mode === 'elim';
+
+/** Arena / Elimination kits: the Boomerang kit or the CS kit (AK + Deagle). */
 export type ArenaKit = 'lethal' | 'cs';
 export const ARENA_KITS: Choice<ArenaKit>[] = [
   { id: 'lethal', name: 'Boomerang', desc: 'Boomerang, Laser and Gravity Grenade.', icon: 'arena' },
@@ -250,11 +260,13 @@ export const practiceMapId = (s: PracticeState): string =>
 
 // ---------------------------------------------------------------- online room wizard
 
-export type RoomObjective = 'tower' | 'bomb' | 'cs' | 'arena' | 'arena-cs';
+export type RoomObjective = 'tower' | 'bomb' | 'elim' | 'cs' | 'elim-cs' | 'arena' | 'arena-cs';
 
 /** An Arena 1v1 room (Boomerang or CS kit). */
 export const isArenaObjective = (o: RoomObjective): boolean => o === 'arena' || o === 'arena-cs';
-export type RoomSize = '1v1' | '2v2' | '5v5';
+/** Elimination (Boomerang kit, or 'elim-cs' with the CS kit). */
+export const isElimObjective = (o: RoomObjective): boolean => o === 'elim' || o === 'elim-cs';
+export type RoomSize = '1v1' | '2v2' | '3v3' | '5v5';
 export type RoomStep = 'objective' | 'map' | 'room';
 
 export const ROOM_STEPS: RoomStep[] = ['objective', 'map', 'room'];
@@ -272,7 +284,14 @@ export const ROOM_OBJECTIVES: Choice<RoomObjective>[] = [
     icon: 'tower',
   },
   { id: 'bomb', name: 'Bomb', desc: 'Plant at site A or B, or defuse.', icon: 'bomb' },
+  { id: 'elim', name: 'Elimination', desc: 'Last team standing wins the round.', icon: 'elim' },
   { id: 'cs', name: 'CS mode', desc: 'AK + Deagle with bomb rules, half-speed.', icon: 'cs' },
+  {
+    id: 'elim-cs',
+    name: 'Elimination CS',
+    desc: 'Last team standing wins the round. AK + Deagle.',
+    icon: 'cs',
+  },
   ...(ARENA_ENABLED
     ? ([
         {
@@ -296,11 +315,12 @@ export const ARENA_ROOM_SIZES: Record<RoomSize, { players: number; label: string
   {
     '1v1': { players: 2, label: '2 players', desc: 'Just you and one friend.' },
     '2v2': { players: 4, label: '4 players', desc: 'Duels rotate between four.' },
+    '3v3': { players: 6, label: '6 players', desc: 'Three pits at once.' },
     '5v5': { players: 8, label: '8 players', desc: 'A full arena: four pits at once.' },
   };
 
-export const ROOM_SIZES: RoomSize[] = ['1v1', '2v2', '5v5'];
-const ROOM_PLAYERS: Record<RoomSize, number> = { '1v1': 2, '2v2': 4, '5v5': 10 };
+export const ROOM_SIZES: RoomSize[] = ['1v1', '2v2', '3v3', '5v5'];
+const ROOM_PLAYERS: Record<RoomSize, number> = { '1v1': 2, '2v2': 4, '3v3': 6, '5v5': 10 };
 
 export interface RoomState {
   step: RoomStep;
@@ -321,7 +341,13 @@ export const initialRoom = (): RoomState => ({
 });
 
 const objectiveMode = (o: RoomObjective): PracticeMode =>
-  o === 'tower' ? 'match' : isArenaObjective(o) ? 'arena' : (o as PracticeMode);
+  o === 'tower'
+    ? 'match'
+    : isArenaObjective(o)
+      ? 'arena'
+      : isElimObjective(o)
+        ? 'elim'
+        : (o as PracticeMode);
 
 /**
  * Maps for an online room: the ones made for the objective first, then every other map (rooms
@@ -365,7 +391,7 @@ export const roomCreateArgs = (
   map: string;
   bots: number;
   skill: BotSkillName;
-  objective: 'tower' | 'bomb';
+  objective: MatchObjective;
   loadout: 'lethal' | 'cs';
 } =>
   isArenaObjective(s.objective)
@@ -382,8 +408,9 @@ export const roomCreateArgs = (
         map: s.map,
         bots: s.bots ? ROOM_PLAYERS[s.size] - 1 : 0,
         skill: s.skill,
-        objective: s.objective === 'tower' ? 'tower' : 'bomb',
-        loadout: s.objective === 'cs' ? 'cs' : 'lethal',
+        objective:
+          s.objective === 'tower' ? 'tower' : isElimObjective(s.objective) ? 'elim' : 'bomb',
+        loadout: s.objective === 'cs' || s.objective === 'elim-cs' ? 'cs' : 'lethal',
       };
 
 // ---------------------------------------------------------------- ranked

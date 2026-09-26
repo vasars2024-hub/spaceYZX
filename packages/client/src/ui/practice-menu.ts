@@ -7,6 +7,7 @@ import {
   ARENA_KITS,
   PRACTICE_STEP_LABELS,
   botSkillChoices,
+  hasKitChoice,
   mapsForMode,
   modeChoice,
   pickPracticeMap,
@@ -140,8 +141,8 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
           renderSummary();
         },
       ),
-      s.mode === 'arena' ? h('h3', { class: 'step-title' }, 'Kit') : null,
-      s.mode === 'arena' ? kitGrid() : null,
+      hasKitChoice(s.mode) ? h('h3', { class: 'step-title' }, 'Kit') : null,
+      hasKitChoice(s.mode) ? kitGrid() : null,
       h('h3', { class: 'step-title' }, 'Bot difficulty'),
       pickGrid(
         'bots',
@@ -174,7 +175,7 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
         ? [sumItem(mapMini(practiceMapId(s)), getMap(practiceMapId(s)).name, 'sum-map')]
         : []),
       sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeTitle(s.mode === 'arena', s.size)),
-      ...(s.mode === 'arena'
+      ...(hasKitChoice(s.mode)
         ? [
             sumItem(
               icon(s.kit === 'cs' ? 'cs' : 'arena'),

@@ -132,9 +132,16 @@ const text = (x: number, y: number, s: string, attrs = ''): string =>
   `<text x="${f1(x)}" y="${f1(y)}" ${attrs}>${esc(s)}</text>`;
 
 /** text with a surface-coloured halo so it stays readable over any fill */
-const label = (x: number, y: number, s: string, size = 10, attrs = ''): string =>
-  `<text x="${f1(x)}" y="${f1(y)}" font-size="${size}" class="halo" ${attrs}>${esc(s)}</text>` +
-  `<text x="${f1(x)}" y="${f1(y)}" font-size="${size}" ${attrs}>${esc(s)}</text>`;
+const label = (x: number, y: number, s: string, size = 10, attrs = ''): string => {
+  // merge a class from `attrs` into the halo's (a repeated class attribute is invalid XML: SVG
+  // viewers stop drawing at it)
+  const cls = /class="([^"]*)"/.exec(attrs)?.[1];
+  const rest = attrs.replace(/\s*class="[^"]*"/, '');
+  return (
+    `<text x="${f1(x)}" y="${f1(y)}" font-size="${size}" class="halo${cls ? ` ${cls}` : ''}" ${rest}>${esc(s)}</text>` +
+    `<text x="${f1(x)}" y="${f1(y)}" font-size="${size}" ${attrs}>${esc(s)}</text>`
+  );
+};
 
 // ---------------------------------------------------------------- geometry helpers
 

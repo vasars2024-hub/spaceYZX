@@ -885,6 +885,8 @@ const CUSTOM_OF: Record<Material, CustomMaterial> = {
   forcefield: 'neon',
   cloud: 'ice',
   glow: 'neon',
+  hazard: 'killpaint',
+  water: 'ice',
 };
 
 /** A rotation → [yaw, pitch, roll] in degrees (customBlockQuat's inverse). */
@@ -931,7 +933,8 @@ const inRange = (p: Vec3): boolean =>
 
 /** One built-in box → a block (null: it can't be expressed, e.g. out of range). */
 const boxToBlock = (b: BoxDef, id: number): CustomBlock | null => {
-  if (!inRange(b.c)) return null;
+  // (a free-form prism, BoxDef.hull: no block shape holds it; as a box it would be a solid lump)
+  if (b.hull || !inRange(b.c)) return null;
   // (far scenery reaching past the network's ±500 m can't be sent)
   const bb = boxAabb(b);
   if (Math.max(-bb.min.x, -bb.min.y, -bb.min.z, bb.max.x, bb.max.y, bb.max.z) > 500) return null;
@@ -978,7 +981,7 @@ const gateOf = (g: RaceGateDef): CustomGate => ({
  * Any built-in map → a Map Maker doc to start a new map from: its boxes (surf ramps and wedges
  * keep their shape, the rest become boxes; decoration stays see-only), portals, launch pads,
  * spawns and race gates. What a doc can't hold (Towers, gravity zones, zip-rails, bomb sites,
- * kill volumes...) is left out.
+ * kill volumes, curved surf ramps' free-form prisms...) is left out.
  */
 export const levelToCustomMap = (def: LevelDef, baseId: string, name: string): CustomMapDoc => {
   const blocks: CustomBlock[] = [];

@@ -99,6 +99,19 @@ describe('custom maps (store)', () => {
     expect(again.override(MAP)?.doc.name).toBe('v3');
     s.maps.restore(MAP, by);
   });
+
+  it('an official edit of a removed built-in map is kept in the history but never played', () => {
+    const doc = { ...edit('Old surf'), base: 'surf-aurora' };
+    s.db
+      .prepare(
+        'INSERT INTO map_overrides (map, doc, hash, action, by_id, by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run('surf-aurora', JSON.stringify(doc), customMapHash(doc), 'publish', null, 'host', clock);
+    const again = new CustomMapStore(s.db);
+    expect(again.override('surf-aurora')).toBeNull();
+    expect(again.overrides()['surf-aurora']).toBeUndefined();
+    expect(again.officialList().some((m) => m.base === 'surf-aurora')).toBe(false);
+  });
 });
 
 // ------------------------------------------------------------------------------------------
@@ -308,5 +321,32 @@ describe('custom maps online', () => {
     expect((await ask(host, { op: 'play', mode: 'race', doc: track })).ok).toBe(true);
     await until(() => host.core.mode === 'race' && !!host.core.level);
     expect(host.core.level!.def.race).toBeTruthy();
+  });
+
+  it('a saved edit of a removed built-in map: listed, loadable, deletable, never played or saved', async () => {
+    const c = await connect('OldSurfer');
+    await secure(c, 'OldSurfer');
+    const saved = await ask(c, { op: 'save', doc: edit('Old surf') });
+    expect(saved.ok).toBe(true);
+    const id = saved.id!;
+    // (as if saved back when surf-aurora was a built-in map)
+    const old = { ...edit('Old surf'), base: 'surf-aurora' };
+    s.db
+      .prepare('UPDATE custom_maps SET base = ?, doc = ? WHERE id = ?')
+      .run('surf-aurora', JSON.stringify(old), id);
+    expect((await ask(c, { op: 'list' })).list).toMatchObject([{ id, base: 'surf-aurora' }]);
+    expect((await ask(c, { op: 'load', id })).doc?.base).toBe('surf-aurora');
+    const play = await ask(c, { op: 'play', mode: 'race', id });
+    expect(play).toMatchObject({ ok: false });
+    expect(play.error).toMatch(/no longer exists/);
+    const unsaved = await ask(c, { op: 'play', mode: 'freeRoam', doc: old });
+    expect(unsaved.ok).toBe(false);
+    expect(unsaved.error).toMatch(/no longer exists/);
+    const again = await ask(c, { op: 'save', doc: old, id });
+    expect(again.ok).toBe(false);
+    expect(again.error).toMatch(/no longer exists/);
+    expect(await ask(c, { op: 'loadOfficial', map: 'surf-aurora' })).toMatchObject({ ok: false });
+    expect(c.core.state).not.toBe('room');
+    expect((await ask(c, { op: 'delete', id })).ok).toBe(true);
   });
 });

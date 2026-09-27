@@ -7,6 +7,7 @@ import { FpsCamera } from './camera';
 import type { InputManager } from './input';
 import { buildLevelMeshes, type LevelMeshes } from '../render/level-mesh';
 import { buildMoverMeshes, type MoverMeshes } from '../render/mover-mesh';
+import { PortalPreviews } from '../render/portal-preview';
 import { QUALITY } from '../render/perf';
 import { effects } from '../render/effects';
 import { Hud } from '../ui/hud';
@@ -38,6 +39,8 @@ export class GameClient {
   paused = false;
   fovOverride: number | null = null; // aiming zoom (horizontal degrees)
   private levelMeshes: LevelMeshes;
+  /** where turning portals lead, shown in their discs (surf maps) */
+  private portalPreviews: PortalPreviews;
   /** moving blocks (player-made maps), drawn at the local player's predicted tick */
   private moverMeshes: MoverMeshes | null;
   private wind: LoopHandle | null = null;
@@ -81,6 +84,7 @@ export class GameClient {
       atmosphere: q.atmosphere && effects.decoration,
     });
     this.scene.add(this.levelMeshes.group);
+    this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
     this.moverMeshes = buildMoverMeshes(def, {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
     });
@@ -157,6 +161,24 @@ export class GameClient {
   syncCameraToPlayer(): void {
     const p = this.session.local();
     if (p) this.fps.reset(p.view, p.up);
+    this.portalYaw = p?.portalYaw ?? null;
+  }
+
+  /** How far turning portals had turned you when the camera last followed (null: not yet). */
+  private portalYaw: number | null = null;
+
+  /**
+   * A turning portal (PortalDef.turn) turned you: turn the camera the same way before the next
+   * input is taken from it (called before every simulated tick).
+   */
+  private followPortalTurn(): void {
+    const me = this.session.local();
+    if (!me) return;
+    if (this.portalYaw !== null && me.portalYaw !== this.portalYaw) {
+      const d = ((((me.portalYaw - this.portalYaw) % 360) + 540) % 360) - 180;
+      this.fps.look(d, 0);
+    }
+    this.portalYaw = me.portalYaw;
   }
 
   frame(dt: number): void {
@@ -171,10 +193,14 @@ export class GameClient {
 
     if (!this.paused) {
       this.session.update(dt, () => {
+        this.followPortalTurn();
         const raw = input.sampleButtons();
         this.muteButtons &= raw; // released: counts again
         return { buttons: raw & ~this.muteButtons, view: this.fps.quat };
       });
+      // (a portal that turned you in this frame's last tick: the camera turns with you now, not
+      // a frame later)
+      this.followPortalTurn();
     }
     // moving blocks: where the sim has them between the last two ticks (like your own eye)
     this.moverMeshes?.update(this.session.world().tick - 1 + this.session.alpha);
@@ -232,6 +258,7 @@ export class GameClient {
     const r = this.deps.renderer;
     r.info.autoReset = false; // count both passes (world + viewmodel) per frame
     r.info.reset();
+    if (eye) this.portalPreviews.update(r, this.scene, eye);
     r.render(this.scene, this.camera);
     if (this.overlay) {
       r.autoClear = false;
@@ -325,6 +352,7 @@ export class GameClient {
     for (const f of this.features) f.dispose?.(this);
     this.wind?.stop(0.05);
     this.slide?.stop(0.05);
+    this.portalPreviews.dispose();
     this.levelMeshes.dispose();
     this.moverMeshes?.dispose();
     this.hud.root.remove();

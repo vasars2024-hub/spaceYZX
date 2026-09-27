@@ -2,16 +2,28 @@
 // (packages/client/src/render/level-mesh.ts splits every face into ~2.5 m tiles, at most 48 × 48).
 //
 //   npx tsx tools/race/budget.ts [map-id ...]
-import { MAPS, mapDef, type BoxDef } from '@space-yz/shared';
+import { MAPS, mapDef, type BoxDef, type Vec3 } from '@space-yz/shared';
 
 const TILE = 2.5;
 const tiles = (l: number) => Math.min(48, Math.max(1, Math.round(l / TILE)));
+
+const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
 /** Triangles of one box as the level mesh draws it (a prism has no top face). */
 export const boxTriangles = (b: BoxDef): number => {
   if (b.noRender) return 0;
   if (b.mat === 'trim' || b.mat === 'glass' || b.mat === 'skyglass' || b.lowDetail)
-    return (b.prism !== undefined ? 5 : 6) * 2;
+    return (b.prism !== undefined || b.hull ? 5 : 6) * 2;
+  if (b.hull) {
+    // a free-form prism: tiled by its faces' real sizes
+    const [bl0, br0, bl1, br1, r0] = b.hull;
+    // (only the slanted faces are tiled; the base and the ends are one quad each)
+    const faces: [number, number][] = [
+      [dist(bl0, bl1), dist(bl0, r0)],
+      [dist(br0, br1), dist(br0, r0)],
+    ];
+    return faces.reduce((a, [u, v]) => a + tiles(u) * tiles(v) * 2, 3 * 2);
+  }
   const x = b.h.x * 2;
   const y = b.h.y * 2;
   const z = b.h.z * 2;

@@ -31,8 +31,7 @@ export * from './level/maps/index';
 export * from './level/maps/race-sunspire';
 export * from './level/maps/race-neon';
 export * from './level/maps/race-ember';
-export * from './level/maps/surf-aurora';
-export * from './level/maps/surf-cinder';
+export * from './level/maps/surf-copper-reef';
 
 export * from './sim/input';
 export * from './sim/state';

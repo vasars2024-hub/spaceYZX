@@ -21,6 +21,7 @@ import {
   roomBack,
   roomCreateArgs,
   roomMaps,
+  surfModeGroups,
   type RoomSize,
   type RoomState,
 } from './flow';
@@ -35,6 +36,7 @@ import {
   segTabs,
   stepPanel,
   sumItem,
+  surfGroupTitle,
   swapStage,
   type Dir,
 } from './menu-kit';
@@ -176,31 +178,28 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
   const mapStep = () => {
     const { best, other } = roomMaps(s.objective);
     const pick = (id: string) => go(pickRoomMap(s, id), 'forward');
-    return stepPanel(
-      'Map',
+    const grid = (maps: typeof best, cls = 'maps') =>
       pickGrid(
-        'maps',
-        best,
+        cls,
+        maps,
         (m) => m.id === s.map,
         (m, selected, p) => mapCard(m.id, selected, p),
         (m) => pick(m.id),
-      ),
+      );
+    // races: the race tracks, then the surf maps by mode (Beginner, then Intermediate)
+    if (isRaceObjective(s.objective))
+      return stepPanel(
+        'Map',
+        grid(best),
+        ...surfModeGroups().flatMap((g) => [surfGroupTitle(g), grid(g.maps, 'maps small-maps')]),
+      );
+    return stepPanel(
+      'Map',
+      grid(best),
       other.length
-        ? h(
-            'h3',
-            { class: 'step-title' },
-            isRaceObjective(s.objective) ? 'Surf maps' : 'Other maps (no objective for this mode)',
-          )
+        ? h('h3', { class: 'step-title' }, 'Other maps (no objective for this mode)')
         : null,
-      other.length
-        ? pickGrid(
-            'maps small-maps',
-            other,
-            (m) => m.id === s.map,
-            (m, selected, p) => mapCard(m.id, selected, p),
-            (m) => pick(m.id),
-          )
-        : null,
+      other.length ? grid(other, 'maps small-maps') : null,
     );
   };
 

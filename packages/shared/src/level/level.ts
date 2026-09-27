@@ -24,8 +24,15 @@ export interface BoxShape {
    * normals and plane offsets (inside: nz·z + ny·y <= d) — and the ridge's local z; null = a box
    */
   prism: PrismShape | null;
+  /**
+   * a free-form prism (BoxDef.hull): its corners and face planes relative to `c` (its axes are
+   * the world's, so box-local = world - c); null = a box or a plain prism
+   */
+  hull: HullShape | null;
   /** a surf ramp (BoxDef.surf): never ground, no wall-jumps off it */
   surf: boolean;
+  /** a red zone (BoxDef.kill): touching it sends a racer back (sim/race.ts) */
+  kill: boolean;
   /** sight passes through it (BoxDef.seeThrough) */
   seeThrough: boolean;
   /** index into Level.movers of the mover carrying it (-1: it never moves) */
@@ -84,6 +91,78 @@ export const prismShape = (h: Vec3, prism: number): PrismShape => {
   };
 };
 
+/**
+ * A free-form prism (BoxDef.hull) as built: the convex hull of its six corners, as triangles
+ * with outward planes. Its quads (base and slanted faces) are split along whichever diagonal
+ * keeps the solid convex (a twisted quad bends outward, never inward).
+ */
+export interface HullShape {
+  /** corners relative to the box's centre */
+  v: Vec3[];
+  /** face triangles (corner indices) */
+  tris: [number, number, number][];
+  /** each triangle's outward unit normal and plane offset (inside: n�p <= d) */
+  n: Vec3[];
+  d: number[];
+}
+
+/** The faces of a free-form prism: the two ends, the base, the left and right slants. */
+const HULL_FACES: number[][] = [
+  [0, 1, 4],
+  [2, 3, 5],
+  [0, 1, 3, 2],
+  [0, 2, 5, 4],
+  [1, 3, 5, 4],
+];
+
+/** Build a free-form prism's hull from its six corners (relative to its centre). */
+export const hullShape = (v: Vec3[]): HullShape => {
+  const mid = scale(
+    v.reduce((a, b) => add(a, b), v3()),
+    1 / v.length,
+  );
+  const tris: [number, number, number][] = [];
+  const n: Vec3[] = [];
+  const d: number[] = [];
+  /** a triangle's outward plane (null: degenerate) */
+  const plane = (a: number, b: number, c: number): { n: Vec3; d: number } | null => {
+    const nn = crossOf(sub(v[b], v[a]), sub(v[c], v[a]));
+    const l = len(nn);
+    if (l < 1e-9) return null;
+    let u = scale(nn, 1 / l);
+    if (dot(u, sub(v[a], mid)) < 0) u = scale(u, -1);
+    return { n: u, d: dot(u, v[a]) };
+  };
+  const push = (a: number, b: number, c: number): void => {
+    const pl = plane(a, b, c);
+    if (!pl) return;
+    tris.push([a, b, c]);
+    n.push(pl.n);
+    d.push(pl.d);
+  };
+  for (const f of HULL_FACES) {
+    if (f.length === 3) {
+      push(f[0], f[1], f[2]);
+      continue;
+    }
+    const [a, b, c, e] = f;
+    // the split whose triangles keep the fourth corner inside (on or under their plane)
+    const p1 = plane(a, b, c);
+    const convex = !p1 || dot(p1.n, v[e]) <= p1.d + 1e-9;
+    if (convex) {
+      push(a, b, c);
+      push(a, c, e);
+    } else {
+      push(a, b, e);
+      push(b, c, e);
+    }
+  }
+  return { v, tris, n, d };
+};
+
+const crossOf = (a: Vec3, b: Vec3): Vec3 =>
+  v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+
 export interface RailShape {
   points: Vec3[];
   cum: number[]; // cumulative length at each point
@@ -109,6 +188,8 @@ export interface Level {
   moverTick: number;
   /** some box is see-through (lineOfSight skips those) */
   seeThrough: boolean;
+  /** some colliding box is a red zone (BoxDef.kill: sim/race.ts looks for contacts) */
+  hasKill: boolean;
   /** scratch for de-duplicating grid queries */
   stamp: Uint32Array;
   stampId: number;
@@ -120,6 +201,39 @@ export const buildLevel = (def: LevelDef): Level => {
   // the sky duel arena (if any) collides like the rest, after the ship's own boxes
   const defs = def.skyArena ? [...def.boxes, ...def.skyArena.boxes] : def.boxes;
   const boxes: BoxShape[] = defs.map((b, index) => {
+    if (b.hull) {
+      // a free-form prism: world axes, its corners around its bounding box's centre
+      const v = b.hull.map((p) => sub(p, b.c));
+      const lo = v3(Infinity, Infinity, Infinity);
+      const hi = v3(-Infinity, -Infinity, -Infinity);
+      for (const p of b.hull) {
+        lo.x = Math.min(lo.x, p.x);
+        lo.y = Math.min(lo.y, p.y);
+        lo.z = Math.min(lo.z, p.z);
+        hi.x = Math.max(hi.x, p.x);
+        hi.y = Math.max(hi.y, p.y);
+        hi.z = Math.max(hi.z, p.z);
+      }
+      return {
+        index,
+        c: b.c,
+        h: b.h,
+        ax: v3(1, 0, 0),
+        ay: v3(0, 1, 0),
+        az: v3(0, 0, 1),
+        rotated: false,
+        min: lo,
+        max: hi,
+        collide: !b.noCollide,
+        boomerangPasses: !!b.boomerangPasses,
+        prism: null,
+        hull: hullShape(v),
+        surf: !!b.surf,
+        kill: !!b.kill,
+        seeThrough: !!b.seeThrough,
+        mover: -1,
+      };
+    }
     const rotated = !!b.q && Math.abs(b.q.x) + Math.abs(b.q.y) + Math.abs(b.q.z) > 1e-9;
     const ax = rotated ? qRotate(b.q!, v3(1, 0, 0)) : v3(1, 0, 0);
     const ay = rotated ? qRotate(b.q!, v3(0, 1, 0)) : v3(0, 1, 0);
@@ -141,7 +255,9 @@ export const buildLevel = (def: LevelDef): Level => {
       collide: !b.noCollide,
       boomerangPasses: !!b.boomerangPasses,
       prism: b.prism !== undefined ? prismShape(b.h, b.prism) : null,
+      hull: null,
       surf: !!b.surf,
+      kill: !!b.kill,
       seeThrough: !!b.seeThrough,
       mover: -1,
     };
@@ -232,6 +348,7 @@ export const buildLevel = (def: LevelDef): Level => {
     moverBoxes,
     moverTick: NaN,
     seeThrough: boxes.some((b) => b.seeThrough),
+    hasKill: boxes.some((b) => b.kill && b.collide),
     stamp: new Uint32Array(boxes.length),
     stampId: 0,
   };

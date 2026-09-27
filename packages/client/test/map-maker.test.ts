@@ -6,6 +6,8 @@ import {
   countPieces,
   customMoverOffset,
   expandCustomBlock,
+  levelToCustomMap,
+  mapDef,
   qFromAxisAngle,
   v3,
   validateCustomMap,
@@ -54,6 +56,14 @@ import {
 } from '../src/editor/curve-edit';
 import { BLOCK_BRUSHES, makeBlock } from '../src/editor/palette';
 import { sceneData } from '../src/editor/scene-data';
+import {
+  GONE_MAP,
+  baseGone,
+  draftInfo,
+  loadDraft,
+  newSession,
+  saveDraft,
+} from '../src/editor/session';
 
 /** A new map as the start screen makes it: a platform and a spawn point. */
 const starter = (): EditDoc => {
@@ -390,5 +400,66 @@ describe('curve handles', () => {
     expect(near(worldToLocal(pos, yaw, localToWorld(pos, yaw, [1, 2, 3])), [1, 2, 3], 1e-9)).toBe(
       true,
     );
+  });
+});
+
+describe('removed built-in maps and curved surf pieces', () => {
+  it('a draft or saved edit of a removed built-in map says so (never another map)', () => {
+    expect(baseGone('surf-aurora')).toBe(true);
+    expect(baseGone('surf-cinder')).toBe(true);
+    expect(baseGone('kestrel')).toBe(false);
+    expect(baseGone('')).toBe(false);
+    expect(baseGone(undefined)).toBe(false);
+    expect(GONE_MAP).toBe('This map no longer exists');
+    // the game refuses to play or save it, and says why
+    const doc = { ...toCustomDoc(newDoc('Old surf edit', 'kestrel', true)), base: 'surf-aurora' };
+    const r = validateCustomMap(JSON.parse(JSON.stringify(doc)));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(' ')).toMatch(/no longer exists/);
+  });
+
+  it('the draft of a removed map still reads (the start screen shows it as gone)', () => {
+    const mem = new Map<string, string>();
+    const g = globalThis as { localStorage?: unknown };
+    const had = g.localStorage;
+    g.localStorage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    };
+    try {
+      const doc = { ...newDoc('Old surf edit', 'kestrel', true), base: 'surf-aurora' };
+      saveDraft(newSession(doc, 'own'));
+      const info = draftInfo();
+      expect(info?.base).toBe('surf-aurora');
+      expect(baseGone(info?.base)).toBe(true);
+      expect(() => loadDraft()).not.toThrow();
+    } finally {
+      g.localStorage = had;
+    }
+  });
+
+  it('a free-form prism (curved surf) never turns into a solid block', () => {
+    const def = mapDef('race-sunspire');
+    const hull: BoxDef = {
+      c: v3(0, 5, 0),
+      h: v3(10, 5, 10),
+      surf: true,
+      hull: [
+        v3(-10, 0, -10),
+        v3(-10, 0, 10),
+        v3(10, 0, -10),
+        v3(10, 0, 10),
+        v3(-10, 10, 0),
+        v3(10, 10, 0),
+      ],
+    };
+    const plain = levelToCustomMap(def, 'race-sunspire', 'x').blocks.length;
+    const withHull = levelToCustomMap(
+      { ...def, boxes: [...def.boxes, hull] },
+      'race-sunspire',
+      'x',
+    );
+    expect(withHull.blocks.length).toBe(plain);
   });
 });

@@ -47,6 +47,8 @@ const TEX_OF: Record<Material, TexKind | null> = {
   forcefield: null,
   cloud: null,
   glow: null,
+  hazard: 'hazard',
+  water: null,
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -159,6 +161,8 @@ class GeoBuilder {
 }
 
 const boxCorner = (b: BoxDef, lx: number, ly: number, lz: number): Vec3 => {
+  // a free-form prism (curved surf): its own corners (base quad, then the ridge's two ends)
+  if (b.hull) return b.hull[ly > 0 ? (lx > 0 ? 5 : 4) : (lx > 0 ? 2 : 0) + (lz > 0 ? 1 : 0)];
   // a prism (surf ramp): the top corners all sit on the ridge
   const z = b.prism !== undefined && ly > 0 ? Math.max(-1, Math.min(1, b.prism)) : lz;
   const local = v3(lx * b.h.x, ly * b.h.y, z * b.h.z);
@@ -166,8 +170,35 @@ const boxCorner = (b: BoxDef, lx: number, ly: number, lz: number): Vec3 => {
   return v3(b.c.x + r.x, b.c.y + r.y, b.c.z + r.z);
 };
 
+/**
+ * A face's world normal from its corners (a free-form prism's: its faces lean any way), pointing
+ * away from the middle of its corners; null for its top face (it is a ridge).
+ */
+const hullNormal = (b: BoxDef, fi: number): Vec3 | null => {
+  const h = b.hull!;
+  if (FACES[fi].n.y > 0) return null;
+  const pts = FACES[fi].corners.map(([x, y, z]) => boxCorner(b, x, y, z));
+  let n = normalize(cross(sub(pts[2], pts[0]), sub(pts[3], pts[1])));
+  const mid = h.reduce(
+    (a, p) => v3(a.x + p.x / h.length, a.y + p.y / h.length, a.z + p.z / h.length),
+    v3(),
+  );
+  const fc = v3((pts[0].x + pts[2].x) / 2, (pts[0].y + pts[2].y) / 2, (pts[0].z + pts[2].z) / 2);
+  if (dot(n, sub(fc, mid)) < 0) n = v3(-n.x, -n.y, -n.z);
+  return n;
+};
+
+/** A face's world normal: a box's (turned), a prism's slanted sides, a free-form prism's. */
+const worldNormal = (b: BoxDef, fi: number): Vec3 | null => {
+  if (b.hull) return hullNormal(b, fi);
+  const ln = localNormal(b, fi);
+  if (!ln) return null;
+  return b.q ? qRotate(b.q, ln) : ln;
+};
+
 /** A face's local normal: a box's, or a prism's slanted sides (its top face is gone: null). */
 const localNormal = (b: BoxDef, fi: number): Vec3 | null => {
+  if (b.hull) return hullNormal(b, fi);
   const n = FACES[fi].n;
   if (b.prism === undefined || n.z === 0) return b.prism !== undefined && n.y > 0 ? null : n;
   const ridge = Math.max(-1, Math.min(1, b.prism)) * b.h.z;
@@ -370,9 +401,8 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       // and shading into the sky's own colour underneath; no lights, no texture, no tiles
       const under = new THREE.Color(def.outdoor?.horizon ?? MATERIAL_COLORS.cloud);
       for (const [fi, f] of FACES.entries()) {
-        const ln = localNormal(b, fi);
-        if (!ln) continue;
-        const n = b.q ? qRotate(b.q, ln) : ln;
+        const n = worldNormal(b, fi);
+        if (!n) continue;
         const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
         const up = n.y > 0.5 ? 1.05 : n.y < -0.5 ? 0.62 : 0.86;
         const cols = f.corners.map(([, y]) =>
@@ -416,9 +446,8 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     const isTrim = mat === 'trim';
     const tex = TEX_OF[mat];
     FACES.forEach((f, fi) => {
-      const ln = localNormal(b, fi);
-      if (!ln) return;
-      const n = b.q ? qRotate(b.q, ln) : ln;
+      const n = worldNormal(b, fi);
+      if (!n) return;
       const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
       if (isTrim) {
         const c = base.clone().multiplyScalar(brightness);
@@ -446,7 +475,8 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
         base,
         lightAt,
         brightness,
-        !!b.lowDetail,
+        // (a free-form prism: only its slanted faces, the ones you ride, get lit tiles)
+        !!b.lowDetail || (!!b.hull && fi !== 4 && fi !== 5),
       );
     });
     if (b.trim !== undefined)
@@ -882,7 +912,7 @@ const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispos
   const ringGeo = new THREE.TorusGeometry(1.9, 0.08, 6, 40);
   const discGeo = new THREE.CircleGeometry(1.85, 40);
   disposables.push(ringGeo, discGeo);
-  for (const pt of def.portals ?? []) {
+  (def.portals ?? []).forEach((pt, portalIndex) => {
     const ringMat = new THREE.MeshBasicMaterial({ color: pt.color });
     const discMat = new THREE.MeshBasicMaterial({
       color: pt.color,
@@ -907,8 +937,11 @@ const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispos
     if (pt.max.x - pt.min.x < pt.max.z - pt.min.z) g.rotation.y = Math.PI / 2;
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.userData.portalSpin = true;
-    g.add(ring, new THREE.Mesh(discGeo, discMat));
+    // (the disc shows where it leads when the portal knows its way: render/portal-preview.ts)
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.userData.portalIndex = portalIndex;
+    g.add(ring, disc);
     group.add(g);
-  }
+  });
   return { group, dispose: () => disposables.forEach((d) => d.dispose()) };
 };

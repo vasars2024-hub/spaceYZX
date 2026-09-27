@@ -126,7 +126,79 @@ const gridLambert = (opts: THREE.MeshLambertMaterialParameters): THREE.MeshLambe
   return m;
 };
 
-/** Everything of one look (and shape) as one instanced mesh. */
+// free-form prisms (curved surf ramps of the built-in maps, BoxDef.hull): shown read-only, all of
+// one look merged into one mesh with per-corner colours (the Map Maker can't pick or change them)
+
+const hullMatCache = new Map<LookKind, THREE.Material>();
+
+/** A look's material for merged free-form prisms (vertex colours). Kept for the editor's lifetime. */
+const hullMaterial = (look: LookKind): THREE.Material => {
+  let m = hullMatCache.get(look);
+  if (m) return m;
+  const opacity = { solid: 1, glass: 0.3, bright: 1, field: 0.35, cloud: 0.86, hidden: 0.12 }[look];
+  const see = opacity < 1;
+  const o = { color: 0xffffff, vertexColors: true, transparent: see, opacity };
+  m =
+    look === 'solid'
+      ? gridLambert(o)
+      : look === 'bright' || look === 'field' || look === 'hidden'
+        ? new THREE.MeshBasicMaterial({ ...o, depthWrite: !see, side: THREE.DoubleSide })
+        : new THREE.MeshLambertMaterial({ ...o, depthWrite: look !== 'glass' });
+  hullMatCache.set(look, m);
+  return m;
+};
+
+// a free-form prism's corners (level/types.ts): the base [start-left, start-right, end-left,
+// end-right], then the ridge [start, end]
+const HULL_TRIS = [
+  [0, 1, 3],
+  [0, 3, 2], // base
+  [0, 1, 4], // start end
+  [2, 3, 5], // far end
+  [0, 2, 5],
+  [0, 5, 4], // one slope
+  [1, 3, 5],
+  [1, 5, 4], // the other slope
+];
+
+/** Free-form prisms as triangles in world space, each face wound outwards. */
+const hullGeometry = (boxes: BoxDef[]): THREE.BufferGeometry => {
+  const pos: number[] = [];
+  const cols: number[] = [];
+  const col = new THREE.Color();
+  const mid = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const e = new THREE.Vector3();
+  const V = (p: { x: number; y: number; z: number }) => new THREE.Vector3(p.x, p.y, p.z);
+  for (const b of boxes) {
+    const hp = b.hull!.map(V);
+    if (hp.length < 6) continue;
+    mid.set(0, 0, 0);
+    for (const p of hp) mid.addScaledVector(p, 1 / hp.length);
+    col.setHex(colorOf(b));
+    for (const [i, j, k] of HULL_TRIS) {
+      const [a, bb, c] = [hp[i], hp[j], hp[k]];
+      n.subVectors(bb, a).cross(e.subVectors(c, a));
+      e.copy(a)
+        .add(bb)
+        .add(c)
+        .multiplyScalar(1 / 3)
+        .sub(mid);
+      for (const v of n.dot(e) < 0 ? [a, c, bb] : [a, bb, c]) {
+        pos.push(v.x, v.y, v.z);
+        cols.push(col.r, col.g, col.b);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+};
+
+/** Everything of one look (and shape) as one instanced mesh (free-form prisms: merged). */
 const buildBuckets = (
   boxes: BoxDef[],
   mats: Record<LookKind, THREE.Material>,
@@ -134,9 +206,14 @@ const buildBuckets = (
 ): THREE.Group => {
   const group = new THREE.Group();
   const groups = new Map<string, BoxDef[]>();
+  const hulls = new Map<LookKind, BoxDef[]>();
   for (const b of boxes) {
     const look = lookOf(b);
     if (look === 'hidden' && !showHidden) continue;
+    if (b.hull) {
+      hulls.set(look, [...(hulls.get(look) ?? []), b]);
+      continue;
+    }
     const key = `${look}|${prismKey(b)}`;
     let list = groups.get(key);
     if (!list) groups.set(key, (list = []));
@@ -164,8 +241,13 @@ const buildBuckets = (
     if (look === 'glass' || look === 'field' || look === 'hidden') mesh.renderOrder = 2;
     group.add(mesh);
   }
+  for (const [look, list] of hulls) {
+    const mesh = new THREE.Mesh(hullGeometry(list), hullMaterial(look));
+    if (look === 'glass' || look === 'field' || look === 'hidden') mesh.renderOrder = 2;
+    group.add(mesh);
+  }
   // glowing edges (glass panes have them, so you see where the glass is)
-  const trimmed = boxes.filter((b) => b.trim !== undefined && !b.noRender);
+  const trimmed = boxes.filter((b) => b.trim !== undefined && !b.noRender && !b.hull);
   if (trimmed.length) {
     const geo = outlineGeometry(trimmed);
     const n = geo.getAttribute('position').count;
@@ -190,6 +272,8 @@ const buildBuckets = (
 const disposeBuckets = (g: THREE.Group): void => {
   for (const o of g.children) {
     if (o instanceof THREE.InstancedMesh) o.dispose();
+    else if (o instanceof THREE.Mesh)
+      o.geometry.dispose(); // merged free-form prisms
     else if (o instanceof THREE.LineSegments) {
       o.geometry.dispose();
       (o.material as THREE.Material).dispose();

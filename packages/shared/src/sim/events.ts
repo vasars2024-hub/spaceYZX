@@ -42,14 +42,31 @@ export type SimEvent =
   | { type: 'mag'; player: number; on: boolean }
   | { type: 'padFlip'; pad: number; zone: number }
   | { type: 'launch'; player: number; pad: number }
-  | { type: 'portal'; player: number; portal: number; from: Vec3; to: Vec3 }
+  | {
+      type: 'portal';
+      player: number;
+      portal: number;
+      from: Vec3;
+      to: Vec3;
+      /** degrees it turned you (+ = right): the client turns its camera with you */
+      turn?: number;
+    }
   | { type: 'dash'; player: number }
   // races (sim/race.ts): a SURGE, a gate passed (`cp` = gates passed now), back to a
-  // checkpoint (a fall or the respawn key; `penalty`: frozen for a moment), a fuel cell used
+  // checkpoint or recovery anchor (a fall, a red zone or the respawn key; `penalty`: frozen for
+  // a moment; `anchor`: the anchor's index), a fuel cell used, a recovery anchor passed
   | { type: 'surge'; player: number }
   | { type: 'raceCp'; player: number; cp: number; finish: boolean }
-  | { type: 'raceRespawn'; player: number; cp: number; reason: 'fall' | 'key'; penalty: boolean }
+  | {
+      type: 'raceRespawn';
+      player: number;
+      cp: number;
+      reason: 'fall' | 'key' | 'red';
+      penalty: boolean;
+      anchor?: number;
+    }
   | { type: 'raceFuel'; player: number; cell: number }
+  | { type: 'raceAnchor'; player: number; anchor: number }
   | { type: 'throw'; player: number; boomerang: number; windup: boolean }
   | { type: 'catch'; player: number; boomerang: number }
   | { type: 'pickup'; player: number; boomerang: number }

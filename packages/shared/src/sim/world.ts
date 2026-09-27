@@ -159,6 +159,8 @@ export const createPlayer = (
     racePenalty: 0,
     raceFuel: 0,
     raceHold: 0,
+    raceAnchor: -1,
+    portalYaw: 0,
   };
 };
 

@@ -1,8 +1,9 @@
-// The race maps (level/maps/race-*.ts and surf-*.ts): sky courses built from course data
-// (level/course). Registered race-only (surf maps apart, never in the ranked pool); their data is
-// plain JSON; nothing cuts through anything; every section has a deadly floor under it; the
-// course is complete, in order and drivable; checkpoints come every ≤ 25 s; the bunny-hop,
-// surf and jetpack sections really need those skills.
+// The parkour race tracks (level/maps/race-*.ts): sky courses built from course data
+// (level/course). Registered race-only (never in a combat mode's pool); their data is plain
+// JSON; nothing cuts through anything; every section has a deadly floor under it; the course is
+// complete, in order and drivable; checkpoints come every ≤ 25 s; the bunny-hop, surf and
+// jetpack sections really need those skills. (The surf maps have their own requirements:
+// surf-maps.test.ts.)
 //
 // How the duration is measured: a bot racer (bots/racer.ts) drives the racing line in the real
 // simulation with ordinary inputs. STEADY_RACER is a skilled run: sprinting, first-tick bunny
@@ -45,15 +46,13 @@ import {
   type SimContext,
 } from '../src/index';
 
-const TRACKS = raceMaps().map((m) => m.id);
+const TRACKS = raceTracks().map((m) => m.id);
 
 /** How well a human must strafe to get round (the maps' difficulty curve). */
 const DESIGN_EFF: Record<string, number> = {
   'race-sunspire': 0.6,
   'race-neon': 0.8,
   'race-ember': 0.85,
-  'surf-aurora': 0.6,
-  'surf-cinder': 0.6,
 };
 
 const sim = (def: LevelDef) => {
@@ -94,10 +93,10 @@ const driveFrom = (def: LevelDef, nodes: RaceLineNode[], cp: number) => {
   return driveNodes(ctx, world, p, nodes, step, 30);
 };
 
-it('three race tracks and two surf maps, only for races; the ranked pool is the tracks', () => {
+it('three race tracks and the surf maps, only for races; the ranked pool is the tracks', () => {
   expect(raceTracks().map((m) => m.id)).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
-  expect(surfMaps().map((m) => m.id)).toEqual(['surf-aurora', 'surf-cinder']);
-  for (const id of TRACKS) {
+  expect(surfMaps().map((m) => m.id)).toContain('surf-copper-reef');
+  for (const id of raceMaps().map((m) => m.id)) {
     const m = MAPS.find((x) => x.id === id)!;
     expect(m.competitive).toBe(false);
     expect(m.arena).toBeFalsy();
@@ -230,14 +229,9 @@ describe.each(TRACKS)('%s', (id) => {
       expect(s - last).toBeLessThanOrEqual(25);
       last = s;
     }
-    // race tracks about 3 minutes (2:40–3:20); surf maps 1:30–2:30
-    if (getMap(id).surf) {
-      expect(r.timeSec).toBeGreaterThan(90);
-      expect(r.timeSec).toBeLessThan(150);
-    } else {
-      expect(r.timeSec).toBeGreaterThan(160);
-      expect(r.timeSec).toBeLessThan(200);
-    }
+    // about 3 minutes (2:40–3:20)
+    expect(r.timeSec).toBeGreaterThan(160);
+    expect(r.timeSec).toBeLessThan(200);
     // race movement is fast: well past the race sprint
     expect(r.topSpeed).toBeGreaterThan(defaultConfig().movement.raceSprintSpeed * 3);
   }, 60000);
@@ -296,7 +290,6 @@ describe.each(TRACKS)('%s', (id) => {
 
   it('every jetpack gap needs the jetpack', () => {
     const jets = race.line.map((n, i) => [n, i] as const).filter(([n]) => n.jet);
-    if (getMap(id).surf) expect(jets.length).toBe(0);
     for (const [n, i] of jets) {
       const nodes = race.line.slice(i - 1, i + 2);
       expect(driveFrom(def, nodes, n.cp).reached).toBe(true);

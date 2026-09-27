@@ -325,6 +325,18 @@
   color: #cfe3ff;
   background: rgba(255, 255, 255, 0.07);
 }
+/* a surf map's mode (Beginner / Intermediate): the word in its colour, with a thin ring */
+.chip.mode-chip {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid currentColor;
+  text-transform: none;
+}
+.step-title .mode-chip {
+  margin-left: 8px;
+  vertical-align: 1px;
+  letter-spacing: 0.04em;
+}
 
 /* accents: modes and tiles get their own color, the rest stay team cyan */
 .card.mode-bomb {
@@ -799,6 +811,12 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
+}
+.race-track-group {
+  margin-top: 6px;
+}
+.race-track-group .mode-chip {
+  font-size: 10px;
 }
 .ladder-buttons {
   display: flex;

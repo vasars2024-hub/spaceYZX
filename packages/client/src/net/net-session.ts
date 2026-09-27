@@ -15,6 +15,8 @@ import type {
 import {
   lerp,
   add,
+  len,
+  sub,
   normalize,
   netToBoomerang,
   newBoomerang,
@@ -57,7 +59,9 @@ export class NetSession implements Session {
     const a = this.core.prevLocal;
     const b = this.core.curLocal;
     if (!b) return this.local()?.pos;
-    const e = a ? lerp(a.eye, b.eye, this.alpha) : b.eye;
+    // (a teleport — a portal, a respawn — is not smeared across the frame between)
+    const jump = a ? len(sub(a.eye, b.eye)) > 5 : true;
+    const e = jump ? b.eye : lerp(a!.eye, b.eye, this.alpha);
     return add(e, this.core.correction);
   }
 

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import type * as SqliteModule from 'node:sqlite';
-import { RACE_DEFAULTS, raceMaps } from '@space-yz/shared';
+import { RACE_DEFAULTS, raceMaps, raceTracks, surfMaps } from '@space-yz/shared';
 import { createServices, type Services } from '../src/services';
 import { migrate, SCHEMA_VERSION } from '../src/services/db';
 import { raceTrackPool } from '../src/services/queue';
@@ -246,9 +246,15 @@ describe('Race ladder and personal bests', () => {
       [a, 58_500],
       [b, 59_000],
     ]);
-    // the profile shows every track, with your place on it
+    // the profile shows every track (then the surf maps by mode), with your place on it
     const bests = s.ranked.profile(b)!.raceBests;
-    expect(bests.map((x) => x.track)).toEqual(raceMaps().map((m) => m.id));
+    expect(bests.map((x) => x.track)).toEqual([...raceTracks(), ...surfMaps()].map((m) => m.id));
+    expect(bests.map((x) => x.track).sort()).toEqual(
+      raceMaps()
+        .map((m) => m.id)
+        .sort(),
+    );
+    for (const x of bests) expect(x.mode).toBe(raceMaps().find((m) => m.id === x.track)!.mode);
     expect(bests.find((x) => x.track === TRACK)).toMatchObject({ timeMs: 59_000, position: 2 });
     const other = raceMaps().find((m) => m.id !== TRACK);
     if (other) expect(bests.find((x) => x.track === other.id)!.timeMs).toBeNull();
@@ -319,6 +325,30 @@ describe('Race ladder and personal bests', () => {
     expect(res('/api/leaderboard?mode=race').status).toBe(200);
     expect(res(`/api/race-times?track=${TRACK}`).status).toBe(200);
     expect(res('/api/race-times?track=split-deck').status).toBe(400);
+    // a removed surf map: no board (never another map's)
+    expect(res('/api/race-times?track=surf-aurora').status).toBe(400);
+  });
+
+  it('old times on a removed map are ignored: no crash, not listed, no new bests', () => {
+    const [a] = ids(1, 'Old');
+    // (a best from back when surf-cinder was a map)
+    s.db
+      .prepare(
+        'INSERT INTO race_bests (player_id, track, time_ms, splits, at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(a, 'surf-cinder', 99_000, '[]', clock);
+    const p = s.ranked.profile(a)!;
+    expect(p.raceBests.some((x) => x.track === 'surf-cinder')).toBe(false);
+    // a race record naming a removed map is stored, but sets no personal best
+    const n = s.ranked
+      .recordRace({
+        ranked: false,
+        record: record([{ accountId: a, timeMs: 50_000 }], 1, 'surf-aurora'),
+      })
+      .get(a)!;
+    expect(n.newBest).toBe(false);
+    expect(s.ranked.raceBest(a, 'surf-aurora')).toBeNull();
+    expect(() => s.ranked.profile(a)).not.toThrow();
   });
 });
 

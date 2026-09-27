@@ -8,7 +8,7 @@ const data = getMap(id).course!();
 const f = (p: number[]) => p.map((x) => x.toFixed(1).padStart(7)).join('');
 let stage = 0;
 data.route.forEach((e, i) => {
-  const at = 'at' in e ? e.at : 'from' in e ? e.from : 'to' in e ? e.to : [0, 0, 0];
+  const at = ('at' in e ? e.at : 'from' in e ? e.from : 'to' in e ? e.to : null) ?? [0, 0, 0];
   if (e.t === 'stage') stage++;
   console.log(
     `${String(i).padStart(3)} ${e.t.padEnd(9)}${f(at)}  ${e.go ?? ''}${e.t === 'stage' ? `  ← checkpoint ${stage}` : ''}`,

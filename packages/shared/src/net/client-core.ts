@@ -103,6 +103,7 @@ const PREDICTED_EVENTS = new Set([
   'raceCp',
   'raceRespawn',
   'raceFuel',
+  'raceAnchor',
 ]);
 
 /**

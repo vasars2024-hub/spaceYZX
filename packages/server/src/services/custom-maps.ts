@@ -4,7 +4,7 @@
 // version they started with. Docs arrive validated (custom-map-handler.ts).
 import { randomBytes } from 'node:crypto';
 import type { CustomMapDoc, CustomMapInfo, OfficialVersion } from '@space-yz/shared';
-import { CUSTOM_MAP_LIMITS, OFFICIAL_PREFIX, customMapHash } from '@space-yz/shared';
+import { CUSTOM_MAP_LIMITS, OFFICIAL_PREFIX, customMapHash, mapExists } from '@space-yz/shared';
 import type { Db } from './db';
 
 interface MapRow {
@@ -49,7 +49,8 @@ export class CustomMapStore {
          WHERE o.id = (SELECT MAX(id) FROM map_overrides WHERE map = o.map)`,
       )
       .all() as { map: string; doc: string | null; hash: string }[];
-    for (const r of rows) this.setActive(r.map, r.doc, r.hash);
+    // (the edit of a built-in map the game no longer has stays in the history, never played)
+    for (const r of rows) if (mapExists(r.map)) this.setActive(r.map, r.doc, r.hash);
   }
 
   private setActive(map: string, doc: string | null, hash: string): void {

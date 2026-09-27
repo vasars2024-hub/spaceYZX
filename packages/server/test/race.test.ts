@@ -61,6 +61,8 @@ describe('race rooms (hub)', () => {
     try {
       expect(hub.createRoom({ mode: 'race', map: 'split-deck' })!.map).toBe(DEFAULT_RACE_MAP);
       expect(hub.createRoom({ mode: 'race', map: 'race-sunspire' })!.map).toBe('race-sunspire');
+      // a removed surf map is ignored: the default track (never Training Bay)
+      expect(hub.createRoom({ mode: 'race', map: 'surf-aurora' })!.map).toBe(DEFAULT_RACE_MAP);
     } finally {
       hub.close();
     }

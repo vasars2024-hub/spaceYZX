@@ -40,6 +40,9 @@ export const NEED_ACCOUNT =
 const isBuiltIn = (map: unknown): map is string =>
   typeof map === 'string' && MAPS.some((m) => m.id === map);
 
+/** A saved map or edit whose built-in base map was removed from the game. */
+export const GONE_BASE = 'This map no longer exists: the built-in map it was made from was removed';
+
 /** Check a doc from a client: size, then the shared validator. */
 export const checkDoc = (
   raw: unknown,
@@ -64,7 +67,7 @@ export const checkDoc = (
     };
   }
   if (v.doc.base && !isBuiltIn(v.doc.base))
-    return { ok: false, error: `Unknown base map "${String(v.doc.base).slice(0, 40)}".` };
+    return { ok: false, error: `${GONE_BASE} ("${String(v.doc.base).slice(0, 40)}").` };
   if (v.doc.patch && !v.doc.base) return { ok: false, error: 'An edit needs its base map.' };
   return { ok: true, doc: v.doc };
 };
@@ -215,6 +218,8 @@ export const customMapHandler = (d: {
           if (!c.ok) return fail(c.error);
           custom = roomCustom(c.doc, 'custom');
         }
+        // (an edit of a built-in map the game no longer has: never played as another map)
+        if (custom.doc.patch && !isBuiltIn(custom.doc.base)) return fail(`${GONE_BASE}.`);
         // (an edit of a built-in map plays on that map's id: its name shows everywhere)
         const roomMap = custom.doc.patch ? custom.doc.base : `custom:${custom.id ?? 'draft'}`;
         try {

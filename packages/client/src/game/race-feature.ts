@@ -5,7 +5,8 @@
 // checkpoint count and splits react instantly.
 //
 //   top      race clock · position (2/6) · checkpoint (3/7) · split vs your best (green/red)
-//   middle   3-2-1-GO, "back to checkpoint" during a penalty, NEW BEST / DNF banners
+//   middle   3-2-1-GO, "back to checkpoint" during a penalty (surf maps: to the recovery
+//            anchor, or "red zone"), NEW BEST / DNF banners; a quiet note passing an anchor
 //   right    live order (names, gates)
 //   left     SURGE charges and the jetpack tank (in the movement HUD; none on surf maps)
 //   bottom   your speed (m/s) and your peak this race; a tip at the first surf ramp and hop chain
@@ -216,6 +217,8 @@ export class RaceFeature implements ClientFeature {
   private labels: GateLabel[] = [];
   /** the stretch each checkpoint starts ("THE GRAND SURF"), under its number */
   private names: (GateLabel | null)[] = [];
+  /** portal marks (PortalDef.glyph) over a portal and over its exit */
+  private glyphs: GateLabel[] = [];
   private cells: THREE.Mesh[] = [];
   private cellGeo = new THREE.OctahedronGeometry(0.55);
   private cellMat = new THREE.MeshBasicMaterial({ color: 0x7fe8ff });
@@ -225,6 +228,8 @@ export class RaceFeature implements ClientFeature {
   private lastCount = -1;
   private lastPhase = '';
   private lastRace = -1;
+  /** what the last respawn was (the penalty banner says where it brings you, and why) */
+  private lastBack: { anchor?: number; red: boolean } = { red: false };
   /** this race: your split times (ms) and the finish */
   private mySplits: number[] = [];
   private myFinishMs = 0;
@@ -319,13 +324,15 @@ export class RaceFeature implements ClientFeature {
     const race = c.session.level.def.race;
     if (!race) return;
     const gates = [...race.checkpoints, race.finish];
+    // (surf maps' gates are fly-through arches: their labels sit over the arch, C1..C5)
+    const over = (g: (typeof gates)[number]) => (race.surf ? g.max.y + 3.5 : g.min.y + 1.5 + 6.2);
     gates.forEach((g, i) => {
       const last = i === gates.length - 1;
-      const tex = labelTexture(last ? 'FINISH' : String(i + 1), last);
+      const tex = labelTexture(last ? 'FINISH' : race.surf ? `C${i + 1}` : String(i + 1), last);
       const mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true });
       const sprite = new THREE.Sprite(mat);
       const p = gateCenter(g);
-      sprite.position.set(p.x, g.min.y + 1.5 + 6.2, p.z);
+      sprite.position.set(p.x, over(g), p.z);
       sprite.scale.set(last ? 7 : 3.2, last ? 1.75 : 3.2, 1);
       this.group.add(sprite);
       this.labels.push({ sprite, mat, tex });
@@ -334,12 +341,28 @@ export class RaceFeature implements ClientFeature {
         const nt = nameTexture(name);
         const nm = new THREE.SpriteMaterial({ map: nt, depthWrite: false, transparent: true });
         const ns = new THREE.Sprite(nm);
-        ns.position.set(p.x, g.min.y + 1.5 + 4.3, p.z);
+        ns.position.set(p.x, over(g) - 1.9, p.z);
         ns.scale.set(8, 1, 1);
         this.group.add(ns);
         this.names.push({ sprite: ns, mat: nm, tex: nt });
       } else this.names.push(null);
     });
+    // portal pairs told apart: the same mark (in the portal's colour) over the way in and out
+    for (const pt of c.session.level.def.portals ?? []) {
+      if (!pt.glyph) continue;
+      const tex = labelTexture(pt.glyph, false, `#${pt.color.toString(16).padStart(6, '0')}`);
+      for (const at of [
+        { x: (pt.min.x + pt.max.x) / 2, y: pt.max.y + 3.5, z: (pt.min.z + pt.max.z) / 2 },
+        { x: pt.exit.x, y: pt.exit.y + 4.5, z: pt.exit.z },
+      ]) {
+        const mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.set(at.x, at.y, at.z);
+        sprite.scale.set(3.2, 3.2, 1);
+        this.group.add(sprite);
+        this.glyphs.push({ sprite, mat, tex });
+      }
+    }
     for (const f of race.fuelCells ?? []) {
       const mesh = new THREE.Mesh(this.cellGeo, this.cellMat);
       mesh.position.set(f.x, f.y, f.z);
@@ -375,7 +398,17 @@ export class RaceFeature implements ClientFeature {
         case 'raceRespawn':
           a.play('revealPulse', { volume: 0.6, rate: 0.8 });
           c.syncCameraToPlayer();
+          this.lastBack = { anchor: e.anchor, red: e.reason === 'red' };
           break;
+        case 'raceAnchor': {
+          // a recovery anchor: only where a fall brings you back now (quietly noted)
+          a.play('controllerPickup', { volume: 0.25, rate: 1.5 });
+          const name = c.session.level.def.race?.anchors?.[e.anchor]?.name;
+          this.splitEl.textContent = `RECOVERY ${name ? `· ${name.toUpperCase()}` : 'ANCHOR'}`;
+          this.splitEl.style.color = '#c8ffe6';
+          this.splitUntil = this.time + 1.6;
+          break;
+        }
         case 'raceCp':
           if (v && v.phase === 'racing') this.onGate(c, v, e.cp, e.finish);
           break;
@@ -397,8 +430,10 @@ export class RaceFeature implements ClientFeature {
     if (!finish) {
       a.play('controllerPickup', { volume: 0.7 });
       // the stretch this checkpoint starts
-      const name = c.session.level.def.race?.checkpoints[cp - 1]?.name;
-      if (name) this.big(`CHECKPOINT ${cp}`, name.toUpperCase(), 1.6, '#ffe9a8');
+      const race = c.session.level.def.race;
+      const name = race?.checkpoints[cp - 1]?.name;
+      if (name)
+        this.big(race?.surf ? `C${cp}` : `CHECKPOINT ${cp}`, name.toUpperCase(), 1.6, '#ffe9a8');
       return;
     }
     this.myFinishMs = ms;
@@ -506,7 +541,12 @@ export class RaceFeature implements ClientFeature {
 
     // penalty: frozen at the checkpoint for a moment
     if (me && me.racePenalty > 0 && phase === 'racing') {
-      this.bigEl.textContent = 'BACK TO CHECKPOINT';
+      const anchor =
+        this.lastBack.anchor !== undefined ? race.anchors?.[this.lastBack.anchor] : undefined;
+      this.bigEl.textContent = anchor
+        ? `BACK TO ${(anchor.name ?? 'the anchor').toUpperCase()}`
+        : 'BACK TO CHECKPOINT';
+      if (this.lastBack.red) this.bigEl.textContent = `RED ZONE · ${this.bigEl.textContent}`;
       this.bigEl.style.color = '#ffb347';
       this.bigSubEl.textContent = (me.racePenalty * TICK_DT).toFixed(1);
       this.bigUntil = this.time + 0.05;
@@ -705,7 +745,7 @@ export class RaceFeature implements ClientFeature {
     c.panelOpen = false;
     this.models.dispose();
     this.ghostModels.dispose();
-    for (const l of [...this.labels, ...this.names]) {
+    for (const l of [...this.labels, ...this.names, ...this.glyphs]) {
       l?.mat.dispose();
       l?.tex.dispose();
     }
@@ -759,7 +799,7 @@ const nameTexture = (text: string): THREE.CanvasTexture => {
   return tex;
 };
 
-const labelTexture = (text: string, wide: boolean): THREE.CanvasTexture => {
+const labelTexture = (text: string, wide: boolean, color = '#ffe9a8'): THREE.CanvasTexture => {
   const cv = document.createElement('canvas');
   cv.width = wide ? 256 : 128;
   cv.height = wide ? 64 : 128;
@@ -769,7 +809,7 @@ const labelTexture = (text: string, wide: boolean): THREE.CanvasTexture => {
     g.beginPath();
     g.roundRect?.(4, 4, cv.width - 8, cv.height - 8, 18);
     g.fill();
-    g.fillStyle = '#ffe9a8';
+    g.fillStyle = color;
     g.font = `800 ${wide ? 44 : 84}px system-ui, sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';

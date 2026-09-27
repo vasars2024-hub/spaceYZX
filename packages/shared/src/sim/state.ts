@@ -90,6 +90,13 @@ export interface PlayerState extends CombatPlayerState {
   racePenalty: number; // ticks frozen at the checkpoint after a fall / respawn
   raceFuel: number; // bitmask of the fuel cells used this race
   raceHold: number; // ticks the respawn key has been held
+  /** surf maps: the recovery anchor (RaceDef.anchors) a fall brings you back to; -1 = none */
+  raceAnchor: number;
+  /**
+   * degrees turning portals (PortalDef.turn) have turned you so far, 0..360: the client turns
+   * its camera with you when it changes (the view you send is the camera's)
+   */
+  portalYaw: number;
 }
 
 export interface ZoneRuntime {

@@ -14,12 +14,11 @@ import {
   checkUsername,
   cleanTitle,
   formatRaceTime,
-  getMap,
 } from '@space-yz/shared';
 import { h, button } from './menus';
-import { iconButton, screenHead } from './menu-kit';
+import { iconButton, modeChip, screenHead } from './menu-kit';
 import { avatarEl, AVATARS, bannerColor } from './avatars';
-import { standingText, type LadderStandingView } from './flow';
+import { mapName, raceMapSections, standingText, type LadderStandingView } from './flow';
 import { account } from '../net/account';
 
 interface Rank {
@@ -303,7 +302,7 @@ const matchOverlay = (id: number, openProfile: (id: number) => void): HTMLElemen
         h(
           'div',
           { class: 'mp-head' },
-          h('b', {}, `${modeLabel(m.mode, m.objective, m.ladder)} · ${getMap(m.map).name}`),
+          h('b', {}, `${modeLabel(m.mode, m.objective, m.ladder)} · ${mapName(m.map)}`),
           h(
             'span',
             { class: 'muted' },
@@ -457,7 +456,7 @@ export const profileScreen = (o: ProfileScreenOpts): HTMLElement => {
               'tr',
               { title: 'Show the scoreboard' },
               h('td', {}, modeLabel(r.mode, r.objective, r.ladder)),
-              h('td', {}, getMap(r.map).name),
+              h('td', {}, mapName(r.map)),
               h(
                 'td',
                 { class: r.won ? 'win' : r.won === false ? 'loss' : '' },
@@ -477,18 +476,23 @@ export const profileScreen = (o: ProfileScreenOpts): HTMLElement => {
           }),
         )
       : h('div', { class: 'muted' }, 'No matches yet.');
+    // (the maps this game has, surf maps under their mode; a removed map's old best is not shown)
     const races = h(
       'table',
       { class: 'recent' },
-      ...p.raceBests.map((b) =>
-        h(
-          'tr',
-          {},
-          h('td', {}, getMap(b.track).name),
-          h('td', {}, b.timeMs ? formatRaceTime(b.timeMs) : 'no time yet'),
-          h('td', {}, b.position ? `#${b.position}` : ''),
-        ),
-      ),
+      ...raceMapSections().flatMap((g) => [
+        g.label ? h('tr', {}, h('td', { colspan: '3' }, modeChip(g.label, g.color))) : null,
+        ...g.maps.map((m) => {
+          const b = p.raceBests.find((x) => x.track === m.id);
+          return h(
+            'tr',
+            {},
+            h('td', {}, m.name),
+            h('td', {}, b?.timeMs ? formatRaceTime(b.timeMs) : 'no time yet'),
+            h('td', {}, b?.position ? `#${b.position}` : ''),
+          );
+        }),
+      ]),
     );
     body.replaceChildren(
       header,

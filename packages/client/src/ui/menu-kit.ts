@@ -1,10 +1,10 @@
 // Menu building blocks shared by every screen: cards (modes, maps, bots…), a screen header with
 // a back button, step breadcrumbs, a summary bar, and the slide/fade transitions between screens
 // and steps (CSS in ui/menu-flow.css; `prefers-reduced-motion` turns them off).
-import { mapDef } from '@space-yz/shared';
+import { MAPS, mapDef } from '@space-yz/shared';
 import { h } from './menus';
 import { icon, mapThumbnail, type IconName } from './icons';
-import { MAP_BLURBS, mapTags } from './flow';
+import { MAP_BLURBS, mapTags, surfModeTag, type SurfGroup } from './flow';
 
 /** Transition direction: forward slides in from the right, back from the left. */
 export type Dir = 'forward' | 'back' | 'fade' | 'none';
@@ -95,7 +95,8 @@ export interface CardOpts {
   desc?: string;
   /** picture: an icon, bot badge or map thumbnail */
   art?: Node | null;
-  tags?: string[];
+  /** feature chips; a coloured one (a surf map's mode) keeps its word, colour is extra */
+  tags?: (string | { label: string; color: string })[];
   selected?: boolean;
   cls?: string;
   disabled?: boolean;
@@ -117,7 +118,13 @@ export const card = (o: CardOpts): HTMLButtonElement => {
       h('span', { class: 'card-title' }, o.title),
       o.desc ? h('span', { class: 'card-desc' }, o.desc) : null,
       o.tags?.length
-        ? h('span', { class: 'card-tags' }, ...o.tags.map((t) => h('span', { class: 'chip' }, t)))
+        ? h(
+            'span',
+            { class: 'card-tags' },
+            ...o.tags.map((t) =>
+              typeof t === 'string' ? h('span', { class: 'chip' }, t) : modeChip(t.label, t.color),
+            ),
+          )
         : null,
     ),
   );
@@ -126,6 +133,21 @@ export const card = (o: CardOpts): HTMLButtonElement => {
   b.addEventListener('click', o.onClick);
   return b;
 };
+
+/** A small coloured word chip: a surf map's mode ("Beginner" / "Intermediate"). */
+export const modeChip = (label: string, color: string | null): HTMLElement =>
+  h(
+    'span',
+    {
+      class: 'chip mode-chip',
+      ...(color ? { style: `color:${color};border-color:${color}` } : {}),
+    },
+    label,
+  );
+
+/** A surf group's heading: "Surf maps" and its mode as a coloured word. */
+export const surfGroupTitle = (g: SurfGroup): HTMLElement =>
+  h('h3', { class: 'step-title' }, 'Surf maps', g.color ? modeChip(g.label, g.color) : null);
 
 /** A grid of cards (entering cards fade in one after another). */
 export const cardGrid = (cls: string, cards: HTMLElement[]): HTMLDivElement => {
@@ -168,10 +190,12 @@ export const mapCard = (
   const def = mapDef(id);
   const art = h('span', { class: 'map-art' });
   art.innerHTML = mapThumbnail(def); // our own SVG markup, built from level data
+  // (surf maps: their mode first, as a coloured word)
+  const mode = surfModeTag(MAPS.find((m) => m.id === id));
   return card({
     title: def.name,
     desc: MAP_BLURBS[id],
-    tags: [...mapTags(def), ...extraTags],
+    tags: [...(mode ? [mode] : []), ...mapTags(def), ...extraTags],
     art,
     selected,
     cls: 'map',

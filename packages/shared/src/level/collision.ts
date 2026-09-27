@@ -1,7 +1,7 @@
 // Collision queries against the level's boxes: capsule (character) and rays/sphere-casts.
 import type { Vec3 } from '../math/vec3';
 import { v3, sub, add, scale, dot, madd, normalize, len } from '../math/vec3';
-import type { BoxShape, Level } from './level';
+import type { BoxShape, HullShape, Level } from './level';
 import { queryBoxes, nextStamp } from './level';
 
 /** World point -> box-local coordinates. */
@@ -76,8 +76,116 @@ const set2 = (z: number, y: number): { z: number; y: number } => {
   return TRI;
 };
 
+/**
+ * Closest point of triangle (a, b, c) to (x, y, z) (Ericson's closest-point-on-triangle, 3D),
+ * written into HP; returns the squared distance.
+ */
+const HP = { x: 0, y: 0, z: 0 };
+const triPoint3 = (x: number, y: number, z: number, a: Vec3, b: Vec3, c: Vec3): number => {
+  const abx = b.x - a.x,
+    aby = b.y - a.y,
+    abz = b.z - a.z;
+  const acx = c.x - a.x,
+    acy = c.y - a.y,
+    acz = c.z - a.z;
+  const apx = x - a.x,
+    apy = y - a.y,
+    apz = z - a.z;
+  const d1 = abx * apx + aby * apy + abz * apz;
+  const d2 = acx * apx + acy * apy + acz * apz;
+  let qx: number, qy: number, qz: number;
+  if (d1 <= 0 && d2 <= 0) {
+    qx = a.x;
+    qy = a.y;
+    qz = a.z;
+  } else {
+    const bpx = x - b.x,
+      bpy = y - b.y,
+      bpz = z - b.z;
+    const d3 = abx * bpx + aby * bpy + abz * bpz;
+    const d4 = acx * bpx + acy * bpy + acz * bpz;
+    const cpx = x - c.x,
+      cpy = y - c.y,
+      cpz = z - c.z;
+    const d5 = abx * cpx + aby * cpy + abz * cpz;
+    const d6 = acx * cpx + acy * cpy + acz * cpz;
+    const vc = d1 * d4 - d3 * d2;
+    const vb = d5 * d2 - d1 * d6;
+    const va = d3 * d6 - d5 * d4;
+    if (d3 >= 0 && d4 <= d3) {
+      qx = b.x;
+      qy = b.y;
+      qz = b.z;
+    } else if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+      const v = d1 / (d1 - d3);
+      qx = a.x + abx * v;
+      qy = a.y + aby * v;
+      qz = a.z + abz * v;
+    } else if (d6 >= 0 && d5 <= d6) {
+      qx = c.x;
+      qy = c.y;
+      qz = c.z;
+    } else if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+      const w = d2 / (d2 - d6);
+      qx = a.x + acx * w;
+      qy = a.y + acy * w;
+      qz = a.z + acz * w;
+    } else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+      const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+      qx = b.x + (c.x - b.x) * w;
+      qy = b.y + (c.y - b.y) * w;
+      qz = b.z + (c.z - b.z) * w;
+    } else {
+      const den = 1 / (va + vb + vc);
+      const v = vb * den;
+      const w = vc * den;
+      qx = a.x + abx * v + acx * w;
+      qy = a.y + aby * v + acy * w;
+      qz = a.z + abz * v + acz * w;
+    }
+  }
+  HP.x = qx;
+  HP.y = qy;
+  HP.z = qz;
+  const ex = x - qx,
+    ey = y - qy,
+    ez = z - qz;
+  return ex * ex + ey * ey + ez * ez;
+};
+
+/**
+ * Closest point of a free-form prism (its hull, box-local) to a box-local point, written into
+ * HQ; returns the squared distance (0 inside). Only faces the point is in front of can hold
+ * the closest point of a convex solid, so the others are skipped.
+ */
+const HQ = { x: 0, y: 0, z: 0 };
+const hullClosest = (h: HullShape, x: number, y: number, z: number): number => {
+  let best = Infinity;
+  for (let i = 0; i < h.tris.length; i++) {
+    const n = h.n[i];
+    if (n.x * x + n.y * y + n.z * z <= h.d[i]) continue;
+    const t = h.tris[i];
+    const d = triPoint3(x, y, z, h.v[t[0]], h.v[t[1]], h.v[t[2]]);
+    if (d < best) {
+      best = d;
+      HQ.x = HP.x;
+      HQ.y = HP.y;
+      HQ.z = HP.z;
+    }
+  }
+  if (best === Infinity) {
+    // inside every face plane: inside the solid
+    HQ.x = x;
+    HQ.y = y;
+    HQ.z = z;
+    return 0;
+  }
+  return best;
+};
+
 /** Squared distance from a box-local point to the box (or prism). */
 const localDistSq = (b: BoxShape, x: number, y: number, z: number): number => {
+  if (b.hull) return hullClosest(b.hull, x, y, z);
   const dx = Math.max(Math.abs(x) - b.h.x, 0);
   if (b.prism) {
     const t = triClosest(b, z, y);
@@ -92,6 +200,10 @@ const localDistSq = (b: BoxShape, x: number, y: number, z: number): number => {
 
 /** Closest box-local point of the box (or prism) to a box-local point. */
 const localClosest = (b: BoxShape, x: number, y: number, z: number): Vec3 => {
+  if (b.hull) {
+    hullClosest(b.hull, x, y, z);
+    return v3(HQ.x, HQ.y, HQ.z);
+  }
   if (b.prism) {
     const t = triClosest(b, z, y);
     return v3(clamp(x, -b.h.x, b.h.x), t.y, t.z);
@@ -175,6 +287,16 @@ const satPush = (box: BoxShape, a: Vec3, b: Vec3, r: number): { normal: Vec3; de
   const la = toLocal(box, a);
   const lb = toLocal(box, b);
   let best = { normal: box.ay, depth: Infinity };
+  const hl = box.hull;
+  if (hl) {
+    // a free-form prism: out through the nearest face plane (its axes are the world's)
+    for (let i = 0; i < hl.n.length; i++) {
+      const n = hl.n[i];
+      const push = hl.d[i] - Math.min(dot(n, la), dot(n, lb)) + r;
+      if (push < best.depth) best = { normal: n, depth: push };
+    }
+    return best;
+  }
   const axes: [keyof Vec3, Vec3][] = [
     ['x', box.ax],
     ['y', box.ay],
@@ -300,6 +422,8 @@ export const rayBox = (
   radius = 0,
 ): { t: number; normal: Vec3 } | null => {
   const o = toLocal(box, origin);
+  const hl = box.hull;
+  if (hl) return rayHull(hl, o, dir, maxDist, radius);
   const d = v3(dot(dir, box.ax), dot(dir, box.ay), dot(dir, box.az));
   let tmin = -Infinity,
     tmax = Infinity;
@@ -361,6 +485,39 @@ export const rayBox = (
   if (slant) return { t: tmin, normal: slant };
   const axis = nAxis === 0 ? box.ax : nAxis === 1 ? box.ay : box.az;
   return { t: tmin, normal: scale(axis, nSign) };
+};
+
+/** A ray (or a sphere, conservatively) against a free-form prism's face planes (Cyrus�Beck). */
+const rayHull = (
+  h: HullShape,
+  o: Vec3,
+  dir: Vec3,
+  maxDist: number,
+  radius: number,
+): { t: number; normal: Vec3 } | null => {
+  let tmin = -Infinity;
+  let tmax = Infinity;
+  let normal: Vec3 | null = null;
+  for (let i = 0; i < h.n.length; i++) {
+    const n = h.n[i];
+    const denom = dot(n, dir);
+    const num = h.d[i] + radius - dot(n, o);
+    if (Math.abs(denom) < 1e-12) {
+      if (num < 0) return null;
+      continue;
+    }
+    const t = num / denom;
+    if (denom < 0) {
+      if (t > tmin) {
+        tmin = t;
+        normal = n;
+      }
+    } else if (t < tmax) tmax = t;
+    if (tmin > tmax) return null;
+  }
+  if (tmax < 0 || tmin > maxDist) return null;
+  if (tmin < 0 || !normal) return { t: 0, normal: scale(dir, -1) };
+  return { t: tmin, normal };
 };
 
 /**
@@ -538,6 +695,18 @@ export const nearestSurface = (
 
 /** Snap a direction to the box's nearest face normal (so mag-boots align to faces, not edges). */
 export const faceNormal = (box: BoxShape, n: Vec3): Vec3 => {
+  if (box.hull) {
+    let best = box.hull.n[0];
+    let bestDot = -Infinity;
+    for (const c of box.hull.n) {
+      const d = dot(c, n);
+      if (d > bestDot) {
+        bestDot = d;
+        best = c;
+      }
+    }
+    return normalize(best);
+  }
   const cands = [box.ax, box.ay, box.az];
   const pr = box.prism;
   if (pr) {

@@ -8,7 +8,10 @@ import {
   BOT_SKILL_LABELS,
   DEFAULT_BOT_SKILL,
   DEFAULT_MATCH_MAP,
+  SURF_MODES,
   brawlMaps,
+  getMap,
+  mapExists,
   type BotSkillName,
   type BrawlMode,
   type LevelDef,
@@ -218,13 +221,57 @@ export const mapsForMode = (
   return ok.length ? ok : comp;
 };
 
-/** Race maps in two groups: the race tracks and the surf maps (MapInfo.surf). */
+/** A surf map's mode tag ("Beginner" / "Intermediate" and its colour); null for other maps. */
+export const surfModeTag = (m: MapInfo | undefined): { label: string; color: string } | null => {
+  const s = m?.surf ? SURF_MODES.find((x) => x.mode === m.mode) : undefined;
+  return s ? { label: s.label, color: s.color } : null;
+};
+
+/** One mode's surf maps (color null: surf maps without a standard mode, untagged). */
+export interface SurfGroup {
+  label: string;
+  color: string | null;
+  maps: MapInfo[];
+}
+
+/**
+ * The surf maps grouped by mode: Beginner, then Intermediate (SURF_MODES order; modes without
+ * maps are left out). A surf map without a standard mode comes last, in a group of its own.
+ */
+export const surfModeGroups = (maps: readonly MapInfo[] = MAPS): SurfGroup[] => {
+  const surf = maps.filter((m) => isRaceMap(m) && !!m.surf);
+  const rest = surf.filter((m) => !SURF_MODES.some((x) => x.mode === m.mode));
+  return [
+    ...SURF_MODES.map((x) => ({
+      label: x.label,
+      color: x.color as string | null,
+      maps: surf.filter((m) => m.mode === x.mode),
+    })),
+    { label: 'Other', color: null, maps: rest },
+  ].filter((g) => g.maps.length);
+};
+
+/** Race maps in two groups: the race tracks, and the surf maps (Beginner first, then Intermediate). */
 export const raceMapGroups = (
   maps: readonly MapInfo[] = MAPS,
 ): { best: MapInfo[]; other: MapInfo[] } => ({
   best: maps.filter((m) => isRaceMap(m) && !m.surf),
-  other: maps.filter((m) => isRaceMap(m) && !!m.surf),
+  other: surfModeGroups(maps).flatMap((g) => g.maps),
 });
+
+/**
+ * Every race map in its group, for lists of best times and boards: the race tracks (label null),
+ * then the surf maps by mode. Personal bests and leaderboards stay per map.
+ */
+export const raceMapSections = (
+  maps: readonly MapInfo[] = MAPS,
+): { label: string | null; color: string | null; maps: MapInfo[] }[] => [
+  { label: null, color: null, maps: raceMapGroups(maps).best },
+  ...surfModeGroups(maps),
+];
+
+/** A map's name; a map the game no longer has (old history, drafts) is not Training Bay. */
+export const mapName = (id: string): string => (mapExists(id) ? getMap(id).name : 'Removed map');
 
 /** One-line map descriptions for the map cards (a new map without one shows its features). */
 export const MAP_BLURBS: Record<string, string> = {
@@ -245,8 +292,8 @@ export const MAP_BLURBS: Record<string, string> = {
     'Neon city fragments at night (hard): steep surf flicks, pillar weaves, a jetpack gap, speed gates.',
   'race-ember':
     'Basalt islands at dusk (very hard): small pads, the steepest ramps, two jetpack gaps on one fuel cell.',
-  'surf-aurora': 'Surf, beginner: five stages of long forgiving ramps under an aurora sky.',
-  'surf-cinder': 'Surf, hard: seven stages — royal spin, window, wall surf, pillars, needles.',
+  'surf-copper-reef':
+    'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
 };
 
 /** Short feature tags of a map from its layout (Towers, bomb sites, sky duel). */
@@ -514,7 +561,7 @@ export const roomMaps = (
   defOf: (id: string) => LevelDef = mapDef,
 ): { best: MapInfo[]; other: MapInfo[] } => {
   const best = mapsForMode(objectiveMode(o), maps, defOf);
-  // (races: the race tracks first, then the surf maps)
+  // (races: the race tracks first, then the surf maps by mode)
   if (isRaceObjective(o)) return raceMapGroups(maps);
   // (the Arena only plays on its own maps, Brawl on its rotation)
   if (isArenaObjective(o) || isBrawlObjective(o)) return { best, other: [] };

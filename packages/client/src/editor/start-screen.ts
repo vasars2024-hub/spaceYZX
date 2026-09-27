@@ -8,7 +8,15 @@ import { card, cardGrid, mapCard, screenHead, type Dir } from '../ui/menu-kit';
 import { h } from '../ui/menus';
 import { edIcon } from './icons';
 import { addBlocks, addSpawn, fromCustomDoc, newDoc, type EditDoc } from './model';
-import { clearDraft, draftInfo, loadDraft, newSession, type EditorSession } from './session';
+import {
+  GONE_MAP,
+  baseGone,
+  clearDraft,
+  draftInfo,
+  loadDraft,
+  newSession,
+  type EditorSession,
+} from './session';
 import { confirmBox, errorText } from './ui-kit';
 
 /** A new empty map: a big floating platform and a spawn point on it. */
@@ -41,7 +49,8 @@ export const startScreen = (app: App, dir: Dir, open: (s: EditorSession) => void
 
   /** Open something new; an unsaved draft is replaced only after asking. */
   const replaceDraft = async (make: () => Promise<EditorSession | null> | EditorSession | null) => {
-    if (draft?.unsaved) {
+    // (a draft of a removed map can't be opened any more: nothing to keep)
+    if (draft?.unsaved && !baseGone(draft.base)) {
       const ok = await confirmBox(
         screen,
         'Start something else?',
@@ -64,14 +73,22 @@ export const startScreen = (app: App, dir: Dir, open: (s: EditorSession) => void
   const note = h('p', { class: 'ed-start-note' });
 
   const top: HTMLElement[] = [];
+  // (a draft of a built-in map that was removed says so instead of opening another map)
+  const draftGone = !!draft && baseGone(draft.base);
   if (draft)
     top.push(
       card({
         title: `Continue: ${draft.name}`,
-        desc: `${draft.base ? `${draft.kind === 'official' ? 'The real' : 'Your version of'} ${getMap(draft.base).name} · ` : ''}kept on this PC · ${ago(draft.at)}${draft.unsaved ? ' · not saved yet' : ''}`,
+        desc: draftGone
+          ? `${GONE_MAP} · kept on this PC · ${ago(draft.at)}`
+          : `${draft.base ? `${draft.kind === 'official' ? 'The real' : 'Your version of'} ${getMap(draft.base).name} · ` : ''}kept on this PC · ${ago(draft.at)}${draft.unsaved ? ' · not saved yet' : ''}`,
         art: edIcon('restore'),
         cls: 'mode ed-continue',
         onClick: () => {
+          if (draftGone) {
+            note.textContent = `${GONE_MAP}: it was a change of a built-in map the game no longer has. Start a new map instead.`;
+            return;
+          }
           const s = loadDraft();
           if (s) open(s);
           else note.textContent = 'The draft could not be read.';
@@ -157,19 +174,30 @@ export const startScreen = (app: App, dir: Dir, open: (s: EditorSession) => void
             'modes wide',
             list.map((m) => {
               const official = m.official || m.id.startsWith(OFFICIAL_PREFIX);
+              // (an edit of a built-in map that was removed: it says so, and only Delete works)
+              const gone = baseGone(m.base);
               const c = card({
                 title: m.name,
-                desc: `${official ? `Live version of ${getMap(m.base).name}` : m.base ? `Edit of ${getMap(m.base).name}` : 'Own map'} · saved ${ago(m.updatedAt)}`,
+                desc: `${gone ? GONE_MAP : official ? `Live version of ${getMap(m.base).name}` : m.base ? `Edit of ${getMap(m.base).name}` : 'Own map'} · saved ${ago(m.updatedAt)}`,
                 art: edIcon(official ? 'publish' : 'map'),
                 cls: 'mode',
-                onClick: () =>
+                onClick: () => {
+                  if (gone) {
+                    note.textContent = `${GONE_MAP}: "${m.name}" was a change of a built-in map the game no longer has.`;
+                    return;
+                  }
                   void replaceDraft(async () => {
                     note.textContent = `Opening ${m.name}…`;
                     const doc = fromCustomDoc(await loadMap(m.id));
+                    if (baseGone(doc.base)) {
+                      note.textContent = `${GONE_MAP}: "${m.name}" was a change of a built-in map the game no longer has.`;
+                      return null;
+                    }
                     return official
                       ? newSession(doc, 'official', undefined, true)
                       : newSession(doc, 'own', m.id, true);
-                  }),
+                  });
+                },
               });
               if (!official) {
                 const del = h(

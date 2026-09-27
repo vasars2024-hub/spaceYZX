@@ -71,6 +71,10 @@
   Race movement (Source-style air-strafe, bhop, surf ramps = `BoxDef.prism` + `surf`) is gated
   on `LevelDef.race` in `sim/movement.ts` (`race*` config numbers); combat maps are untouched.
   Check a map with `npx tsx tools/race/time-tracks.ts` (bot runs) and `tools/race/check.ts`.
+  Surf maps (Beginner/Intermediate, `MapInfo.mode`) are built on the measured movement profile
+  (`npm run race:lab` → `docs/movement-map-design/movement-profile.md`, `course/profile.ts`)
+  from curved ramps (`course/curve.ts`, exactly-joined `BoxDef.hull` prisms), gates, recovery
+  anchors, red zones and turning portals: how-to in `docs/movement-map-design/BUILDING.md`.
 - Transition cards + announcer: plans `packages/client/src/game/transitions.ts`, overlay
   `ui/transitions.ts` (`showTransition(kind, info)` for other HUDs), clips
   `packages/client/public/audio/announcer/*.ogg` played by `audio/announcer.ts` (own volume bus).

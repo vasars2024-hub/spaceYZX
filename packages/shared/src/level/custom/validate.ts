@@ -169,7 +169,12 @@ export const validateCustomMap = (
   if (raw.patch !== undefined) {
     if (!isObj(raw.patch)) err('patch: must be an object');
     else {
-      if (!isBuiltInMap(base)) err('base: an edit must name a built-in map');
+      if (!isBuiltInMap(base))
+        err(
+          base
+            ? `base: this map no longer exists (it was a change of "${base}", a built-in map that was removed)`
+            : 'base: an edit must name a built-in map',
+        );
       const removed = list(raw.patch.removed, 'patch.removed', MAX_REMOVED).map((f, i) =>
         str(f, `patch.removed[${i}]`, MAX_FINGERPRINT, 1),
       );

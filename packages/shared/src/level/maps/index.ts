@@ -8,13 +8,12 @@ import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
 import { buildSakuraHold } from './sakura-hold';
-import type { CourseData } from '../course/types';
+import type { CourseData, CourseMode } from '../course/types';
 import { expandCourse } from '../course/expand';
 import { sunspireCourse } from './race-sunspire';
 import { neonDriftCourse } from './race-neon';
 import { emberSpireCourse } from './race-ember';
-import { surfAuroraCourse } from './surf-aurora';
-import { surfCinderCourse } from './surf-cinder';
+import { copperReefCourse } from './surf-copper-reef';
 import { withSkyArena } from '../sky-arena';
 import { FULL_TEAM_SIZE, sizedLevelDef } from '../size-walls';
 
@@ -41,18 +40,34 @@ export interface MapInfo {
   surf?: boolean;
   /** built from course data (level/course: plain JSON, expanded by expandCourse) */
   course?: () => CourseData;
+  /**
+   * surf maps: the standard mode it belongs to — Beginner or Intermediate (the menus show it
+   * as a tag and group by it; personal bests and leaderboards stay per map, grouped by mode)
+   */
+  mode?: CourseMode;
 }
 
-/** A map built from course data. */
-const courseMap = (id: string, name: string, course: () => CourseData, surf = false): MapInfo => ({
+/** A map built from course data (a surf map when it has a `mode`). */
+const courseMap = (
+  id: string,
+  name: string,
+  course: () => CourseData,
+  mode?: CourseMode,
+): MapInfo => ({
   id,
   name,
   build: () => expandCourse(course()).def,
   course,
   competitive: false,
   race: true,
-  ...(surf ? { surf: true } : {}),
+  ...(mode ? { surf: true, mode } : {}),
 });
+
+/** The standard surf modes in the order the menus list them, with their tag colours. */
+export const SURF_MODES: { mode: CourseMode; label: string; color: string }[] = [
+  { mode: 'beginner', label: 'Beginner', color: '#5dd39e' },
+  { mode: 'intermediate', label: 'Intermediate', color: '#f2a93b' },
+];
 
 export const MAPS: MapInfo[] = [
   { id: 'training-bay', name: 'Training Bay', build: buildTrainingBay, competitive: false },
@@ -85,17 +100,23 @@ export const MAPS: MapInfo[] = [
   courseMap('race-sunspire', 'Sunspire', sunspireCourse),
   courseMap('race-neon', 'Neon Drift', neonDriftCourse),
   courseMap('race-ember', 'Ember Spire', emberSpireCourse),
-  // surf maps: raced like tracks, listed apart, never in the ranked Race queue
-  courseMap('surf-aurora', 'Surf Aurora', surfAuroraCourse, true),
-  courseMap('surf-cinder', 'Surf Cinder', surfCinderCourse, true),
+  // surf maps (docs/movement-map-design): raced like tracks, listed apart by mode (Beginner,
+  // Intermediate), never in the ranked Race queue
+  courseMap('surf-copper-reef', 'Copper Reef', copperReefCourse, 'beginner'),
 ];
 
 /** Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs). */
 export const raceMaps = (): MapInfo[] => MAPS.filter((m) => m.race);
 /** The race tracks only (the ranked Race queue's pool). */
 export const raceTracks = (): MapInfo[] => MAPS.filter((m) => m.race && !m.surf);
-/** The surf maps only. */
-export const surfMaps = (): MapInfo[] => MAPS.filter((m) => m.race && m.surf);
+/** The surf maps only (Beginner first, then Intermediate; in registry order within a mode). */
+export const surfMaps = (): MapInfo[] =>
+  SURF_MODES.flatMap(({ mode }) => MAPS.filter((m) => m.race && m.surf && m.mode === mode));
+/** The surf maps of one mode. */
+export const surfMapsOf = (mode: CourseMode): MapInfo[] =>
+  MAPS.filter((m) => m.race && m.surf && m.mode === mode);
+/** Is this a map id the game still has? (old personal bests, drafts and edits of removed maps) */
+export const mapExists = (id: string): boolean => MAPS.some((m) => m.id === id);
 /** The track race rooms use unless the players pick another one. */
 export const DEFAULT_RACE_MAP = 'race-sunspire';
 

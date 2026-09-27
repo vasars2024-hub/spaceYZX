@@ -645,6 +645,8 @@ export const updateMovement = (
   // jump requests
   if (pressed & Btn.Jump)
     p.jumpBuffer = Math.round((race ? m.raceJumpBufferSec : m.jumpBufferSec) / dt) + 1;
+  // (hold-to-bhop maps: a held jump counts as pressed again, so it fires on every landing)
+  else if (race?.holdToBhop && buttons & Btn.Jump) p.jumpBuffer = Math.max(p.jumpBuffer, 1);
 
   if (p.grounded || p.coyote > 0) {
     if (p.jumpBuffer > 0 && (!p.crouched || p.move === Move.Slide || setCrouch(ctx, p, false))) {

@@ -18,13 +18,11 @@ import {
   CASUAL_SIZES,
   casualMode,
   formatRaceTime,
-  getMap,
   LADDER_IDS,
   LADDERS,
   mapDef,
   queueMaxParty,
   queueTeamSizes,
-  raceMaps,
   RANKED_QUEUE_IDS,
   rankedQueue,
 } from '@space-yz/shared';
@@ -32,12 +30,14 @@ import { h, button } from './menus';
 import { icon } from './icons';
 import {
   countdown,
+  mapName,
+  raceMapSections,
   rankedCards,
   rankedQueueName,
   standingText,
   type LadderStandingView,
 } from './flow';
-import { card, iconButton, mapCard, screenHead } from './menu-kit';
+import { card, iconButton, mapCard, modeChip, screenHead } from './menu-kit';
 import { avatarEl } from './avatars';
 import { nameLink } from './profile-screen';
 
@@ -208,26 +208,31 @@ const vetoPanel = (core: NetCore, v: VetoView): { el: HTMLElement; timer: HTMLEl
   return { el, timer };
 };
 
-/** The race tracks with your best time on each (the Race card). */
+/** The race tracks with your best time on each (the Race card), surf maps grouped by mode. */
 const raceTrackList = (p: ClientProfile | null): HTMLElement =>
   h(
     'div',
     { class: 'race-tracks' },
-    ...raceMaps().map((m) => {
-      const b = p?.raceBests?.find((x) => x.track === m.id);
-      return h(
-        'div',
-        { class: 'race-track-row' },
-        h('span', {}, m.name),
-        h(
-          'span',
-          { class: 'rank-rating' },
-          b?.timeMs
-            ? `${formatRaceTime(b.timeMs)}${b.position ? ` · #${b.position}` : ''}`
-            : 'no time yet',
-        ),
-      );
-    }),
+    ...raceMapSections().flatMap((g) => [
+      g.label
+        ? h('div', { class: 'race-track-row race-track-group' }, modeChip(g.label, g.color))
+        : null,
+      ...g.maps.map((m) => {
+        const b = p?.raceBests?.find((x) => x.track === m.id);
+        return h(
+          'div',
+          { class: 'race-track-row' },
+          h('span', {}, m.name),
+          h(
+            'span',
+            { class: 'rank-rating' },
+            b?.timeMs
+              ? `${formatRaceTime(b.timeMs)}${b.position ? ` · #${b.position}` : ''}`
+              : 'no time yet',
+          ),
+        );
+      }),
+    ]),
   );
 
 /** Premier's opening hours in words ('' = no hours set). */
@@ -671,18 +676,22 @@ export const leaderboardScreen = (
           ),
         );
       }
+    // (a button per race map: the race tracks, then the surf maps under their mode's word)
     const trackButtons =
       which === 'race'
-        ? raceMaps().map((m) =>
-            button(
-              `${m.name} times`,
-              () => {
-                track = m.id;
-                void load();
-              },
-              `btn small ${track === m.id ? '' : 'secondary'}`,
+        ? raceMapSections().flatMap((g) => [
+            ...(g.label ? [modeChip(g.label, g.color)] : []),
+            ...g.maps.map((m) =>
+              button(
+                `${m.name} times`,
+                () => {
+                  track = m.id;
+                  void load();
+                },
+                `btn small ${track === m.id ? '' : 'secondary'}`,
+              ),
             ),
-          )
+          ])
         : [];
     tabs.replaceChildren(
       ...LADDER_IDS.map((m) =>
@@ -767,7 +776,7 @@ export const leaderboardScreen = (
       };
       if (track !== id) return; // another tab was picked meanwhile
       if (!data.rows.length) {
-        table.textContent = `No times on ${getMap(id).name} yet — finish a race there online.`;
+        table.textContent = `No times on ${mapName(id)} yet — finish a race there online.`;
         return;
       }
       table.replaceChildren(

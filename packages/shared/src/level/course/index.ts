@@ -4,3 +4,5 @@ export * from './expand';
 export * from './overlap';
 export * from './pen';
 export * from './sections';
+export * from './curve';
+export * from './profile';

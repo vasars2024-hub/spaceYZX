@@ -6,9 +6,12 @@
 // seeded RNG, no clocks.
 //
 // Line nodes are feet positions in order; `jump` nodes are take-off edges, `hop` nodes a
-// bunny-hop chain, `surf` nodes the line along a surf ramp's face, `strafe` a strafed flight,
-// `air` a point to fly through (a window, a ring). Launch pads, portals and mantles need no
-// input. A bot that stops making progress hops, and after a while holds the respawn key.
+// bunny-hop chain, `surf` nodes the line along a surf ramp's face (curved ramps too: their line
+// is dense), `strafe` a strafed flight, `air` a point to fly through (a window, a ring, a portal
+// flown through). Launch pads, portals (turning ones too) and mantles need no input. Back from
+// a fall in a surf map's restart bay, it drives the bay's way back (RaceGateDef.bayLine: the
+// launch pad) and rejoins the racing line. A bot that stops making progress hops, and after a
+// while holds the respawn key.
 import type { Vec3 } from '../math/vec3';
 import { v3, add, sub, dot, len, scale, cross, UP } from '../math/vec3';
 import type { Quat } from '../math/quat';
@@ -19,7 +22,7 @@ import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import { Btn } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
-import type { RaceLineNode } from '../level/types';
+import type { RaceDef, RaceGateDef, RaceLineNode } from '../level/types';
 import type { BotSkillName } from './brain';
 
 export interface RacerSkill {
@@ -76,6 +79,11 @@ export interface RacerMemory {
   surgedCp: number;
   /** ticks to keep Space held after a jump (a jetpack burn) */
   hold: number;
+  /**
+   * the line it follows when not the track's own: back from a restart bay, the bay's way back
+   * and then the racing line from where it joins (null: RaceDef.line)
+   */
+  line: RaceLineNode[] | null;
 }
 
 export const createRacerMemory = (id: number, skill: RacerSkill, seed: number): RacerMemory => ({
@@ -91,9 +99,22 @@ export const createRacerMemory = (id: number, skill: RacerSkill, seed: number): 
   jumped: false,
   surgedCp: -1,
   hold: 0,
+  line: null,
 });
 
+/** Where a racer is coming back to right now: its section's anchor, else its checkpoint. */
+const recoveryOf = (race: RaceDef, p: PlayerState): RaceGateDef | null => {
+  const a = p.raceAnchor >= 0 ? race.anchors?.[p.raceAnchor] : undefined;
+  if (a && a.cp === p.raceCp) return a;
+  return p.raceCp > 0 ? (race.checkpoints[p.raceCp - 1] ?? null) : null;
+};
+
 const flat = (v: Vec3): Vec3 => v3(v.x, 0, v.z);
+
+/** Time in the air of a bunny hop on the flat (a jump's up-and-down, MOVEMENT_PROFILE v1). */
+const HOP_AIR_SEC = 0.7;
+/** Keeping a hop chain's pace, a racer may land this far past the middle of a pad (m). */
+const PAD_SLACK = 4;
 
 /** First line node of checkpoint section `cp` (where a racer with `cp` gates heads first). */
 export const lineNodeForCp = (line: readonly RaceLineNode[], cp: number): number => {
@@ -179,6 +200,11 @@ export const airToward = (
   tick: number,
   cap: number,
   gravity: number,
+  /**
+   * keep up to this pace (a bunny-hop chain needs it for the next hop) as long as you still
+   * come down no more than PAD_SLACK metres past the target
+   */
+  minSpeed = 0,
 ): { view: Quat; buttons: number } => {
   const feet = v3(p.pos.x, p.pos.y - 0.9, p.pos.z);
   const to = flat(sub(target, feet));
@@ -188,7 +214,8 @@ export const airToward = (
   const disc = vy * vy + 2 * gravity * drop;
   // time until you are back down at the target's height (its apex when it's above you)
   const t = disc >= 0 ? (vy + Math.sqrt(disc)) / gravity : Math.max(0.05, vy / gravity);
-  const want = dist / Math.max(0.05, t);
+  const tt = Math.max(0.05, t);
+  const want = Math.max(dist / tt, Math.min(minSpeed, (dist + PAD_SLACK) / tt));
   const v = flat(p.vel);
   const s = len(v);
   if (s < want - 0.3 || s < 2) return strafeToward(p, to, tick);
@@ -251,28 +278,39 @@ export const racerThink = (
   const race = ctx.level.def.race;
   const idle: PlayerInput = { tick, buttons: 0, view: p.view };
   if (!race || !race.line.length) return idle;
-  const line = race.line;
   const n = race.checkpoints.length;
   const racing = p.raceCp >= 0 && p.raceCp <= n;
   // a new gate, or a teleport (portal, checkpoint respawn): re-sync the node
   const moved = mem.lastPos ? len(sub(p.pos, mem.lastPos)) : 0;
   mem.lastPos = { ...p.pos };
   if (racing && (p.raceCp !== mem.cp || moved > 8)) {
+    const line = mem.line ?? race.line;
     const first = lineNodeForCp(line, p.raceCp);
     if (mem.node < first) mem.node = first;
     if (moved > 8) {
-      // back at the checkpoint (a respawn): its section from the start; else (a portal) the
-      // nearest point of it
-      const at = p.raceCp > 0 ? race.checkpoints[p.raceCp - 1]?.respawn : race.start.respawn;
-      const home = at && Math.hypot(p.pos.x - at.x, p.pos.z - at.z) < 2;
-      mem.node = home ? first : nearestNode(line, p.pos, first, p.raceCp);
+      // back at the checkpoint or anchor (a respawn): its restart bay's way back, or its
+      // section from the start; else (a portal) the nearest point of it
+      const rec = recoveryOf(race, p);
+      const at = rec ? rec.respawn : race.start.respawn;
+      const home = Math.hypot(p.pos.x - at.x, p.pos.z - at.z) < 2;
+      if (home && rec?.bayLine && rec.join !== undefined) {
+        mem.line = [...rec.bayLine, ...race.line.slice(rec.join)];
+        mem.node = 0;
+      } else if (home) {
+        mem.line = null;
+        mem.node = lineNodeForCp(race.line, p.raceCp);
+      } else mem.node = nearestNode(line, p.pos, first, p.raceCp);
     }
     mem.cp = p.raceCp;
     mem.stuck = 0;
   }
+  const line = mem.line ?? race.line;
   // lobby, countdown, penalty, finished: stand still
   if (!racing || p.frozen) {
-    if (!racing) mem.node = 0;
+    if (!racing) {
+      mem.node = 0;
+      mem.line = null;
+    }
     mem.cp = p.raceCp;
     mem.stuck = 0;
     mem.jumped = false;
@@ -333,9 +371,11 @@ export const racerThink = (
   if (!p.grounded && !p.jetOn && mem.hold === 0 && p.airTicks > 1) {
     mem.stuck = 0;
     const m = ctx.config.movement;
-    // (fly through windows and rings toward where you land next)
+    // (fly through windows and rings toward where you land next; on surf maps a portal flown
+    // through is aimed at itself: what comes after it is on the other side)
+    const surfMap = !!race.surf;
     let land = mem.node;
-    while (line[land].air && land < line.length - 1) land++;
+    while (line[land].air && !(surfMap && line[land].portal) && land < line.length - 1) land++;
     // (coming down onto a take-off edge: land a little short of it, then run and jump)
     let aim = line[land].pos;
     const before = land > 0 ? line[land - 1].pos : null;
@@ -344,9 +384,18 @@ export const racerThink = (
       const bl = len(back);
       if (bl > 1e-6) aim = add(aim, scale(back, Math.min(2.5, bl / 2) / bl));
     }
+    // (surf maps — boarding a surf ramp: its face runs on ahead, so fly at it without braking;
+    // landing on a pad of a hop chain: keep the pace the next hop needs, past its middle)
+    const after = line[land + 1];
+    const pace =
+      surfMap && line[land].hop && after?.hop
+        ? len(flat(sub(after.pos, line[land].pos))) / HOP_AIR_SEC
+        : 0;
     const air = surfing
       ? surfToward(p, prev!.pos, target.pos, tick)
-      : airToward(p, aim, tick, m.raceAirWishCap, m.gravity);
+      : surfMap && line[land].surf
+        ? strafeToward(p, flat(sub(aim, feet)), tick)
+        : airToward(p, aim, tick, m.raceAirWishCap, m.gravity, pace);
     let buttons = air.buttons;
     // a sloppy strafer lets go now and then (a fixed pattern: deterministic)
     // (holding the key into a surf ramp is easy: there only the aim is off, less often)
@@ -361,9 +410,10 @@ export const racerThink = (
   if (hop && p.grounded) {
     // landed on the pad you were heading for: head for the next one
     const t = flat(sub(target.pos, feet));
+    // (anywhere on it: pads on surf maps are up to ~10 m across)
     if (
       target.hop &&
-      len(t) < 3.5 &&
+      len(t) < (race.surf ? 6 : 3.5) &&
       Math.abs(target.pos.y - feet.y) < 1.5 &&
       mem.node < line.length - 1
     )
@@ -416,8 +466,11 @@ export interface RaceRunReport {
   splitsSec: number[];
   /** checkpoint respawns (falls, or stuck) */
   respawns: number;
-  /** where each respawn happened (feet), the gates passed then and the node heading for */
-  falls: { pos: Vec3; cp: number; node: number }[];
+  /**
+   * where each respawn happened (feet), the gates passed then and the node heading for (its
+   * index in the line the bot was following, and where it is)
+   */
+  falls: { pos: Vec3; cp: number; node: number; target: Vec3 | null }[];
   /** the furthest line node reached */
   node: number;
   /** the highest horizontal speed reached (m/s) */
@@ -436,9 +489,11 @@ export const driveRaceLine = (
   stepFn: (world: WorldState, inputs: Record<number, PlayerInput>, ctx: SimContext) => void,
   skill: RacerSkill = STEADY_RACER,
   maxSec = 400,
+  /** a memory to go on with (a racer already driving: tests of recoveries), else a fresh one */
+  memory?: RacerMemory,
 ): RaceRunReport => {
   const race = ctx.level.def.race!;
-  const mem = createRacerMemory(p.id, skill, 7);
+  const mem = memory ?? createRacerMemory(p.id, skill, 7);
   const start = world.tick;
   const splits: number[] = [];
   const falls: RaceRunReport['falls'] = [];
@@ -460,7 +515,12 @@ export const driveRaceLine = (
     for (const e of world.events) {
       if (e.type === 'raceCp' && e.player === p.id) splits.push((world.tick - start) * ctx.dt);
       if (e.type === 'raceRespawn' && e.player === p.id)
-        falls.push({ pos: lastFeet, cp: e.cp, node: mem.node });
+        falls.push({
+          pos: lastFeet,
+          cp: e.cp,
+          node: mem.node,
+          target: (mem.line ?? race.line)[mem.node]?.pos ?? null,
+        });
     }
     furthest = Math.max(furthest, mem.node);
     topSpeed = Math.max(topSpeed, len(flat(p.vel)));

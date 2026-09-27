@@ -15,6 +15,7 @@ import {
   isCurveShape,
   levelToCustomMap,
   mapDef,
+  mapExists,
   v3,
   validateCustomMap,
 } from '@space-yz/shared';
@@ -134,6 +135,12 @@ export class MapEditor {
   baseDef: LevelDef | null = null;
   baseName = '';
   private base: { fingerprint: string; box: BoxDef }[] = [];
+  /**
+   * the built-in map's free-form prisms (curved surf ramps, BoxDef.hull): drawn, but they can't
+   * be picked, changed or deleted (they stay part of the map when played: an edit only lists
+   * the boxes it removes)
+   */
+  private baseHulls: BoxDef[] = [];
   private baseByFp = new Map<string, BoxDef[]>();
   private basePieces: PickPiece[] = [];
   private baseKey = '';
@@ -208,20 +215,25 @@ export class MapEditor {
   ) {
     this.touch = !!opts.touch;
     const doc = this.doc;
-    if (doc.patch && doc.base) {
+    // (a removed built-in map is never loaded as another one: the start screen refuses to open
+    // it, and here it just has no base map)
+    if (doc.patch && doc.base && mapExists(doc.base)) {
       try {
-        this.base = baseBoxesForEditor(doc.base);
+        const all = baseBoxesForEditor(doc.base);
+        this.base = all.filter((b) => !b.box.hull);
+        this.baseHulls = all.filter((b) => b.box.hull).map((b) => b.box);
         this.baseDef = mapDef(doc.base);
         this.baseName = getMap(doc.base).name;
       } catch {
         this.base = [];
+        this.baseHulls = [];
       }
       for (const b of this.base) {
         const list = this.baseByFp.get(b.fingerprint) ?? [];
         list.push(b.box);
         this.baseByFp.set(b.fingerprint, list);
       }
-    }
+    } else if (doc.patch && doc.base) this.baseName = 'a removed map';
     this.view = new EditorViewport(app.renderer);
     // phones: a shorter view distance keeps big maps smooth
     if (this.touch) this.view.camera.far = 1200;
@@ -379,7 +391,7 @@ export class MapEditor {
       const live = this.base.filter((b) => !gone.has(b.fingerprint));
       const visible = live.filter((b) => this.view.showHidden || !b.box.noRender);
       this.basePieces = visible.map((b) => piece({ k: 'base', fp: b.fingerprint }, b.box));
-      this.view.setBase(visible.map((b) => b.box));
+      this.view.setBase([...visible.map((b) => b.box), ...this.baseHulls]);
     }
     const sd = sceneData(doc, (r) => this.isSelected(r), this.baseDef);
     this.view.setDoc(sd.docBoxes);

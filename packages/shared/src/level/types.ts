@@ -25,7 +25,9 @@ export type Material =
   | 'forcefield' // glowing size-wall barrier (LevelDef.sizeWalls): blocks everything
   // race courses (level/course): the deadly cloud sea and the glow under it
   | 'cloud' // soft, slightly see-through, shaded bright on top: never mistaken for a platform
-  | 'glow'; // unlit, full-bright colour (danger glow, signs) that lights nothing around it
+  | 'glow' // unlit, full-bright colour (danger glow, signs) that lights nothing around it
+  | 'hazard' // red zones (BoxDef.kill): red with dark diagonal hatching, never colour alone
+  | 'water'; // a sea or pool surface (surf maps): flat, glossy, outside the collision
 
 export interface BoxDef {
   c: Vec3; // center
@@ -54,6 +56,19 @@ export interface BoxDef {
    * (level/collision.ts), and so does the renderer.
    */
   prism?: number;
+  /**
+   * A free-form prism (curved surf ramps, level/course/curve.ts): its six corners in world space
+   * — the base [start-left, start-right, end-left, end-right], then the ridge [start, end]. It
+   * collides as the convex hull of the six (level/collision.ts), drawn the same; `c` and `h` are
+   * then its bounding box (no `q`, no `prism`). Neighbouring pieces of a curve share the exact
+   * corners of their joint, so the faces meet edge to edge: no lip, no gap, nothing to catch.
+   */
+  hull?: Vec3[];
+  /**
+   * A red zone (race tracks and surf maps): touching it sends you back to your latest recovery
+   * point (sim/race.ts), exactly at its surface. Drawn red with hazard hatching ('hazard').
+   */
+  kill?: boolean;
   /**
    * A surf ramp (race tracks): never ground, however you touch it — no friction, gravity slides
    * you down it, your velocity is clipped along it (air-strafe into it to stay on), and you can't
@@ -130,6 +145,28 @@ export interface PortalDef {
   exit: Vec3;
   /** frame / glow color */
   color: number;
+  /**
+   * degrees it turns you about the vertical (+ = right, like a compass heading): velocity and
+   * view come out turned, speed kept (sim/devices.ts); absent = the same way you went in
+   */
+  turn?: number;
+  /**
+   * the way through it (horizontal unit vector; course portals): clients show a preview of
+   * where it leads in its disc (the view from the exit, turned by `turn`)
+   */
+  dir?: Vec3;
+  /**
+   * keep where you crossed the opening (course portals): you come out as far off `exit` as you
+   * went in off the opening's middle (across and up, turned with you), instead of at `exit`
+   */
+  offset?: boolean;
+  /**
+   * your vertical speed coming out (course portals): 'keep' (default: a fall comes out falling)
+   * or 'zero' (you come out level, horizontal speed kept)
+   */
+  vertical?: 'keep' | 'zero';
+  /** a short mark (a letter or symbol) shown over it and its exit: tells portal pairs apart */
+  glyph?: string;
 }
 
 /** A bomb site (Bomb mode): the area where the bomb can be planted. */
@@ -327,6 +364,21 @@ export interface RaceGateDef {
   yawDeg: number;
   /** the stretch it starts (shown over the gate: "3 · THE GRAND SURF") */
   name?: string;
+  /**
+   * surf maps: the way back onto the route from a restart bay at `respawn` (bay, launch pad,
+   * landing): bot racers drive it after a recovery, then the racing line from node `join`
+   */
+  bayLine?: RaceLineNode[];
+  join?: number;
+}
+
+/**
+ * A recovery anchor (surf maps, sim/race.ts): passing through `min..max` while in checkpoint
+ * section `cp` (gates passed) makes it where a fall brings you back — its restart bay — until
+ * the next gate. It never counts as progress and records no split.
+ */
+export interface RaceAnchorDef extends RaceGateDef {
+  cp: number;
 }
 
 /**
@@ -396,8 +448,15 @@ export interface RaceDef {
   fuelCells?: Vec3[];
   line: RaceLineNode[];
   forks?: RaceForkDef[];
+  /** surf maps: recovery anchors in route order (sim/race.ts) */
+  anchors?: RaceAnchorDef[];
   /** a surf map (CS-style surf stages): no jetpack and no SURGE (sim/movement.ts) */
   surf?: boolean;
+  /**
+   * holding Space bunny-hops (hold-to-bhop): a held jump fires again on every landing, as a
+   * fresh press would (sim/movement.ts). Off unless a map asks for it.
+   */
+  holdToBhop?: boolean;
   /** no jetpack on this track (surf maps, or a track not built around it) */
   noJetpack?: boolean;
   /** no SURGE charges on this track */

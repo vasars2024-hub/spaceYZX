@@ -130,8 +130,8 @@ export const landmark = (
   const points: [number, number, number][] = [];
   for (const e of p.route) {
     if ('at' in e) points.push(e.at);
-    if ('from' in e) points.push(e.from);
-    if ('to' in e) points.push(e.to);
+    if ('from' in e && e.from) points.push(e.from);
+    if ('to' in e && e.to) points.push(e.to);
     if (e.t === 'jumps') for (const pd of e.pads) points.push(pd.at);
   }
   const clear = (x: number, y: number, z: number) =>

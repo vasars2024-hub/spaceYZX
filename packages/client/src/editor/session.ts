@@ -1,6 +1,7 @@
 // MAP MAKER — one editing session (the map, its undo history, where the camera was) and the
 // autosaved draft in localStorage, so a crash, a closed tab or a test run never loses work.
 import type { CustomMapDoc } from '@space-yz/shared';
+import { mapExists } from '@space-yz/shared';
 import { History } from './history';
 import { fromCustomDoc, toCustomDoc, type EditDoc, type V3 } from './model';
 
@@ -35,6 +36,15 @@ export const newSession = (
 });
 
 export const hasUnsaved = (s: EditorSession): boolean => s.history.current !== s.savedDoc;
+
+/** Said when a draft or saved map is an edit of a built-in map the game no longer has. */
+export const GONE_MAP = 'This map no longer exists';
+
+/**
+ * Is `base` a built-in map the game no longer has (a draft or saved edit of it can't be opened:
+ * it is never loaded as another map)?
+ */
+export const baseGone = (base: string | undefined): boolean => !!base && !mapExists(base);
 
 // ---------------------------------------------------------------------------------------------
 // the draft

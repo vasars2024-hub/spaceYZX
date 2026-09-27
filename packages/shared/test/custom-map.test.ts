@@ -330,10 +330,14 @@ describe('built-in maps', () => {
       const back = compileCustomMap(r.doc);
       expect(back.boxes.length).toBeGreaterThan(0);
       expect(!!back.race).toBe(!!def.race);
-      // shapes and places survive (boxes stay where they were)
-      const src = def.boxes.filter(
-        (b) => Math.max(Math.abs(b.c.x), Math.abs(b.c.y), Math.abs(b.c.z)) <= 480,
-      );
+      // shapes and places survive (boxes stay where they were; curved surf pieces and scenery
+      // reaching past the network's ±500 m can't be blocks)
+      const src = def.boxes.filter((b) => {
+        if (b.hull || Math.max(Math.abs(b.c.x), Math.abs(b.c.y), Math.abs(b.c.z)) > 480)
+          return false;
+        const bb = boxAabb(b);
+        return Math.max(-bb.min.x, -bb.min.y, -bb.min.z, bb.max.x, bb.max.y, bb.max.z) <= 500;
+      });
       expect(back.boxes).toHaveLength(Math.min(src.length, CUSTOM_MAP_LIMITS.maxPieces));
       back.boxes.forEach((b, i) => {
         const o = src[i];

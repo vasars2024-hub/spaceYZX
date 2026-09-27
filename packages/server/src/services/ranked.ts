@@ -7,6 +7,7 @@
 // A ladder's ratings are rows of `ratings` with mode = the ladder id: profile() /
 // leaderboard() / startNewSeason() pick every ladder up from LADDER_IDS.
 import type {
+  CourseMode,
   FormResult,
   LadderId,
   RankDisplay,
@@ -22,10 +23,12 @@ import {
   LADDERS,
   ladderForMode,
   ladderRank,
-  raceMaps,
+  mapExists,
+  raceTracks,
   RANKED_QUEUE_IDS,
   rankedQueue,
   seasonResetRating,
+  surfMaps,
   updateRaceRatings,
   updateTeamMatch,
 } from '@space-yz/shared';
@@ -94,8 +97,17 @@ export interface Profile {
     rating: number | null;
     rank: RankDisplay | null;
   }[];
-  /** your best time on every race track (null: no finish yet), with your place on its board */
-  raceBests: { track: string; timeMs: number | null; position: number | null; at: number }[];
+  /**
+   * your best time on every race map the game has (null: no finish yet), with your place on its
+   * board: the race tracks, then the surf maps by mode (`mode`: Beginner first, then Intermediate)
+   */
+  raceBests: {
+    track: string;
+    mode?: CourseMode;
+    timeMs: number | null;
+    position: number | null;
+    at: number;
+  }[];
   /** your last races (online race rooms) */
   recentRaces: {
     track: string;
@@ -839,7 +851,12 @@ export class RankedStore {
         );
       for (const l of rated) {
         const prev = this.raceBest(l.accountId!, record.track);
-        const newBest = l.timeMs !== null && l.timeMs > 0 && (prev === null || l.timeMs < prev);
+        // (only a map the game has keeps personal bests)
+        const newBest =
+          mapExists(record.track) &&
+          l.timeMs !== null &&
+          l.timeMs > 0 &&
+          (prev === null || l.timeMs < prev);
         if (newBest)
           this.db
             .prepare(
@@ -877,13 +894,17 @@ export class RankedStore {
     return row?.time_ms ?? null;
   }
 
-  /** A player's best on every race track, with their place on the track's board. */
+  /**
+   * A player's best on every race map, with their place on the map's board: the race tracks,
+   * then the surf maps by mode. Only maps the game has (old rows of a removed map are skipped).
+   */
   raceBests(playerId: number): Profile['raceBests'] {
-    return raceMaps().map((m) => {
+    return [...raceTracks(), ...surfMaps()].map((m) => {
+      const mode = m.mode ? { mode: m.mode } : {};
       const row = this.db
         .prepare('SELECT time_ms, at FROM race_bests WHERE player_id = ? AND track = ?')
         .get(playerId, m.id) as { time_ms: number; at: number } | undefined;
-      if (!row) return { track: m.id, timeMs: null, position: null, at: 0 };
+      if (!row) return { track: m.id, ...mode, timeMs: null, position: null, at: 0 };
       const faster = (
         this.db
           .prepare(
@@ -892,7 +913,7 @@ export class RankedStore {
           )
           .get(m.id, row.time_ms, row.time_ms, row.at, row.at, playerId) as { n: number }
       ).n;
-      return { track: m.id, timeMs: row.time_ms, position: faster + 1, at: row.at };
+      return { track: m.id, ...mode, timeMs: row.time_ms, position: faster + 1, at: row.at };
     });
   }
 

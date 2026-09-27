@@ -4,7 +4,17 @@
 import * as THREE from 'three';
 
 export type TexKind =
-  'hull' | 'floor' | 'plate' | 'grate' | 'panel' | 'crate' | 'pillar' | 'engine' | 'team' | 'stars';
+  | 'hull'
+  | 'floor'
+  | 'plate'
+  | 'grate'
+  | 'panel'
+  | 'crate'
+  | 'pillar'
+  | 'engine'
+  | 'team'
+  | 'stars'
+  | 'hazard';
 
 const SIZE = 256;
 
@@ -283,6 +293,23 @@ const draw: Record<TexKind, (g: Ctx, r: () => number) => void> = {
       g.fillRect(r() * SIZE, r() * SIZE, s, s);
     }
   },
+  // red zones: bold diagonal hatching (the red comes from the vertex colour; the dark stripes
+  // make it read as a hazard without relying on colour alone). Tiles seamlessly.
+  hazard: (g) => {
+    g.fillStyle = grey(1);
+    g.fillRect(0, 0, SIZE, SIZE);
+    g.fillStyle = grey(0.13);
+    const w = SIZE / 4;
+    for (let k = -2; k < 4; k++) {
+      const x = k * SIZE * 0.5;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x + w, 0);
+      g.lineTo(x + w + SIZE, SIZE);
+      g.lineTo(x + SIZE, SIZE);
+      g.fill();
+    }
+  },
 };
 
 /** Meters per texture repeat (null = one texture per box face, e.g. crates). */
@@ -297,6 +324,7 @@ export const TEX_SCALE: Record<TexKind, number | null> = {
   engine: 4,
   team: 4,
   stars: 12,
+  hazard: 2.4,
 };
 
 const cache = new Map<TexKind, THREE.Texture | null>();
@@ -343,8 +371,8 @@ export const surfaceTexture = (kind: TexKind): THREE.Texture | null => {
     return null;
   }
   draw[kind](g, rng(kind.length * 7919 + kind.charCodeAt(0)));
-  // the starfield stays crisp (windows), everything else follows the Effects setting
-  if (kind !== 'stars') calm(g, detail);
+  // the starfield (windows) and hazard hatching stay crisp, the rest follows the Effects setting
+  if (kind !== 'stars' && kind !== 'hazard') calm(g, detail);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;

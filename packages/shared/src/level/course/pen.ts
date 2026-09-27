@@ -2,10 +2,28 @@
 // elements with absolute coordinates, so a map file reads as a sequence of moves ("a 12 m gap,
 // a hop chain curving left, a surf ramp dropping 14 m") while the result stays plain JSON data.
 // Nothing here is needed to expand a course; an editor will write the same data directly.
+//
+// Surf maps (docs/movement-map-design/BUILDING.md): `curve` lands you on a curved ramp's face
+// at the pen and leaves the pen where its racing line ends (heading its way); `gate` and
+// `anchor` put a fly-through gate / recovery ring round the pen, and their restart bay is placed
+// when the next ramp (or pad) is written — its landing is where the bay's launch throws you.
 import type { Vec3 } from '../../math/vec3';
-import { v3, add, madd, cross, UP } from '../../math/vec3';
-import type { CourseData, Go, P2, P3, RouteElement, SceneryElement, SurfEl } from './types';
-import { headingDir } from './expand';
+import { v3, add, madd, cross, dot, sub, UP } from '../../math/vec3';
+import type {
+  AnchorEl,
+  CourseData,
+  CurveEl,
+  CurveLeg,
+  GateEl,
+  Go,
+  P2,
+  P3,
+  RouteElement,
+  SceneryElement,
+  SurfEl,
+} from './types';
+import { headingDir, headingOf } from './expand';
+import { curvePath, curveRidePoint } from './curve';
 
 const r3 = (x: number): number => Math.round(x * 1000) / 1000;
 const P = (v: Vec3): P3 => [r3(v.x), r3(v.y), r3(v.z)];
@@ -20,11 +38,34 @@ export interface HopStep {
   size?: P2;
 }
 
+/**
+ * Where a gate's or anchor's restart bay goes, from the landing its launch throws you onto:
+ * `back` metres back along the way, `side` to the right, `up` above (defaults 26, 10 toward a
+ * ramp's ridge — away from the transfer that arrives on its face — and 12), the flight taking
+ * `flightSec` (default 1.2 s: about 23 m/s on arrival, a typical surf entry, mostly along it).
+ * Before a portal the landing is the portal's opening (Pen.airPortal: you are thrown through it
+ * again). Authored instead: `at` (the bay), `heading` (its facing) and `to` (where its launch
+ * throws you: a re-entry ramp of your own, drawn with `branch`) — any of them.
+ */
+export interface BayOpts {
+  back?: number;
+  side?: number;
+  up?: number;
+  flightSec?: number;
+  at?: P3;
+  heading?: number;
+  to?: P3;
+}
+
 export class Pen {
   pos: Vec3;
   heading: number;
   readonly route: RouteElement[] = [];
   readonly scenery: SceneryElement[] = [];
+  /** gates and anchors whose restart bay waits for the next landing */
+  private pending: { e: GateEl | AnchorEl; bay: BayOpts }[] = [];
+  /** where the last element written was left (its exit): bays go to the other side */
+  private lastEnd: Vec3 | null = null;
 
   constructor(at: P3, heading: number) {
     this.pos = v3(at[0], at[1], at[2]);
@@ -96,12 +137,229 @@ export class Pen {
     this.pos = this.rel(size[1] / 2);
     return this;
   }
+  /**
+   * Place the restart bays waiting for a landing: the landing is at the pen, heading its way;
+   * `ridge` = the side (+1 right, -1 left) of a ramp's ridge, where a bay goes by default.
+   */
+  private land(ridge = 0, landing: Vec3 = this.pos, up = 12): void {
+    // (no ridge to go by: the side away from where the way arrives from)
+    const from = this.lastEnd;
+    const away = ridge || (from && dot(sub(from, this.pos), this.right) > 0 ? -1 : 1);
+    for (const { e, bay } of this.pending) {
+      const to = bay.to ? v3(bay.to[0], bay.to[1], bay.to[2]) : landing;
+      const side = bay.side ?? 10 * away;
+      const at = bay.at
+        ? v3(bay.at[0], bay.at[1], bay.at[2])
+        : add(
+            madd(madd(to, this.dir, -(bay.back ?? 26)), this.right, side),
+            v3(0, bay.up ?? up, 0),
+          );
+      e.bay = P(at);
+      e.bayHeading = r3(bay.heading ?? headingOf(v3(to.x - at.x, 0, to.z - at.z)));
+      e.to = P(to);
+      e.flightSec = bay.flightSec ?? 1.2;
+    }
+    this.pending = [];
+  }
+
+  /**
+   * A fly-through progress gate (C1..C5) round the pen: `size` [width, height] centred on it;
+   * its restart bay is placed at the next landing (`bay`). `finish`: the finish gate.
+   */
+  gate(size: P2, name?: string, bay: BayOpts = {}, finish = false): this {
+    const e: GateEl = {
+      t: 'gate',
+      at: this.relP(0, 0, -size[1] / 2),
+      heading: this.heading,
+      size,
+    };
+    if (name) e.name = name;
+    if (finish) e.finish = true;
+    this.route.push(e);
+    if (!finish) this.pending.push({ e, bay });
+    return this;
+  }
+
+  /** The finish gate round the pen, with a landing platform `after` metres beyond it. */
+  finishGate(size: P2, after = 30, drop = 10): this {
+    const e: GateEl = {
+      t: 'gate',
+      at: this.relP(0, 0, -size[1] / 2),
+      heading: this.heading,
+      size,
+      finish: true,
+      bay: this.relP(after, 0, -drop),
+    };
+    this.route.push(e);
+    return this;
+  }
+
+  /** A recovery anchor ring round the pen (default 10 × 10); its bay waits for the next landing. */
+  anchor(name?: string, bay: BayOpts = {}, size: P2 = [10, 10]): this {
+    const e = {
+      t: 'anchor',
+      at: this.relP(0, 0, -size[1] / 2),
+      heading: this.heading,
+      size,
+    } as AnchorEl;
+    if (name) e.name = name;
+    this.route.push(e);
+    this.pending.push({ e, bay });
+    return this;
+  }
+
+  /** A red zone block `f` ahead, `s` right, bottom `u` up: [width, height, depth], turned. */
+  red(f: number, s: number, u: number, size: P3, turn = 0): this {
+    this.route.push({ t: 'red', at: this.relP(f, s, u), size, heading: r3(this.heading + turn) });
+    return this;
+  }
+
+  /**
+   * A curved surf ramp you land on at the pen, `depth` down its riding face: its ridge follows
+   * the legs from above the pen (./curve.ts), starting `lead` metres (default 5) before it on
+   * a straight at the first leg's slope (nobody lands on a ramp's very end). The pen ends where
+   * its racing line ends, heading the way the ridge does there.
+   */
+  curve(o: {
+    legs: CurveLeg[];
+    height: number;
+    angle: number;
+    side: 'left' | 'right' | 'both';
+    ride?: 'left' | 'right';
+    depth?: number;
+    red?: number;
+    color?: number;
+    early?: number;
+    lead?: number;
+    /** how far the lead-in drops toward the landing (default: the first leg's slope carried on) */
+    leadDrop?: number;
+    alt?: boolean;
+    go?: Go;
+  }): this {
+    const depth = o.depth ?? 0.35;
+    const face = o.side === 'both' ? (o.legs[0]?.ride ?? o.ride ?? 'right') : o.side;
+    const s = face === 'right' ? 1 : -1;
+    this.land(-s);
+    const run = o.height / Math.tan(o.angle * DEG);
+    const lead = o.lead ?? 5;
+    // the first leg's slope carries on back over the lead-in
+    const l0 = o.legs[0];
+    const len0 = l0.len ?? Math.abs(l0.turn ?? 0) * DEG * (l0.radius ?? 20);
+    const drop = r3(o.leadDrop ?? ((l0.drop ?? 0) / Math.max(1, len0)) * lead);
+    // the ridge is up and toward it from the landing, `lead` back along the way
+    const at = add(
+      madd(madd(this.pos, this.right, -s * run * depth), this.dir, -lead),
+      v3(0, o.height * depth + drop, 0),
+    );
+    const e: CurveEl = {
+      t: 'curve',
+      at: P(at),
+      heading: r3(this.heading),
+      legs: lead > 0 ? [{ len: lead, drop }, ...o.legs] : o.legs,
+      height: o.height,
+      angle: o.angle,
+      side: o.side,
+    };
+    if (lead > 0) e.lead = lead;
+    for (const k of ['ride', 'depth', 'red', 'color', 'early', 'alt'] as const)
+      if (o[k] !== undefined) (e as unknown as Record<string, unknown>)[k] = o[k];
+    e.go = o.go ?? 'strafe';
+    this.route.push(e);
+    // where the line ends: on the face it rides at the end, at that leg's depth
+    const path = curvePath(e);
+    const end = path.at(Math.max(0, path.length - (o.early ?? 0)));
+    let lastFace: 'left' | 'right' = face;
+    let lastDepth = depth;
+    for (const l of e.legs) {
+      if (l.ride) lastFace = l.ride;
+      if (l.depth !== undefined) lastDepth = l.depth;
+    }
+    this.pos = curveRidePoint(e, end, o.side === 'both' ? lastFace : face, lastDepth);
+    this.heading = r3(headingOf(end.dir));
+    this.lastEnd = this.pos;
+    return this;
+  }
+
+  /**
+   * An alternative stretch (a salvage ramp, a faster line's ramp, a launch back): `draw` writes
+   * it from here with the pen (everything marked `alt`: off the racing line), then the pen
+   * comes back where it was. Returns what `draw` returns (points to build a fork's line from).
+   */
+  branch<T>(draw: (p: this) => T): T {
+    const pos = this.pos;
+    const heading = this.heading;
+    const pending = this.pending;
+    this.pending = [];
+    const from = this.route.length;
+    const out = draw(this);
+    for (const e of this.route.slice(from)) {
+      if (e.t === 'gate' || e.t === 'anchor' || e.t === 'jumps')
+        throw new Error('a branch holds ramps, platforms, launches, portals, walls, red zones');
+      e.alt = true;
+    }
+    this.pos = pos;
+    this.heading = heading;
+    this.pending = pending;
+    return out;
+  }
+
+  /** Bhop pads (their own top colour, arrows to the next pad), each a step from the last. */
+  bhopPads(steps: HopStep[], size: P2 = [6, 6]): this {
+    this.pads(steps, 'hop', size);
+    const e = this.route[this.route.length - 1];
+    if (e.t === 'jumps') e.style = 'bhop';
+    return this;
+  }
+
+  /**
+   * A portal flown through `f` ahead of the pen ([width, height] centred on the flight), turning
+   * you `turn` degrees; you come out at `exit` (feet) heading the turned way. Cardinal only.
+   * `look`: its colour and mark, whether it keeps where you crossed it (PortalEl.offset) and
+   * your vertical speed (PortalEl.vertical).
+   * Gates and anchors waiting for a landing get their bays here, before it: their launch throws
+   * you through it again (from 30 m back, 3 m below the opening's middle: through it level).
+   */
+  airPortal(
+    f: number,
+    exit: P3,
+    turn = 0,
+    size: P2 = [10, 10],
+    look: { color?: number; glyph?: string; offset?: boolean; vertical?: 'keep' | 'zero' } = {},
+  ): this {
+    if (this.pending.length) {
+      this.pending = this.pending.map(({ e, bay }) => ({ e, bay: { back: 30, ...bay } }));
+      this.land(0, this.rel(f), -3);
+    }
+    const e: RouteElement = {
+      t: 'portal',
+      at: this.relP(f, 0, -size[1] / 2),
+      // (portals face a cardinal heading: the nearest)
+      heading: (Math.round(this.heading / 90) * 90) % 360,
+      exit,
+      size,
+      air: true,
+      go: 'strafe',
+    };
+    if (turn) e.turn = turn;
+    if (look.color !== undefined) e.color = look.color;
+    if (look.glyph) e.glyph = look.glyph;
+    if (look.offset) e.offset = true;
+    if (look.vertical === 'zero') e.vertical = 'zero';
+    this.route.push(e);
+    this.pos = v3(exit[0], exit[1], exit[2]);
+    this.heading = e.heading;
+    this.turn(turn);
+    this.lastEnd = null;
+    return this;
+  }
+
   /** A platform entered from its back edge at the pen (or centred on it: `centred`). */
   platform(
     size: P2,
     go?: Go,
     opts: { centred?: boolean; style?: 'island' | 'slab' | 'plain' } = {},
   ): this {
+    this.land();
     const c = opts.centred ? this.pos : this.rel(size[1] / 2);
     const e: RouteElement = { t: 'platform', at: P(c), size, heading: this.heading };
     if (go) e.go = go;
@@ -136,11 +394,17 @@ export class Pen {
   /** Pads to jump or bunny-hop (`go` 'hop'), each a step from the last; the pen ends on the last. */
   pads(steps: HopStep[], go: Go = 'hop', size: P2 = [5, 5]): this {
     const pads: { at: P3; size: P2; heading: number }[] = [];
+    let landed = false;
     for (const s of steps) {
       if (s.turn) this.turn(s.turn);
       this.move(s.d, s.rise ?? 0);
+      if (!landed) {
+        this.land();
+        landed = true;
+      }
       pads.push({ at: this.here(), size: s.size ?? size, heading: this.heading });
     }
+    this.lastEnd = this.pos;
     this.route.push({ t: 'jumps', pads, go });
     return this;
   }
@@ -158,6 +422,7 @@ export class Pen {
     depth?: number;
     go?: Go;
   }): this {
+    this.land();
     const depth = o.depth ?? 0.3;
     const face = o.side === 'both' ? (o.ride ?? 'right') : o.side;
     const s = face === 'right' ? 1 : -1;
@@ -269,6 +534,7 @@ export class Pen {
   course(
     rest: Omit<CourseData, 'route' | 'scenery' | 'format'> & { scenery?: SceneryElement[] },
   ): CourseData {
+    if (this.pending.length) throw new Error('a gate or anchor has no landing after it');
     return {
       format: 1,
       ...rest,

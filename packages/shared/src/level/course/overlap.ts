@@ -2,9 +2,10 @@
 // Two pieces may overlap only when they look the same (same material and colour: the overlap
 // is hidden inside one solid); anything else — a wall through a path, a tree through a
 // platform, a cloud layer through an island, coplanar faces of different colours fighting —
-// is a hit. Works on any LevelDef (race tracks, surf maps, and the combat maps via tools/map).
+// is a hit (except the sea's surface on surf maps: whatever stands in the water crosses it).
+// Works on any LevelDef (race tracks, surf maps, and the combat maps via tools/map).
 import type { Vec3 } from '../../math/vec3';
-import { v3, cross, dot, len, normalize, scale } from '../../math/vec3';
+import { v3, cross, dot, len, normalize, scale, sub } from '../../math/vec3';
 import type { BoxShape } from '../level';
 import { buildLevel } from '../level';
 import type { LevelDef } from '../types';
@@ -38,6 +39,18 @@ interface Hull {
 
 const hullOf = (b: BoxShape): Hull => {
   const { x: hx, y: hy, z: hz } = b.h;
+  if (b.hull) {
+    // a free-form prism: its corners, its face planes, its triangles' edges
+    const h = b.hull;
+    const verts = h.v.map((p) => v3(b.c.x + p.x, b.c.y + p.y, b.c.z + p.z));
+    const edges: Vec3[] = [];
+    for (const t of h.tris)
+      for (let k = 0; k < 3; k++) {
+        const e = sub(h.v[t[(k + 1) % 3]], h.v[t[k]]);
+        if (len(e) > 1e-9) edges.push(normalize(e));
+      }
+    return { verts, faces: h.n, edges };
+  }
   if (b.prism) {
     const r = b.prism.ridge;
     const verts = [
@@ -109,7 +122,10 @@ export const penetration = (a: BoxShape, b: BoxShape): number => {
 export const findOverlaps = (def: LevelDef, tol = 0.02): Overlap[] => {
   const level = buildLevel({ ...def, skyArena: undefined });
   const boxes = level.boxes;
-  const look = def.boxes.map((b) => (b.noRender ? null : `${b.mat ?? 'hull'}|${b.color ?? -1}`));
+  // (a sea's surface is meant to be crossed: towers and rocks stand in it)
+  const look = def.boxes.map((b) =>
+    b.noRender || b.mat === 'water' ? null : `${b.mat ?? 'hull'}|${b.color ?? -1}`,
+  );
   const order = boxes.map((_, i) => i).filter((i) => look[i] !== null);
   order.sort((i, j) => boxes[i].min.x - boxes[j].min.x);
   const out: Overlap[] = [];

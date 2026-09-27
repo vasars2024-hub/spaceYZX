@@ -24,4 +24,7 @@ export const MATERIAL_COLORS: Record<Material, number> = {
   forcefield: 0x38e8ff,
   cloud: 0xf2f4f8,
   glow: 0xff5a2a,
+  // red zones (BoxDef.kill): the hatching's red (the dark stripes are drawn over it)
+  hazard: 0xe8242c,
+  water: 0x1f5a6a,
 };

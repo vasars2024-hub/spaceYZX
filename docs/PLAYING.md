@@ -240,16 +240,26 @@ down. 15 checkpoints, about 2:50.
 
 ### Surf maps
 
-Pure surf (no jetpack, no SURGE). Each **stage** starts in a walled room that **caps your
-speed** (you can't carry speed in) and ends on a landing with a big portal to the next
-stage's room; fall and you are back at the stage start in about a second.
+Pure surf (no jetpack, no SURGE), on **curved** ramps that bend, climb and dip. Every surf map
+belongs to one of two standard modes, shown as a coloured word on its card and in the menus
+(surf maps are listed by mode; best times and leaderboards are still per map):
 
-- **Surf Aurora** (beginner): five stages of long, forgiving 55° ramps over a frozen sea under
-  an aurora sky — straight transfers, longer transfers, side-switch flicks, a 90° turn with a
-  booster ring, a curved finale. About 1:40.
-- **Surf Cinder** (hard): seven stages of steep, narrow ramps at dusk — fast straights, a royal
-  spin, a window to thread and drop strafes, a **wall surf** (72°) into flicks, a pillar weave,
-  "the needles" (65° ramps 8 m tall), a mixed finale. About 1:50.
+- **Beginner** (green): wide, forgiving ramps and gentle turns.
+- **Intermediate** (orange): faster and less forgiving.
+
+What you meet on every surf map:
+
+- **Progress gates C1–C5**: pass them in order; each one shows your **split** (how far ahead
+  or behind your best you are).
+- **Recovery anchors R**: once you pass one, a fall brings you back to its **restart bay**,
+  which has a **launch pad** to get your speed back.
+- **Red zones** (red with hazard stripes): touching one sends you back too.
+- **Portals** can **turn you** as they carry you (you come out facing a new direction).
+
+The maps:
+
+- **Copper Reef** (Beginner): abandoned coastal waterworks round a lighthouse — curved copper
+  spillways, a helix, a bhop crossing and a turning portal. About 3 minutes.
 
 ## What the markers mean
 

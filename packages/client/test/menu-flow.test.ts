@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   BOT_SKILL_NAMES,
   MAPS,
+  SURF_MODES,
   mapDef,
+  raceMaps,
+  surfMaps,
   type LevelDef,
   type MapInfo,
   type QueueCounts,
@@ -39,9 +42,15 @@ import {
   roomBack,
   roomCreateArgs,
   roomMaps,
+  MAP_BLURBS,
+  mapName,
+  raceMapGroups,
+  raceMapSections,
   sizesFor,
   stepAfter,
   stepBefore,
+  surfModeGroups,
+  surfModeTag,
 } from '../src/ui/flow';
 import { ICONS } from '../src/ui/icons';
 import { queueCountText } from '../src/ui/ranked';
@@ -184,17 +193,16 @@ describe('menu flow: online room wizard', () => {
       expect([...best, ...other].some((m) => m.race)).toBe(false);
     }
     const tracks = mapsForMode('race').map((m) => m.id);
-    expect(tracks).toEqual([
-      'race-sunspire',
-      'race-neon',
-      'race-ember',
-      'surf-aurora',
-      'surf-cinder',
-    ]);
-    // (online: the race tracks first, the surf maps apart)
+    expect(tracks.slice(0, 3)).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
+    expect(tracks.sort()).toEqual(
+      raceMaps()
+        .map((m) => m.id)
+        .sort(),
+    );
+    // (online: the race tracks first, the surf maps apart, Beginner before Intermediate)
     expect(roomMaps('race')).toEqual({
       best: mapsForMode('race').filter((m) => !m.surf),
-      other: mapsForMode('race').filter((m) => m.surf),
+      other: surfMaps(),
     });
   });
 
@@ -413,6 +421,87 @@ describe('menu flow: map tags', () => {
     expect(mapTags(mapDef('training-bay'))).toEqual([]);
     const orbital = mapTags(mapDef('orbital-ring'));
     for (const t of ['Towers', 'Portals', 'Launch pads']) expect(orbital).toContain(t);
+  });
+});
+
+describe('menu flow: surf maps by mode', () => {
+  // made-up race maps (the real surf maps come and go while they are being built)
+  const race = (id: string, extra: Partial<MapInfo> = {}): MapInfo => ({
+    id,
+    name: id,
+    build: () => mapDef('training-bay'),
+    competitive: false,
+    race: true,
+    ...extra,
+  });
+  const maps: MapInfo[] = [
+    race('track-a'),
+    race('surf-i1', { surf: true, mode: 'intermediate' }),
+    race('surf-b1', { surf: true, mode: 'beginner' }),
+    race('track-b'),
+    race('surf-b2', { surf: true, mode: 'beginner' }),
+    race('surf-x', { surf: true }),
+    { id: 'combat', name: 'Combat', build: () => mapDef('split-deck'), competitive: true },
+  ];
+
+  it('groups the surf maps Beginner, then Intermediate (then any without a mode)', () => {
+    const groups = surfModeGroups(maps);
+    expect(groups.map((g) => [g.label, g.maps.map((m) => m.id)])).toEqual([
+      ['Beginner', ['surf-b1', 'surf-b2']],
+      ['Intermediate', ['surf-i1']],
+      ['Other', ['surf-x']],
+    ]);
+    expect(groups.map((g) => g.color)).toEqual([SURF_MODES[0].color, SURF_MODES[1].color, null]);
+    // modes without maps are left out (none at all: no groups)
+    expect(
+      surfModeGroups(maps.filter((m) => m.mode !== 'intermediate')).map((g) => g.label),
+    ).toEqual(['Beginner', 'Other']);
+    expect(surfModeGroups(maps.filter((m) => !m.surf))).toEqual([]);
+  });
+
+  it('race pickers and best-time lists: the race tracks first, then the surf maps by mode', () => {
+    expect(raceMapGroups(maps).best.map((m) => m.id)).toEqual(['track-a', 'track-b']);
+    expect(raceMapGroups(maps).other.map((m) => m.id)).toEqual([
+      'surf-b1',
+      'surf-b2',
+      'surf-i1',
+      'surf-x',
+    ]);
+    expect(roomMaps('race', maps)).toEqual(raceMapGroups(maps));
+    expect(raceMapSections(maps).map((g) => [g.label, g.maps.length])).toEqual([
+      [null, 2],
+      ['Beginner', 2],
+      ['Intermediate', 1],
+      ['Other', 1],
+    ]);
+    // (the real registry works the same, with any number of surf maps)
+    expect(
+      raceMapSections()
+        .flatMap((g) => g.maps)
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(
+      raceMaps()
+        .map((m) => m.id)
+        .sort(),
+    );
+  });
+
+  it('a surf map shows its mode as a word with its colour; other maps have no tag', () => {
+    expect(surfModeTag(maps[2])).toEqual({ label: 'Beginner', color: '#5dd39e' });
+    expect(surfModeTag(maps[1])).toEqual({ label: 'Intermediate', color: '#f2a93b' });
+    expect(surfModeTag(maps[0])).toBeNull();
+    expect(surfModeTag(maps[5])).toBeNull();
+    expect(surfModeTag(undefined)).toBeNull();
+    for (const m of surfMaps()) expect(surfModeTag(m)?.label).toBeTruthy();
+  });
+
+  it('removed maps are named as removed, never as Training Bay; no blurbs for them', () => {
+    expect(mapName('surf-aurora')).toBe('Removed map');
+    expect(mapName('surf-cinder')).toBe('Removed map');
+    expect(mapName('race-sunspire')).toBe('Sunspire');
+    for (const id of ['surf-aurora', 'surf-cinder']) expect(MAP_BLURBS[id]).toBeUndefined();
+    expect(MAP_BLURBS['surf-copper-reef']).toMatch(/^Surf, Beginner/);
   });
 });
 

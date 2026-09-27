@@ -11,6 +11,7 @@ import {
   isFreeRoam,
   mapsForMode,
   raceMapGroups,
+  surfModeGroups,
   modeChoice,
   pickPracticeMap,
   pickPracticeMode,
@@ -32,6 +33,7 @@ import {
   screenHead,
   stepPanel,
   sumItem,
+  surfGroupTitle,
   swapStage,
   type Dir,
 } from './menu-kit';
@@ -113,16 +115,13 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
         (m, selected, pick) => mapCard(m.id, selected, pick),
         (m) => go(pickPracticeMap(s, m.id), 'forward'),
       );
-    // races: the race tracks, then the surf maps
-    if (s.mode === 'race') {
-      const { best, other } = raceMapGroups();
+    // races: the race tracks, then the surf maps by mode (Beginner, then Intermediate)
+    if (s.mode === 'race')
       return stepPanel(
         'Pick a track',
-        grid(best),
-        other.length ? h('h3', { class: 'step-title' }, 'Surf maps') : null,
-        other.length ? grid(other) : null,
+        grid(raceMapGroups().best),
+        ...surfModeGroups().flatMap((g) => [surfGroupTitle(g), grid(g.maps)]),
       );
-    }
     return stepPanel('Pick a map', grid(mapsForMode(s.mode)));
   };
 

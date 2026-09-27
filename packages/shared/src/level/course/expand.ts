@@ -20,7 +20,6 @@ import type {
 import type {
   CourseData,
   CoursePalette,
-  FloorData,
   Go,
   IslandStyle,
   P3,
@@ -1385,7 +1384,7 @@ const clearBox = (
 ) => list.every((a) => a[3] < x0 || a[0] > x1 || a[4] < y0 || a[1] > y1 || a[5] < z0 || a[2] > z1);
 
 /** The deadly cloud seas: kill volumes, a cloud layer on top and a dark floor under it. */
-const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[]) => {
+const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[], solid: number[][]) => {
   const pal = data.palette;
   const killVolumes: { min: Vec3; max: Vec3 }[] = [];
   const floors = [...data.floors];
@@ -1410,27 +1409,33 @@ const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[]) => {
     });
     for (const ns of chunks) {
       if (!ns.length) continue;
-      const y = Math.round(Math.min(...ns.map((n) => n.pos.y)) - below);
+      const base = Math.round(Math.min(...ns.map((n) => n.pos.y)) - below);
       const xs = ns.map((n) => n.pos.x);
       const zs = ns.map((n) => n.pos.z);
-      // as wide as it can be without reaching under another stretch of the way
+      // as wide as it can be without reaching under another stretch of the way: nothing you can
+      // stand on (a node of the line, the foot of a lower surf ramp, a landing) may be inside it
+      // or less than 3 m above it, so it sinks under whatever is there (up to 20 m), else shrinks
       for (const r of [pad, pad / 2, 6]) {
-        const f: FloorData = {
-          y,
-          min: [Math.round(Math.min(...xs) - r), Math.round(Math.min(...zs) - r)],
-          max: [Math.round(Math.max(...xs) + r), Math.round(Math.max(...zs) + r)],
+        const x0 = Math.round(Math.min(...xs) - r);
+        const z0 = Math.round(Math.min(...zs) - r);
+        const x1 = Math.round(Math.max(...xs) + r);
+        const z1 = Math.round(Math.max(...zs) + r);
+        /** The lowest thing in reach of a floor at `y` (Infinity: none). */
+        const clash = (y: number): number => {
+          let low = Infinity;
+          for (const n of line)
+            if (n.pos.x > x0 && n.pos.x < x1 && n.pos.z > z0 && n.pos.z < z1)
+              if (n.pos.y + 0.9 > y - 25 - 3 && n.pos.y < y + 3) low = Math.min(low, n.pos.y);
+          for (const a of solid)
+            if (a[0] <= x1 && a[3] >= x0 && a[2] <= z1 && a[5] >= z0)
+              if (a[4] > y - 25 - 3 && a[1] < y + 3) low = Math.min(low, a[1]);
+          return low;
         };
-        const hits = line.some(
-          (n) =>
-            n.pos.x > f.min[0] &&
-            n.pos.x < f.max[0] &&
-            n.pos.z > f.min[1] &&
-            n.pos.z < f.max[1] &&
-            n.pos.y + 0.9 > y - 25 - 3 &&
-            n.pos.y < y + 3,
-        );
-        if (!hits) {
-          floors.push(f);
+        let y = base;
+        for (let low = clash(y); low < Infinity && y >= base - 20; low = clash(y))
+          y = Math.floor(low - 3);
+        if (y >= base - 20) {
+          floors.push({ y, min: [x0, z0], max: [x1, z1] });
           break;
         }
       }
@@ -1541,13 +1546,32 @@ export const expandCourse = (data: CourseData): ExpandedCourse => {
   const lights: LightDef[] = [];
   const r = expandRoute(data, g, lights);
   if (!r.start || !r.finish) throw new Error(`${data.name}: a course needs a start and a finish`);
+  // everything of the course you can stand on (the deadly floors keep clear of it)
+  const solid: number[][] = [];
+  for (const b of g.boxes) {
+    if (b.noCollide) continue;
+    const a = aabbOf(b);
+    if (b.prism === undefined) {
+      solid.push(a);
+      continue;
+    }
+    // a surf ramp: its underside, point by point (its bounding box reaches far past its slope)
+    const nx = Math.ceil(b.h.x);
+    const nz = Math.ceil(b.h.z);
+    for (let i = -nx; i <= nx; i++)
+      for (let j = -nz; j <= nz; j++) {
+        const l = v3((b.h.x * i) / nx, -b.h.y, (b.h.z * j) / nz);
+        const w = add(b.c, b.q ? qRotate(b.q, l) : l);
+        solid.push([w.x, w.y, w.z, w.x, a[4], w.z]);
+      }
+  }
   expandScenery(
     data,
     g,
     r.line.map((n) => n.pos),
     lights,
   );
-  const killVolumes = expandFloors(data, g, r.line);
+  const killVolumes = expandFloors(data, g, r.line, solid);
   const surf = data.kind === 'surf';
   const sky = data.sky;
   const def: LevelDef = {

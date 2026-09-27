@@ -28,6 +28,7 @@ import {
   mapDef,
   MAPS,
   pointInAabb,
+  qRotate,
   raceMaps,
   raceTracks,
   raycast,
@@ -168,6 +169,53 @@ describe.each(TRACKS)('%s', (id) => {
       for (let d = 1; d <= 45 && !hit; d += 1)
         hit = kills.some((k) => pointInAabb(v3(body.x, body.y - d, body.z), k.min, k.max));
       expect(hit, `no floor under ${JSON.stringify(n.pos)}`).toBe(true);
+      // and beside it (falling off the side of a ramp or a pad)
+      for (const [dx, dz] of [
+        [14, 0],
+        [-14, 0],
+        [0, 14],
+        [0, -14],
+      ]) {
+        let side = false;
+        for (let d = 0; d <= 45 && !side; d += 1)
+          side = kills.some((k) =>
+            pointInAabb(v3(body.x + dx, body.y - d, body.z + dz), k.min, k.max),
+          );
+        expect(side, `no floor beside ${JSON.stringify(n.pos)}`).toBe(true);
+      }
+    }
+  });
+
+  it('nothing you can stand on is inside a deadly floor (riding low on a surf ramp is safe)', () => {
+    const kills = race.killVolumes ?? [];
+    const deadly = (x: number, y: number, z: number) =>
+      [0.1, 1.1].some((up) => kills.some((k) => pointInAabb(v3(x, y + up, z), k.min, k.max)));
+    for (const b of def.boxes) {
+      if (b.noCollide) continue;
+      const at = (x: number, y: number, z: number) => {
+        const w = b.q ? qRotate(b.q, v3(x, y, z)) : v3(x, y, z);
+        return v3(b.c.x + w.x, b.c.y + w.y, b.c.z + w.z);
+      };
+      const pts = [];
+      if (b.prism !== undefined) {
+        // both slanted faces, ridge to foot
+        const ridge = Math.max(-1, Math.min(1, b.prism)) * b.h.z;
+        for (let i = 0; i <= 10; i++)
+          for (let j = 0; j <= 10; j++)
+            for (const foot of [-b.h.z, b.h.z])
+              pts.push(
+                at(
+                  -b.h.x + (b.h.x * i) / 5,
+                  b.h.y - (b.h.y * j) / 5,
+                  ridge + ((foot - ridge) * j) / 10,
+                ),
+              );
+      } else
+        for (let i = 0; i <= 4; i++)
+          for (let j = 0; j <= 4; j++)
+            pts.push(at(-b.h.x + (b.h.x * i) / 2, b.h.y, -b.h.z + (b.h.z * j) / 2));
+      for (const p of pts)
+        expect(deadly(p.x, p.y, p.z), `deadly spot ${JSON.stringify(p)}`).toBe(false);
     }
   });
 

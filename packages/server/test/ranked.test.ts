@@ -3,7 +3,7 @@ import { createServices, type Services } from '../src/services';
 import { hashToken } from '../src/services/accounts';
 import { BAN_STEPS_MS } from '../src/services/ranked';
 import type { MatchResult } from '../src/game/rules/match';
-import { MatchRules } from '../src/game/rules/match';
+import { MatchRules, RANKED_START_DELAY_SEC } from '../src/game/rules/match';
 import { Room } from '../src/game/room';
 import type { Conn } from '../src/game/conn';
 import { startGameServer, type GameServer } from '../src/app';
@@ -53,7 +53,7 @@ describe('accounts & ranked store', () => {
     expect(again.created).toBe(false);
     expect(again.account.id).toBe(a.account.id);
     expect(again.account.name).toBe('Alice2');
-    const rows = s.db.prepare('SELECT token_hash FROM players').all() as { token_hash: string }[];
+    const rows = s.db.prepare('SELECT token_hash FROM sessions').all() as { token_hash: string }[];
     expect(rows.some((r) => r.token_hash === a.token)).toBe(false);
     expect(rows.some((r) => r.token_hash === hashToken(a.token))).toBe(true);
     // a bad token just makes a new account
@@ -346,7 +346,8 @@ describe('ranked forfeits', () => {
     room.addMember('B', fake(), { team: 1, accountId: 12 });
     let res: MatchResult | null = null;
     rules.onResult = (_r, x) => (res = x);
-    for (let i = 0; i < 60 * 4; i++) room.tick();
+    // (ranked rooms warm up longer: the versus screen)
+    for (let i = 0; i < 60 * (RANKED_START_DELAY_SEC + 1); i++) room.tick();
     expect(rules.ms.phase).toBe('spawnLock');
     room.removeMember(a.id);
     await Promise.resolve();

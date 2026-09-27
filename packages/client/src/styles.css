@@ -863,33 +863,6 @@ table.controls td.key {
   text-align: center;
   text-shadow: 0 2px 8px #000;
 }
-.match-wordmark {
-  font-size: 72px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  line-height: 1;
-  background: linear-gradient(90deg, #19e3ff, #ffffff 50%, #ff8a1f);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: none;
-  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.6));
-  opacity: 0;
-  transform: scale(1.15);
-  transition:
-    opacity 0.35s,
-    transform 0.5s ease-out;
-  margin-bottom: 6px;
-}
-.match-wordmark.show {
-  opacity: 1;
-  transform: scale(1);
-}
-@media (max-width: 700px) {
-  .match-wordmark {
-    font-size: 40px;
-  }
-}
 .match-banner {
   font-size: 46px;
   font-weight: 900;

@@ -14,7 +14,7 @@ import {
   startMatch,
   updateMatch,
   applyBotObjectives,
-  mapDef,
+  mapDefForSize,
   csConfig,
   DEFAULT_MATCH_MAP,
   type MatchState,
@@ -41,7 +41,7 @@ export interface PracticeOptions {
   /**
    * 'match': rounds + Controller & Tower; 'bomb': rounds + plant/defuse; 'elim': rounds, last
    * team standing (Boomerang kit; 'elim-cs' with the CS kit); 'cs': CS mode (bomb rules with
-   * AK + Deagle, half-speed movement); 'deathmatch': respawning.
+   * AK + Deagle, 70 % movement speed); 'deathmatch': respawning.
    */
   kind?: PracticeKind;
   /** map of a 'match' (default: the default match map, Split Deck) */
@@ -59,10 +59,14 @@ export const createPracticeSession = (
 ): { session: LocalSession; stats: StatsTracker } => {
   const isMatch = opts.kind !== undefined && opts.kind !== 'deathmatch';
   const cs = isCsKind(opts.kind);
-  // CS mode runs the sim with its own config (guns, half-speed movement)
+  // CS mode runs the sim with its own config (guns, 70 % movement speed)
   const config = cs ? csConfig(opts.config) : opts.config;
+  // (matches: smaller teams play a smaller map, like online — level/size-walls.ts)
   const levelDef =
-    opts.levelDef ?? (isMatch ? mapDef(opts.mapId ?? DEFAULT_MATCH_MAP()) : buildTrainingBay());
+    opts.levelDef ??
+    (isMatch
+      ? mapDefForSize(opts.mapId ?? DEFAULT_MATCH_MAP(), Math.min(5, Math.max(1, opts.size)))
+      : buildTrainingBay());
   const mems: BotMemory[] = [];
   const match: MatchState | undefined = isMatch
     ? createMatch(

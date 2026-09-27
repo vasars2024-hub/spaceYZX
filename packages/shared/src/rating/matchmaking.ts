@@ -1,5 +1,8 @@
 // Ranked queue logic (pure): who plays whom. The server calls findMatches() every few
 // seconds with the current queue and the current time; nothing here keeps state.
+//
+// An entry is a solo player or a party (`size` players searching as one unit, rated by the
+// party rating, always on one team — ladders.ts partyRating).
 
 import type { RankedMode } from './global';
 
@@ -8,7 +11,13 @@ export interface QueueEntry {
   rating: number;
   pingMs: number;
   joinedAtMs: number;
+  /** players in this entry (a party; default 1). They always play on the same team. */
+  size?: number;
+  /** a wide-gap full-team party: only matched at this team size (ladders.ts partyOnlySize) */
+  onlySize?: number | null;
 }
+
+const sizeOf = (e: QueueEntry): number => Math.max(1, e.size ?? 1);
 
 export interface MatchmakingOptions {
   /** Starting rating window (± points). */
@@ -93,9 +102,46 @@ export const balanceTeams = (players: readonly QueueEntry[]): [QueueEntry[], Que
 };
 
 /**
+ * Split whole entries (parties stay together) into two teams of `teamSize` players with the
+ * closest total rating (each entry weighs its rating × its size). Null: no exact split exists.
+ * Tries every split (a match has at most 10 entries), deterministic.
+ */
+export const splitParties = (
+  entries: readonly QueueEntry[],
+  teamSize: number,
+): [QueueEntry[], QueueEntry[]] | null => {
+  const list = [...entries].sort((a, b) => b.rating - a.rating || byId(a.id, b.id));
+  const n = list.length;
+  const total = list.reduce((s, e) => s + e.rating * sizeOf(e), 0);
+  let best: number | null = null;
+  let bestDiff = Infinity;
+  // the first entry is always on team A (halves the search, and A/B are symmetric)
+  for (let mask = 1; mask < 1 << n; mask += 2) {
+    let players = 0;
+    let sum = 0;
+    for (let i = 0; i < n; i++)
+      if (mask & (1 << i)) {
+        players += sizeOf(list[i]);
+        sum += list[i].rating * sizeOf(list[i]);
+      }
+    if (players !== teamSize) continue;
+    const diff = Math.abs(total - 2 * sum);
+    if (diff < bestDiff - 1e-9) {
+      bestDiff = diff;
+      best = mask;
+    }
+  }
+  if (best === null) return null;
+  const a = list.filter((_, i) => best! & (1 << i));
+  const b = list.filter((_, i) => !(best! & (1 << i)));
+  return [a, b];
+};
+
+/**
  * Form as many matches as possible. Longest-waiting players are served first; each builds a
  * group from the closest ratings (similar ping as tie-breaker). A group is valid when its
- * rating spread fits in the widest window of the players involved. Deterministic.
+ * rating spread fits in the widest window of the players involved (and, with parties, when it
+ * splits into two full teams without breaking a party). Deterministic.
  */
 export const findMatches = (
   queue: readonly QueueEntry[],
@@ -104,9 +150,16 @@ export const findMatches = (
   opts: MatchmakingOptions = {},
 ): MatchmakingResult => {
   const o = { ...DEFAULTS, ...opts };
-  const size = (opts.teamSize ?? TEAM_SIZE[mode]) * 2;
+  const teamSize = opts.teamSize ?? TEAM_SIZE[mode];
+  const size = teamSize * 2;
+  // a party bigger than a team, or one that only plays at another size, sits this one out
+  const fits = (p: QueueEntry) =>
+    sizeOf(p) <= teamSize &&
+    (p.onlySize === undefined || p.onlySize === null || p.onlySize === teamSize);
   const windows = new Map(queue.map((p) => [p.id, searchWindow(p, nowMs, o)]));
-  const byWait = [...queue].sort((x, y) => x.joinedAtMs - y.joinedAtMs || byId(x.id, y.id));
+  const byWait = [...queue]
+    .filter(fits)
+    .sort((x, y) => x.joinedAtMs - y.joinedAtMs || byId(x.id, y.id));
   const taken = new Set<string>();
   const matches: FoundMatch[] = [];
 
@@ -124,23 +177,29 @@ export const findMatches = (
           byId(x.id, y.id),
       );
     const group = [anchor];
+    let players = sizeOf(anchor);
     let lo = anchor.rating;
     let hi = anchor.rating;
     let win = windows.get(anchor.id) ?? o.baseWindow;
     for (const c of candidates) {
-      if (group.length === size) break;
+      if (players === size) break;
+      if (players + sizeOf(c) > size) continue;
       const nLo = Math.min(lo, c.rating);
       const nHi = Math.max(hi, c.rating);
       const nWin = Math.max(win, windows.get(c.id) ?? o.baseWindow);
       if (nHi - nLo > nWin) continue;
       group.push(c);
+      players += sizeOf(c);
       lo = nLo;
       hi = nHi;
       win = nWin;
     }
-    if (group.length < size) continue;
+    if (players < size) continue;
+    const solo = group.every((p) => sizeOf(p) === 1);
+    const teams = solo ? balanceTeams(group) : splitParties(group, teamSize);
+    if (!teams) continue;
     for (const p of group) taken.add(p.id);
-    const [a, b] = balanceTeams(group);
+    const [a, b] = teams;
     matches.push({ teams: [a.map((p) => p.id), b.map((p) => p.id)] });
   }
 

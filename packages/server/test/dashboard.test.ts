@@ -119,6 +119,14 @@ describe('host dashboard', () => {
     expect(services.ranked.schedule().windows[0].days).toEqual([6]);
   });
 
+  it('sets the players-online thresholds that open each ranked queue', async () => {
+    const st = (await (await api('/status')).json()) as { thresholds: Record<string, number> };
+    expect(st.thresholds).toMatchObject({ premier: 20, 'premier-cs': 35, 'duels-1v1': 0 });
+    expect((await api('/thresholds', { premier: -3 })).status).toBe(400);
+    expect((await api('/thresholds', { premier: 8, race: 2 })).status).toBe(200);
+    expect(services.ranked.thresholds()).toMatchObject({ premier: 8, race: 2, 'premier-cs': 35 });
+  });
+
   it('toggles ranked, restarts and stops', async () => {
     await api('/ranked', { on: false });
     expect(services.queue.enabled).toBe(false);

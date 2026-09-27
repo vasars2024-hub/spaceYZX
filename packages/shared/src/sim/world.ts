@@ -60,6 +60,7 @@ export const newBoomerang = (owner: number, pos: Vec3): BoomerangState => ({
   recallTo: null,
   recallLethal: false,
   explosive: false,
+  stuck: null,
   bounced: false,
 });
 
@@ -144,6 +145,7 @@ export const createPlayer = (
     powerupCharges: 0,
     stun: 0,
     shield: false,
+    padFlight: false,
     lastHurtTick: -1000,
     lastAttacker: -1,
     kills: 0,
@@ -197,6 +199,20 @@ export const playerById = (world: WorldState, id: number): PlayerState | undefin
   world.players.find((p) => p.id === id);
 
 /**
+ * Damage for landing at `impact` m/s (speed into the ground): none from `fallSafeHeight` or
+ * lower, then growing linearly with the impact speed to a certain kill at `fallLethalHeight`.
+ */
+export const fallDamage = (impact: number, ctx: SimContext): number => {
+  const g = ctx.config.movement.gravity;
+  const c = ctx.config.combat;
+  const safe = Math.sqrt(2 * g * c.fallSafeHeight);
+  const lethal = Math.sqrt(2 * g * c.fallLethalHeight);
+  if (!(impact > safe)) return 0;
+  if (impact >= lethal) return 9999;
+  return Math.round((c.maxHp * (impact - safe)) / (lethal - safe));
+};
+
+/**
  * Advance the world by one tick. `inputs` maps player id -> input for this tick; missing
  * inputs mean "no buttons, same view".
  */
@@ -219,10 +235,22 @@ export const step = (
     }
     // race tracks: the respawn key, then (after moving) falls, gates and fuel cells
     const race = !!ctx.level.def.race;
+    const eventsBefore = world.events.length;
     if (race) updateRaceInput(world, ctx, p, input);
     updateMovement(world, ctx, p, input);
     updateDevices(world, ctx, p);
     if (race) updateRaceBody(world, ctx, p);
+    // a hard landing hurts (races have no damage; a launch pad's landing never does)
+    const tickEvents = world.events.slice(eventsBefore);
+    const landed = tickEvents.find((e) => e.type === 'land' && e.player === p.id);
+    if (landed && landed.type === 'land') {
+      const dmg = race || p.padFlight ? 0 : fallDamage(landed.speed, ctx);
+      // the pad flight is over, unless a pad threw you again this same tick
+      if (!tickEvents.some((e) => e.type === 'launch' && e.player === p.id)) p.padFlight = false;
+      if (dmg > 0)
+        applyDamage(world, ctx, p.id, p, dmg, 'world', false, clone(p.pos), clone(p.pos));
+    }
+    if (!p.alive) continue;
     // fell into a deadly volume (a gorge): gone, like falling off the sky duel arena
     const kills = ctx.level.def.killVolumes;
     if (kills)
@@ -232,20 +260,19 @@ export const step = (
           break;
         }
     if (!p.alive) continue;
-    // fell out of the ship: bounce back into bounds (not up at the sky duel arena: falling off
-    // it is deadly, the match rules end you there)
+    // left the map (e.g. walked off the outside of the hull with gravity boots): dead (races
+    // handle their own falls; at the sky duel arena the match rules end you)
     const d = ctx.level.def;
     if (
+      !race &&
       !pointInAabb(
         p.pos,
         madd(d.boundsMin, v3(1, 1, 1), -20),
         madd(d.boundsMax, v3(1, 1, 1), 20),
       ) &&
       !inSkyZone(d, p.pos)
-    ) {
-      const s = d.spawns.find((sp) => sp.team === undefined || sp.team === p.team) ?? d.spawns[0];
-      respawnPlayer(world, p, s.pos, s.yawDeg, ctx.config);
-    }
+    )
+      applyDamage(world, ctx, p.id, p, 9999, 'world', false, clone(p.pos), clone(p.pos));
   }
   // races: no weapons, no damage, no power-ups
   if (ctx.level.def.race) return;

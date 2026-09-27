@@ -25,13 +25,13 @@ const memoryStore = (): RaceStore & { data: Map<string, string> } => {
 describe('offline race practice', () => {
   it('counts down, then bot racers run the track; tags show their places', () => {
     const { session, race } = createRacePractice({
-      track: 'race-canopy',
+      track: 'race-neon',
       bots: 3,
       skill: 'hard',
       config: defaultConfig(),
     });
     expect(session.world().players.length).toBe(4);
-    expect(race.track).toBe('race-canopy');
+    expect(race.track).toBe('race-neon');
     const idle = () => ({ buttons: 0, view: yawToView(0) });
     for (let i = 0; i < 60 * 8 && race.phase !== 'racing'; i++) session.update(1 / 60, idle);
     expect(race.phase).toBe('racing');
@@ -48,9 +48,9 @@ describe('offline race practice', () => {
   });
 
   it('picks a race track (the default one for anything else)', () => {
-    expect(raceTrackId('race-canopy')).toBe('race-canopy');
-    expect(raceTrackId('split-deck')).toBe('race-cliffline');
-    expect(raceTrackId(undefined)).toBe('race-cliffline');
+    expect(raceTrackId('race-neon')).toBe('race-neon');
+    expect(raceTrackId('split-deck')).toBe('race-sunspire');
+    expect(raceTrackId(undefined)).toBe('race-sunspire');
   });
 });
 
@@ -141,7 +141,7 @@ describe('ranked race results line', () => {
   it('shows the rating change (or placement) and the server best', () => {
     const base = {
       race: 1,
-      track: 'race-cliffline',
+      track: 'race-sunspire',
       placement: { done: 5, need: 5 },
       timeMs: 61_230,
       newBest: false,

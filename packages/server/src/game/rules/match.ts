@@ -14,9 +14,13 @@ import {
   takeOverInMatch,
 } from '@space-yz/shared';
 import type { Member, Room, Rules } from '../room';
+import { MatchStats, type PlayerMatchStats } from '../match-stats';
 
 export interface MatchResult {
-  mode: TeamMode;
+  /** the room's team size ('1v1'…'5v5'), or 'brawl' / 'brawl-ffa' (brawl.ts brawlMatchResult) */
+  mode: TeamMode | 'brawl' | 'brawl-ffa';
+  /** 'tower', 'bomb', 'elim'… (profiles count wins per objective) */
+  objective?: string;
   winner: 0 | 1 | null;
   reason: string;
   scores: [number, number];
@@ -31,12 +35,18 @@ export interface MatchResult {
     deaths: number;
     teamKills: number;
     damage: number;
+    /** shooting stats this match (match-stats.ts) and seconds played */
+    stats?: PlayerMatchStats & { playSec: number };
+    /** free-for-all: final place (1 = won) */
+    place?: number | null;
   }[];
   /** players who left before the end (count as losses in ranked) */
   leavers: { accountId: number | null; team: 0 | 1 }[];
 }
 
 const START_DELAY_SEC = 3;
+/** ranked: a longer warm-up so everyone can read the versus screen (odds, ratings) */
+export const RANKED_START_DELAY_SEC = 7;
 
 /** Anti-grief thresholds (per match). A warning comes first, then a kick. */
 export const GRIEF = {
@@ -62,6 +72,8 @@ export class MatchRules implements Rules {
   /** ranked rooms: the results screen is over (the room should close) */
   onFinished: ((room: Room) => void) | null = null;
   private grief = new Map<number, { teamKills: number; warned: Set<string> }>();
+  /** shooting stats of the match being played (profiles) */
+  readonly stats = new MatchStats();
 
   constructor(
     readonly mode: TeamMode,
@@ -94,13 +106,16 @@ export class MatchRules implements Rules {
   afterStep(room: Room): void {
     const { world, ctx } = room;
     const ms = this.ms;
+    if (ms.phase !== 'warmup' && ms.phase !== 'matchEnd') this.stats.observe(world);
     if (ms.phase === 'warmup') {
       if (!this.startAt && this.full(room))
-        this.startAt = world.tick + Math.round(START_DELAY_SEC * 60);
+        this.startAt =
+          world.tick + Math.round((room.ranked ? RANKED_START_DELAY_SEC : START_DELAY_SEC) * 60);
       if (this.startAt && world.tick >= this.startAt) {
         this.startAt = 0;
         this.leavers = [];
         this.grief.clear();
+        this.stats.reset();
         startMatch(ms, world, ctx);
       }
     }
@@ -163,6 +178,7 @@ export class MatchRules implements Rules {
     const ms = this.ms;
     return {
       mode: this.mode,
+      objective: ms.objective,
       winner: ms.winner,
       reason: ms.endReason,
       scores: [...ms.scores] as [number, number],
@@ -179,6 +195,13 @@ export class MatchRules implements Rules {
           deaths: p.deaths,
           teamKills: p.teamKills,
           damage: Math.round(p.damageDealt),
+          stats: {
+            ...this.stats.get(p.id),
+            playSec: Math.max(
+              0,
+              Math.round((room.world.tick - Math.max(ms.matchStartTick, m?.joinedTick ?? 0)) / 60),
+            ),
+          },
         };
       }),
       leavers: this.leavers,

@@ -20,20 +20,88 @@ export const toWorld = (b: BoxShape, l: Vec3): Vec3 =>
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
-/** Squared distance from a box-local point to the box. */
+/**
+ * Closest point of a prism's cross-section (the triangle (-hz, -hy), (hz, -hy), (ridge, hy) in
+ * local (z, y)) to (z, y): Ericson's closest-point-on-triangle, in 2D. Writes into `out`.
+ */
+const TRI = { z: 0, y: 0 };
+const triClosest = (b: BoxShape, z: number, y: number): { z: number; y: number } => {
+  const pr = b.prism!;
+  const az = -b.h.z,
+    ay = -b.h.y;
+  const bz = b.h.z,
+    by = -b.h.y;
+  const cz = pr.ridge,
+    cy = b.h.y;
+  const abz = bz - az,
+    aby = by - ay;
+  const acz = cz - az,
+    acy = cy - ay;
+  const apz = z - az,
+    apy = y - ay;
+  const d1 = abz * apz + aby * apy;
+  const d2 = acz * apz + acy * apy;
+  if (d1 <= 0 && d2 <= 0) return set2(az, ay);
+  const bpz = z - bz,
+    bpy = y - by;
+  const d3 = abz * bpz + aby * bpy;
+  const d4 = acz * bpz + acy * bpy;
+  if (d3 >= 0 && d4 <= d3) return set2(bz, by);
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3);
+    return set2(az + abz * v, ay + aby * v);
+  }
+  const cpz = z - cz,
+    cpy = y - cy;
+  const d5 = abz * cpz + aby * cpy;
+  const d6 = acz * cpz + acy * cpy;
+  if (d6 >= 0 && d5 <= d6) return set2(cz, cy);
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6);
+    return set2(az + acz * w, ay + acy * w);
+  }
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+    return set2(bz + (cz - bz) * w, by + (cy - by) * w);
+  }
+  // inside
+  return set2(z, y);
+};
+const set2 = (z: number, y: number): { z: number; y: number } => {
+  TRI.z = z;
+  TRI.y = y;
+  return TRI;
+};
+
+/** Squared distance from a box-local point to the box (or prism). */
 const localDistSq = (b: BoxShape, x: number, y: number, z: number): number => {
   const dx = Math.max(Math.abs(x) - b.h.x, 0);
+  if (b.prism) {
+    const t = triClosest(b, z, y);
+    const ez = z - t.z;
+    const ey = y - t.y;
+    return dx * dx + ez * ez + ey * ey;
+  }
   const dy = Math.max(Math.abs(y) - b.h.y, 0);
   const dz = Math.max(Math.abs(z) - b.h.z, 0);
   return dx * dx + dy * dy + dz * dz;
 };
 
+/** Closest box-local point of the box (or prism) to a box-local point. */
+const localClosest = (b: BoxShape, x: number, y: number, z: number): Vec3 => {
+  if (b.prism) {
+    const t = triClosest(b, z, y);
+    return v3(clamp(x, -b.h.x, b.h.x), t.y, t.z);
+  }
+  return v3(clamp(x, -b.h.x, b.h.x), clamp(y, -b.h.y, b.h.y), clamp(z, -b.h.z, b.h.z));
+};
+
 export const closestPointOnBox = (b: BoxShape, p: Vec3): Vec3 => {
   const l = toLocal(b, p);
-  return toWorld(
-    b,
-    v3(clamp(l.x, -b.h.x, b.h.x), clamp(l.y, -b.h.y, b.h.y), clamp(l.z, -b.h.z, b.h.z)),
-  );
+  return toWorld(b, localClosest(b, l.x, l.y, l.z));
 };
 
 export interface SegBoxResult {
@@ -89,10 +157,7 @@ export const segmentBoxClosest = (box: BoxShape, a: Vec3, b: Vec3): SegBoxResult
     ly = la.y + dy * t,
     lz = la.z + dz * t;
   const pSeg = toWorld(box, v3(lx, ly, lz));
-  const pBox = toWorld(
-    box,
-    v3(clamp(lx, -box.h.x, box.h.x), clamp(ly, -box.h.y, box.h.y), clamp(lz, -box.h.z, box.h.z)),
-  );
+  const pBox = toWorld(box, localClosest(box, lx, ly, lz));
   return { t, pSeg, pBox, distSq: best };
 };
 
@@ -121,11 +186,29 @@ const satPush = (box: BoxShape, a: Vec3, b: Vec3, r: number): { normal: Vec3; de
     const h = box.h[k];
     const pushPos = h - smin; // move +axis so capsule min reaches box max
     const pushNeg = smax + h; // move -axis
-    if (pushPos < best.depth) best = { normal: axis, depth: pushPos };
+    // (a prism has no top face: its slanted faces below stand in for it)
+    if (pushPos < best.depth && !(box.prism && k === 'y')) best = { normal: axis, depth: pushPos };
     if (pushNeg < best.depth) best = { normal: scale(axis, -1), depth: pushNeg };
   }
+  const pr = box.prism;
+  if (pr)
+    for (const [nz, ny, d] of [
+      [pr.lz, pr.ly, pr.ld],
+      [pr.rz, pr.ry, pr.rd],
+    ]) {
+      const push = d - Math.min(nz * la.z + ny * la.y, nz * lb.z + ny * lb.y) + r;
+      if (push < best.depth) best = { normal: localDir(box, 0, ny, nz), depth: push };
+    }
   return best;
 };
+
+/** A box-local direction in world space. */
+const localDir = (b: BoxShape, x: number, y: number, z: number): Vec3 =>
+  v3(
+    b.ax.x * x + b.ay.x * y + b.az.x * z,
+    b.ax.y * x + b.ay.y * y + b.az.y * z,
+    b.ax.z * x + b.ay.z * y + b.az.z * z,
+  );
 
 export interface Capsule {
   center: Vec3;
@@ -183,9 +266,11 @@ export const depenetrate = (
   level: Level,
   cap: Capsule,
   iterations = 5,
-): { center: Vec3; normals: Vec3[] } => {
+): { center: Vec3; normals: Vec3[]; boxes: number[] } => {
   let center = cap.center;
   const normals: Vec3[] = [];
+  /** the box behind each normal */
+  const boxes: number[] = [];
   for (let it = 0; it < iterations; it++) {
     const contacts = capsuleContacts(level, { ...cap, center });
     let deepest: Contact | null = null;
@@ -194,8 +279,9 @@ export const depenetrate = (
     if (!deepest) break;
     center = madd(center, deepest.normal, deepest.depth + 1e-4);
     normals.push(deepest.normal);
+    boxes.push(deepest.box);
   }
-  return { center, normals };
+  return { center, normals, boxes };
 };
 
 export interface RayHit {
@@ -244,11 +330,35 @@ export const rayBox = (
     if (t2 < tmax) tmax = t2;
     if (tmin > tmax) return null;
   }
+  // a prism: clip by its two slanted faces too (Cyrus–Beck)
+  const pr = box.prism;
+  let slant: Vec3 | null = null;
+  if (pr)
+    for (const [nz, ny, d0] of [
+      [pr.lz, pr.ly, pr.ld],
+      [pr.rz, pr.ry, pr.rd],
+    ]) {
+      const denom = nz * d.z + ny * d.y;
+      const num = d0 + radius - (nz * o.z + ny * o.y);
+      if (Math.abs(denom) < 1e-12) {
+        if (num < 0) return null;
+        continue;
+      }
+      const t = num / denom;
+      if (denom < 0) {
+        if (t > tmin) {
+          tmin = t;
+          slant = localDir(box, 0, ny, nz);
+        }
+      } else if (t < tmax) tmax = t;
+      if (tmin > tmax) return null;
+    }
   if (tmax < 0 || tmin > maxDist) return null;
   if (tmin < 0) {
     // origin inside: report a zero-distance hit with the ray's reverse as normal
     return { t: 0, normal: scale(dir, -1) };
   }
+  if (slant) return { t: tmin, normal: slant };
   const axis = nAxis === 0 ? box.ax : nAxis === 1 ? box.ay : box.az;
   return { t: tmin, normal: scale(axis, nSign) };
 };
@@ -414,6 +524,22 @@ export const nearestSurface = (
 /** Snap a direction to the box's nearest face normal (so mag-boots align to faces, not edges). */
 export const faceNormal = (box: BoxShape, n: Vec3): Vec3 => {
   const cands = [box.ax, box.ay, box.az];
+  const pr = box.prism;
+  if (pr) {
+    // the slanted faces (outward only), then the base and the ends
+    const l = localDir(box, 0, pr.ly, pr.lz);
+    const r = localDir(box, 0, pr.ry, pr.rz);
+    let best = scale(box.ay, -1);
+    let bestDot = -dot(box.ay, n);
+    for (const c of [l, r, box.ax, scale(box.ax, -1)]) {
+      const d = dot(c, n);
+      if (d > bestDot) {
+        bestDot = d;
+        best = c;
+      }
+    }
+    return normalize(best);
+  }
   let best = box.ay;
   let bestDot = -Infinity;
   for (const a of cands) {

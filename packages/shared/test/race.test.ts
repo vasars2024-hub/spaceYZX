@@ -12,7 +12,6 @@ import {
   raceJoin,
   raceLeave,
   raceView,
-  RaceCourse,
   requestRaceStart,
   resetRacer,
   step,
@@ -20,7 +19,6 @@ import {
   updateRace,
   v3,
   yawToView,
-  type CourseTheme,
   type LevelDef,
   type PlayerInput,
   type PlayerState,
@@ -29,40 +27,51 @@ import {
   type WorldState,
 } from '../src/index';
 
-const THEME: CourseTheme = {
-  path: { mat: 'rock', color: 0x888888, thick: 1, width: 6 },
-  gate: 0xff9a3c,
-  arrow: 0xffffff,
-  risky: 0xff0000,
-  finish: 0xffd24a,
-  pad: { mat: 'wood', color: 0xaa3322 },
-  post: { mat: 'wood', color: 0x664422 },
-};
+/** A gate across the track at z (heading north): the respawn just past it. */
+const gateAt = (z: number) => ({
+  min: v3(-5, 48.5, z - 5),
+  max: v3(5, 56, z + 5),
+  respawn: v3(0, 50, z - 2.5),
+  yawDeg: 0,
+});
 
 /**
  * A short straight track high in the air: start, gate 1 at 30 m, gate 2 at 60 m, the finish at
  * 90 m (all heading north, -z); a fuel cell 10 m in. Falling off: below y 40.
  */
 const testTrack = (): LevelDef => {
-  const c = RaceCourse.create(THEME, v3(0, 50, 0), 0);
-  c.run(4);
-  const grid = c.grid();
-  const start = { respawn: { ...c.pos }, yawDeg: 0 };
-  c.run(10).fuel().run(16).gate().run(30).gate().run(30).finishHere().run(12);
-  c.buildGeometry();
-  const race = c.raceDef({ parSec: 20, start, grid, killY: 40 });
+  const grid = Array.from({ length: 8 }, (_, i) => ({
+    pos: v3(((i % 4) - 1.5) * 1.4, 50, -2.5 + Math.floor(i / 4) * 2.5),
+    yawDeg: 0,
+  }));
+  const line = [0, -14, -30, -45, -60, -75, -90, -100].map((z) => ({
+    pos: v3(0, 50, z),
+    cp: z > -30 ? 0 : z > -60 ? 1 : z > -90 ? 2 : 3,
+  }));
   return {
     name: 'test track',
     boundsMin: v3(-60, 0, -160),
     boundsMax: v3(60, 100, 40),
     defaultGravity: v3(0, -1, 0),
-    boxes: c.b.boxes,
+    // one straight walkway, 6 m wide
+    boxes: [{ c: v3(0, 49.5, -50), h: v3(3, 0.5, 56), mat: 'rock', color: 0x888888 }],
     zones: [],
     rails: [],
     pads: [],
     spawns: grid,
     towers: [],
-    race,
+    race: {
+      parSec: 20,
+      start: { respawn: v3(0, 50, -4), yawDeg: 0 },
+      grid,
+      checkpoints: [gateAt(-30), gateAt(-60)],
+      finish: gateAt(-90),
+      killY: 40,
+      killVolumes: [],
+      fuelCells: [v3(0, 51.1, -14)],
+      line,
+      forks: [],
+    },
   };
 };
 
@@ -248,18 +257,19 @@ describe('race rules: surge and fuel', () => {
     toGo(r);
     ticks(r, 60, { 1: { buttons: Btn.Forward } });
     const before = Math.hypot(p.vel.x, p.vel.z);
-    expect(before).toBeCloseTo(m.sprintSpeed, 0);
+    expect(before).toBeCloseTo(m.raceSprintSpeed, 0);
     tick(r, { 1: { buttons: Btn.Forward | Btn.Dash } });
     expect(p.surgeLeft).toBe(2);
-    expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThan(m.sprintSpeed * m.raceSurgeMul - 0.6);
+    expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThan(m.raceSprintSpeed * m.raceSurgeMul - 0.6);
     // it lasts about a second, then running speed is back to normal
     ticks(r, 40, { 1: { buttons: Btn.Forward } });
-    expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThan(m.sprintSpeed * 1.4);
+    expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThan(m.raceSprintSpeed * 1.4);
     ticks(r, 60, { 1: { buttons: Btn.Forward } });
-    expect(Math.hypot(p.vel.x, p.vel.z)).toBeLessThan(m.sprintSpeed + 0.5);
+    expect(Math.hypot(p.vel.x, p.vel.z)).toBeLessThan(m.raceSprintSpeed + 0.5);
+    // (the rest facing back the way you came: the test track is short at race speed)
     for (let i = 0; i < 4; i++) {
-      tick(r, { 1: { buttons: Btn.Forward | Btn.Dash } });
-      ticks(r, 70, { 1: { buttons: Btn.Forward } });
+      tick(r, { 1: { buttons: Btn.Dash, view: yawToView(180) } });
+      ticks(r, 70, { 1: { view: yawToView(180) } });
     }
     expect(p.surgeLeft).toBe(0);
     expect(r.st.entries[0].surges).toBe(3);
@@ -313,8 +323,9 @@ describe('race rules: finish', () => {
     );
     const t1 = res.standings[0].timeMs!;
     const t2 = res.standings[1].timeMs!;
-    expect(t1).toBeGreaterThan(9000);
-    expect(t1).toBeLessThan(13000);
+    // (90 m at the race sprint, 12 m/s)
+    expect(t1).toBeGreaterThan(6500);
+    expect(t1).toBeLessThan(9500);
     expect(t2 - t1).toBeGreaterThan(250);
     expect(t2 - t1).toBeLessThan(450);
     // splits at every gate: 2 checkpoints + the finish
@@ -379,7 +390,7 @@ describe('race rules: finish', () => {
     const rep = driveRaceLine(ctx, world, p, step);
     expect(rep.finished).toBe(true);
     expect(rep.splitsSec.length).toBe(3);
-    expect(rep.timeSec).toBeGreaterThan(9);
-    expect(rep.timeSec).toBeLessThan(12);
+    expect(rep.timeSec).toBeGreaterThan(6.5);
+    expect(rep.timeSec).toBeLessThan(9.5);
   });
 });

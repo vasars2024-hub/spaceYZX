@@ -1,7 +1,8 @@
-// Race track timing: drives a steady bot racer (sprinting on the racing line: no slides, no
-// surges, no shortcuts, no bunny hops) through every race track in the real simulation and
+// Race track timing: drives a skilled bot racer through every race track and surf map in the
+// real simulation (bots/racer.ts: sprinting, bunny-hopping with first-tick jumps and perfect
+// air-strafes, surfing, strafed flights that land on target; no SURGE, no hesitation) and
 // prints its time, its splits and where it fell. The track tests
-// (packages/shared/test/race-tracks.test.ts) check the same run lands in 2:30–3:30.
+// (packages/shared/test/race-tracks.test.ts) check the same runs.
 //
 //   npx tsx tools/race/time-tracks.ts               every race track
 //   npx tsx tools/race/time-tracks.ts race-canopy   one track
@@ -17,6 +18,8 @@ import {
   raceMaps,
   resetRacer,
   step,
+  HUMAN_RACER,
+  STEADY_RACER,
   TICK_DT,
 } from '@space-yz/shared';
 
@@ -33,7 +36,7 @@ const lineLength = (id: string): number => {
 };
 
 /** Time a steady racer needs on a track (seconds), with the run report. */
-export const timeTrack = (id: string) => {
+export const timeTrack = (id: string, human: boolean | number = false) => {
   const def = mapDef(id);
   const race = def.race!;
   const config = defaultConfig();
@@ -42,11 +45,15 @@ export const timeTrack = (id: string) => {
   const g = race.grid[0];
   const p = addPlayer(world, createPlayer(1, 0, g.pos, g.yawDeg, config));
   resetRacer(p, config.movement, g.pos, g.yawDeg, 0);
-  return driveRaceLine(ctx, world, p, step, undefined, race.parSec * 2.5);
+  const skill =
+    human === false ? STEADY_RACER : { ...HUMAN_RACER, strafeEff: human === true ? 0.6 : human };
+  return driveRaceLine(ctx, world, p, step, skill, race.parSec * 2.5);
 };
 
 const main = (): void => {
-  const want = process.argv[2];
+  const want = process.argv.slice(2).find((a) => !a.startsWith('--'));
+  const h = process.argv.find((a) => a.startsWith('--human'));
+  const human = h ? (h.includes('=') ? Number(h.split('=')[1]) : true) : false;
   const ids = raceMaps()
     .map((m) => m.id)
     .filter((id) => !want || id === want);
@@ -54,11 +61,12 @@ const main = (): void => {
     const def = mapDef(id);
     const race = def.race!;
     const t0 = Date.now();
-    const r = timeTrack(id);
+    const r = timeTrack(id, human);
     console.log(
       `${def.name} (${id}): ${r.finished ? formatRaceTime(r.timeSec * 1000) : 'DID NOT FINISH'}` +
         ` · par ${formatRaceTime(race.parSec * 1000)} · line ${Math.round(lineLength(id))} m` +
         ` · ${race.checkpoints.length} checkpoints · ${def.boxes.length} boxes` +
+        ` · top speed ${r.topSpeed.toFixed(1)} m/s` +
         ` · ${r.respawns} respawns · simulated in ${Date.now() - t0} ms`,
     );
     console.log(`  splits: ${r.splitsSec.map((s) => formatRaceTime(s * 1000)).join('  ')}`);

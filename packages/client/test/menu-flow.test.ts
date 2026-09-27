@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_SKILL_NAMES, MAPS, mapDef, type LevelDef, type MapInfo } from '@space-yz/shared';
+import {
+  BOT_SKILL_NAMES,
+  MAPS,
+  mapDef,
+  type LevelDef,
+  type MapInfo,
+  type QueueCounts,
+} from '@space-yz/shared';
 import {
   ARENA_ENABLED,
   BOT_SKILL_DESC,
+  BRAWL_FFA_ROOM_SIZES,
+  QUICK_PLAY_OFFLINE,
+  defaultNickname,
+  quickPlayMode,
+  isBrawlPractice,
+  isFreeRoam,
   ROOM_OBJECTIVES,
   ROOM_SIZES,
   hasKitChoice,
@@ -31,6 +44,7 @@ import {
   stepBefore,
 } from '../src/ui/flow';
 import { ICONS } from '../src/ui/icons';
+import { queueCountText } from '../src/ui/ranked';
 
 describe('menu flow: steps', () => {
   it('moves forward and back through a list of steps', () => {
@@ -102,7 +116,17 @@ describe('menu flow: practice wizard', () => {
 
   it('lists the five modes (Arena only behind its flag) with icons', () => {
     const ids = practiceModes(false).map((m) => m.id);
-    expect(ids).toEqual(['match', 'bomb', 'elim', 'cs', 'deathmatch', 'race']);
+    expect(ids).toEqual([
+      'brawl',
+      'brawl-ffa',
+      'match',
+      'bomb',
+      'elim',
+      'cs',
+      'deathmatch',
+      'freeroam',
+      'race',
+    ]);
     expect(modeChoice('elim').desc).toMatch(/Last team standing wins the round/);
     expect(practiceModes(true).map((m) => m.id)).toContain('arena');
     expect(practiceModes().some((m) => m.id === 'arena')).toBe(ARENA_ENABLED);
@@ -160,8 +184,18 @@ describe('menu flow: online room wizard', () => {
       expect([...best, ...other].some((m) => m.race)).toBe(false);
     }
     const tracks = mapsForMode('race').map((m) => m.id);
-    expect(tracks).toEqual(['race-cliffline', 'race-canopy']);
-    expect(roomMaps('race')).toEqual({ best: mapsForMode('race'), other: [] });
+    expect(tracks).toEqual([
+      'race-sunspire',
+      'race-neon',
+      'race-ember',
+      'surf-aurora',
+      'surf-cinder',
+    ]);
+    // (online: the race tracks first, the surf maps apart)
+    expect(roomMaps('race')).toEqual({
+      best: mapsForMode('race').filter((m) => !m.surf),
+      other: mapsForMode('race').filter((m) => m.surf),
+    });
   });
 
   it('race: a practice mode (time trial or bot racers) and a room objective', () => {
@@ -169,15 +203,15 @@ describe('menu flow: online room wizard', () => {
     expect(hasKitChoice('race')).toBe(false);
     expect(practiceSteps('race')).toEqual(['mode', 'map', 'setup']);
     const p = pickPracticeMode(initialPractice(), 'race');
-    expect(p.map).toBe('race-cliffline');
+    expect(p.map).toBe('race-sunspire');
     expect(p.step).toBe('map');
-    expect(practiceMapId(pickPracticeMap(p, 'race-canopy'))).toBe('race-canopy');
+    expect(practiceMapId(pickPracticeMap(p, 'race-neon'))).toBe('race-neon');
     expect(ICONS[modeChoice('race').icon]).toBeTruthy();
     const r = pickRoomObjective(initialRoom(), 'race');
-    expect(r.map).toBe('race-cliffline');
+    expect(r.map).toBe('race-sunspire');
     expect(
-      roomCreateArgs({ ...pickRoomMap(r, 'race-canopy'), size: '5v5', bots: true }),
-    ).toMatchObject({ mode: 'race', map: 'race-canopy', bots: 7 });
+      roomCreateArgs({ ...pickRoomMap(r, 'race-neon'), size: '5v5', bots: true }),
+    ).toMatchObject({ mode: 'race', map: 'race-neon', bots: 7 });
     expect(roomCreateArgs({ ...r, size: '1v1', bots: false })).toMatchObject({
       mode: 'race',
       bots: 0,
@@ -229,19 +263,53 @@ describe('menu flow: online room wizard', () => {
     ).toMatchObject({ mode: 'arena', bots: 5 });
   });
 
-  it('ranked is three cards: Premier, Duels (1v1 + 2v2, one rating) and Race; no Arena', () => {
+  it('ranked is four cards: Premier, Premier CS, Duels (1v1 + 2v2, one rating), Race; no Arena', () => {
     const cards = rankedCards();
-    expect(cards.map((c) => c.ladder)).toEqual(['premier', 'duels', 'race']);
-    expect(cards[2].queues).toEqual([{ id: 'race', label: 'Search race' }]);
+    expect(cards.map((c) => c.ladder)).toEqual(['premier', 'premier-cs', 'duels', 'race']);
+    expect(cards[3].queues).toEqual([{ id: 'race', label: 'Race' }]);
     expect(cards[0].queues.map((q) => q.id)).toEqual(['premier']);
-    expect(cards[1].queues.map((q) => [q.id, q.label])).toEqual([
+    expect(cards[1].queues.map((q) => q.id)).toEqual(['premier-cs']);
+    expect(cards[2].queues.map((q) => [q.id, q.label])).toEqual([
       ['duels-1v1', '1v1'],
       ['duels-2v2', '2v2'],
     ]);
     expect(cards.flatMap((c) => c.queues).some((q) => q.id.includes('arena'))).toBe(false);
     expect(rankedQueueName('premier')).toBe('Premier');
+    expect(rankedQueueName('premier-cs')).toBe('Premier CS');
     expect(rankedQueueName('duels-2v2')).toBe('Duels 2v2');
     expect(rankedQueueName('race')).toBe('Race');
+  });
+
+  it('queue cards show live numbers, the size that forms, or why they are closed', () => {
+    const counts = {
+      online: 12,
+      ranked: {
+        premier: { searching: 8, open: true, threshold: 20, forms: 4 },
+        'premier-cs': { searching: 0, open: false, threshold: 35, forms: null },
+        'duels-1v1': { searching: 1, open: true, threshold: 0, forms: 1 },
+        'duels-2v2': { searching: 3, open: true, threshold: 0, forms: null },
+        race: { searching: 0, open: true, threshold: 0, forms: null },
+      },
+      casual: {},
+    } as unknown as QueueCounts;
+    expect(queueCountText('premier', counts).text).toBe('8 searching · 4v4 ready');
+    expect(queueCountText('premier-cs', counts)).toEqual({
+      text: 'Opens at 35 online · now 12',
+      open: false,
+    });
+    expect(queueCountText('premier-cs', counts, 'Hours: Fri–Sun 18:00–23:00').text).toBe(
+      'Opens at 35 online · now 12 or Hours: Fri–Sun 18:00–23:00',
+    );
+    expect(queueCountText('duels-1v1', counts).text).toBe('1 searching');
+    expect(
+      queueCountText('premier', {
+        ...counts,
+        ranked: {
+          ...counts.ranked,
+          premier: { searching: 2, open: true, threshold: 0, forms: null },
+        },
+      }).text,
+    ).toBe('2 searching · 6 needed for 3v3');
   });
 
   it('ranked texts: countdown and placement', () => {
@@ -264,6 +332,76 @@ describe('menu flow: online room wizard', () => {
         rank: { label: 'Planet', color: '#4f8dff' },
       }),
     ).toBe('1240 · Planet');
+  });
+});
+
+describe('menu flow: Brawl and one-click Play', () => {
+  it('Brawl practice: TDM team sizes, FFA player counts, maps from the rotation', () => {
+    expect(isBrawlPractice('brawl')).toBe(true);
+    expect(isBrawlPractice('deathmatch')).toBe(false);
+    expect(sizesFor('brawl')).toEqual([2, 3, 4, 5]);
+    expect(sizesFor('brawl-ffa')).toEqual([4, 6, 8, 10]);
+    for (const mode of ['brawl', 'brawl-ffa'] as const) {
+      const maps = mapsForMode(mode).map((m) => m.id);
+      expect(maps).toContain('training-bay');
+      expect(maps).toContain('split-deck');
+      expect(mapsForMode(mode).some((m) => m.arena || m.race)).toBe(false);
+      expect(practiceSteps(mode)).toEqual(['mode', 'map', 'setup']);
+      expect(ICONS[modeChoice(mode).icon]).toBeTruthy();
+    }
+    // a size that doesn't fit the mode: its quick-play default
+    expect(pickPracticeMode({ ...initialPractice(), size: 1 }, 'brawl').size).toBe(
+      QUICK_PLAY_OFFLINE.tdm,
+    );
+    expect(pickPracticeMode({ ...initialPractice(), size: 1 }, 'brawl-ffa').size).toBe(
+      QUICK_PLAY_OFFLINE.ffa,
+    );
+    const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'brawl-ffa'), 'kestrel');
+    expect(practiceMapId(s)).toBe('kestrel');
+  });
+
+  it('Brawl rooms online: rotation maps only, bots fill TDM teams / FFA player counts', () => {
+    const ids = ROOM_OBJECTIVES.map((o) => o.id);
+    expect(ids).toContain('brawl');
+    expect(ids).toContain('brawl-ffa');
+    const r = pickRoomObjective(initialRoom(), 'brawl');
+    const { best, other } = roomMaps('brawl');
+    expect(other).toEqual([]);
+    expect(best.some((m) => m.id === r.map)).toBe(true);
+    expect(roomCreateArgs({ ...r, size: '3v3', bots: true })).toMatchObject({
+      mode: 'brawl',
+      bots: 5,
+      loadout: 'lethal',
+    });
+    const f = pickRoomObjective(initialRoom(), 'brawl-ffa');
+    expect(roomCreateArgs({ ...f, size: '5v5', bots: true })).toMatchObject({
+      mode: 'brawl-ffa',
+      bots: BRAWL_FFA_ROOM_SIZES['5v5'].players - 1,
+    });
+    expect(roomCreateArgs({ ...f, bots: false }).bots).toBe(0);
+  });
+
+  it('Play: the switch picks the playlist, first-timers get a nickname', () => {
+    expect(quickPlayMode('tdm')).toBe('brawl');
+    expect(quickPlayMode('ffa')).toBe('brawl-ffa');
+    expect(defaultNickname(() => 0)).toBe('Pilot1000');
+    expect(defaultNickname(() => 0.9999)).toMatch(/^Pilot\d{4}$/);
+    expect(defaultNickname().length).toBeLessThanOrEqual(16);
+  });
+});
+
+describe('menu flow: free roam', () => {
+  it('any map, a kit choice, no opponents to set up', () => {
+    expect(mapsForMode('freeroam').map((m) => m.id)).toEqual(MAPS.map((m) => m.id));
+    expect(hasKitChoice('freeroam')).toBe(true);
+    expect(isFreeRoam('freeroam')).toBe(true);
+    expect(isFreeRoam('deathmatch')).toBe(false);
+    expect(sizesFor('freeroam')).toEqual([1]);
+    expect(practiceSteps('freeroam')).toEqual(['mode', 'map', 'setup']);
+    const track = MAPS.find((m) => m.race)?.id ?? 'kestrel';
+    const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'freeroam'), track);
+    expect(practiceMapId(s)).toBe(track);
+    expect(ICONS[modeChoice('freeroam').icon]).toBeTruthy();
   });
 });
 

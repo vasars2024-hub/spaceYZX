@@ -8,9 +8,15 @@ import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
 import { buildSakuraHold } from './sakura-hold';
-import { buildCliffline } from './race-cliffline';
-import { buildCanopyRun } from './race-canopy';
+import type { CourseData } from '../course/types';
+import { expandCourse } from '../course/expand';
+import { sunspireCourse } from './race-sunspire';
+import { neonDriftCourse } from './race-neon';
+import { emberSpireCourse } from './race-ember';
+import { surfAuroraCourse } from './surf-aurora';
+import { surfCinderCourse } from './surf-cinder';
 import { withSkyArena } from '../sky-arena';
+import { FULL_TEAM_SIZE, sizedLevelDef } from '../size-walls';
 
 export interface MapInfo {
   id: string;
@@ -28,7 +34,25 @@ export interface MapInfo {
   premier?: boolean;
   /** a parkour race track (LevelDef.race, rules/race.ts): only for races, never other modes */
   race?: boolean;
+  /**
+   * a surf map (CS-style surf stages; also `race`): raced and timed like a track, listed apart
+   * ("Surf"), never picked by the ranked Race queue, its own best times
+   */
+  surf?: boolean;
+  /** built from course data (level/course: plain JSON, expanded by expandCourse) */
+  course?: () => CourseData;
 }
+
+/** A map built from course data. */
+const courseMap = (id: string, name: string, course: () => CourseData, surf = false): MapInfo => ({
+  id,
+  name,
+  build: () => expandCourse(course()).def,
+  course,
+  competitive: false,
+  race: true,
+  ...(surf ? { surf: true } : {}),
+});
 
 export const MAPS: MapInfo[] = [
   { id: 'training-bay', name: 'Training Bay', build: buildTrainingBay, competitive: false },
@@ -56,21 +80,24 @@ export const MAPS: MapInfo[] = [
     symmetric: true,
     arena: true,
   },
-  // parkour race tracks (rules/race.ts): never competitive, never in a combat mode's pool
-  {
-    id: 'race-cliffline',
-    name: 'Cliffline',
-    build: buildCliffline,
-    competitive: false,
-    race: true,
-  },
-  { id: 'race-canopy', name: 'Canopy Run', build: buildCanopyRun, competitive: false, race: true },
+  // parkour race tracks (rules/race.ts): never competitive, never in a combat mode's pool;
+  // sky courses built from course data (level/course), easiest first
+  courseMap('race-sunspire', 'Sunspire', sunspireCourse),
+  courseMap('race-neon', 'Neon Drift', neonDriftCourse),
+  courseMap('race-ember', 'Ember Spire', emberSpireCourse),
+  // surf maps: raced like tracks, listed apart, never in the ranked Race queue
+  courseMap('surf-aurora', 'Surf Aurora', surfAuroraCourse, true),
+  courseMap('surf-cinder', 'Surf Cinder', surfCinderCourse, true),
 ];
 
-/** The race tracks (race rooms and race practice only). */
+/** Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs). */
 export const raceMaps = (): MapInfo[] => MAPS.filter((m) => m.race);
+/** The race tracks only (the ranked Race queue's pool). */
+export const raceTracks = (): MapInfo[] => MAPS.filter((m) => m.race && !m.surf);
+/** The surf maps only. */
+export const surfMaps = (): MapInfo[] => MAPS.filter((m) => m.race && m.surf);
 /** The track race rooms use unless the players pick another one. */
-export const DEFAULT_RACE_MAP = 'race-cliffline';
+export const DEFAULT_RACE_MAP = 'race-sunspire';
 
 /** The map Arena 1v1 rooms and practice run on. */
 export const ARENA_MAP_ID = 'arena';
@@ -97,6 +124,23 @@ export const mapDef = (id: string): LevelDef => {
     if (m.competitive) d = withSkyArena(d);
     cache.set(m.id, d);
   }
+  return d;
+};
+
+const sizedCache = new Map<string, LevelDef>();
+
+/**
+ * The map as played with `teamSize` players per team (level/size-walls.ts: smaller teams get
+ * force-field walls closing parts of the map). Server rooms and clients build their level from
+ * this, so both agree. Cached; treat as read-only. Without walls for that size: mapDef(id).
+ */
+export const mapDefForSize = (id: string, teamSize: number = FULL_TEAM_SIZE): LevelDef => {
+  const base = mapDef(id);
+  if (!base.sizeWalls?.length) return base;
+  const n = Math.max(1, Math.min(FULL_TEAM_SIZE, Math.floor(teamSize) || FULL_TEAM_SIZE));
+  const key = `${getMap(id).id}@${n}`;
+  let d = sizedCache.get(key);
+  if (!d) sizedCache.set(key, (d = sizedLevelDef(base, n)));
   return d;
 };
 

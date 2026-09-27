@@ -1,19 +1,28 @@
-// Wires accounts, ranked, matchmaking, reports and anti-grief into the game hub, and serves
-// the small JSON API (leaderboards, profiles).
+// Wires accounts, ranked, matchmaking (ranked + casual queues), parties, reports and
+// anti-grief into the game hub, and serves the small JSON API (leaderboards, profiles, match
+// details, player search).
 import type http from 'node:http';
-import type { LadderId } from '@space-yz/shared';
+import type { LadderId, PartyOp } from '@space-yz/shared';
 import { LADDER_IDS, LADDERS, ladderForMode, raceMaps } from '@space-yz/shared';
 import type { HubServices } from '../game/hub';
 import { openDb, type Db } from './db';
 import { Accounts } from './accounts';
 import { RankedStore } from './ranked';
 import { RankedQueue } from './queue';
+import { Social } from './social';
+import { Parties } from './party';
+import { ProfileStore } from './profiles';
+import { accountHandler } from './account-handler';
+import type { ScryptCost } from './passwords';
 
 export interface Services {
   db: Db;
   accounts: Accounts;
   ranked: RankedStore;
   queue: RankedQueue;
+  social: Social;
+  parties: Parties;
+  profiles: ProfileStore;
   hub: HubServices;
   /** Tell every connected player the season / Premier hours changed. */
   broadcastRankedInfo(): void;
@@ -35,18 +44,30 @@ export const createServices = (opts: {
   dbFile: string;
   log?: (msg: string) => void;
   now?: () => number;
+  /** password hashing cost (tests use a cheap one) */
+  scrypt?: ScryptCost;
 }): Services => {
   const log = opts.log ?? ((m: string) => console.log(m));
   const now = opts.now ?? Date.now;
   const db = openDb(opts.dbFile);
-  const accounts = new Accounts(db, now);
+  const accounts = new Accounts(db, now, { cost: opts.scrypt });
   const ranked = new RankedStore(db, now);
   const queue = new RankedQueue(ranked, now, log);
+  const social = new Social(db, accounts, () => queue.hub, now);
+  const parties = new Parties(social, accounts, now, log);
+  queue.parties = parties;
+  parties.searchOf = (p) => queue.partySearch(p);
+  parties.onChange = (p, why) => queue.partyChanged(p, why);
+  const profiles = new ProfileStore(db);
+  const accountMsgs = accountHandler({ accounts, ranked, queue, social, log });
 
   const hub: HubServices = {
-    login: (_conn, name, token) => {
+    login: (conn, name, token) => {
+      // (a hello again: renamed, or switched account) — friends see the new state
+      social.disconnect(conn);
       const r = accounts.login(name, token);
       if (r.created) log(`New player: ${r.account.name} (#${r.account.id})`);
+      accountMsgs.sessionOf.set(conn, r.token);
       return {
         name: r.account.name,
         accountId: r.account.id,
@@ -59,9 +80,36 @@ export const createServices = (opts: {
       queue.start(h);
       queue.set(conn, id);
     },
+    casualQueue: (h, conn, pick) => {
+      queue.start(h);
+      queue.setCasual(conn, pick);
+    },
     veto: (conn, map) => void queue.ban(conn, map),
-    onHello: (conn) => conn.sendJson({ t: 'rankedInfo', data: ranked.info() }),
-    onDisconnect: (_h, conn) => queue.remove(conn),
+    modeVote: (conn, mode) => void queue.vote(conn, mode),
+    party: (h, conn, op, id) => {
+      queue.start(h);
+      const err = parties.op(conn, op as PartyOp, id);
+      if (err) conn.sendJson({ t: 'notice', msg: err });
+    },
+    onHello: (conn, h) => {
+      queue.start(h);
+      conn.sendJson({ t: 'rankedInfo', data: ranked.info() });
+      queue.pushCounts(conn);
+      if (conn.accountId === null) return;
+      social.connect(conn);
+      const me = accounts.me(conn.accountId);
+      if (me) conn.sendJson({ t: 'me', data: me });
+      conn.sendJson({ t: 'social', data: social.state(conn.accountId) });
+      parties.hello(conn);
+    },
+    onDisconnect: (_h, conn) => {
+      queue.remove(conn);
+      social.disconnect(conn);
+      // (their last tab closed: out of the party)
+      parties.disconnected(conn.accountId);
+    },
+    onSocial: (h, conn, msg) => accountMsgs.handle(h, conn, msg),
+    blocked: (to, from) => social.blocks(to, from),
     onReport: (conn, player, reason, room) => {
       const m = room.members.get(player);
       if (!m || m.conn === conn) return;
@@ -88,14 +136,16 @@ export const createServices = (opts: {
     onMatchEnd: (room, result) => {
       const names: Record<number, string> = {};
       for (const m of room.members.values()) names[m.id] = m.name;
+      const ladder = room.ranked ? (room.ladder ?? ladderForMode(result.mode)) : null;
       const deltas = ranked.recordMatch({
         mode: room.mode,
         ranked: room.ranked,
         map: room.map,
         result,
         names,
+        ladder,
+        scale: room.ratingScale ?? undefined,
       });
-      const ladder = room.ranked ? ladderForMode(result.mode) : null;
       for (const m of room.humans) {
         if (!m.conn || m.accountId === null) continue;
         const profile = ranked.profile(m.accountId);
@@ -113,6 +163,28 @@ export const createServices = (opts: {
         });
       }
     },
+  };
+
+  // Brawl is casual: every finished Brawl goes into the match history with each player's
+  // stats (profiles: kills, accuracy, time played, wins as 'brawl')
+  hub.onBrawlEnd = (room, _result, rules) => {
+    const names: Record<number, string> = {};
+    for (const m of room.members.values()) names[m.id] = m.name;
+    try {
+      ranked.recordMatch({
+        mode: room.mode,
+        ranked: false,
+        map: room.map,
+        result: rules.matchResult(room),
+        names,
+      });
+    } catch (err) {
+      log(`Brawl result not stored: ${String(err)}`);
+      return;
+    }
+    for (const m of room.humans)
+      if (m.conn && m.accountId !== null)
+        m.conn.sendJson({ t: 'profile', data: ranked.profile(m.accountId) });
   };
 
   // Arena 1v1 is casual only now: its matches are just recorded in the history
@@ -187,11 +259,32 @@ export const createServices = (opts: {
         const id = Number(url.searchParams.get('id'));
         const p = Number.isInteger(id) ? ranked.profile(id) : null;
         if (!p) return json(res, 404, { error: 'no such player' });
-        // public view: no moderation details
-        return json(res, 200, { ...p, bannedUntil: undefined, warnings: undefined });
+        // public view: no moderation details; looks, join date and lifetime stats
+        return json(res, 200, {
+          ...p,
+          bannedUntil: undefined,
+          warnings: undefined,
+          card: profiles.card(id),
+          stats: profiles.stats(id),
+        });
+      }
+      case '/api/match': {
+        // one recorded match with every player's line (the profile's match detail)
+        const id = Number(url.searchParams.get('id'));
+        const m = Number.isInteger(id) && id > 0 ? profiles.match(id) : null;
+        if (!m) return json(res, 404, { error: 'no such match' });
+        return json(res, 200, m);
+      }
+      case '/api/players': {
+        // ?q=name: find players (friend search)
+        const q = (url.searchParams.get('q') ?? '').slice(0, 32);
+        return json(res, 200, { rows: accounts.search(q, 20) });
       }
       case '/api/stats':
         return json(res, 200, { players: accounts.count(), queued: queue.size() });
+      case '/api/queues':
+        // the live queue numbers the menus show (players online, searching per mode)
+        return json(res, 200, queue.counts());
       default:
         return json(res, 404, { error: 'not found' });
     }
@@ -202,6 +295,9 @@ export const createServices = (opts: {
     accounts,
     ranked,
     queue,
+    social,
+    parties,
+    profiles,
     hub,
     broadcastRankedInfo: () => {
       const msg = { t: 'rankedInfo' as const, data: ranked.info() };
@@ -210,6 +306,7 @@ export const createServices = (opts: {
     api,
     close: () => {
       queue.stop();
+      social.stop();
       db.close();
     },
   };

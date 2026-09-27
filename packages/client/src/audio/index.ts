@@ -1,5 +1,8 @@
 // Procedural game audio: pure DSP + sound recipes + a thin WebAudio engine.
 export { AudioEngine } from './audio';
+export { Announcer } from './announcer';
+export type { AnnouncerOptions, ClipPlayer } from './announcer';
+export { ANNOUNCER_LINES, roundLine } from './announcer-lines';
 export type {
   AudioEngineOptions,
   LoopHandle,

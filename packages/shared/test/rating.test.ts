@@ -25,6 +25,18 @@ import {
   findMatches,
   searchWindow,
   balanceTeams,
+  formableTeamSize,
+  partyOnlySize,
+  partyQueueProblem,
+  partyRating,
+  queueTeamSizes,
+  stackMultiplier,
+  STACK_PENALTY,
+  splitParties,
+  createModeVote,
+  castModeVote,
+  modeVoteTick,
+  modeVoteCounts,
   MIN_RD,
   MAX_RD,
 } from '../src/index';
@@ -168,25 +180,82 @@ describe('ladders: Premier, Duels and Race only', () => {
     expect(seasonResetRating(1500, LADDERS.race.startRating)).toBeCloseTo(1300, 9);
   });
 
-  it('has the approved ladders; 5v5 counts for Premier, 1v1 and 2v2 share Duels', () => {
-    expect(LADDER_IDS).toEqual(['premier', 'duels', 'race']);
-    expect(RANKED_QUEUES.map((q) => q.id)).toEqual(['premier', 'duels-1v1', 'duels-2v2', 'race']);
+  it('has the approved ladders: Premier, Premier CS, Duels (1v1 + 2v2), Race', () => {
+    expect(LADDER_IDS).toEqual(['premier', 'premier-cs', 'duels', 'race']);
+    expect(RANKED_QUEUES.map((q) => q.id)).toEqual([
+      'premier',
+      'premier-cs',
+      'duels-1v1',
+      'duels-2v2',
+      'race',
+    ]);
     expect(ladderForMode('5v5')).toBe('premier');
+    expect(ladderForMode('3v3')).toBe('premier');
     expect(ladderForMode('1v1')).toBe('duels');
     expect(ladderForMode('2v2')).toBe('duels');
-    expect(ladderForMode('3v3')).toBeNull();
     expect(ladderForMode('arena')).toBeNull();
     expect(ladderForMode('race')).toBe('race');
     const premier = RANKED_QUEUES.find((q) => q.id === 'premier')!;
     if (premier.kind !== 'team') throw new Error('Premier is a team queue');
-    expect(premier).toMatchObject({ mode: '5v5', objective: 'bomb', veto: true });
-    expect(premier.smaller).toEqual({ teamSize: 4, afterSec: 90 });
-    expect(LADDERS.premier).toMatchObject({
-      startRating: 1000,
-      placement: { count: 5, unit: 'wins' },
-      hideWhilePlacing: true,
-      seasonal: true,
-    });
+    expect(premier).toMatchObject({ objective: 'bomb', veto: true, loadout: 'lethal' });
+    // 3v3 by default, 4v4 / 5v5 when enough search
+    expect(queueTeamSizes(premier)).toEqual([5, 4, 3]);
+    const cs = RANKED_QUEUES.find((q) => q.id === 'premier-cs')!;
+    if (cs.kind !== 'team') throw new Error('Premier CS is a team queue');
+    expect(cs).toMatchObject({ ladder: 'premier-cs', loadout: 'cs', veto: true });
+    expect(cs.modeVote).toEqual(['bomb', 'elim']);
+    expect(queueTeamSizes(cs)).toEqual([5, 4, 3]);
+    for (const l of ['premier', 'premier-cs'] as const)
+      expect(LADDERS[l]).toMatchObject({
+        startRating: 1000,
+        placement: { count: 5, unit: 'wins' },
+        hideWhilePlacing: true,
+        seasonal: true,
+      });
+    expect(ladderRank('premier-cs', 1450)).toEqual(ladderRank('premier', 1450));
+  });
+
+  it('says which team size could form now', () => {
+    const premier = RANKED_QUEUES.find((q) => q.id === 'premier')!;
+    expect(formableTeamSize(premier, 5)).toBeNull();
+    expect(formableTeamSize(premier, 6)).toBe(3);
+    expect(formableTeamSize(premier, 8)).toBe(4);
+    expect(formableTeamSize(premier, 9)).toBe(4);
+    expect(formableTeamSize(premier, 10)).toBe(5);
+    expect(formableTeamSize(premier, 14)).toBe(5);
+    const duel = RANKED_QUEUES.find((q) => q.id === 'duels-1v1')!;
+    expect(formableTeamSize(duel, 2)).toBe(1);
+  });
+
+  it('rates parties toward their best player and limits rank gaps', () => {
+    expect(partyRating([1000])).toBe(1000);
+    expect(partyRating([1600, 1000])).toBeCloseTo(0.6 * 1600 + 0.4 * 1300, 9);
+    const premier = RANKED_QUEUES.find((q) => q.id === 'premier')!;
+    const duo = RANKED_QUEUES.find((q) => q.id === 'duels-2v2')!;
+    const solo = RANKED_QUEUES.find((q) => q.id === 'duels-1v1')!;
+    const race = RANKED_QUEUES.find((q) => q.id === 'race')!;
+    expect(partyQueueProblem(premier, [1000, 1500])).toBeNull();
+    // a duo 700 apart can't search Premier (not a full team)…
+    expect(partyQueueProblem(premier, [1000, 1700])).toMatch(/apart/);
+    // …but a full team may, and then only plays at its own size
+    expect(partyQueueProblem(premier, [1000, 1700, 1100])).toBeNull();
+    expect(partyOnlySize([1000, 1700, 1100])).toBe(3);
+    expect(partyOnlySize([1000, 1100])).toBeNull();
+    expect(partyQueueProblem(duo, [1000, 1900])).toBeNull();
+    expect(partyQueueProblem(duo, [1000, 1100, 1200])).toMatch(/up to 2/);
+    expect(partyQueueProblem(solo, [1000, 1100])).toMatch(/solo/);
+    expect(partyQueueProblem(race, [1000, 1100])).toMatch(/solo/);
+    expect(
+      partyQueueProblem(
+        premier,
+        [1, 2, 3, 4, 5, 6].map((x) => 1000 + x),
+      ),
+    ).toMatch(/up to 5/);
+    // Valorant rule: a full stack with a big spread earns 75 %
+    expect(stackMultiplier([1000, 1500, 1100], 3)).toBe(STACK_PENALTY);
+    expect(stackMultiplier([1000, 1300, 1100], 3)).toBe(1);
+    expect(stackMultiplier([1000, 1500, 1100], 5)).toBe(1);
+    expect(stackMultiplier([1000], 1)).toBe(1);
   });
 
   it('Premier shows one number in 7 colour bands', () => {
@@ -292,6 +361,90 @@ describe('matchmaking team size override', () => {
     expect(m.length).toBe(1);
     expect(m[0].teams[0].length).toBe(4);
     expect(m[0].teams[1].length).toBe(4);
+  });
+});
+
+describe('Premier CS mode vote', () => {
+  it('the majority decides; it closes early once everyone voted', () => {
+    const v = createModeVote(['bomb', 'elim'], 0, 10_000);
+    expect(castModeVote(v, 'a', 'elim')).toBeNull();
+    expect(castModeVote(v, 'b', 'bomb')).toBeNull();
+    expect(castModeVote(v, 'c', 'elim')).toBeNull();
+    expect(castModeVote(v, 'c', 'tower')).toMatch(/not in the vote/);
+    // 3 of 4 voted, time left: still open
+    expect(modeVoteTick(v, 5_000, 4, () => 0)).toBe(false);
+    expect(v.result).toBeNull();
+    expect(modeVoteTick(v, 5_000, 3, () => 0.99)).toBe(true);
+    expect(v.result).toBe('elim');
+    expect(modeVoteCounts(v)).toEqual({ bomb: 1, elim: 2 });
+    expect(castModeVote(v, 'd', 'bomb')).toMatch(/decided/);
+  });
+
+  it('a tie (or nobody voting) is decided at random when time runs out', () => {
+    const tie = createModeVote(['bomb', 'elim'], 0, 10_000);
+    castModeVote(tie, 'a', 'bomb');
+    castModeVote(tie, 'b', 'elim');
+    expect(modeVoteTick(tie, 9_999, 6, () => 0)).toBe(false);
+    expect(modeVoteTick(tie, 10_000, 6, () => 0.7)).toBe(true);
+    expect(tie.result).toBe('elim');
+    const none = createModeVote(['bomb', 'elim'], 0, 10_000);
+    modeVoteTick(none, 10_000, 6, () => 0.2);
+    expect(none.result).toBe('bomb');
+  });
+});
+
+describe('parties in matchmaking', () => {
+  const e = (id: string, rating: number, size = 1, joinedAtMs = 0): QueueEntry => ({
+    id,
+    rating,
+    pingMs: 30,
+    joinedAtMs,
+    size,
+  });
+
+  it('keeps a party on one team and fills the rest with solo players', () => {
+    const q = [e('duo', 1200, 2), e('a', 1180), e('b', 1210), e('c', 1190), e('d', 1205)];
+    const m = findMatches(q, 0, '5v5', { teamSize: 3 }).matches;
+    expect(m.length).toBe(1);
+    const [a, b] = m[0].teams;
+    const withDuo = a.includes('duo') ? a : b;
+    const other = withDuo === a ? b : a;
+    expect(withDuo.length).toBe(2); // the duo + one solo = 3 players
+    expect(other.length).toBe(3);
+  });
+
+  it('never splits a party or overfills a team', () => {
+    expect(splitParties([e('x', 1000, 3), e('y', 1000, 3)], 3)).not.toBeNull();
+    expect(splitParties([e('x', 1000, 2), e('y', 1000, 2), e('z', 1000, 2)], 3)).toBeNull();
+    // two trios can't fill a 2v2; a party of 4 sits out a 3v3
+    expect(
+      findMatches([e('x', 1000, 3), e('y', 1000, 3)], 0, '5v5', { teamSize: 2 }).matches,
+    ).toEqual([]);
+    const four = [e('q', 1000, 4), e('a', 1000), e('b', 1000), e('c', 1000), e('d', 1000)];
+    expect(findMatches(four, 0, '5v5', { teamSize: 3 }).matches).toEqual([]);
+  });
+
+  it('balances whole parties by total rating', () => {
+    const wide = { baseWindow: 1000, maxWindow: 1000 };
+    const duos = findMatches([e('hi', 1600, 2), e('lo', 1000, 2)], 0, '2v2', wide).matches[0];
+    // two duos can't be split: they face each other
+    expect(duos.teams.map((t) => t.join())).toEqual(['hi', 'lo']);
+    const q = [e('hi', 1400, 2), e('s1', 1500), e('s2', 1300), e('s3', 1000), e('s4', 1100)];
+    const [a, b] = findMatches(q, 0, '5v5', { ...wide, teamSize: 3 }).matches[0].teams;
+    const mine = a.includes('hi') ? a : b;
+    // the strong duo gets a weak third player: 1400·2 + 1000/1100 vs the other three
+    expect(mine.length).toBe(2);
+    expect(['s3', 's4']).toContain(mine.find((x) => x !== 'hi'));
+  });
+
+  it('a wide-gap full stack only plays at its own size', () => {
+    const stack: QueueEntry = { ...e('stack', 1300, 3), onlySize: 3 };
+    const solos = ['a', 'b', 'c', 'd', 'f', 'g', 'h'].map((id) => e(id, 1300));
+    expect(findMatches([stack, ...solos], 0, '5v5', { teamSize: 5 }).matches).toEqual([]);
+    solos.length = 3;
+    const m = findMatches([stack, ...solos], 0, '5v5', { teamSize: 3 }).matches;
+    expect(m.length).toBe(1);
+    expect(m[0].teams.some((t) => t.length === 1 && t[0] === 'stack')).toBe(true);
   });
 });
 

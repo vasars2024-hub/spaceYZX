@@ -645,6 +645,81 @@
   gap: 12px;
   width: var(--flow-w);
 }
+/* matchmaking: multi-search tick boxes with live numbers, the party strip, casual picks */
+.queue-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.queue-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.queue-pick input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.queue-pick-name {
+  font-weight: 800;
+}
+.queue-pick-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+.queue-pick.closed {
+  opacity: 0.6;
+  cursor: default;
+}
+.queue-pick.searching .queue-pick-count {
+  color: var(--accent);
+}
+.ranked-search {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+.casual-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.party-row {
+  width: var(--flow-w);
+}
+.party-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+.party-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.party-member.offline,
+.party-member.invited {
+  opacity: 0.55;
+}
+.party-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
 /* Premier + Duels: one big card per ladder */
 .ranked-stage {
   width: var(--flow-w);
@@ -663,6 +738,10 @@
 .card.ladder-premier {
   --accent: #ffd24a;
   --accent-soft: rgba(255, 210, 74, 0.16);
+}
+.card.ladder-premier-cs {
+  --accent: #ff9a3c;
+  --accent-soft: rgba(255, 154, 60, 0.16);
 }
 .ladder-rank {
   display: flex;

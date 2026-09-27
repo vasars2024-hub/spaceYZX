@@ -8,7 +8,9 @@ import {
   BOT_SKILL_LABELS,
   DEFAULT_BOT_SKILL,
   DEFAULT_MATCH_MAP,
+  brawlMaps,
   type BotSkillName,
+  type BrawlMode,
   type LevelDef,
   type MapInfo,
   type MatchObjective,
@@ -32,7 +34,21 @@ const isRaceMap = (m: MapInfo): boolean => !!m.race;
 
 // ---------------------------------------------------------------- modes
 
-export type PracticeMode = 'match' | 'bomb' | 'elim' | 'cs' | 'deathmatch' | 'arena' | 'race';
+export type PracticeMode =
+  | 'brawl'
+  | 'brawl-ffa'
+  | 'match'
+  | 'bomb'
+  | 'elim'
+  | 'cs'
+  | 'deathmatch'
+  | 'freeroam'
+  | 'arena'
+  | 'race';
+
+/** Brawl (shared rules/brawl.ts): 'brawl' = team deathmatch, 'brawl-ffa' = free-for-all. */
+export const isBrawlPractice = (m: PracticeMode): m is BrawlMode =>
+  m === 'brawl' || m === 'brawl-ffa';
 
 export interface Choice<T extends string> {
   id: T;
@@ -42,6 +58,18 @@ export interface Choice<T extends string> {
 }
 
 const PRACTICE_MODES: Choice<PracticeMode>[] = [
+  {
+    id: 'brawl',
+    name: 'Brawl TDM',
+    desc: 'Team deathmatch: instant respawns, first team to 50 kills. Maps rotate.',
+    icon: 'team',
+  },
+  {
+    id: 'brawl-ffa',
+    name: 'Brawl FFA',
+    desc: 'Everyone for themselves: instant respawns, first to 20 kills. Maps rotate.',
+    icon: 'freefight',
+  },
   {
     id: 'match',
     name: 'Tower match',
@@ -63,7 +91,7 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
   {
     id: 'cs',
     name: 'CS mode',
-    desc: 'AK + Deagle with bomb rules. Half-speed movement, stop to shoot straight.',
+    desc: 'AK + Deagle with bomb rules. Slower movement (70 %), stop to shoot straight.',
     icon: 'cs',
   },
   {
@@ -71,6 +99,12 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
     name: 'Free fight',
     desc: 'Respawning brawl in the Training Bay. No rounds, just fight.',
     icon: 'freefight',
+  },
+  {
+    id: 'freeroam',
+    name: 'Free roam',
+    desc: 'Any map, just you and target dummies. Hit stats, no rounds, no timer.',
+    icon: 'range',
   },
   {
     id: 'arena',
@@ -110,20 +144,45 @@ export const botSkillChoices = (): { id: BotSkillName; name: string; desc: strin
  * players in all (you + bots), each duel is 1v1.
  */
 export const sizesFor = (mode: PracticeMode): number[] =>
-  mode === 'arena' ? [2, 4, 6, 8] : mode === 'race' ? RACE_SIZES : [1, 2, 3, 5];
+  mode === 'arena'
+    ? [2, 4, 6, 8]
+    : mode === 'race'
+      ? RACE_SIZES
+      : mode === 'freeroam'
+        ? [1]
+        : mode === 'brawl'
+          ? BRAWL_TDM_SIZES
+          : mode === 'brawl-ffa'
+            ? BRAWL_FFA_SIZES
+            : [1, 2, 3, 5];
+/** Brawl TDM: players per team (you + bots); Brawl FFA: players in all (you + bots). */
+const BRAWL_TDM_SIZES = [2, 3, 4, 5];
+const BRAWL_FFA_SIZES = [4, 6, 8, 10];
+/** A mode's team size (or player count) when yours doesn't fit it. */
+const defaultSize = (mode: PracticeMode): number =>
+  mode === 'arena'
+    ? ARENA_DEFAULT_SIZE
+    : mode === 'brawl'
+      ? QUICK_PLAY_OFFLINE.tdm
+      : mode === 'brawl-ffa'
+        ? QUICK_PLAY_OFFLINE.ffa
+        : sizesFor(mode)[0];
 /** Races: how many racers in all (1 = a time trial: just you and your best's ghost). */
 const RACE_SIZES = [1, 2, 4, 8];
 /** The Arena's default player count in practice (you + 3 bots: duels rotate). */
 const ARENA_DEFAULT_SIZE = 4;
 
 /** Modes whose setup step also picks the kit (Boomerang or CS): the Arena and Elimination. */
-export const hasKitChoice = (mode: PracticeMode): boolean => mode === 'arena' || mode === 'elim';
+export const hasKitChoice = (mode: PracticeMode): boolean =>
+  mode === 'arena' || mode === 'elim' || mode === 'freeroam';
+/** Free roam: no opponents (no team size, no bot difficulty), dummies on / off instead. */
+export const isFreeRoam = (mode: PracticeMode): boolean => mode === 'freeroam';
 
 /** Arena / Elimination kits: the Boomerang kit or the CS kit (AK + Deagle). */
 export type ArenaKit = 'lethal' | 'cs';
 export const ARENA_KITS: Choice<ArenaKit>[] = [
   { id: 'lethal', name: 'Boomerang', desc: 'Boomerang, Laser and Gravity Grenade.', icon: 'arena' },
-  { id: 'cs', name: 'CS kit', desc: 'AK + Deagle, half-speed movement.', icon: 'cs' },
+  { id: 'cs', name: 'CS kit', desc: 'AK + Deagle, slower movement (70 %).', icon: 'cs' },
 ];
 
 // ---------------------------------------------------------------- maps
@@ -151,10 +210,21 @@ export const mapsForMode = (
   if (mode === 'deathmatch') return maps.filter((m) => m.id === 'training-bay');
   if (mode === 'arena') return maps.filter(isArenaMap);
   if (mode === 'race') return maps.filter(isRaceMap);
+  if (isBrawlPractice(mode)) return brawlMaps(maps);
+  // free roam: any map at all (race tracks without dummies)
+  if (mode === 'freeroam') return [...maps];
   const comp = maps.filter((m) => m.competitive && !isArenaMap(m));
   const ok = comp.filter((m) => supports(defOf(m.id), mapNeed(mode)));
   return ok.length ? ok : comp;
 };
+
+/** Race maps in two groups: the race tracks and the surf maps (MapInfo.surf). */
+export const raceMapGroups = (
+  maps: readonly MapInfo[] = MAPS,
+): { best: MapInfo[]; other: MapInfo[] } => ({
+  best: maps.filter((m) => isRaceMap(m) && !m.surf),
+  other: maps.filter((m) => isRaceMap(m) && !!m.surf),
+});
 
 /** One-line map descriptions for the map cards (a new map without one shows its features). */
 export const MAP_BLURBS: Record<string, string> = {
@@ -169,10 +239,14 @@ export const MAP_BLURBS: Record<string, string> = {
   'training-bay': 'Compact combat bay for quick fights.',
   'proving-grounds': 'The movement test ship: zero-G bay, wall corridor, flip room.',
   arena: 'Sealed duel pits: crates in the middle, upper ground along the sides.',
-  'race-cliffline':
-    'Alpine ridge at sunrise: switchbacks, zip-rails between peaks, an ice-cave portal, a lake.',
-  'race-canopy':
-    'Jungle treetops: rope rails, mushroom launch pads, a river gorge and temple ruins.',
+  'race-sunspire':
+    'Sky temple at sunrise (medium): hop chains round the walls, first surf ramps, a window jump.',
+  'race-neon':
+    'Neon city fragments at night (hard): steep surf flicks, pillar weaves, a jetpack gap, speed gates.',
+  'race-ember':
+    'Basalt islands at dusk (very hard): small pads, the steepest ramps, two jetpack gaps on one fuel cell.',
+  'surf-aurora': 'Surf, beginner: five stages of long forgiving ramps under an aurora sky.',
+  'surf-cinder': 'Surf, hard: seven stages — royal spin, window, wall surf, pillars, needles.',
 };
 
 /** Short feature tags of a map from its layout (Towers, bomb sites, sky duel). */
@@ -211,6 +285,8 @@ export interface PracticeState {
   skill: BotSkillName;
   /** Arena: which kit */
   kit?: ArenaKit;
+  /** free roam: target dummies on the map (default on) */
+  dummies?: boolean;
 }
 
 export const PRACTICE_STEP_LABELS: Record<PracticeStep, string> = {
@@ -255,7 +331,7 @@ export const pickPracticeMode = (
     ...s,
     mode,
     map: valid.some((m) => m.id === s.map) ? s.map : (valid[0]?.id ?? s.map),
-    size: sizes.includes(s.size) ? s.size : mode === 'arena' ? ARENA_DEFAULT_SIZE : sizes[0],
+    size: sizes.includes(s.size) ? s.size : defaultSize(mode),
     step: stepAfter(practiceSteps(mode, maps, defOf), 'mode'),
   };
 };
@@ -283,7 +359,16 @@ export const practiceMapId = (s: PracticeState): string =>
 // ---------------------------------------------------------------- online room wizard
 
 export type RoomObjective =
-  'tower' | 'bomb' | 'elim' | 'cs' | 'elim-cs' | 'arena' | 'arena-cs' | 'race';
+  | 'tower'
+  | 'bomb'
+  | 'elim'
+  | 'cs'
+  | 'elim-cs'
+  | 'brawl'
+  | 'brawl-ffa'
+  | 'arena'
+  | 'arena-cs'
+  | 'race';
 
 /** An Arena 1v1 room (Boomerang or CS kit). */
 export const isArenaObjective = (o: RoomObjective): boolean => o === 'arena' || o === 'arena-cs';
@@ -291,6 +376,9 @@ export const isArenaObjective = (o: RoomObjective): boolean => o === 'arena' || 
 export const isRaceObjective = (o: RoomObjective): boolean => o === 'race';
 /** Elimination (Boomerang kit, or 'elim-cs' with the CS kit). */
 export const isElimObjective = (o: RoomObjective): boolean => o === 'elim' || o === 'elim-cs';
+/** A Brawl room: team deathmatch ('brawl') or free-for-all ('brawl-ffa'), maps rotate. */
+export const isBrawlObjective = (o: RoomObjective): o is BrawlMode =>
+  o === 'brawl' || o === 'brawl-ffa';
 export type RoomSize = '1v1' | '2v2' | '3v3' | '5v5';
 export type RoomStep = 'objective' | 'map' | 'room';
 
@@ -310,12 +398,24 @@ export const ROOM_OBJECTIVES: Choice<RoomObjective>[] = [
   },
   { id: 'bomb', name: 'Bomb', desc: 'Plant at site A or B, or defuse.', icon: 'bomb' },
   { id: 'elim', name: 'Elimination', desc: 'Last team standing wins the round.', icon: 'elim' },
-  { id: 'cs', name: 'CS mode', desc: 'AK + Deagle with bomb rules, half-speed.', icon: 'cs' },
+  { id: 'cs', name: 'CS mode', desc: 'AK + Deagle with bomb rules, slower movement.', icon: 'cs' },
   {
     id: 'elim-cs',
     name: 'Elimination CS',
     desc: 'Last team standing wins the round. AK + Deagle.',
     icon: 'cs',
+  },
+  {
+    id: 'brawl',
+    name: 'Brawl TDM',
+    desc: 'Team deathmatch, instant respawns, first team to 50 kills. Maps rotate.',
+    icon: 'team',
+  },
+  {
+    id: 'brawl-ffa',
+    name: 'Brawl FFA',
+    desc: 'Everyone for themselves, instant respawns, first to 20 kills.',
+    icon: 'freefight',
   },
   ...(ARENA_ENABLED
     ? ([
@@ -358,6 +458,17 @@ export const ARENA_ROOM_SIZES: Record<RoomSize, { players: number; label: string
     '5v5': { players: 8, label: '8 players', desc: 'A full arena: four pits at once.' },
   };
 
+/** Brawl FFA rooms: the size cards pick how many players there are in all. */
+export const BRAWL_FFA_ROOM_SIZES: Record<
+  RoomSize,
+  { players: number; label: string; desc: string }
+> = {
+  '1v1': { players: 4, label: '4 players', desc: 'A small free-for-all.' },
+  '2v2': { players: 6, label: '6 players', desc: 'Six fighters, every one for themselves.' },
+  '3v3': { players: 8, label: '8 players', desc: 'A busy free-for-all.' },
+  '5v5': { players: 10, label: '10 players', desc: 'A full brawl.' },
+};
+
 export const ROOM_SIZES: RoomSize[] = ['1v1', '2v2', '3v3', '5v5'];
 const ROOM_PLAYERS: Record<RoomSize, number> = { '1v1': 2, '2v2': 4, '3v3': 6, '5v5': 10 };
 
@@ -380,15 +491,17 @@ export const initialRoom = (): RoomState => ({
 });
 
 const objectiveMode = (o: RoomObjective): PracticeMode =>
-  o === 'tower'
-    ? 'match'
-    : isArenaObjective(o)
-      ? 'arena'
-      : isRaceObjective(o)
-        ? 'race'
-        : isElimObjective(o)
-          ? 'elim'
-          : (o as PracticeMode);
+  isBrawlObjective(o)
+    ? o
+    : o === 'tower'
+      ? 'match'
+      : isArenaObjective(o)
+        ? 'arena'
+        : isRaceObjective(o)
+          ? 'race'
+          : isElimObjective(o)
+            ? 'elim'
+            : (o as PracticeMode);
 
 /**
  * Maps for an online room: the ones made for the objective first, then every other map (rooms
@@ -401,8 +514,10 @@ export const roomMaps = (
   defOf: (id: string) => LevelDef = mapDef,
 ): { best: MapInfo[]; other: MapInfo[] } => {
   const best = mapsForMode(objectiveMode(o), maps, defOf);
-  // (the Arena only plays on its own maps, races only on race tracks)
-  if (isArenaObjective(o) || isRaceObjective(o)) return { best, other: [] };
+  // (races: the race tracks first, then the surf maps)
+  if (isRaceObjective(o)) return raceMapGroups(maps);
+  // (the Arena only plays on its own maps, Brawl on its rotation)
+  if (isArenaObjective(o) || isBrawlObjective(o)) return { best, other: [] };
   return {
     best,
     other: maps.filter((m) => !best.includes(m) && !isArenaMap(m) && !isRaceMap(m)),
@@ -432,45 +547,72 @@ export const roomBack = (s: RoomState): RoomState | null => {
 export const roomCreateArgs = (
   s: RoomState,
 ): {
-  mode: RoomSize | 'arena' | 'race';
+  mode: RoomSize | 'arena' | 'race' | BrawlMode;
   map: string;
   bots: number;
   skill: BotSkillName;
   objective: MatchObjective;
   loadout: 'lethal' | 'cs';
 } =>
-  isRaceObjective(s.objective)
+  isBrawlObjective(s.objective)
     ? {
-        mode: 'race',
+        mode: s.objective,
         map: s.map,
-        bots: s.bots ? RACE_ROOM_SIZES[s.size].players - 1 : 0,
+        bots: s.bots
+          ? (s.objective === 'brawl-ffa'
+              ? BRAWL_FFA_ROOM_SIZES[s.size].players
+              : ROOM_PLAYERS[s.size]) - 1
+          : 0,
         skill: s.skill,
         objective: 'tower',
         loadout: 'lethal',
       }
-    : isArenaObjective(s.objective)
+    : isRaceObjective(s.objective)
       ? {
-          mode: 'arena',
+          mode: 'race',
           map: s.map,
-          bots: s.bots ? ARENA_ROOM_SIZES[s.size].players - 1 : 0,
+          bots: s.bots ? RACE_ROOM_SIZES[s.size].players - 1 : 0,
           skill: s.skill,
           objective: 'tower',
-          loadout: s.objective === 'arena-cs' ? 'cs' : 'lethal',
+          loadout: 'lethal',
         }
-      : {
-          mode: s.size,
-          map: s.map,
-          bots: s.bots ? ROOM_PLAYERS[s.size] - 1 : 0,
-          skill: s.skill,
-          objective:
-            s.objective === 'tower' ? 'tower' : isElimObjective(s.objective) ? 'elim' : 'bomb',
-          loadout: s.objective === 'cs' || s.objective === 'elim-cs' ? 'cs' : 'lethal',
-        };
+      : isArenaObjective(s.objective)
+        ? {
+            mode: 'arena',
+            map: s.map,
+            bots: s.bots ? ARENA_ROOM_SIZES[s.size].players - 1 : 0,
+            skill: s.skill,
+            objective: 'tower',
+            loadout: s.objective === 'arena-cs' ? 'cs' : 'lethal',
+          }
+        : {
+            mode: s.size,
+            map: s.map,
+            bots: s.bots ? ROOM_PLAYERS[s.size] - 1 : 0,
+            skill: s.skill,
+            objective:
+              s.objective === 'tower' ? 'tower' : isElimObjective(s.objective) ? 'elim' : 'bomb',
+            loadout: s.objective === 'cs' || s.objective === 'elim-cs' ? 'cs' : 'lethal',
+          };
+
+// ---------------------------------------------------------------- one-click Play
+
+/** Offline quick play (no server): Brawl vs bots, TDM players per team / FFA players in all. */
+export const QUICK_PLAY_OFFLINE = { tdm: 4, ffa: 8 } as const;
+
+/** The room mode the title screen's Play button asks the server for. */
+export const quickPlayMode = (setting: 'tdm' | 'ffa'): BrawlMode =>
+  setting === 'ffa' ? 'brawl-ffa' : 'brawl';
+
+/** A first-time player's nickname (no forms before the first match): "Pilot" + 4 digits. */
+export const defaultNickname = (rand: () => number = Math.random): string =>
+  `Pilot${1000 + Math.floor(rand() * 9000)}`;
 
 // ---------------------------------------------------------------- ranked
 
-// Ranked = two ladders (shared rating/ladders.ts): Premier and Duels. One card per ladder, with
-// a button per queue. A new ladder needs its entry in RANKED_CARD_INFO (TypeScript insists).
+// Ranked = four ladders (shared rating/ladders.ts): Premier, Premier CS, Duels and Race. One
+// card per ladder, with a tick box per queue (multi-search). A new ladder needs its entry in
+// RANKED_CARD_INFO (TypeScript insists).
 
 export interface RankedCardDef {
   ladder: LadderId;
@@ -486,9 +628,14 @@ const RANKED_CARD_INFO: Record<
   { desc: string; icon: IconName; labels: Partial<Record<RankedQueueId, string>> }
 > = {
   premier: {
-    desc: '5v5 Bomb · Boomerang kit · map veto. The main rank.',
+    desc: 'Bomb · Boomerang kit · map veto · 3v3, 4v4 or 5v5 by how many search. The main rank.',
     icon: 'bomb',
-    labels: { premier: 'Find match' },
+    labels: { premier: 'Premier' },
+  },
+  'premier-cs': {
+    desc: 'CS kit (AK + Deagle) · vote Bomb or Elimination, then the map veto · 3v3 to 5v5.',
+    icon: 'cs',
+    labels: { 'premier-cs': 'Premier CS' },
   },
   duels: {
     desc: '1v1 and 2v2 on Tower rules · one rating for both.',
@@ -498,7 +645,7 @@ const RANKED_CARD_INFO: Record<
   race: {
     desc: 'Parkour race · 2–8 racers on a random track · no weapons.',
     icon: 'race',
-    labels: { race: 'Search race' },
+    labels: { race: 'Race' },
   },
 };
 

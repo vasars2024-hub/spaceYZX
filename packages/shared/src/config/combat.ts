@@ -37,6 +37,11 @@ export const COMBAT_DEFAULTS = {
   maxFlightSec: 4,
   quickHeadDamage: 100,
   quickBodyDamage: 50,
+  // Fall damage (not in races): landings from up to `fallSafeHeight` metres are free; above it
+  // damage grows with the impact speed, and a fall from `fallLethalHeight` or more kills.
+  // (Falling speed tops out at 30 m/s ≈ a 22.5 m drop, so the lethal height must stay below.)
+  fallSafeHeight: 8,
+  fallLethalHeight: 22,
   // Explosive throw: every `blastEvery`-th Quick Throw explodes on the first wall or player it
   // hits (no bounce), hurting enemies within `blastRadius`. If it hits nothing, the charge
   // stays for the next throw.

@@ -1,5 +1,5 @@
-// Premier: the queue (5v5, 4v4 after a long wait), the map veto, opening hours, and the
-// database migration from the old ladders.
+// Premier: the queue (5v5 with 10, 4v4 / 3v3 after a short wait), the map veto, opening
+// hours, and the database migration from the old ladders.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import type * as SqliteModule from 'node:sqlite';
@@ -46,6 +46,8 @@ describe('Premier queue and map veto', () => {
     s.queue.rand = () => 0;
     // a fixed pool of 4, so the test sees several bans whatever maps exist
     s.queue.mapPool = () => ['split-deck', 'kestrel', 'orbital-ring', 'map-four'];
+    // (these tests are about the queue itself: no players-online rule)
+    s.ranked.setThresholds({ premier: 0, 'premier-cs': 0 });
   });
   afterEach(() => s.close());
 
@@ -132,15 +134,15 @@ describe('Premier queue and map veto', () => {
     expect(s.queue.vetoing()).toBe(0);
   });
 
-  it('few searching: 8 players start a 4v4 after 90 s, not before', () => {
+  it('8 searching: a 4v4 after 10 s, not before', () => {
     const ps = Array.from({ length: 8 }, (_, i) => player(`Small${i}`));
     for (const p of ps) s.queue.set(p.conn, 'premier');
     s.queue.tick();
-    clock += 60_000;
+    clock += 9_000;
     s.queue.tick();
     expect(s.queue.vetoing()).toBe(0);
     expect(s.queue.size('premier')).toBe(8);
-    clock += 31_000;
+    clock += 1_000;
     s.queue.tick();
     expect(s.queue.vetoing()).toBe(8);
     expect(ps[0].lastVeto()!.teamSize).toBe(4);

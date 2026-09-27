@@ -22,12 +22,14 @@ import { v3 } from '../../math/vec3';
 import { qFromAxisAngle } from '../../math/quat';
 import { LevelBuilder, type Face } from '../builder';
 import type {
+  BoxDef,
   GravityPadDef,
   GravityZoneDef,
   LevelDef,
   LightDef,
   Material,
   RailDef,
+  SizeWallDef,
   SpawnDef,
   TowerDef,
   WaypointDef,
@@ -647,7 +649,59 @@ export const buildKestrel = (): LevelDef => {
     ambient: 0.85,
     lights: kestrelLights(),
     sideTint: { neg: 0x1d6a80, pos: 0x86501f, amount: 0.16 },
+    sizeWalls: kestrelSizeWalls(),
   });
+};
+
+/**
+ * Smaller teams play a smaller map (level/size-walls.ts): force-field panels in existing
+ * doorways, built as mirror pairs (the map stays symmetric). Each panel is 0.4 m thick in the
+ * middle of its 1 m wall and reaches 0.1 m into the jambs, sill and lintel.
+ *
+ * - 3v3 (and smaller): the south lane (turbine hall, engine corridor) closes: the hangar's
+ *   south door, the south connector's trench end and the crouch vent's atrium end. The main and
+ *   north lanes stay: two ways to each Tower.
+ * - 1v1 / 2v2: the north lane closes too (the hangar's north door, the north connector's gallery
+ *   end, the balcony window into the zero-G shaft): only the main lane is left, every way to a
+ *   Tower runs through the reactor room.
+ */
+const kestrelSizeWalls = (): SizeWallDef[] => {
+  const K = KESTREL;
+  const U = K.upperY;
+  const TR = K.trench;
+  const AT = K.atrium;
+  const HX = K.hangar.x0 - 0.5; // middle of the hangar's lane-side wall (x 75..76)
+  /** a panel across a doorway in a wall along z (thin in x), +X-side coordinates, both sides */
+  const acrossX = (x: number, z0: number, z1: number, y0: number, y1: number): BoxDef[] =>
+    [-1, 1].map((s) => ({
+      c: v3(s * x, (y0 + y1) / 2, (z0 + z1) / 2),
+      h: v3(0.2, (y1 - y0) / 2 + 0.1, (z1 - z0) / 2 + 0.1),
+    }));
+  /** a panel across a doorway in a wall along x (thin in z), +X-side coordinates, both sides */
+  const acrossZ = (z: number, x0: number, x1: number, y0: number, y1: number): BoxDef[] =>
+    [-1, 1].map((s) => ({
+      c: v3((s * (x0 + x1)) / 2, (y0 + y1) / 2, z),
+      h: v3((x1 - x0) / 2 + 0.1, (y1 - y0) / 2 + 0.1, 0.2),
+    }));
+  return [
+    {
+      maxTeamSize: 3,
+      boxes: [
+        ...acrossX(HX, -30, -22, 0, 6), // hangar south door
+        ...acrossZ(TR.z0 - 0.5, 30, 36, 0, 5), // south connector, trench end
+        ...acrossZ(AT.z0 - 0.5, 50, 53, 0, 1.3), // crouch vent, atrium end
+      ],
+    },
+    {
+      maxTeamSize: 2,
+      boxes: [
+        ...acrossX(HX, 22, 30, 0, 6), // hangar north door
+        ...acrossZ(TR.z1 + 0.5, 28, 34, U, U + 5), // north connector, gallery end
+        // the reactor balcony's window into the shaft (through both walls, z 18..20)
+        { c: v3(0, U + 4.5, K.reactor.z1 + 1), h: v3(8.1, 3.6, 0.2) },
+      ],
+    },
+  ];
 };
 
 /** South connector hole in the engine corridor's +z wall (x coordinates of one side). */

@@ -39,6 +39,8 @@ export const MATERIAL_COLORS: Record<Material, number> = {
   wood: 0x6b4a34,
   paper: 0xede3d1,
   leaf: 0xf4b8c8,
+  // size walls (level/size-walls.ts): a glowing cyan force field
+  forcefield: 0x38e8ff,
 };
 
 const TEX_OF: Record<Material, TexKind | null> = {
@@ -61,6 +63,7 @@ const TEX_OF: Record<Material, TexKind | null> = {
   wood: null,
   paper: null,
   leaf: null,
+  forcefield: null,
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -173,9 +176,21 @@ class GeoBuilder {
 }
 
 const boxCorner = (b: BoxDef, lx: number, ly: number, lz: number): Vec3 => {
-  const local = v3(lx * b.h.x, ly * b.h.y, lz * b.h.z);
+  // a prism (surf ramp): the top corners all sit on the ridge
+  const z = b.prism !== undefined && ly > 0 ? Math.max(-1, Math.min(1, b.prism)) : lz;
+  const local = v3(lx * b.h.x, ly * b.h.y, z * b.h.z);
   const r = b.q ? qRotate(b.q, local) : local;
   return v3(b.c.x + r.x, b.c.y + r.y, b.c.z + r.z);
+};
+
+/** A face's local normal: a box's, or a prism's slanted sides (its top face is gone: null). */
+const localNormal = (b: BoxDef, fi: number): Vec3 | null => {
+  const n = FACES[fi].n;
+  if (b.prism === undefined || n.z === 0) return b.prism !== undefined && n.y > 0 ? null : n;
+  const ridge = Math.max(-1, Math.min(1, b.prism)) * b.h.z;
+  const side = n.z > 0 ? b.h.z - ridge : ridge + b.h.z;
+  const l = Math.hypot(2 * b.h.y, side) || 1;
+  return v3(0, side / l, (n.z * 2 * b.h.y) / l);
 };
 
 /** Key light + fill + fake ambient occlusion (the part of lighting shared by a whole face). */
@@ -326,7 +341,13 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   };
   const trims = new GeoBuilder();
   const glassGeo = new GeoBuilder();
-  const level = buildLevel(def);
+  const fieldGeo = new GeoBuilder();
+  // (force-field size walls glow: they don't cast baked shadows)
+  const level = buildLevel(
+    def.boxes.some((b) => b.mat === 'forcefield')
+      ? { ...def, boxes: def.boxes.filter((b) => b.mat !== 'forcefield') }
+      : def,
+  );
   const lightDefs = collectLights(def);
   const lightAt = makeLightAt(
     level,
@@ -345,10 +366,22 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     if (b.noRender) return;
     const mat = b.mat ?? 'hull';
     const base = new THREE.Color(b.color ?? MATERIAL_COLORS[mat]);
+    if (mat === 'forcefield') {
+      // a size wall: a see-through glowing panel with bright edges (both sides visible)
+      const c = base.clone().multiplyScalar(0.55 * brightness);
+      for (const [fi, f] of FACES.entries()) {
+        if (!localNormal(b, fi)) continue;
+        const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
+        fieldGeo.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
+      }
+      addTrims(trims, b, base.clone().multiplyScalar(brightness));
+      return;
+    }
     if (mat === 'skyglass') {
       // see-through glass to space: one flat tint, blended over the sky (drawn after the level)
       const c = base.clone().multiplyScalar(brightness);
-      for (const f of FACES) {
+      for (const [fi, f] of FACES.entries()) {
+        if (!localNormal(b, fi)) continue;
         const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
         glassGeo.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
       }
@@ -362,7 +395,9 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     const isTrim = mat === 'trim';
     const tex = TEX_OF[mat];
     FACES.forEach((f, fi) => {
-      const n = b.q ? qRotate(b.q, f.n) : f.n;
+      const ln = localNormal(b, fi);
+      if (!ln) return;
+      const n = b.q ? qRotate(b.q, ln) : ln;
       const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
       if (isTrim) {
         const c = base.clone().multiplyScalar(brightness);
@@ -380,7 +415,18 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       const cols = f.corners.map(([, y]) =>
         shade(base, n, variation, vertical && y < 0, ambient, sun),
       );
-      tiledQuad(builder(tex ?? 'none'), pts, cols, n, bi * 31 + fi, tex, base, lightAt, brightness);
+      tiledQuad(
+        builder(tex ?? 'none'),
+        pts,
+        cols,
+        n,
+        bi * 31 + fi,
+        tex,
+        base,
+        lightAt,
+        brightness,
+        !!b.lowDetail,
+      );
     });
     if (b.trim !== undefined)
       addTrims(trims, b, new THREE.Color(b.trim).multiplyScalar(brightness));
@@ -407,6 +453,22 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     disposables.push(trimGeo, trimMat);
   }
 
+  if (!fieldGeo.empty) {
+    const geo = fieldGeo.build();
+    const mat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    mesh.renderOrder = 1;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
   if (!glassGeo.empty) {
     const geo = glassGeo.build();
     // front faces only: looking through a glass slab tints once, not twice
@@ -490,12 +552,14 @@ const tiledQuad = (
   base: THREE.Color,
   lightAt: (p: Vec3, n: Vec3) => THREE.Color,
   brightness: number,
+  /** one quad for the whole face (BoxDef.lowDetail) */
+  flat = false,
 ): void => {
   const [p0, p1, , p3] = pts;
   const l1 = len(sub(p1, p0));
   const l2 = len(sub(p3, p0));
-  const nu = Math.min(48, Math.max(1, Math.round(l1 / TILE)));
-  const nv = Math.min(48, Math.max(1, Math.round(l2 / TILE)));
+  const nu = flat ? 1 : Math.min(48, Math.max(1, Math.round(l1 / TILE)));
+  const nv = flat ? 1 : Math.min(48, Math.max(1, Math.round(l2 / TILE)));
   const faceUv = kind !== null && TEX_SCALE[kind] === null;
   const scale = kind ? (TEX_SCALE[kind] ?? 1) : 1;
   const at = (u: number, v: number): Vec3 => {
@@ -795,11 +859,15 @@ const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispos
     });
     disposables.push(ringMat, discMat);
     const g = new THREE.Group();
+    // (big portals: the ring fills the opening)
+    const across = Math.max(pt.max.x - pt.min.x, pt.max.z - pt.min.z);
+    const k = Math.max(1, Math.min(across, pt.max.y - pt.min.y) / 4.2);
     g.position.set(
       (pt.min.x + pt.max.x) / 2,
-      Math.min(pt.max.y, pt.min.y + 2.1),
+      Math.min(pt.max.y, pt.min.y + 2.1 * k),
       (pt.min.z + pt.max.z) / 2,
     );
+    g.scale.setScalar(k);
     // the disc's normal is local +Z: turn it toward the thin axis (x or z)
     if (pt.max.x - pt.min.x < pt.max.z - pt.min.z) g.rotation.y = Math.PI / 2;
     const ring = new THREE.Mesh(ringGeo, ringMat);

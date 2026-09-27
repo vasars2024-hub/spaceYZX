@@ -9,6 +9,9 @@ export interface Settings {
   masterVolume: number;
   sfxVolume: number;
   uiVolume: number;
+  /** the 90s announcer ("LETHAL RECOIL!", "Round three", "Match point"…) */
+  announcer: boolean;
+  announcerVolume: number;
   showFps: boolean;
   showNetStats: boolean;
   invertY: boolean;
@@ -26,6 +29,8 @@ export interface Settings {
   crosshair: CrosshairSettings;
   keybinds: Record<string, string[]>;
   nickname: string;
+  /** the title screen's one-click Play: team deathmatch or free-for-all Brawl */
+  brawlMode: 'tdm' | 'ffa';
   /** online text chat: show enemies' all-chat */
   chatShowEnemyAll: boolean;
   /** voice chat: connect and play others' voices (the mic is only asked for on push-to-talk) */
@@ -90,6 +95,8 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.8,
   sfxVolume: 1,
   uiVolume: 0.8,
+  announcer: true,
+  announcerVolume: 0.9,
   showFps: true,
   showNetStats: true,
   invertY: false,
@@ -105,6 +112,7 @@ export const DEFAULT_SETTINGS: Settings = {
   crosshair: { style: 'cross', color: '#e8fbff', size: 7, gap: 4, thickness: 2, outline: true },
   keybinds: DEFAULT_KEYBINDS,
   nickname: '',
+  brawlMode: 'tdm',
   chatShowEnemyAll: true,
   voiceEnabled: true,
   voiceVolume: 0.8,
@@ -153,6 +161,9 @@ export const loadSettings = (): Settings => {
     s.brightness = Math.min(1.2, Math.max(0.8, Number(s.brightness) || 1));
     s.renderScale = Math.min(1, Math.max(0.5, Number(s.renderScale) || 1));
     s.voiceVolume = Math.min(1, Math.max(0, Number(s.voiceVolume) || 0));
+    s.announcer = s.announcer !== false;
+    s.announcerVolume = Math.min(1, Math.max(0, Number(s.announcerVolume ?? 0.9) || 0));
+    if (s.brawlMode !== 'ffa') s.brawlMode = 'tdm';
     if (!['auto', 'on', 'off'].includes(s.touchControls)) s.touchControls = 'auto';
     if (!['aim', 'curve', 'off'].includes(s.touchFireDrag)) s.touchFireDrag = 'aim';
     const num = (v: unknown, min: number, max: number, def: number): number => {

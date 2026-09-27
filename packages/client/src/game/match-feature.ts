@@ -1,9 +1,10 @@
-// Match presentation: score/timer bar, round banners, Tower beams and dropped Controllers
-// (3D), scoreboard (Tab) and the match results overlay. On-screen markers (Towers,
+// Match presentation: score/timer bar, round banners, transition cards + announcer (MATCH
+// START, ROUND n, HALF TIME, ROUND WON/LOST, VICTORY/DEFEAT: game/transitions.ts), Tower beams
+// and dropped Controllers (3D), scoreboard (Tab) and the match results overlay. On-screen markers (Towers,
 // Controllers, name tags, reveals) are drawn by WorldMarkers.
 import * as THREE from 'three';
 import type { SimEvent } from '@space-yz/shared';
-import { GAME_NAME, TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
+import { TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, Session } from './session';
 import { h } from '../ui/menus';
@@ -12,6 +13,15 @@ import { TEAM_COLOR, TEAM_HEX, towerRole, controllerAtHome } from './objectives'
 import { setSidesSwapped } from '../render/team-palette';
 import { SkyArenaView } from '../render/sky-arena';
 import { effects } from '../render/effects';
+import { planMatchEnd, planRoundEnd, planRoundStart } from './transitions';
+import {
+  announce,
+  clearTransitions,
+  mountTransitions,
+  playTransitions,
+  preloadAnnouncer,
+  transitionShowing,
+} from '../ui/transitions';
 
 const TEAM_NAME = ['CYAN', 'ORANGE'] as const;
 
@@ -49,9 +59,8 @@ export class MatchFeature implements ClientFeature {
   private banner!: HTMLDivElement;
   private bannerSub!: HTMLDivElement;
   private bannerUntil = 0;
-  /** the game's name, big, over the round result */
-  private wordmark!: HTMLDivElement;
-  private wordmarkUntil = 0;
+  /** a banner can wait for the transition cards to finish */
+  private bannerFrom = 0;
   private board!: HTMLDivElement;
   private results!: HTMLDivElement;
   private boardHeld = false;
@@ -92,6 +101,11 @@ export class MatchFeature implements ClientFeature {
   /** the sky duel overtime's arena, clouds and sky (drawn only while the camera is up there) */
   private sky: SkyArenaView | null = null;
 
+  constructor(
+    /** ranked: the ladder's name for the match start card ('Premier', 'Duels') */
+    private readonly opts: { ladder?: string } = {},
+  ) {}
+
   init(c: GameClient): void {
     const ui = c.deps.ui;
     this.scoreA = h('span', { class: 'mb-score', style: `color:${TEAM_COLOR[0]}` }, '0');
@@ -104,7 +118,6 @@ export class MatchFeature implements ClientFeature {
       h('div', { class: 'mb-row' }, this.scoreA, this.center, this.scoreB),
       this.sub,
     );
-    this.wordmark = h('div', { class: 'match-wordmark' }, GAME_NAME.toUpperCase());
     this.zoneWarn = h('div', { class: 'zone-warn' });
     this.bombBarFill = h('div', { class: 'bomb-bar-fill' });
     this.bombBarText = h('div', { class: 'bomb-bar-text' });
@@ -122,7 +135,7 @@ export class MatchFeature implements ClientFeature {
       'div',
       { class: 'match-ui' },
       this.bar,
-      h('div', { class: 'match-banner-wrap' }, this.wordmark, this.banner, this.bannerSub),
+      h('div', { class: 'match-banner-wrap' }, this.banner, this.bannerSub),
       this.zoneWarn,
       this.bombBar,
       this.board,
@@ -130,7 +143,12 @@ export class MatchFeature implements ClientFeature {
     );
     this.root.style.display = 'none';
     ui.append(this.root);
+    // transition cards sit above this HUD; the announcer's clips start loading now
+    mountTransitions(ui);
+    preloadAnnouncer();
     this.unsub = c.deps.input.onAction((a) => {
+      // Tab: the scoreboard wins over a transition card
+      if (a === 'scoreboard') clearTransitions();
       if (a === 'scoreboard') this.boardHeld = true;
       if (a === 'scoreboard:up') this.boardHeld = false;
     });
@@ -199,11 +217,12 @@ export class MatchFeature implements ClientFeature {
     return s.local()?.team ?? 0;
   }
 
-  private showBanner(text: string, sub = '', sec = 2.5, color = '#fff'): void {
+  private showBanner(text: string, sub = '', sec = 2.5, color = '#fff', delaySec = 0): void {
     this.banner.textContent = text;
     this.banner.style.color = color;
     this.bannerSub.textContent = sub;
-    this.bannerUntil = this.time + sec;
+    this.bannerFrom = this.time + delaySec;
+    this.bannerUntil = this.bannerFrom + sec;
   }
 
   events(c: GameClient, events: SimEvent[]): void {
@@ -216,23 +235,35 @@ export class MatchFeature implements ClientFeature {
       switch (e.type) {
         case 'roundStart': {
           // teams swap map sides at half time: say so, or people run to the wrong Tower
-          const swapped = !!s.match?.()?.sideSwapped && this.last?.sideSwapped === false;
-          this.showBanner(
-            e.suddenDeath ? 'SUDDEN DEATH' : `ROUND ${e.round}`,
-            e.suddenDeath
-              ? 'Half timer · bigger Tower zones · everyone revealed'
-              : swapped
-                ? s.match?.()?.objective === 'bomb'
-                  ? mine === s.match?.()?.attackers
+          const now = s.match?.() ?? null;
+          const swapped = !!now?.sideSwapped && this.last?.sideSwapped === false;
+          // the cards (MATCH START / HALF TIME / ROUND n…) play through the spawn lock
+          const cardsMs = now
+            ? playTransitions(
+                planRoundStart(this.last, now, {
+                  myTeam: mine,
+                  map: s.level.def.name,
+                  ladder: this.opts.ladder,
+                }),
+              )
+            : 0;
+          // after a side swap the reminder stays up a little after the cards
+          if (swapped || !now)
+            this.showBanner(
+              e.suddenDeath ? 'SUDDEN DEATH' : `ROUND ${e.round}`,
+              swapped
+                ? now?.objective === 'bomb'
+                  ? mine === now?.attackers
                     ? 'Sides swapped — you are now T (orange): plant the bomb'
                     : 'Sides swapped — you are now CT (cyan): defend the sites'
-                  : s.match?.()?.objective === 'elim'
+                  : now?.objective === 'elim'
                     ? 'Sides swapped · team colors swapped too'
                     : 'Sides swapped — attack the other Tower now · team colors swapped too'
                 : 'Get ready',
-            swapped ? 4 : 3,
-            e.suddenDeath ? '#ff5b5b' : '#fff',
-          );
+              swapped ? 4 : 3,
+              '#fff',
+              cardsMs / 1000,
+            );
           a.play('roundStart');
           break;
         }
@@ -283,22 +314,26 @@ export class MatchFeature implements ClientFeature {
           a.play('revealPulse');
           break;
         case 'roundLive':
+          // never a card over live combat
+          clearTransitions();
           this.showBanner('GO!', '', 1);
+          announce('fight');
           break;
         case 'roundEnd': {
           const won = e.winner === mine;
-          const text = e.winner === null ? 'DRAW' : won ? 'ROUND WON' : 'ROUND LOST';
-          this.showBanner(
-            text,
-            REASON_TEXT[e.reason] ?? e.reason,
-            4,
-            e.winner === null ? '#fff' : TEAM_COLOR[e.winner],
+          playTransitions(
+            planRoundEnd(
+              e.winner,
+              mine,
+              REASON_TEXT[e.reason] ?? e.reason,
+              e.winner === null ? undefined : TEAM_COLOR[e.winner],
+            ),
           );
-          this.wordmarkUntil = this.time + 4;
           if (e.winner !== null) a.play(won ? 'roundWin' : 'roundLose');
           break;
         }
         case 'matchEnd':
+          playTransitions(planMatchEnd(e.winner, mine, s.match?.()?.scores ?? [0, 0]));
           a.play(e.winner === mine ? 'roundWin' : 'roundLose');
           break;
         case 'controllerDrop':
@@ -353,6 +388,7 @@ export class MatchFeature implements ClientFeature {
     this.last = m;
     setSidesSwapped(!!m?.sideSwapped);
     if (!m) {
+      if (this.root.style.display !== 'none') clearTransitions();
       this.root.style.display = 'none';
       this.group.visible = false;
       c.panelOpen = false;
@@ -456,10 +492,11 @@ export class MatchFeature implements ClientFeature {
     this.bar.dataset.team = String(mine);
 
     // ---- banner ----
-    const bannerOn = this.time < this.bannerUntil;
+    const bannerOn = this.time >= this.bannerFrom && this.time < this.bannerUntil;
     this.banner.style.opacity = bannerOn ? '1' : '0';
     this.bannerSub.style.opacity = bannerOn ? '1' : '0';
-    this.wordmark.classList.toggle('show', this.time < this.wordmarkUntil);
+    // safety net: a card never stays over live combat (e.g. the roundLive event was missed)
+    if (m.phase === 'live' && transitionShowing()) clearTransitions();
 
     // ---- overtime: the safe zone's edge + the out-of-zone countdown ----
     // (the sky duel has no zone: its edge is the platform's)
@@ -686,6 +723,7 @@ export class MatchFeature implements ClientFeature {
 
   dispose(c: GameClient): void {
     this.unsub?.();
+    clearTransitions();
     setSidesSwapped(false);
     this.sky?.dispose(c.scene);
     this.sky = null;

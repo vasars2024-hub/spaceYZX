@@ -1,6 +1,6 @@
 // Match loadouts: what kit players get. 'lethal' is the normal game (Boomerang, Laser, Gravity
 // Grenade); 'cs' is the Counter-Strike style mode (AK-47 + Desert Eagle + knife slash, bomb
-// rules, everything moving at half speed).
+// rules, everything moving at 70 % speed).
 //
 // The sim reads the loadout from the config (`combat.loadout`), so the client's prediction and
 // the server always agree: a CS room/session simply runs with `csConfig(base)`.

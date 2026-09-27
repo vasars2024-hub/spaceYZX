@@ -227,6 +227,14 @@ export const settingsScreen = (
       s.uiVolume = v;
       apply();
     }),
+    toggle('Announcer (round calls, match start, victory)', s.announcer, (v) => {
+      s.announcer = v;
+      apply();
+    }),
+    slider('Announcer volume', 0, 1, 0.05, s.announcerVolume, pct, (v) => {
+      s.announcerVolume = v;
+      apply();
+    }),
   ];
 
   const chatTab = () => [

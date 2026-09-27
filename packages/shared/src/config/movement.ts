@@ -129,6 +129,20 @@ export const MOVEMENT_DEFAULTS = {
   racePenaltySec: 1.5, // frozen at the checkpoint after a fall / respawn
   raceFuelCellRadius: 1.6, // pick-up reach of a fuel cell (body centre)
   raceRespawnHoldSec: 0.3, // hold the respawn key this long (no accidental resets)
+  // Race movement (race tracks and surf maps only; every other mode keeps the numbers above):
+  // Source-style air control. In the air the wish direction only adds speed while your
+  // velocity along it is under raceAirWishCap, so strafing (A/D) while turning the mouse the
+  // same way adds a little speed every tick: bunny-hop chains and surfing build speed. Jumping
+  // on the first ground tick of a landing skips friction (a fresh press, or pressed up to
+  // raceJumpBufferSec before landing); a late jump pays a tick of friction (~10 %).
+  raceSprintSpeed: 12, // m/s: races run a third faster than combat (sprintSpeed)
+  raceAirAccel: 100, // like surf servers' sv_airaccelerate: the wish cap is reached at once
+  raceAirWishCap: 1, // m/s (Source's 30 u ≈ 0.76 m): the speed gained per perfectly strafed tick
+  raceAirSoftCap: 34, // m/s: strafing can't push your horizontal speed past this (~2.8 × race sprint)
+  raceMaxSpeed: 50, // m/s total: surfing down ramps and long falls top out here
+  raceJumpBufferSec: 0.05, // a jump pressed this early still fires on the landing tick
+  raceLandGraceSec: 0, // no friction-free ticks after landing: jump on the first one or slow down
+  raceSurfPenaltySec: 0.5, // surf maps: frozen this long at the stage start after a fall
 } as const;
 
 export type MovementConfig = { -readonly [K in keyof typeof MOVEMENT_DEFAULTS]: number };

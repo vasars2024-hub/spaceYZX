@@ -1,9 +1,33 @@
-// Ranked UI: the ranked screen (Premier, Duels and Race cards, the Premier map veto),
-// leaderboards (ladders and race track times) and the player profile with the "login code" for
-// moving an account to another PC. Names are always rendered as text. The ladders come from
+// Ranked UI: the matchmaking screen (Premier, Premier CS, Duels and Race cards with multi-search
+// tick boxes and live numbers, the casual queue, your party, the mode vote and map veto) and
+// leaderboards (ladders and race track times; a name opens that player's profile, see
+// ui/profile-screen.ts). Names are always rendered as text. The ladders come from
 // shared rating/ladders.ts (ui/flow.ts cards).
-import type { LadderId, NetCore, RankedInfo, VetoView } from '@space-yz/shared';
-import { formatRaceTime, getMap, LADDER_IDS, LADDERS, mapDef, raceMaps } from '@space-yz/shared';
+import type {
+  CasualModeId,
+  LadderId,
+  NetCore,
+  QueueCounts,
+  RankedInfo,
+  RankedQueueId,
+  TeamMode,
+  VetoView,
+} from '@space-yz/shared';
+import {
+  CASUAL_MODES,
+  CASUAL_SIZES,
+  casualMode,
+  formatRaceTime,
+  getMap,
+  LADDER_IDS,
+  LADDERS,
+  mapDef,
+  queueMaxParty,
+  queueTeamSizes,
+  raceMaps,
+  RANKED_QUEUE_IDS,
+  rankedQueue,
+} from '@space-yz/shared';
 import { h, button } from './menus';
 import { icon } from './icons';
 import {
@@ -13,7 +37,9 @@ import {
   standingText,
   type LadderStandingView,
 } from './flow';
-import { iconButton, mapCard, screenHead } from './menu-kit';
+import { card, iconButton, mapCard, screenHead } from './menu-kit';
+import { avatarEl } from './avatars';
+import { nameLink } from './profile-screen';
 
 interface Rank {
   label: string;
@@ -77,12 +103,60 @@ export interface RankedScreenHandlers {
   beforeQueue(): void;
   back(): void;
   status(): { text: string; ok: boolean | null };
+  /** open the friends screen (to invite friends to your party) */
+  friends?(): void;
 }
 
-/** The Premier map veto: a card per map, banned ones crossed out, whose turn, the timer. */
+const MODE_NAME: Record<string, string> = { bomb: 'Bomb', elim: 'Elimination', tower: 'Tower' };
+
+/**
+ * The map veto (Premier, Premier CS): a card per map, banned ones crossed out, whose turn, the
+ * timer. Premier CS votes the mode first: two big cards (Bomb / Elimination) with the votes.
+ */
 const vetoPanel = (core: NetCore, v: VetoView): { el: HTMLElement; timer: HTMLElement } => {
   const mine = v.turn === v.yourTeam;
   const timer = h('span', { class: 'veto-timer' });
+  const ladder = v.ladder ? LADDERS[v.ladder].name : 'Premier';
+  const names = (t: 0 | 1) => v.teams[t].join(', ');
+  const teams = h(
+    'div',
+    { class: 'veto-teams' },
+    h('span', {}, `Your team: ${names(v.yourTeam)}`),
+    h('span', {}, `Enemy: ${names(v.yourTeam === 0 ? 1 : 0)}`),
+  );
+  if (v.phase === 'vote' && v.vote) {
+    const vote = v.vote;
+    const grid = h('div', { class: 'card-grid modes vote-grid' });
+    for (const o of vote.options) {
+      const c = card({
+        title: MODE_NAME[o] ?? o,
+        desc: `${vote.counts[o] ?? 0} vote${vote.counts[o] === 1 ? '' : 's'}${vote.yours === o ? ' · your vote' : ''}`,
+        art: icon(o === 'elim' ? 'elim' : 'bomb'),
+        cls: `mode${vote.yours === o ? ' selected' : ''}`,
+        onClick: () => core.voteMode(o),
+      });
+      grid.append(c);
+    }
+    const el = h(
+      'div',
+      { class: 'veto' },
+      h(
+        'div',
+        { class: 'veto-head' },
+        h('span', { class: 'veto-title' }, `Mode vote · ${ladder} ${v.teamSize}v${v.teamSize}`),
+        h('span', { class: 'veto-turn mine' }, 'Everyone votes: Bomb or Elimination?'),
+        timer,
+      ),
+      teams,
+      grid,
+      h(
+        'div',
+        { class: 'queue-status' },
+        'The mode with the most votes is played (a tie is decided at random). Then the teams ban maps.',
+      ),
+    );
+    return { el, timer };
+  }
   const grid = h('div', { class: 'card-grid maps veto-grid' });
   for (const id of v.maps) {
     const ban = v.banned.find((b) => b.map === id);
@@ -104,14 +178,14 @@ const vetoPanel = (core: NetCore, v: VetoView): { el: HTMLElement; timer: HTMLEl
     c.disabled = !!ban || !mine || !!v.picked;
     grid.append(c);
   }
-  const names = (t: 0 | 1) => v.teams[t].join(', ');
+  const mode = v.mode ? ` · ${MODE_NAME[v.mode] ?? v.mode}` : '';
   const el = h(
     'div',
     { class: 'veto' },
     h(
       'div',
       { class: 'veto-head' },
-      h('span', { class: 'veto-title' }, `Map veto · Premier ${v.teamSize}v${v.teamSize}`),
+      h('span', { class: 'veto-title' }, `Map veto · ${ladder} ${v.teamSize}v${v.teamSize}${mode}`),
       h(
         'span',
         { class: `veto-turn${mine ? ' mine' : ''}` },
@@ -123,12 +197,7 @@ const vetoPanel = (core: NetCore, v: VetoView): { el: HTMLElement; timer: HTMLEl
       ),
       timer,
     ),
-    h(
-      'div',
-      { class: 'veto-teams' },
-      h('span', {}, `Your team: ${names(v.yourTeam)}`),
-      h('span', {}, `Enemy: ${names(v.yourTeam === 0 ? 1 : 0)}`),
-    ),
+    teams,
     grid,
     h(
       'div',
@@ -161,30 +230,119 @@ const raceTrackList = (p: ClientProfile | null): HTMLElement =>
     }),
   );
 
-/** Premier's opening hours in words for its card ('' = always open). */
+/** Premier's opening hours in words ('' = no hours set). */
 const hoursLine = (info: RankedInfo | null, at: number): { text: string; closed: boolean } => {
-  if (!info) return { text: '', closed: false };
+  if (!info || !info.premier.hours) return { text: '', closed: false };
   const p = info.premier;
   if (!p.open) {
     const s = left(p.opensInSec, at);
     return {
-      text:
-        s === null
-          ? 'Premier is closed for now.'
-          : `Premier opens in ${countdown(s)}${p.hours ? ` · ${p.hours}` : ''}`,
+      text: s === null ? `Hours: ${p.hours}` : `Hours: ${p.hours} · next in ${countdown(s)}`,
       closed: true,
     };
   }
   const s = left(p.closesInSec, at);
   return {
-    text: s === null ? '' : `Open now · closes in ${countdown(s)}${p.hours ? ` · ${p.hours}` : ''}`,
+    text: `Opening hours now${s === null ? '' : ` · closes in ${countdown(s)}`} · ${p.hours}`,
     closed: false,
   };
 };
 
-/** Ranked: a card per ladder (Premier, Duels) with its rating and a button per queue. */
+/**
+ * One queue's live line: "7 searching · 3v3 ready", or why it's closed ("Opens at 20 online ·
+ * now 12").
+ */
+export const queueCountText = (
+  id: RankedQueueId,
+  counts: QueueCounts | null,
+  hours = '',
+): { text: string; open: boolean } => {
+  const c = counts?.ranked[id];
+  if (!counts || !c) return { text: '', open: true };
+  if (!c.open) {
+    const parts = c.threshold > 0 ? [`Opens at ${c.threshold} online · now ${counts.online}`] : [];
+    if (hours) parts.push(c.threshold > 0 ? `or ${hours}` : hours);
+    return { text: parts.join(' ') || 'Closed right now', open: false };
+  }
+  const q = rankedQueue(id);
+  const sizes = q?.kind === 'team' ? queueTeamSizes(q) : [];
+  const size = q?.kind === 'team' && sizes.length > 1 ? c.forms : null;
+  const smallest = sizes[sizes.length - 1] ?? 0;
+  const extra =
+    sizes.length > 1
+      ? size
+        ? ` · ${size}v${size} ready`
+        : ` · ${smallest * 2} needed for ${smallest}v${smallest}`
+      : '';
+  return { text: `${c.searching} searching${extra}`, open: true };
+};
+
+/** Ranked picks kept while the page is open (null: the default, every open queue). */
+let rankedPick: Set<RankedQueueId> | null = null;
+/** The casual pick kept while the page is open. */
+const casualPick: { modes: Set<CasualModeId>; sizes: Set<TeamMode> } = {
+  modes: new Set(['tower', 'bomb', 'elim', 'brawl']),
+  sizes: new Set(['1v1', '2v2', '3v3', '5v5']),
+};
+
+/** The party strip: who is in it, ready ticks, leave / invite. */
+const partyStrip = (core: NetCore, hd: RankedScreenHandlers, myId: number | null): HTMLElement => {
+  const p = core.party;
+  if (!p)
+    return h(
+      'div',
+      { class: 'party-strip empty' },
+      h('span', { class: 'muted' }, 'Solo. Play with friends: '),
+      button('Invite friends to a party', () => hd.friends?.(), 'btn small secondary'),
+    );
+  const leader = p.leader === myId;
+  const me = p.members.find((m) => m.id === myId);
+  return h(
+    'div',
+    { class: 'party-strip' },
+    h('span', { class: 'label' }, `Party ${p.members.length}/${p.max}`),
+    ...p.members.map((m) =>
+      h(
+        'span',
+        { class: `party-member${m.leader ? ' leader' : ''}${m.online ? '' : ' offline'}` },
+        avatarEl(m.avatar, m.banner, 24),
+        h('span', {}, m.name),
+        m.leader ? h('span', { class: 'chip' }, 'leader') : null,
+        m.ready ? h('span', { class: 'chip ok' }, 'ready') : null,
+        leader && !m.leader
+          ? button('✕', () => core.partyOp('kick', m.id), 'btn tiny secondary')
+          : null,
+      ),
+    ),
+    ...p.invited.map((c) => h('span', { class: 'party-member invited' }, `${c.name} (invited)`)),
+    h(
+      'span',
+      { class: 'party-actions' },
+      leader && p.members.length < p.max
+        ? button('Invite', () => hd.friends?.(), 'btn small secondary')
+        : null,
+      !leader && me
+        ? button(
+            me.ready ? 'Not ready' : 'Ready',
+            () => core.partyOp(me.ready ? 'unready' : 'ready'),
+            'btn small secondary',
+          )
+        : null,
+      button('Leave party', () => core.partyOp('leave'), 'btn small secondary'),
+    ),
+  );
+};
+
+/**
+ * Ranked + casual matchmaking. Ranked: a card per ladder with a tick box per queue — tick
+ * several to search them all at once (all open ones are ticked by default); every card shows
+ * how many search it and, for Premier, which team size would form now. Casual: tick modes and
+ * team sizes, the server forms the match that suits the most people (bots fill after a short
+ * wait). A party searches together (its leader picks); the members see it here.
+ */
 export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLElement => {
   const season = h('div', { class: 'rank-global' });
+  const party = h('div', { class: 'party-row' });
   const stage = h('div', { class: 'ranked-stage' });
   const status = h('div', { class: 'queue-status' });
   const conn = h('div', { class: 'status' });
@@ -194,41 +352,69 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
     () => core.queueRanked(null),
     'btn small secondary cancel-btn',
   );
-  core.sendJson({ t: 'profile' }); // fresh ratings, season and Premier hours
+  core.sendJson({ t: 'profile' }); // fresh ratings, season, Premier hours and queue numbers
   let lastAsk = performance.now();
-  let hoursEl: HTMLElement | null = null;
   let vetoTimer: HTMLElement | null = null;
+  const myId = (): number | null => (core.account as ClientProfile | null)?.id ?? null;
+  const partySize = (): number => core.party?.members.length ?? 1;
+  /** may I start a search? (solo, or my party's leader) */
+  const canSearch = (): boolean => !core.party || core.party.leader === myId();
+  const hours = (): string => hoursLine(core.rankedInfo, core.rankedInfoAt).text;
+  /** open for me: open now, and my party fits it */
+  const usable = (id: RankedQueueId): boolean => {
+    const q = rankedQueue(id);
+    return !!q && queueCountText(id, core.queueCounts).open && queueMaxParty(q) >= partySize();
+  };
+  const ticked = (id: RankedQueueId): boolean => (rankedPick ? rankedPick.has(id) : true);
+  const selection = (): RankedQueueId[] =>
+    RANKED_QUEUE_IDS.filter((id) => ticked(id) && usable(id));
 
   const ladderCards = (): HTMLElement => {
     const p = core.account as ClientProfile | null;
     const q = core.queue;
+    const searchingNow = new Set(q.modes ?? (q.mode ? [q.mode] : []));
     const grid = h('div', { class: 'card-grid queues ladders' });
     rankedCards().forEach((c, i) => {
       const st = p?.ladders?.[c.ladder];
       const def = LADDERS[c.ladder];
       const color = st?.rank?.color ?? '#9aa6b8';
-      const hours = c.ladder === 'premier' ? hoursLine(core.rankedInfo, core.rankedInfoAt) : null;
-      const buttons = c.queues.map((qd) => {
-        const searching = q.mode === qd.id;
-        const b = button(
-          searching ? `Searching ${qd.label === 'Find match' ? '' : qd.label}`.trim() : qd.label,
-          () => {
-            if (q.mode === qd.id) return;
-            hd.beforeQueue();
-            core.queueRanked(qd.id);
+      const premierLike = c.ladder === 'premier' || c.ladder === 'premier-cs';
+      const rows = c.queues.map((qd) => {
+        const line = queueCountText(qd.id, core.queueCounts, premierLike ? hours() : '');
+        const rq = rankedQueue(qd.id)!;
+        const tooBig = queueMaxParty(rq) < partySize();
+        const box = h('input', { type: 'checkbox', 'aria-label': `Search ${qd.label}` });
+        box.checked = searchingNow.size ? searchingNow.has(qd.id) : ticked(qd.id) && usable(qd.id);
+        box.disabled = !line.open || tooBig || !canSearch() || searchingNow.size > 0;
+        box.addEventListener('change', () => {
+          rankedPick ??= new Set(RANKED_QUEUE_IDS.filter(usable));
+          if (box.checked) rankedPick.add(qd.id);
+          else rankedPick.delete(qd.id);
+          last = '';
+          render();
+        });
+        return h(
+          'label',
+          {
+            class: `queue-pick${line.open ? '' : ' closed'}${searchingNow.has(qd.id) ? ' searching' : ''}`,
           },
-          `btn${searching ? '' : q.mode ? ' secondary' : ''}`,
+          box,
+          h('span', { class: 'queue-pick-name' }, qd.label),
+          h(
+            'span',
+            { class: 'queue-pick-count' },
+            tooBig
+              ? queueMaxParty(rq) === 1
+                ? 'solo only'
+                : `parties up to ${queueMaxParty(rq)}`
+              : line.text,
+          ),
         );
-        b.disabled = (!!q.mode && !searching) || !!hours?.closed;
-        return b;
       });
-      const hoursText = h('div', { class: `ladder-hours${hours?.closed ? ' closed' : ''}` });
-      hoursText.textContent = hours?.text ?? '';
-      if (hours) hoursEl = hoursText;
       const card = h(
         'div',
         {
-          class: `card queue ladder-card ladder-${c.ladder}${q.mode && c.queues.some((x) => x.id === q.mode) ? ' selected searching' : ''}`,
+          class: `card queue ladder-card ladder-${c.ladder}${c.queues.some((x) => searchingNow.has(x.id)) ? ' selected searching' : ''}`,
           style: `--i:${i}`,
         },
         h('span', { class: 'card-art' }, icon(c.icon)),
@@ -265,23 +451,107 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
             )
           : null,
         def.seasonal ? h('div', { class: 'ladder-season' }, `Season ${p?.season ?? 1}`) : null,
-        hours ? hoursText : null,
         c.ladder === 'race' ? raceTrackList(p) : null,
-        h('div', { class: 'ladder-buttons' }, ...buttons),
+        h('div', { class: 'ladder-buttons queue-picks' }, ...rows),
       );
       grid.append(card);
     });
     return grid;
   };
 
+  /** Casual: tick modes and sizes, then search. */
+  const casualPanel = (): HTMLElement => {
+    const q = core.queue;
+    const searching = !!q.casual;
+    const locked = searching || !canSearch() || !!q.modes?.length;
+    const chip = (label: string, on: boolean, count: string, flip: () => void) => {
+      const b = button(
+        `${label}${count}`,
+        () => {
+          flip();
+          last = '';
+          render();
+        },
+        `btn small ${on ? '' : 'secondary'}`,
+      );
+      b.disabled = locked;
+      b.setAttribute('aria-pressed', String(on));
+      return b;
+    };
+    const flip =
+      <T>(set: Set<T>, v: T) =>
+      () =>
+        set.has(v) ? set.delete(v) : set.add(v);
+    const shown = searching ? new Set(q.casual!.modes) : casualPick.modes;
+    const shownSizes = searching ? new Set(q.casual!.sizes) : casualPick.sizes;
+    const go = button(
+      'Search casual',
+      () => {
+        hd.beforeQueue();
+        core.queueCasual({ modes: [...casualPick.modes], sizes: [...casualPick.sizes] });
+      },
+      'btn',
+    );
+    go.disabled = locked || !casualPick.modes.size || !casualPick.sizes.size;
+    return h(
+      'div',
+      { class: `panel casual-panel${searching ? ' searching' : ''}` },
+      h('div', { class: 'label' }, 'Casual — unranked, bots fill empty slots after 30 s'),
+      h(
+        'div',
+        { class: 'choice-row' },
+        ...CASUAL_MODES.map((m) =>
+          chip(
+            m.name,
+            shown.has(m.id),
+            core.queueCounts ? ` · ${core.queueCounts.casual[m.id] ?? 0}` : '',
+            flip(casualPick.modes, m.id),
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'choice-row' },
+        ...CASUAL_SIZES.map((s) => chip(s, shownSizes.has(s), '', flip(casualPick.sizes, s))),
+        go,
+      ),
+    );
+  };
+
+  const searchRow = (): HTMLElement => {
+    const sel = selection();
+    const b = button(
+      sel.length > 1 ? `Search ${sel.length} ranked modes` : 'Search ranked',
+      () => {
+        hd.beforeQueue();
+        core.queueRankedMany(sel);
+      },
+      'btn primary',
+    );
+    b.disabled = !sel.length || !canSearch() || !!core.queue.mode || !!core.queue.casual;
+    return h(
+      'div',
+      { class: 'ranked-search' },
+      b,
+      h(
+        'span',
+        { class: 'muted' },
+        canSearch()
+          ? 'Tick several: the first match that forms wins, the other searches stop.'
+          : 'Your party leader picks the search.',
+      ),
+    );
+  };
+
   /** countdowns tick without rebuilding the cards */
   const tickTexts = (): void => {
     const v = core.veto;
-    if (hoursEl) hoursEl.textContent = hoursLine(core.rankedInfo, core.rankedInfoAt).text;
-    if (v && vetoTimer)
+    if (v && vetoTimer) {
+      const secs = v.phase === 'vote' && v.vote ? v.vote.secondsLeft : v.secondsLeft;
       vetoTimer.textContent = v.picked
         ? ''
-        : `${Math.max(0, Math.ceil(v.secondsLeft - (performance.now() - core.vetoAt) / 1000))} s`;
+        : `${Math.max(0, Math.ceil(secs - (performance.now() - core.vetoAt) / 1000))} s`;
+    }
   };
 
   let last = '';
@@ -296,8 +566,7 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
       st.text,
     );
     tickTexts();
-    const hours = hoursLine(info, core.rankedInfoAt);
-    // Premier just opened / closed: ask the server again (at most every 5 s)
+    // Premier's hours just opened / closed: ask the server again (at most every 5 s)
     const edge = left(
       info?.premier.open ? info.premier.closesInSec : (info?.premier.opensInSec ?? null),
       core.rankedInfoAt,
@@ -310,13 +579,13 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
       p?.ladders,
       p?.raceBests,
       p?.season,
-      q.mode,
-      q.error,
-      q.waitSec,
-      q.searching,
-      v && { ...v, secondsLeft: 0 },
+      q,
+      v && { ...v, secondsLeft: 0, vote: v.vote && { ...v.vote, secondsLeft: 0 } },
       info && { ...info, premier: { ...info.premier, opensInSec: 0, closesInSec: 0 } },
-      hours.closed,
+      core.queueCounts,
+      core.party,
+      rankedPick && [...rankedPick],
+      hours(),
     ]);
     if (key === last) return;
     last = key;
@@ -325,27 +594,32 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
       h(
         'span',
         { class: 'rank-rating' },
-        'Premier resets softly each season. Duels has no seasons.',
+        `${core.queueCounts ? `${core.queueCounts.online} players online · ` : ''}Premier and Premier CS reset softly each season.`,
       ),
     );
-    hoursEl = null;
+    party.replaceChildren(partyStrip(core, hd, myId()));
     vetoTimer = null;
     if (v) {
       const panel = vetoPanel(core, v);
       vetoTimer = panel.timer;
       stage.replaceChildren(panel.el);
-    } else stage.replaceChildren(ladderCards());
+    } else stage.replaceChildren(ladderCards(), searchRow(), casualPanel());
+    const names = (q.modes ?? (q.mode ? [q.mode] : [])).map(rankedQueueName);
     if (v) {
       status.textContent = 'Leaving now cancels the match for everyone.';
       status.className = 'queue-status';
       cancel.hidden = false;
-    } else if (q.mode) {
-      status.textContent = `Searching ${rankedQueueName(q.mode)} · ${fmtWait(q.waitSec)} · ${q.searching} searching`;
+    } else if (names.length || q.casual) {
+      const what = names.length
+        ? names.join(' + ')
+        : `casual ${q.casual!.modes.map((m) => casualMode(m)?.name ?? m).join(' / ')}`;
+      status.textContent = `${q.party ? 'Your party is searching' : 'Searching'} ${what} · ${fmtWait(q.waitSec)}`;
       status.className = 'queue-status active';
       cancel.hidden = false;
     } else {
       status.textContent =
-        q.error ?? 'Solo queue, matched by rating. Leaving a ranked match counts as a loss.';
+        q.error ??
+        'Matched by rating; a party plays on one team. Leaving a ranked match counts as a loss.';
       status.className = `queue-status${q.error ? ' error' : ''}`;
       cancel.hidden = true;
     }
@@ -359,8 +633,9 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
   return h(
     'div',
     { class: 'screen interactive flow-screen ranked-flow' },
-    screenHead('ranked', 'Ranked', hd.back),
+    screenHead('ranked', 'Find a match', hd.back),
     season,
+    party,
     stage,
     h('div', { class: 'queue-row' }, status, cancel),
     conn,
@@ -368,7 +643,11 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
 };
 
 /** Leaderboards: Premier (this season or a past one) and Duels, from the server's JSON API. */
-export const leaderboardScreen = (back: () => void, myId: number | null): HTMLElement => {
+export const leaderboardScreen = (
+  back: () => void,
+  myId: number | null,
+  openProfile?: (id: number) => void,
+): HTMLElement => {
   let which: LadderId = 'premier';
   let season: number | null = null;
   /** Race: a track's fastest times instead of the rating board */
@@ -449,8 +728,8 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
       }
       if (!data.rows.length) {
         table.textContent =
-          which === 'premier'
-            ? 'No one has placed yet — win 5 Premier matches to appear here.'
+          which === 'premier' || which === 'premier-cs'
+            ? `No one has placed yet — win 5 ${LADDERS[which].name} matches to appear here.`
             : which === 'race'
               ? 'No one has placed yet — finish 5 ranked races to appear here.'
               : 'No ranked players yet — play 5 Duels to appear here.';
@@ -466,7 +745,7 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
               'tr',
               { class: r.playerId === myId ? 'me' : '' },
               h('td', {}, String(r.position)),
-              h('td', {}, r.name),
+              h('td', {}, nameLink(r.name, r.playerId, openProfile)),
               h('td', { style: `color:${r.rank.color};font-weight:800` }, String(r.rating)),
               h('td', {}, rankBadge(r.rank)),
               h('td', {}, String(r.games)),
@@ -501,7 +780,7 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
               'tr',
               { class: r.playerId === myId ? 'me' : '' },
               h('td', {}, String(r.position)),
-              h('td', {}, r.name),
+              h('td', {}, nameLink(r.name, r.playerId, openProfile)),
               h('td', { style: 'font-weight:800' }, formatRaceTime(r.timeMs)),
               h('td', {}, new Date(r.at).toLocaleDateString()),
             ),
@@ -518,205 +797,5 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
     { class: 'screen interactive flow-screen' },
     screenHead('leaderboard', 'Leaderboards', back),
     h('div', { class: 'panel wide-panel' }, tabs, table),
-  );
-};
-
-/** How a match shows in the history: "Premier", "Duels 2v2", "2v2", "arena". */
-const matchLabel = (r: ClientProfile['recent'][number]): string =>
-  r.ladder === 'premier'
-    ? 'Premier'
-    : r.ladder
-      ? `${LADDERS[r.ladder].name} ${r.mode}`
-      : `${r.mode}${r.ranked ? ' ranked (old)' : ''}`;
-
-/** Your profile: Premier and Duels, past seasons, recent matches and the login code. */
-export const profileScreen = (
-  core: NetCore,
-  back: () => void,
-  useCode: (code: string) => void,
-): HTMLElement => {
-  core.sendJson({ t: 'profile' });
-  const body = h('div', {});
-  let last = '';
-  const render = () => {
-    const p = core.account as ClientProfile | null;
-    const key = JSON.stringify([p, core.state]);
-    if (key === last) return;
-    last = key;
-    if (!p?.ladders) {
-      body.textContent = core.state === 'closed' ? 'Not connected to the game server.' : 'Loading…';
-      return;
-    }
-    const parts: (Node | null)[] = [
-      h('div', { class: 'profile-name' }, p.name),
-      h(
-        'div',
-        { class: 'rank-list' },
-        ...LADDER_IDS.map((l) => {
-          const st = p.ladders[l];
-          return h(
-            'div',
-            { class: 'rank-row' },
-            h('span', { class: 'rank-mode' }, LADDERS[l].name),
-            st?.rating !== null && st?.rating !== undefined
-              ? h(
-                  'span',
-                  {},
-                  h('b', { style: `color:${st.rank?.color ?? '#9aa6b8'}` }, `${st.rating} `),
-                  rankBadge(st.rank),
-                )
-              : h('span', { class: 'tier' }, standingText(st)),
-            h(
-              'span',
-              { class: 'rank-rating' },
-              st && st.games
-                ? `${st.wins}/${st.games} won${st.position ? ` · #${st.position}` : ''}${LADDERS[l].seasonal ? ` · season ${p.season}` : ''}`
-                : 'no games',
-            ),
-          );
-        }),
-        ...(p.pastSeasons ?? []).map((s) =>
-          h(
-            'div',
-            { class: 'rank-row past' },
-            h('span', { class: 'rank-mode' }, `S${s.season}`),
-            s.rating !== null
-              ? h(
-                  'span',
-                  {},
-                  h('b', { style: `color:${s.rank?.color ?? '#9aa6b8'}` }, `${s.rating} `),
-                  rankBadge(s.rank),
-                )
-              : h('span', { class: 'tier' }, 'not placed'),
-            h(
-              'span',
-              { class: 'rank-rating' },
-              `${LADDERS[s.ladder ?? 'premier'].name} season ${s.season} final`,
-            ),
-          ),
-        ),
-      ),
-      p.bannedUntil
-        ? h(
-            'div',
-            { class: 'queue-status error' },
-            `Ranked ban until ${new Date(p.bannedUntil).toLocaleString()}`,
-          )
-        : null,
-      h('div', { class: 'label' }, 'Recent matches'),
-      p.recent.length
-        ? h(
-            'table',
-            { class: 'recent' },
-            ...p.recent.map((r) =>
-              h(
-                'tr',
-                {},
-                h('td', {}, matchLabel(r)),
-                h(
-                  'td',
-                  { class: r.won ? 'win' : r.won === false ? 'loss' : '' },
-                  r.place ? `#${r.place}` : r.won ? 'Win' : r.won === false ? 'Loss' : 'Draw',
-                ),
-                h('td', {}, `${r.kills}/${r.deaths}`),
-                h('td', {}, r.ladder ? `${r.delta >= 0 ? '+' : ''}${r.delta}` : ''),
-              ),
-            ),
-          )
-        : h('div', {}, 'No matches yet.'),
-      h('div', { class: 'label' }, 'Race best times'),
-      h(
-        'table',
-        { class: 'recent' },
-        ...(p.raceBests ?? []).map((b) =>
-          h(
-            'tr',
-            {},
-            h('td', {}, getMap(b.track).name),
-            h('td', {}, b.timeMs ? formatRaceTime(b.timeMs) : 'no time yet'),
-            h('td', {}, b.position ? `#${b.position}` : ''),
-          ),
-        ),
-      ),
-      p.recentRaces?.length ? h('div', { class: 'label' }, 'Recent races') : null,
-      p.recentRaces?.length
-        ? h(
-            'table',
-            { class: 'recent' },
-            ...p.recentRaces.map((r) =>
-              h(
-                'tr',
-                {},
-                h('td', {}, `${getMap(r.track).name}${r.ranked ? ' ranked' : ''}`),
-                h(
-                  'td',
-                  { class: r.place === 1 && r.timeMs !== null ? 'win' : '' },
-                  r.timeMs !== null ? `${r.place}/${r.racers}` : 'DNF',
-                ),
-                h('td', {}, r.timeMs !== null ? formatRaceTime(r.timeMs) : ''),
-                h('td', {}, r.ranked ? `${r.delta >= 0 ? '+' : ''}${r.delta}` : ''),
-              ),
-            ),
-          )
-        : null,
-    ];
-    body.replaceChildren(...parts.filter((x): x is Node => x !== null));
-  };
-  render();
-  const timer = window.setInterval(() => {
-    if (!body.isConnected) window.clearInterval(timer);
-    else render();
-  }, 500);
-  const codeOut = h('input', {
-    type: 'password',
-    readonly: 'readonly',
-    value: core.token ?? '',
-    class: 'login-code',
-  });
-  const codeIn = h('input', {
-    type: 'text',
-    placeholder: 'Paste a login code',
-    class: 'login-code',
-  });
-  return h(
-    'div',
-    { class: 'screen interactive flow-screen' },
-    screenHead('profile', 'Your profile', back),
-    h(
-      'div',
-      { class: 'panel wide-panel' },
-      body,
-      h(
-        'div',
-        { class: 'label' },
-        'Login code — keep it secret. Use it to play as you on another PC.',
-      ),
-      h(
-        'div',
-        { class: 'choice-row' },
-        codeOut,
-        button(
-          'Copy my login code',
-          () => {
-            void navigator.clipboard?.writeText(core.token ?? '');
-          },
-          'btn small',
-        ),
-      ),
-      h(
-        'div',
-        { class: 'choice-row' },
-        codeIn,
-        button(
-          'Use this code',
-          () => {
-            const c = codeIn.value.trim();
-            if (/^syz_[A-Za-z0-9_-]{20,64}$/.test(c)) useCode(c);
-            else codeIn.value = '';
-          },
-          'btn small orange',
-        ),
-      ),
-    ),
   );
 };

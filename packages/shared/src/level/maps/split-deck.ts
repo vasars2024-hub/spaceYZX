@@ -34,6 +34,7 @@ import type {
   LevelDef,
   LightDef,
   Material,
+  SizeWallDef,
   SpawnDef,
   TowerDef,
   WaypointDef,
@@ -432,6 +433,7 @@ export const buildSplitDeck = (): LevelDef => {
       { name: 'B', ...S.bombSites.B },
     ],
     powerups: [S.powerup],
+    sizeWalls: sizeWalls(),
     sky: {
       moons: [
         { dir: norm(v3(0.3, 0.85, -0.42)), sizeDeg: 7, color: 0xdfe6f5 },
@@ -445,6 +447,76 @@ export const buildSplitDeck = (): LevelDef => {
 const norm = (p: Vec3): Vec3 => {
   const l = Math.hypot(p.x, p.y, p.z) || 1;
   return v3(p.x / l, p.y / l, p.z / l);
+};
+
+/**
+ * A force-field panel sealing a doorway, given the doorway's volume (1 m deep through the
+ * wall): 0.4 m thick in the middle of the wall, reaching 0.1 m into the jambs, sill and header
+ * all round so nothing slips past its edges.
+ */
+const doorPanel = (
+  x0: number,
+  y0: number,
+  z0: number,
+  x1: number,
+  y1: number,
+  z1: number,
+): BoxDef => {
+  const thinX = x1 - x0 < z1 - z0;
+  return {
+    c: v3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2),
+    h: v3(
+      thinX ? 0.2 : (x1 - x0) / 2 + 0.1,
+      (y1 - y0) / 2 + 0.1,
+      thinX ? (z1 - z0) / 2 + 0.1 : 0.2,
+    ),
+  };
+};
+
+/**
+ * Smaller teams play a smaller map (level/size-walls.ts). The walls sit in existing doorways
+ * (the coordinates are the doorways' own, from the room list above); nothing else changes.
+ *
+ * - 3v3 (and smaller): the west lane is closed at both ends (Orange's west door and the gate
+ *   down into the basement corridor). B keeps the stairwell door and the basement corridor
+ *   (through the passage); A both the gantry and the deck run.
+ * - 1v1 / 2v2: only the middle is open: the spawns, the connector, the atrium with the gantry,
+ *   the pit under it, the stairs and the mid corridor. Both spawns' side doors, the gantry's
+ *   door and window onto the A deck, and the stairwell's doors to B and the passage close, so
+ *   every way to a Tower runs through the atrium (or the pit). The sites move into the middle:
+ *   A on the gantry platform, B in the pit's west end (under the atrium floor, by the stairwell
+ *   door); defenders (Cyan) still reach both first.
+ */
+const sizeWalls = (): SizeWallDef[] => {
+  const S = SPLIT_DECK;
+  const H = S.hold;
+  const D = S.deck;
+  const BC = S.basement;
+  return [
+    {
+      maxTeamSize: 3,
+      boxes: [
+        doorPanel(41, 0, 82, 42, 3.5, 86), // Orange spawn → west lane
+        doorPanel(BC.x0 + 1, 0, 77, BC.x1 - 1, 4, 78), // west lane gate → basement corridor
+      ],
+    },
+    {
+      maxTeamSize: 2,
+      boxes: [
+        doorPanel(47, 0, 9, 48, 3.5, 13), // Cyan spawn → B ramp
+        doorPanel(72, 0, 9, 73, 3.5, 13), // Cyan spawn → A ramp
+        doorPanel(77, D, 40, 84, D + 5, 41), // gantry → A deck
+        doorPanel(76, D + 1.1, 36.5, 77, D + 4, 39.5), // A deck window over the atrium
+        doorPanel(36, H, 41, 42, H + 3.5, 42), // stairwell → B hold
+        doorPanel(34, H, 45, 35, H + 3.5, 49), // stairwell → passage
+        doorPanel(78, 0, 82, 79, 3.5, 86), // Orange spawn → east lane
+      ],
+      bombSites: [
+        { name: 'A', min: v3(77.2, D, 41), max: v3(84, D + 3, 48) },
+        { name: 'B', min: v3(45, H, 41), max: v3(52, H + 3, 55) },
+      ],
+    },
+  ];
 };
 
 /**

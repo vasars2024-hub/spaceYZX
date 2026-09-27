@@ -17,7 +17,48 @@ export interface BoxShape {
   collide: boolean;
   /** the Boomerang flies through it (BoxDef.boomerangPasses) */
   boomerangPasses: boolean;
+  /**
+   * a triangular prism (BoxDef.prism): its two slanted faces in local (z, y) — outward unit
+   * normals and plane offsets (inside: nz·z + ny·y <= d) — and the ridge's local z; null = a box
+   */
+  prism: PrismShape | null;
+  /** a surf ramp (BoxDef.surf): never ground, no wall-jumps off it */
+  surf: boolean;
 }
+
+export interface PrismShape {
+  /** local z of the ridge (local y = +h.y) */
+  ridge: number;
+  /** the -z side's slanted face */
+  lz: number;
+  ly: number;
+  ld: number;
+  /** the +z side's slanted face */
+  rz: number;
+  ry: number;
+  rd: number;
+}
+
+/** The slanted faces of a prism with half extents `h` and ridge at `prism` × h.z. */
+export const prismShape = (h: Vec3, prism: number): PrismShape => {
+  const ridge = Math.max(-1, Math.min(1, prism)) * h.z;
+  // left face: (-hz, -hy) → (ridge, hy); right face: (hz, -hy) → (ridge, hy)
+  const ll = Math.hypot(2 * h.y, ridge + h.z) || 1;
+  const lz = (-2 * h.y) / ll;
+  const ly = (ridge + h.z) / ll;
+  const rl = Math.hypot(2 * h.y, h.z - ridge) || 1;
+  const rz = (2 * h.y) / rl;
+  const ry = (h.z - ridge) / rl;
+  return {
+    ridge,
+    lz,
+    ly,
+    ld: lz * -h.z + ly * -h.y,
+    rz,
+    ry,
+    rd: rz * h.z + ry * -h.y,
+  };
+};
 
 export interface RailShape {
   points: Vec3[];
@@ -67,6 +108,8 @@ export const buildLevel = (def: LevelDef): Level => {
       max: v3(b.c.x + ex, b.c.y + ey, b.c.z + ez),
       collide: !b.noCollide,
       boomerangPasses: !!b.boomerangPasses,
+      prism: b.prism !== undefined ? prismShape(b.h, b.prism) : null,
+      surf: !!b.surf,
     };
   });
 

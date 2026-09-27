@@ -29,6 +29,7 @@ import type {
   LevelDef,
   LightDef,
   Material,
+  SizeWallDef,
   SpawnDef,
   TowerDef,
   WaypointDef,
@@ -320,10 +321,12 @@ export const buildCanyonRelay = (): LevelDef => {
 
   decorate(box, quad, decoQuad, light, launchPads);
 
+  const boundsMin = v3(0, GF - 2, 0);
+  const boundsMax = v3(120, 14, 100);
   return b.build({
     name: 'Canyon Relay',
-    boundsMin: v3(0, GF - 2, 0),
-    boundsMax: v3(120, 14, 100),
+    boundsMin,
+    boundsMax,
     defaultGravity: v3(0, -1, 0),
     zones: [],
     rails: [],
@@ -362,7 +365,70 @@ export const buildCanyonRelay = (): LevelDef => {
       sun: { dir: v3(-0.85, 0.1, 0.3), color: 0xfff1c9, sizeDeg: 5 },
       sunLight: 0xffd9a8,
     },
+    sizeWalls: sizeWalls(boundsMin, boundsMax),
   });
+};
+
+/**
+ * Smaller teams play a smaller map (level/size-walls.ts). Outdoors nothing has a ceiling: the
+ * jetpack, wall-jumps and a climb get you ~10 m up, and gravity shift walks you up any wall
+ * (the cliffs, the rocks, a force field itself) and over its top. So a wall that must really
+ * shut a part of the map is a curtain across the whole out-of-map box (sim/world.ts kills
+ * anyone more than 20 m outside the bounds): you can't go over, under or round its ends alive.
+ *
+ * - 3v3 (and smaller): the outer paths end at the slot canyons' mouths (a curtain across each
+ *   path at x 99.7 / 20.3, sky-high). The canyons and basins stay open through the passages
+ *   from the mesas (and the rock tops beside them, as before), so each site keeps two ways in
+ *   (from the north and the south canyon) and each camp both gates; but walking round the
+ *   outside to the far camp now takes you over the mesas.
+ * - 1v1 / 2v2: the canyons and basins close: the rest of those curtains (the whole cross-section
+ *   of the map at x 99.7 and 20.3). Play stays in the camps, on the outer paths, the mesas and
+ *   the gorge crossings; every way to a Tower crosses the gorge. The bomb sites move onto the
+ *   rock bridges (with the mesa ends beside them), on the middle line like the real ones.
+ */
+const sizeWalls = (boundsMin: Vec3, boundsMax: Vec3): SizeWallDef[] => {
+  const C = CANYON_RELAY;
+  const M = C.mesa;
+  // the out-of-map box (sim/world.ts): a curtain reaches 1 m past it on every side
+  const OUT = 20 + 1;
+  const y0 = boundsMin.y - OUT;
+  const y1 = boundsMax.y + OUT;
+  const z0 = boundsMin.z - OUT;
+  const z1 = boundsMax.z + OUT;
+  const X = 99.7; // between the gorge's end wall / the mesa rock (x ≤ 100) and the canyon
+  const mouth = { z0: 7.8, z1: 14.2 }; // the outer path (z 8..14), into the cliff and the rock
+  /** a 0.4 m panel in the plane x = ±X (both sides) from z0..z1, y0..y1 (north half given) */
+  const curtain = (za: number, zb: number, ya: number, yb: number, far = false): BoxDef[] =>
+    SIGNS.map((s) => ({
+      c: v3(mx(s, X), (ya + yb) / 2, (za + zb) / 2),
+      h: v3(0.2, (yb - ya) / 2, (zb - za) / 2),
+      // (the big pieces are mostly sky and rock: flat quads are enough)
+      ...(far ? { lowDetail: true } : {}),
+    }));
+  const mouths = SIGNS.flatMap((n) =>
+    curtain(
+      Math.min(mz(n, mouth.z0), mz(n, mouth.z1)),
+      Math.max(mz(n, mouth.z0), mz(n, mouth.z1)),
+      y0,
+      y1,
+    ),
+  );
+  const rest = [
+    ...curtain(z0, mouth.z0, y0, y1, true),
+    ...curtain(mouth.z1, mz(-1, mouth.z1), y0, y1, true),
+    ...curtain(mz(-1, mouth.z0), z1, y0, y1, true),
+  ];
+  return [
+    { maxTeamSize: 3, boxes: mouths },
+    {
+      maxTeamSize: 2,
+      boxes: rest,
+      bombSites: [
+        { name: 'A', min: v3(81.5, M, 38), max: v3(88.5, M + 3, 62) },
+        { name: 'B', min: v3(2 * MX - 88.5, M, 38), max: v3(2 * MX - 81.5, M + 3, 62) },
+      ],
+    },
+  ];
 };
 
 type BoxFn = (

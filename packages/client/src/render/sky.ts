@@ -34,18 +34,17 @@ const centreOf = (def: LevelDef): Vec3 => ({
   z: (def.boundsMin.z + def.boundsMax.z) / 2,
 });
 
-export const buildSky = (def: LevelDef, sky: SkyDef): SkyMeshes => {
-  const group = new THREE.Group();
-  group.name = SPACE_SKY_NAME;
-  const c = centreOf(def);
-  group.position.set(c.x, c.y, c.z);
-  const disposables: { dispose(): void }[] = [];
-
-  // stars: uniform on the sphere, a few brighter and tinted
+/** A star field on the sky sphere (one point cloud): uniform, a few brighter and tinted. */
+const addStars = (
+  group: THREE.Group,
+  disposables: { dispose(): void }[],
+  /** only the upper sky (outdoor night skies: no stars under the horizon) */
+  upper: boolean,
+): void => {
   const pos = new Float32Array(STARS * 3);
   const col = new Float32Array(STARS * 3);
   for (let i = 0; i < STARS; i++) {
-    const u = hash(i * 3 + 1) * 2 - 1;
+    const u = upper ? 0.04 + hash(i * 3 + 1) * 0.96 : hash(i * 3 + 1) * 2 - 1;
     const a = hash(i * 3 + 2) * Math.PI * 2;
     const r = Math.sqrt(1 - u * u);
     pos[i * 3] = Math.cos(a) * r * SKY_R;
@@ -70,8 +69,20 @@ export const buildSky = (def: LevelDef, sky: SkyDef): SkyMeshes => {
   });
   const stars = new THREE.Points(starGeo, starMat);
   stars.frustumCulled = false;
+  // (over an outdoor sky dome, which draws first)
+  stars.renderOrder = -1.5;
   group.add(stars);
   disposables.push(starGeo, starMat);
+};
+
+export const buildSky = (def: LevelDef, sky: SkyDef): SkyMeshes => {
+  const group = new THREE.Group();
+  group.name = SPACE_SKY_NAME;
+  const c = centreOf(def);
+  group.position.set(c.x, c.y, c.z);
+  const disposables: { dispose(): void }[] = [];
+
+  addStars(group, disposables, false);
 
   // moons: one merged mesh, shaded into vertex colors (terminator + faint maria blotches)
   const parts: THREE.BufferGeometry[] = [];
@@ -157,6 +168,8 @@ export const buildOutdoorSky = (def: LevelDef, sky: OutdoorSkyDef): SkyMeshes =>
   dome.renderOrder = -2;
   group.add(dome);
   disposables.push(g, mat);
+  // a night sky: stars over the gradient (drawn after the dome, before the moon/sun disc)
+  if (sky.stars) addStars(group, disposables, true);
   if (sky.sun) {
     const d = new THREE.Vector3(sky.sun.dir.x, sky.sun.dir.y, sky.sun.dir.z).normalize();
     const r = SKY_R * 0.95 * Math.tan(((sky.sun.sizeDeg / 2) * Math.PI) / 180);

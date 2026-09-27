@@ -8,6 +8,7 @@ import { qSlerp } from '../math/quat';
 import type { GameConfig } from '../config';
 import type { PlayerState } from '../sim/state';
 import type { BoomerangState } from '../sim/combat-state';
+import { Phase } from '../sim/combat-state';
 import type { Hitbox } from '../sim/hitbox';
 import { hitboxOf } from '../sim/hitbox';
 import { createPlayer, newBoomerang } from '../sim/world';
@@ -98,6 +99,10 @@ export const netToBoomerang = (owner: number, nb: NetBoomerang): BoomerangState 
     t: nb.t,
     curve: nb.curve / 32 - 1,
     explosive: nb.explosive,
+    stuck:
+      nb.phase === Phase.Dropped && Math.hypot(nb.stuckN.x, nb.stuckN.y, nb.stuckN.z) > 0.5
+        ? nb.stuckN
+        : null,
   });
   return b;
 };

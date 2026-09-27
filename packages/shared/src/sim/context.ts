@@ -19,6 +19,25 @@ export interface SimContext {
   rewindPos?: (viewerId: number, kind: 'boomerang' | 'grenade', id: number) => Vec3 | null;
   /** Client prediction: emit hit events but never change health (the server decides). */
   noDamage?: boolean;
+  /**
+   * Free-for-all (Brawl FFA, rules/brawl.ts): everyone else is an enemy whatever their `team`
+   * (damage, freezes, blasts, throw previews, bots). Team modes leave it off.
+   */
+  ffa?: boolean;
 }
+
+/** Are `a` and `b` two different players on the same side? Never in a free-for-all. */
+export const isTeammate = (
+  ctx: Pick<SimContext, 'ffa'>,
+  a: { id: number; team: number },
+  b: { id: number; team: number },
+): boolean => a.id !== b.id && !ctx.ffa && a.team === b.team;
+
+/** Are `a` and `b` enemies (two different players not on the same side)? */
+export const isEnemy = (
+  ctx: Pick<SimContext, 'ffa'>,
+  a: { id: number; team: number },
+  b: { id: number; team: number },
+): boolean => a.id !== b.id && (!!ctx.ffa || a.team !== b.team);
 
 export const secToTicks = (sec: number, dt: number): number => Math.max(0, Math.round(sec / dt));

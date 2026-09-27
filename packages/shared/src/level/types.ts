@@ -21,7 +21,8 @@ export type Material =
   | 'sand'
   | 'wood'
   | 'paper' // shoji screens (see BoxDef.boomerangPasses)
-  | 'leaf'; // foliage (blossom canopies, shrubs)
+  | 'leaf' // foliage (blossom canopies, shrubs)
+  | 'forcefield'; // glowing size-wall barrier (LevelDef.sizeWalls): blocks everything
 
 export interface BoxDef {
   c: Vec3; // center
@@ -38,6 +39,24 @@ export interface BoxDef {
    * culling, baked light). Only the Boomerang's flight raycasts skip it (sim/combat.ts).
    */
   boomerangPasses?: boolean;
+  /**
+   * A triangular prism instead of a box (surf ramps): the local top face shrinks to a ridge
+   * along local x at local z = prism × h.z (-1..1: 0 = a symmetric A-frame, ±1 = a right-angle
+   * wedge). The base (local -y) and the ends (±x) stay as they are. Collision matches
+   * (level/collision.ts), and so does the renderer.
+   */
+  prism?: number;
+  /**
+   * A surf ramp (race tracks): never ground, however you touch it — no friction, gravity slides
+   * you down it, your velocity is clipped along it (air-strafe into it to stay on), and you can't
+   * wall-jump or mantle off it (sim/movement.ts). Build it steeper than the walkable slope.
+   */
+  surf?: boolean;
+  /**
+   * Render each face as one flat quad instead of ~2.5 m lit tiles (far scenery, clouds): a
+   * handful of triangles however big it is.
+   */
+  lowDetail?: boolean;
 }
 
 export interface GravityZoneDef {
@@ -154,6 +173,8 @@ export interface OutdoorSkyDef {
   sun?: { dir: Vec3; color: number; sizeDeg: number };
   /** colour of the baked key light (default white) */
   sunLight?: number;
+  /** a night sky: stars over the gradient */
+  stars?: boolean;
 }
 
 /** A light baked into the level's surfaces (plus a glow, and optionally a light shaft). */
@@ -239,6 +260,29 @@ export interface LevelDef {
   arenaPits?: ArenaPitDef[];
   /** Race tracks: the course (start, checkpoints, finish, fuel cells...; sim/race.ts). */
   race?: RaceDef;
+  /**
+   * Smaller teams play a smaller map (level/size-walls.ts): force-field walls that close parts
+   * of the map when the match's players per team is at most `maxTeamSize`. Room and client
+   * build the level for the room's team size (mapDefForSize).
+   */
+  sizeWalls?: SizeWallDef[];
+}
+
+/**
+ * One layer of size walls: glowing force-field panels (players, bullets, Boomerangs and sight
+ * all stop at them) that exist only when the match has at most `maxTeamSize` players per team.
+ * Towers, bomb sites and spawns must stay in the open part; a layer may move them. With several
+ * active layers, overrides come from the smallest layer that has them.
+ */
+export interface SizeWallDef {
+  maxTeamSize: number;
+  /** the walls (rendered as 'forcefield'; they collide like any wall) */
+  boxes: BoxDef[];
+  /** replacements while this layer is up (else the map's own) */
+  spawns?: SpawnDef[];
+  towers?: TowerDef[];
+  controllerHomes?: Vec3[];
+  bombSites?: BombSiteDef[];
 }
 
 /** A race gate (checkpoint or finish): the body centre passing through `min..max` counts. */
@@ -267,6 +311,17 @@ export interface RaceLineNode {
   surge?: boolean;
   /** risky lines: switch the gravity boots on here (stick to the wall beside you) */
   mag?: boolean;
+  /**
+   * bunny-hop from here to the next node: jump again on the first ground tick of every landing
+   * and air-strafe (bots/racer.ts)
+   */
+  hop?: boolean;
+  /** air-strafe toward the next node (a drop, a surf transfer, a strafed long jump) */
+  strafe?: boolean;
+  /** on a surf ramp's face: surf (strafe into the ramp) toward the next node */
+  surf?: boolean;
+  /** a point in the air to pass through (a window, a ring): not somewhere you land */
+  air?: boolean;
   /** gates passed before reaching this node (0 = before checkpoint 1) */
   cp: number;
 }
@@ -306,4 +361,10 @@ export interface RaceDef {
   fuelCells?: Vec3[];
   line: RaceLineNode[];
   forks?: RaceForkDef[];
+  /** a surf map (CS-style surf stages): no jetpack and no SURGE (sim/movement.ts) */
+  surf?: boolean;
+  /** no jetpack on this track (surf maps, or a track not built around it) */
+  noJetpack?: boolean;
+  /** no SURGE charges on this track */
+  noSurge?: boolean;
 }

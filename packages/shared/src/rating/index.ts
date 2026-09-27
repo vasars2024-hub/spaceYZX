@@ -8,3 +8,4 @@ export * from './decay';
 export * from './matchmaking';
 export * from './ladders';
 export * from './veto';
+export * from './versus';

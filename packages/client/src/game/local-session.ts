@@ -41,6 +41,8 @@ export interface LocalSessionOptions {
   names?: Record<number, string>;
   /** Offline match vs bots: rules state updated by `afterStep`. */
   match?: MatchState;
+  /** free-for-all (Brawl FFA): everyone else is an enemy (sim ctx.ffa) */
+  ffa?: boolean;
 }
 
 interface Snap {
@@ -65,6 +67,7 @@ export class LocalSession implements Session {
     this.level = buildLevel(opts.levelDef);
     this.config = opts.config;
     this.ctx = { level: this.level, config: this.config, dt: TICK_DT };
+    if (opts.ffa) this.ctx.ffa = true;
     this.w = createWorld(this.level, opts.seed ?? 1);
     const spawn =
       opts.levelDef.spawns.find((s) => s.team === undefined || s.team === 0) ??

@@ -7,11 +7,14 @@
 //   top      race clock · position (2/6) · checkpoint (3/7) · split vs your best (green/red)
 //   middle   3-2-1-GO, "back to checkpoint" during a penalty, NEW BEST / DNF banners
 //   right    live order (names, gates)
-//   left     SURGE charges and the jetpack tank (in the movement HUD)
+//   left     SURGE charges and the jetpack tank (in the movement HUD; none on surf maps)
+//   bottom   your speed (m/s) and your peak this race; a tip at the first surf ramp and hop chain
 //   results  places, times, gaps, your best
 import * as THREE from 'three';
 import type {
   PlayerState,
+  RaceDef,
+  RaceLineNode,
   RaceRatingNotice,
   RaceResult,
   RaceView,
@@ -201,6 +204,12 @@ export class RaceFeature implements ClientFeature {
   private listEl!: HTMLDivElement;
   private resultsEl!: HTMLDivElement;
   private arrowEl!: HTMLDivElement;
+  private speedEl!: HTMLDivElement;
+  private peakEl!: HTMLDivElement;
+  /** your highest speed this race (m/s) */
+  private peak = 0;
+  /** the tips already shown this session (first surf ramp, first hop chain) */
+  private tipsShown = new Set<string>();
   private models = new PlayerModels();
   private ghostModels = new PlayerModels();
   private group = new THREE.Group();
@@ -248,6 +257,23 @@ export class RaceFeature implements ClientFeature {
     this.listEl = h('div', { class: 'race-list' });
     this.resultsEl = h('div', { class: 'race-results hidden' });
     this.arrowEl = h('div', { class: 'race-next' });
+    // your speed, big (races are about carrying it), and your best this race
+    this.speedEl = h('div', {}, '0');
+    this.peakEl = h('div', {}, '');
+    const speed = h('div', {}, this.speedEl, this.peakEl);
+    Object.assign(speed.style, {
+      position: 'absolute',
+      left: '50%',
+      bottom: '17%',
+      transform: 'translateX(-50%)',
+      textAlign: 'center',
+      pointerEvents: 'none',
+      color: '#fff',
+      textShadow: '0 2px 6px rgba(0,0,0,0.7)',
+      fontVariantNumeric: 'tabular-nums',
+    });
+    Object.assign(this.speedEl.style, { fontSize: '34px', fontWeight: '800', lineHeight: '1' });
+    Object.assign(this.peakEl.style, { fontSize: '12px', opacity: '0.8', letterSpacing: '0.05em' });
     this.root = h(
       'div',
       { class: 'race-ui' },
@@ -261,21 +287,27 @@ export class RaceFeature implements ClientFeature {
       h('div', { class: 'race-center' }, this.bigEl, this.bigSubEl),
       this.listEl,
       this.arrowEl,
+      speed,
       this.resultsEl,
     );
     c.deps.ui.append(this.root);
     c.scene.add(this.models.group, this.ghostModels.group, this.group);
-    // SURGE charges and the race tank instead of the dash line
+    // SURGE charges and the race tank instead of the dash line (surf maps have neither)
     const m = c.session.config.movement;
+    const def = c.session.level.def.race;
     c.hud.dashLine = (p) => {
-      const pips =
-        '●'.repeat(p.surgeLeft) + '○'.repeat(Math.max(0, m.raceSurgeCharges - p.surgeLeft));
-      const k = Math.max(0, Math.min(1, p.jetFuel / m.raceJetpackFuelSec));
-      const bars = Math.round(k * 8);
-      return [
-        `SURGE ${pips}${p.surgeTicks > 0 ? ' ▶' : ''}`,
-        `FUEL ${'▮'.repeat(bars)}${'▯'.repeat(8 - bars)} ${p.jetFuel.toFixed(1)}s`,
-      ];
+      const lines: string[] = [];
+      if (def && !def.surf && !def.noSurge) {
+        const pips =
+          '●'.repeat(p.surgeLeft) + '○'.repeat(Math.max(0, m.raceSurgeCharges - p.surgeLeft));
+        lines.push(`SURGE ${pips}${p.surgeTicks > 0 ? ' ▶' : ''}`);
+      }
+      if (def && !def.surf && !def.noJetpack) {
+        const k = Math.max(0, Math.min(1, p.jetFuel / m.raceJetpackFuelSec));
+        const bars = Math.round(k * 8);
+        lines.push(`FUEL ${'▮'.repeat(bars)}${'▯'.repeat(8 - bars)} ${p.jetFuel.toFixed(1)}s`);
+      }
+      return lines;
     };
     this.buildWorld(c);
   }
@@ -405,6 +437,7 @@ export class RaceFeature implements ClientFeature {
       this.myFinishMs = 0;
       this.recording = [];
       this.recordedTick = -1;
+      this.peak = 0;
     }
     const racingNow = !!v && v.phase === 'racing' && !!me && me.raceCp >= 0 && me.raceCp < nGates;
     if (racingNow && me && myTick - this.recordedTick >= GHOST_EVERY) {
@@ -512,6 +545,37 @@ export class RaceFeature implements ClientFeature {
     });
     this.updateArrow(c, next);
     this.updateResults(c, v);
+    this.updateSpeed(me, race);
+  }
+
+  /** Your speed (m/s, horizontal) and peak; a tip the first time you reach a surf ramp or a hop chain. */
+  private updateSpeed(me: PlayerState | undefined, race: RaceDef): void {
+    if (!me) return;
+    const speed = Math.hypot(me.vel.x, me.vel.z);
+    if (me.raceCp >= 0) this.peak = Math.max(this.peak, speed);
+    this.speedEl.textContent = `${Math.round(speed)}`;
+    this.peakEl.textContent = this.peak > 0 ? `M/S · PEAK ${Math.round(this.peak)}` : 'M/S';
+    const tip = (key: string, near: (n: RaceLineNode) => boolean, title: string, text: string) => {
+      if (this.tipsShown.has(key)) return;
+      const n = race.line.find(near);
+      if (!n) return;
+      const d = Math.hypot(n.pos.x - me.pos.x, n.pos.y - me.pos.y, n.pos.z - me.pos.z);
+      if (d > 28) return;
+      this.tipsShown.add(key);
+      this.big(title, text, 5, '#9ffcff');
+    };
+    tip(
+      'surf',
+      (n) => !!n.surf,
+      'SURF',
+      'Hold A or D into the ramp (never W) and turn your mouse the same way',
+    );
+    tip(
+      'hop',
+      (n) => !!n.hop,
+      'BUNNY HOP',
+      'Jump the instant you land (scroll wheel works); strafe A/D while turning to gain speed',
+    );
   }
 
   private subText(v: RaceView | null, tick: number, me: PlayerState | undefined): string {

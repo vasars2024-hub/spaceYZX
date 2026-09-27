@@ -5,7 +5,8 @@
 // Paper walls (BoxDef.boomerangPasses, Sakura Hold's shoji) block sight like any wall here:
 // only the Boomerang's flight passes through them, so a throw at someone hidden behind one
 // is aimed from memory, never from culled positions leaking through.
-import type { SimContext, WorldState, Vec3 } from '@space-yz/shared';
+// Free-for-all rooms (Brawl FFA, `ffa`) have no teams: each player sees only for themselves.
+import type { PlayerState, SimContext, WorldState, Vec3 } from '@space-yz/shared';
 import { eyePos, lineOfSight, madd, len, sub, cross, normalize, v3 } from '@space-yz/shared';
 
 export const VISIBILITY = {
@@ -25,27 +26,41 @@ export const VISIBILITY = {
 };
 
 export class TeamVision {
-  /** team -> enemy id -> last tick it was visible */
-  private seen: [Map<number, number>, Map<number, number>] = [new Map(), new Map()];
-  /** team -> enemy id -> the viewer / sample point that saw it last (tried first: 1 ray) */
-  private hint: [Map<number, [number, number]>, Map<number, [number, number]>] = [
-    new Map(),
-    new Map(),
-  ];
+  /**
+   * viewing group -> enemy id -> last tick it was visible. A group is a team (0 / 1), or in a
+   * free-for-all one player (their id).
+   */
+  private seen = new Map<number, Map<number, number>>();
+  /** group -> enemy id -> the viewer / sample point that saw it last (tried first: 1 ray) */
+  private hint = new Map<number, Map<number, [number, number]>>();
   enabled = true;
+  /** free-for-all (Brawl FFA): every player is their own group and sees only for themselves */
+  ffa = false;
   raycasts = 0;
 
   update(world: WorldState, ctx: SimContext, revealed: readonly number[]): void {
     // each team is re-checked every `everyTicks`, the two teams on alternating ticks
+    // (free-for-all: each player every `everyTicks`, spread over the ticks by id)
     const phase = world.tick % VISIBILITY.everyTicks;
+    if (this.ffa) {
+      for (const p of world.players)
+        if (p.id % VISIBILITY.everyTicks === phase) this.updatePlayer(world, ctx, revealed, p.id);
+      this.forgetLeavers(world);
+      return;
+    }
     const half = Math.floor(VISIBILITY.everyTicks / 2);
     for (const team of [0, 1] as const) {
       if (phase === (team === 0 ? 0 : half)) this.updateTeam(world, ctx, revealed, team);
     }
   }
 
-  /** Re-check both teams now (tests, tools). */
+  /** Re-check both teams (free-for-all: every player) now (tests, tools). */
   updateAll(world: WorldState, ctx: SimContext, revealed: readonly number[]): void {
+    if (this.ffa) {
+      for (const p of world.players) this.updatePlayer(world, ctx, revealed, p.id);
+      this.forgetLeavers(world);
+      return;
+    }
     this.updateTeam(world, ctx, revealed, 0);
     this.updateTeam(world, ctx, revealed, 1);
   }
@@ -56,21 +71,66 @@ export class TeamVision {
     revealed: readonly number[],
     team: 0 | 1,
   ): void {
+    this.updateGroup(
+      world,
+      ctx,
+      revealed,
+      team,
+      world.players.filter((p) => p.team === team && p.alive),
+      (e) => e.team !== team,
+    );
+  }
+
+  /** Free-for-all: what one player can see of everyone else (nothing while dead). */
+  private updatePlayer(
+    world: WorldState,
+    ctx: SimContext,
+    revealed: readonly number[],
+    id: number,
+  ): void {
+    this.updateGroup(
+      world,
+      ctx,
+      revealed,
+      id,
+      world.players.filter((p) => p.id === id && p.alive),
+      (e) => e.id !== id,
+    );
+  }
+
+  /** Free-for-all: drop the groups of players who left. */
+  private forgetLeavers(world: WorldState): void {
+    for (const g of this.seen.keys())
+      if (!world.players.some((p) => p.id === g)) {
+        this.seen.delete(g);
+        this.hint.delete(g);
+      }
+  }
+
+  private updateGroup(
+    world: WorldState,
+    ctx: SimContext,
+    revealed: readonly number[],
+    group: number,
+    viewers: PlayerState[],
+    isTarget: (e: PlayerState) => boolean,
+  ): void {
     const m = ctx.config.movement;
-    const viewers = world.players.filter((p) => p.team === team && p.alive);
     const fast = (v: { vel: Vec3 }) => len(v.vel) > VISIBILITY.fastMps;
     const eyes = viewers.map((v) => {
       const eye = eyePos(v, m);
       return fast(v) ? [eye, madd(eye, v.vel, VISIBILITY.lookAheadSec)] : [eye];
     });
-    const seen = this.seen[team];
-    const hint = this.hint[team];
+    let seen = this.seen.get(group);
+    if (!seen) this.seen.set(group, (seen = new Map()));
+    let hint = this.hint.get(group);
+    if (!hint) this.hint.set(group, (hint = new Map()));
     const los = (a: Vec3, b: Vec3) => {
       this.raycasts++;
       return lineOfSight(ctx.level, a, b);
     };
     for (const e of world.players) {
-      if (e.team === team) continue;
+      if (!isTarget(e)) continue;
       if (!e.alive || revealed.includes(e.id)) {
         seen.set(e.id, world.tick);
         continue;
@@ -145,7 +205,26 @@ export class TeamVision {
   /** Can `team` currently see player `id`? (teammates always) */
   visible(team: 0 | 1, id: number, playerTeam: 0 | 1, tick: number): boolean {
     if (!this.enabled || playerTeam === team) return true;
-    const t = this.seen[team].get(id);
+    return this.seenRecently(team, id, tick);
+  }
+
+  /**
+   * Can this viewer currently see player `id`? Team modes: whatever their team sees (teammates
+   * always); free-for-all: only what they see themselves (and themselves).
+   */
+  visibleTo(
+    viewer: { id: number; team: 0 | 1 },
+    id: number,
+    playerTeam: 0 | 1,
+    tick: number,
+  ): boolean {
+    if (!this.ffa) return this.visible(viewer.team, id, playerTeam, tick);
+    if (!this.enabled || id === viewer.id) return true;
+    return this.seenRecently(viewer.id, id, tick);
+  }
+
+  private seenRecently(group: number, id: number, tick: number): boolean {
+    const t = this.seen.get(group)?.get(id);
     return t !== undefined && tick - t <= VISIBILITY.stickyTicks;
   }
 }

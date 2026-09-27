@@ -5,7 +5,8 @@
 // - All recipes are rendered into AudioBuffers once, spread over idle callbacks so startup does
 //   not hitch. A sound requested before its turn is rendered on the spot, so playback is never
 //   delayed.
-// - Routing: voice -> [panner] -> sfx|ui bus -> master -> limiter -> speakers.
+// - Routing: voice -> [panner] -> sfx|ui bus -> master -> limiter -> speakers. Decoded clips
+//   (the announcer, audio/announcer.ts) go through their own 'announcer' bus.
 // - Proximity: 3D sounds fade linearly to silence at their `maxDistance` (default 40 m); a
 //   one-shot farther away than that is not played at all.
 
@@ -18,7 +19,7 @@ export interface Vec3 {
   z: number;
 }
 
-export type VolumeKind = 'master' | 'sfx' | 'ui';
+export type VolumeKind = 'master' | 'sfx' | 'ui' | 'announcer';
 
 export interface PlayOptions {
   /** Linear gain, default 1. */
@@ -88,8 +89,13 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private failed = false;
   private master: GainNode | null = null;
-  private buses: Partial<Record<'sfx' | 'ui', GainNode>> = {};
-  private readonly volumes: Record<VolumeKind, number> = { master: 1, sfx: 1, ui: 1 };
+  private buses: Partial<Record<'sfx' | 'ui' | 'announcer', GainNode>> = {};
+  private readonly volumes: Record<VolumeKind, number> = {
+    master: 1,
+    sfx: 1,
+    ui: 1,
+    announcer: 1,
+  };
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly voices = new Map<SoundName, Voice[]>();
   private readonly pending: SoundName[] = [];
@@ -257,6 +263,46 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Decodes a compressed clip (ogg / wav) for playClip(). Null when audio isn't running yet or
+   * the data can't be decoded. Never throws.
+   */
+  async decodeClip(data: ArrayBuffer): Promise<AudioBuffer | null> {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    try {
+      return await ctx.decodeAudioData(data);
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  /**
+   * Plays a decoded clip on the announcer bus (2D). Returns a function that stops it (fading
+   * out briefly), or null when it could not start.
+   */
+  playClip(buffer: AudioBuffer, volume = 1): (() => void) | null {
+    try {
+      const ctx = this.ctx;
+      const bus = this.buses.announcer;
+      if (!ctx || !bus) return null;
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      const gain = ctx.createGain();
+      gain.gain.value = Math.max(0, finite(volume, 1));
+      source.connect(gain);
+      gain.connect(bus);
+      source.onended = () => {
+        source.disconnect();
+        gain.disconnect();
+      };
+      source.start();
+      return () => fadeOutAndStop(this.ctx, { source, gain }, 0.05);
+    } catch (_err) {
+      return null;
+    }
+  }
+
   /** Stops every one-shot voice (e.g. on returning to the menu). Loops are stopped via handles. */
   stopAll(): void {
     for (const list of this.voices.values()) {
@@ -295,7 +341,7 @@ export class AudioEngine {
     const master = ctx.createGain();
     master.gain.value = this.volumes.master;
     master.connect(limiter);
-    for (const kind of ['sfx', 'ui'] as const) {
+    for (const kind of ['sfx', 'ui', 'announcer'] as const) {
       const bus = ctx.createGain();
       bus.gain.value = kind === 'sfx' && this.sfxPaused ? 0 : this.volumes[kind];
       bus.connect(master);

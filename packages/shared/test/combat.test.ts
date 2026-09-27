@@ -176,6 +176,28 @@ describe('Boomerang: Quick Throw', () => {
     expect(b.phase).toBe(Phase.Held);
   });
 
+  it('sticks in the wall it hits instead of falling, until picked up or recalled', () => {
+    const wall: BoxDef = { c: v3(0, 2, -6), h: v3(5, 2, 0.5) };
+    const sim = makeSim(flatLevel([wall]));
+    settle(sim);
+    quickThrow(sim, 1);
+    boomerangOf(sim, 1).bounced = true; // its one bounce is used up: the wall stops it
+    tick(sim, {}, 30);
+    const b = boomerangOf(sim, 1);
+    expect(b.phase).toBe(Phase.Dropped);
+    expect(b.stuck).not.toBeNull();
+    expect(b.stuck!.z).toBeGreaterThan(0.9); // the wall's face points back at the thrower
+    const at = { ...b.pos };
+    tick(sim, {}, 120);
+    expect(b.pos).toEqual(at); // still in the wall, not on the floor
+    expect(b.pos.y).toBeGreaterThan(0.8);
+    // recall pulls it out
+    tick(sim, { 1: { buttons: Btn.Recall } }, 1);
+    tick(sim, {}, 200);
+    expect(b.phase).toBe(Phase.Held);
+    expect(b.stuck).toBeNull();
+  });
+
   it('the preview matches the real flight path exactly', () => {
     const sim = makeSim(flatLevel([{ c: v3(8, 2, -12), h: v3(1, 2, 1) }]));
     settle(sim);
@@ -612,18 +634,18 @@ describe('Boomerang preview in gravity zones', () => {
 });
 
 describe('dropped Boomerang', () => {
-  it('falls to the floor instead of hanging where it hit a wall', () => {
-    // a wall 6 m ahead: the throw hits it at eye height and drops
-    const sim = makeSim(flatLevel([{ c: v3(0, 3, -8), h: v3(6, 3, 0.5) }]));
+  it('dropped in mid-air (its thrower died) it falls to the floor instead of hanging', () => {
+    // (a throw that hits a wall sticks in it instead: see "sticks in the wall it hits")
+    const sim = makeSim(flatLevel());
     settle(sim);
     tick(sim, { 1: { buttons: Btn.Fire } }, 5);
-    const ev = tick(sim, { 1: { buttons: 0 } }, 1);
+    tick(sim, { 1: { buttons: 0 } }, 10);
     const b = sim.world.boomerangs.find((x) => x.owner === 1)!;
-    b.bounced = true; // its one bounce is used up: the wall drops it
-    ev.push(...tick(sim, { 1: { buttons: 0 } }, 29));
-    expect(ev.some((e) => e.type === 'wallHit')).toBe(true);
+    expect(b.pos.y).toBeGreaterThan(0.8);
+    sim.p.alive = false; // no thrower to come back to: it drops where it is
+    tick(sim, {}, 120);
     expect(b.phase).toBe(Phase.Dropped);
-    tick(sim, {}, 90);
+    expect(b.stuck).toBeNull();
     expect(b.pos.y).toBeLessThan(0.3); // on the floor (y = 0)
     const rest = { ...b.pos };
     tick(sim, {}, 30);

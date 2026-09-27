@@ -35,6 +35,7 @@ import type {
   Material,
   PortalDef,
   RailDef,
+  SizeWallDef,
   SpawnDef,
   TowerDef,
   WaypointDef,
@@ -530,6 +531,7 @@ export const buildOrbitalRing = (): LevelDef => {
     powerups: O.powerups,
     launchPads,
     portals,
+    sizeWalls: sizeWalls(),
     sky: {
       moons: [
         // the planet the station orbits, filling the dome
@@ -560,6 +562,60 @@ const mirroredShell = (b: LevelBuilder, vols: OpenVolume[]): void => {
     b.box(min, max, opts);
     b.box(v3(min.x, min.y, 2 * MID - max.z), v3(max.x, max.y, 2 * MID - min.z), opts);
   }
+};
+
+/**
+ * Smaller teams play a smaller map (level/size-walls.ts): force-field panels in existing
+ * doorways, placed in all four quarters with mx / mz (the map stays mirrored both ways). Each
+ * is 0.4 m thick and reaches 0.1 m into the jambs, sill and lintel round its opening.
+ *
+ * - 3v3 (and smaller): the rift portals close (a panel across each frame: no A ↔ B
+ *   teleport) and the basement ring is cut at its four corners, so it no longer runs all the
+ *   way round (each side of it still joins the ring above and the pit). Sites keep the spoke
+ *   and both outer corridors, spawns the spoke and both side doors.
+ * - 1v1 / 2v2: the outer corridors close at the spawns' side doors and the east / west spokes
+ *   at the ring's gates: sites, spokes and corridors are shut, play stays in the spawns, the
+ *   north / south spokes, the ring, the core, the pit and the basement. The bomb sites move
+ *   onto the ring's east (A) and west (B) sides, in front of the closed gates, on the middle
+ *   line like the real ones.
+ */
+const sizeWalls = (): SizeWallDef[] => {
+  const O = ORBITAL_RING;
+  const BY = O.basement.y;
+  const RO = O.ring.out;
+  const BI = O.basement.in;
+  const BO = O.basement.out;
+  /** a box from its centre and half size */
+  const panel = (c: Vec3, h: Vec3): BoxDef => ({ c, h });
+  const portals: BoxDef[] = [];
+  const corners: BoxDef[] = [];
+  const sideDoors: BoxDef[] = [];
+  const gates: BoxDef[] = [];
+  for (const s of SIGNS) {
+    // across the portal's frame, between its posts and under its lintel (x 116.5..118,
+    // z 57..63, lintel from y 4.3): its front face is at x 116.55, so a body centre (0.4 m in
+    // front of it) never reaches the portal volume (from x 116.6)
+    portals.push(panel(v3(mx(s, 116.75), 2.15, MID), v3(0.2, 2.25, 2.1)));
+    // the ring gate into the east / west spoke (x 87.5..88.5, z 58..62, y 0..4.5)
+    gates.push(panel(v3(mx(s, MID + RO + 0.5), 2.25, MID), v3(0.2, 2.35, 2.1)));
+    for (const n of NS) {
+      // across the east / west side of the basement ring, just past its corner
+      corners.push(panel(v3(mx(s, MID + (BI + BO) / 2), BY + 1.5, mz(n, 30)), v3(2.6, 1.6, 0.2)));
+      // the spawn's side door onto the outer corridor (x 74..75, z 9.5..12.5, y 0..4)
+      sideDoors.push(panel(v3(mx(s, O.spawn.x1 + 0.5), 2, mz(n, 11)), v3(0.2, 2.1, 1.6)));
+    }
+  }
+  return [
+    { maxTeamSize: 3, boxes: [...portals, ...corners] },
+    {
+      maxTeamSize: 2,
+      boxes: [...sideDoors, ...gates],
+      bombSites: [
+        { name: 'A', min: v3(80.5, 0, 53), max: v3(87.3, 3, 67) },
+        { name: 'B', min: v3(2 * MID - 87.3, 0, 53), max: v3(2 * MID - 80.5, 3, 67) },
+      ],
+    },
+  ];
 };
 
 const norm = (p: Vec3): Vec3 => {

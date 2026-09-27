@@ -99,7 +99,8 @@ export const sendRacerBack = (
   const racing = isRacing(race, p);
   const at = raceRespawnPoint(race, p.raceCp);
   placeRacer(p, m, at.respawn, at.yawDeg);
-  p.racePenalty = racing ? Math.max(1, Math.round(m.racePenaltySec / ctx.dt)) : 0;
+  const penaltySec = race.surf ? m.raceSurfPenaltySec : m.racePenaltySec;
+  p.racePenalty = racing ? Math.max(1, Math.round(penaltySec / ctx.dt)) : 0;
   if (racing) p.frozen = true;
   world.events.push({
     type: 'raceRespawn',

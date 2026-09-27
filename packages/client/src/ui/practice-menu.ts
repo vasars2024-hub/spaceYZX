@@ -1,6 +1,6 @@
 // Practice vs bots, in steps: 1 mode → 2 map → 3 team size + bot difficulty, with a summary bar
 // and Start. Back (button, Esc, or a breadcrumb) goes one step back; the step logic is ui/flow.ts.
-import { BOT_SKILL_LABELS, getMap } from '@space-yz/shared';
+import { BOT_SKILL_LABELS, getMap, type MapInfo } from '@space-yz/shared';
 import { h } from './menus';
 import { icon, botBadge } from './icons';
 import {
@@ -8,7 +8,9 @@ import {
   PRACTICE_STEP_LABELS,
   botSkillChoices,
   hasKitChoice,
+  isFreeRoam,
   mapsForMode,
+  raceMapGroups,
   modeChoice,
   pickPracticeMap,
   pickPracticeMode,
@@ -57,10 +59,12 @@ const raceSizeDesc = (n: number): string =>
 const sizeText = (mode: string, n: number): { title: string; desc: string } =>
   mode === 'race'
     ? { title: raceSizeTitle(n), desc: raceSizeDesc(n) }
-    : {
-        title: sizeTitle(mode === 'arena', n),
-        desc: mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
-      };
+    : mode === 'brawl-ffa'
+      ? { title: `${n} players`, desc: `You + ${n - 1} bots, everyone for themselves` }
+      : {
+          title: sizeTitle(mode === 'arena', n),
+          desc: mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
+        };
 
 export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
   let s: PracticeState = { ...hd.state, step: 'mode' };
@@ -100,17 +104,27 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
       ),
     );
 
-  const mapStep = () =>
-    stepPanel(
-      'Pick a map',
+  const mapStep = () => {
+    const grid = (maps: MapInfo[], cls = 'maps') =>
       pickGrid(
-        'maps',
-        mapsForMode(s.mode),
+        cls,
+        maps,
         (m) => m.id === s.map,
         (m, selected, pick) => mapCard(m.id, selected, pick),
         (m) => go(pickPracticeMap(s, m.id), 'forward'),
-      ),
-    );
+      );
+    // races: the race tracks, then the surf maps
+    if (s.mode === 'race') {
+      const { best, other } = raceMapGroups();
+      return stepPanel(
+        'Pick a track',
+        grid(best),
+        other.length ? h('h3', { class: 'step-title' }, 'Surf maps') : null,
+        other.length ? grid(other) : null,
+      );
+    }
+    return stepPanel('Pick a map', grid(mapsForMode(s.mode)));
+  };
 
   const kitGrid = () =>
     pickGrid(
@@ -133,50 +147,84 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
       },
     );
 
-  const setupStep = () =>
-    stepPanel(
-      s.mode === 'arena' ? 'Players' : s.mode === 'race' ? 'Racers' : 'Team size',
-      pickGrid(
-        'compact sizes',
-        sizesFor(s.mode),
-        (n) => n === s.size,
-        (n, selected, pick) =>
-          card({
-            ...sizeText(s.mode, n),
-            art: icon(n === 1 ? 'profile' : 'team'),
-            selected,
-            cls: 'size',
-            onClick: pick,
-          }),
-        (n) => {
-          s = { ...s, size: n };
-          save();
-          renderSummary();
-        },
-      ),
-      hasKitChoice(s.mode) ? h('h3', { class: 'step-title' }, 'Kit') : null,
-      hasKitChoice(s.mode) ? kitGrid() : null,
-      h('h3', { class: 'step-title' }, 'Bot difficulty'),
-      pickGrid(
-        'bots',
-        botSkillChoices(),
-        (b) => b.id === s.skill,
-        (b, selected, pick) =>
-          card({
-            title: b.name,
-            desc: b.desc,
-            art: botBadge(b.id),
-            selected,
-            cls: `bot bot-${b.id}`,
-            onClick: pick,
-          }),
-        (b) => {
-          s = { ...s, skill: b.id };
-          save();
-          renderSummary();
-        },
-      ),
+  /** Free roam: the kit and whether target dummies stand on the map. */
+  const freeRoamStep = () => {
+    const race = !!getMap(practiceMapId(s)).race;
+    const dummiesCard = card({
+      title: race ? 'No dummies on race tracks' : 'Target dummies',
+      desc: race
+        ? 'Race tracks are for movement: practise the route.'
+        : 'Static, strafing and jumping dummies placed around the map. They never shoot back.',
+      art: icon('range'),
+      selected: !race && s.dummies !== false,
+      cls: 'toggle dummies-toggle',
+      onClick: () => {
+        if (race) return;
+        s = { ...s, dummies: s.dummies === false };
+        save();
+        dummiesCard.classList.toggle('selected', s.dummies !== false);
+        dummiesCard.setAttribute('aria-pressed', String(s.dummies !== false));
+        renderSummary();
+      },
+    });
+    return stepPanel(
+      'Kit',
+      kitGrid(),
+      h('h3', { class: 'step-title' }, 'Dummies'),
+      h('div', { class: 'card-grid toggles' }, dummiesCard),
     );
+  };
+
+  const setupStep = () =>
+    isFreeRoam(s.mode)
+      ? freeRoamStep()
+      : stepPanel(
+          s.mode === 'arena' || s.mode === 'brawl-ffa'
+            ? 'Players'
+            : s.mode === 'race'
+              ? 'Racers'
+              : 'Team size',
+          pickGrid(
+            'compact sizes',
+            sizesFor(s.mode),
+            (n) => n === s.size,
+            (n, selected, pick) =>
+              card({
+                ...sizeText(s.mode, n),
+                art: icon(n === 1 ? 'profile' : 'team'),
+                selected,
+                cls: 'size',
+                onClick: pick,
+              }),
+            (n) => {
+              s = { ...s, size: n };
+              save();
+              renderSummary();
+            },
+          ),
+          hasKitChoice(s.mode) ? h('h3', { class: 'step-title' }, 'Kit') : null,
+          hasKitChoice(s.mode) ? kitGrid() : null,
+          h('h3', { class: 'step-title' }, 'Bot difficulty'),
+          pickGrid(
+            'bots',
+            botSkillChoices(),
+            (b) => b.id === s.skill,
+            (b, selected, pick) =>
+              card({
+                title: b.name,
+                desc: b.desc,
+                art: botBadge(b.id),
+                selected,
+                cls: `bot bot-${b.id}`,
+                onClick: pick,
+              }),
+            (b) => {
+              s = { ...s, skill: b.id };
+              save();
+              renderSummary();
+            },
+          ),
+        );
 
   const renderSummary = () => {
     const m = modeChoice(s.mode);
@@ -187,7 +235,9 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
       ...(showMap
         ? [sumItem(mapMini(practiceMapId(s)), getMap(practiceMapId(s)).name, 'sum-map')]
         : []),
-      sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeText(s.mode, s.size).title),
+      ...(isFreeRoam(s.mode)
+        ? []
+        : [sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeText(s.mode, s.size).title)]),
       ...(hasKitChoice(s.mode)
         ? [
             sumItem(
@@ -196,7 +246,12 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
             ),
           ]
         : []),
-      sumItem(botBadge(s.skill), `${BOT_SKILL_LABELS[s.skill]} bots`),
+      isFreeRoam(s.mode)
+        ? sumItem(
+            icon('range'),
+            s.dummies !== false && !getMap(practiceMapId(s)).race ? 'Dummies on' : 'No dummies',
+          )
+        : sumItem(botBadge(s.skill), `${BOT_SKILL_LABELS[s.skill]} bots`),
       h('span', { class: 'spacer' }),
       last
         ? iconButton('play', 'Start', () => hd.start({ ...s }), 'btn primary start-btn')

@@ -6,6 +6,7 @@ import { h, slider } from './menus';
 import { icon, botBadge } from './icons';
 import {
   ARENA_ROOM_SIZES,
+  BRAWL_FFA_ROOM_SIZES,
   RACE_ROOM_SIZES,
   ROOM_OBJECTIVES,
   ROOM_SIZES,
@@ -48,7 +49,7 @@ export interface OnlineMenuHandlers {
     bots: number,
     skill: BotSkillName,
     objective: MatchObjective,
-    /** 'cs': the CS kit (AK + Deagle, half-speed movement): bomb rules, or Elimination */
+    /** 'cs': the CS kit (AK + Deagle, 70 % movement speed): bomb rules, or Elimination */
     loadout: 'lethal' | 'cs',
   ): void;
   join(code: string): void;
@@ -61,13 +62,15 @@ export interface OnlineMenuHandlers {
   columns?: HTMLElement[];
 }
 
-/** Arena and race rooms: the size cards count players in all. */
+/** Arena, race and Brawl FFA rooms: the size cards count players in all. */
 const sizeCard = (o: RoomState['objective'], z: RoomSize): { label: string; desc: string } =>
-  isArenaObjective(o)
-    ? ARENA_ROOM_SIZES[z]
-    : isRaceObjective(o)
-      ? RACE_ROOM_SIZES[z]
-      : { label: z, desc: SIZE_DESC[z] };
+  o === 'brawl-ffa'
+    ? BRAWL_FFA_ROOM_SIZES[z]
+    : isArenaObjective(o)
+      ? ARENA_ROOM_SIZES[z]
+      : isRaceObjective(o)
+        ? RACE_ROOM_SIZES[z]
+        : { label: z, desc: SIZE_DESC[z] };
 
 const SIZE_DESC: Record<RoomSize, string> = {
   '1v1': 'A duel: you and one friend.',
@@ -183,7 +186,11 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
         (m) => pick(m.id),
       ),
       other.length
-        ? h('h3', { class: 'step-title' }, 'Other maps (no objective for this mode)')
+        ? h(
+            'h3',
+            { class: 'step-title' },
+            isRaceObjective(s.objective) ? 'Surf maps' : 'Other maps (no objective for this mode)',
+          )
         : null,
       other.length
         ? pickGrid(

@@ -1,6 +1,14 @@
 // App shell: title screen, starting/stopping games, pause menu, settings.
 import * as THREE from 'three';
-import { GAME_NAME, buildTestShip, type MatchObjective, type LoadoutName } from '@space-yz/shared';
+import {
+  GAME_NAME,
+  LADDERS,
+  buildTestShip,
+  isBrawlMode,
+  ladderForMode,
+  type MatchObjective,
+  type LoadoutName,
+} from '@space-yz/shared';
 import { loadSettings, saveSettings, hasSavedSettings, type Settings } from './settings';
 import {
   applyMobileDefaults,
@@ -16,7 +24,8 @@ import { InputManager, setLeaveGuard } from './game/input';
 import { GameClient, type ClientFeature } from './game/client';
 import type { Session } from './game/session';
 import { LocalSession } from './game/local-session';
-import { AudioEngine } from './audio';
+import { AudioEngine, Announcer } from './audio';
+import { configureTransitions } from './ui/transitions';
 import { TuningPanel, loadTuning } from './ui/tuning';
 import { h, controlsTable } from './ui/menus';
 import { icon, type IconName } from './ui/icons';
@@ -25,18 +34,30 @@ import {
   cardGrid,
   fxEnter,
   fxLeave,
+  backButton,
   focusFirst,
   iconButton,
   screenHead,
+  segTabs,
   type Dir,
 } from './ui/menu-kit';
 import {
   ARENA_ENABLED,
+  QUICK_PLAY_OFFLINE,
+  defaultNickname,
   initialPractice,
   initialRoom,
+  isBrawlPractice,
   practiceMapId,
+  quickPlayMode,
   type PracticeState,
 } from './ui/flow';
+import {
+  BRAWL_HINT,
+  BrawlLocalSession,
+  brawlOnlineFeatures,
+  startBrawlPractice,
+} from './game/brawl-entry';
 import { practiceMenu } from './ui/practice-menu';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
@@ -63,6 +84,9 @@ import {
   startRacePractice,
 } from './game/race-entry';
 import { createRangeSession } from './game/range';
+import { FreeRoamSession, startFreeRoam } from './game/free-roam';
+import { raceFromExtra } from './game/race-feature';
+import { VersusFeature } from './ui/versus';
 import {
   createPractice,
   updatePractice,
@@ -74,7 +98,12 @@ import {
 import { NetSession } from './net/net-session';
 import { onlineMenu, RoomPanel, netPanel } from './ui/online';
 import { settingsScreen } from './ui/settings-screen';
-import { rankedScreen, leaderboardScreen, profileScreen, type ClientProfile } from './ui/ranked';
+import { rankedScreen, leaderboardScreen, type ClientProfile } from './ui/ranked';
+import { account } from './net/account';
+import { accountScreen, recoveryCodeScreen } from './ui/account-screen';
+import { editProfileScreen, profileScreen } from './ui/profile-screen';
+import { friendsScreen, socialToast } from './ui/friends';
+import { avatarEl } from './ui/avatars';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -84,6 +113,8 @@ export class App {
   settings: Settings = loadSettings();
   input: InputManager;
   audio = new AudioEngine();
+  /** the 90s announcer (clips in public/audio/announcer, loaded when a match starts) */
+  announcer = new Announcer(this.audio);
   client: GameClient | null = null;
   tuning: TuningPanel | null = null;
   server = new ServerLink();
@@ -118,6 +149,11 @@ export class App {
     this.input = new InputManager(canvas, this.settings);
     this.audio.unlockOnFirstGesture(window);
     this.applyVolumes();
+    configureTransitions({
+      root: ui,
+      announcer: this.announcer,
+      effects: () => this.settings.effects,
+    });
     // menu sounds for every button (one listener for the whole UI)
     ui.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest?.('button')) this.audio.play('uiClick');
@@ -167,6 +203,7 @@ export class App {
     else if (params.has('bench'))
       this.runBench(Number(params.get('bench')) || 20, params.get('map') ?? undefined);
     else this.showTitle('fade');
+    this.initAccount();
     this.server.connect();
     this.renderer.setAnimationLoop(() => this.loop());
   }
@@ -190,6 +227,8 @@ export class App {
     this.audio.setVolume('master', this.settings.masterVolume);
     this.audio.setVolume('sfx', this.settings.sfxVolume);
     this.audio.setVolume('ui', this.settings.uiVolume);
+    this.audio.setVolume('announcer', this.settings.announcerVolume);
+    this.announcer.enabled = this.settings.announcer;
   }
 
   private resize(): void {
@@ -262,6 +301,35 @@ export class App {
       );
     };
     this.server.emitStatus();
+    // one-click Play: a quick Brawl (online, else offline vs bots), TDM or FFA
+    const modeSwitch = h('div', { class: 'play-mode' });
+    const renderSwitch = () =>
+      modeSwitch.replaceChildren(
+        segTabs(
+          [
+            { id: 'tdm', label: 'Team DM', icon: 'team' },
+            { id: 'ffa', label: 'Free-for-all', icon: 'freefight' },
+          ],
+          this.settings.brawlMode,
+          (id) => {
+            this.settings.brawlMode = id;
+            saveSettings(this.settings);
+            renderSwitch();
+          },
+        ),
+      );
+    renderSwitch();
+    const play = h(
+      'div',
+      { class: 'play-now' },
+      iconButton('play', 'Play', () => this.quickPlay(), 'btn primary play-btn'),
+      h(
+        'div',
+        { class: 'play-side' },
+        modeSwitch,
+        h('div', { class: 'play-desc' }, 'Quick match: jump straight into a fight.'),
+      ),
+    );
     const tiles = cardGrid(
       'tiles',
       this.titleTiles().map(([name, title, desc, fn, cls]) =>
@@ -276,12 +344,22 @@ export class App {
         'Leaderboards',
         () =>
           this.setScreen(
-            leaderboardScreen(() => this.showTitle(), this.myAccountId()),
+            leaderboardScreen(
+              () => this.showTitle(),
+              this.myAccountId(),
+              (id) => this.openProfile(id, () => this.showTitle()),
+            ),
             'forward',
           ),
         'btn small secondary',
       ),
       iconButton('profile', 'Profile', () => this.showProfile(), 'btn small secondary'),
+      iconButton(
+        'team',
+        'Friends',
+        () => this.showFriends(() => this.showTitle()),
+        'btn small secondary',
+      ),
       iconButton(
         'settings',
         'Settings',
@@ -299,8 +377,10 @@ export class App {
       h(
         'div',
         { class: 'screen title-screen interactive flow-screen' },
+        this.profileChip(),
         h('h1', { class: 'title' }, GAME_NAME.toUpperCase()),
         h('div', { class: 'subtitle' }, 'Gravity arena'),
+        play,
         tiles,
         small,
         status,
@@ -314,14 +394,14 @@ export class App {
     return [
       [
         'practice',
-        'Play',
+        'Practice',
         'Practice vs bots: pick a mode, a map and your opponents.',
         () => this.showPracticeMenu(),
         'play',
       ],
       [
         'online',
-        'Online',
+        'Online rooms',
         'Play online with friends: create a room or join by code.',
         () => this.showOnline(),
         'online',
@@ -329,7 +409,7 @@ export class App {
       [
         'ranked',
         'Ranked',
-        'Matched by rating. Climb the leaderboards.',
+        'Ranked and casual matchmaking, solo or with your party.',
         () => this.showRanked(),
         'ranked',
       ],
@@ -414,9 +494,13 @@ export class App {
   startGame(
     session: Session,
     features: ClientFeature[] = [],
-    opts: { tuning?: boolean } = {},
+    opts: {
+      tuning?: boolean;
+      /** keep the pointer locked (a Brawl moving on to its next map) */
+      keepLock?: boolean;
+    } = {},
   ): GameClient {
-    this.stopGame();
+    this.stopGame(opts.keepLock);
     const client = new GameClient(
       {
         renderer: this.renderer,
@@ -470,7 +554,8 @@ export class App {
 
   matchFeature: MatchFeature | null = null;
 
-  stopGame(): void {
+  /** `keepLock`: the next game starts right away (Brawl map change): the pointer stays locked. */
+  stopGame(keepLock = false): void {
     this.client?.dispose();
     this.matchFeature = null;
     this.client = null;
@@ -478,8 +563,72 @@ export class App {
     this.tuning?.dispose();
     this.tuning = null;
     setLeaveGuard(false);
-    if (document.pointerLockElement) document.exitPointerLock();
+    if (document.pointerLockElement && !keepLock) document.exitPointerLock();
     this.refreshLayout(); // a touch-controls setting changed during the game applies now
+  }
+
+  /** Leave the game for the title screen (a Brawl's Back to menu button). */
+  quitToTitle(): void {
+    this.stopGame();
+    this.showTitle('fade');
+  }
+
+  /**
+   * One-click Play: into a public Brawl room (TDM or FFA from the title's switch). First-timers
+   * get a default nickname, no forms. No server (or no answer in a few seconds, or it is full):
+   * an offline Brawl vs bots instead.
+   */
+  quickPlay(): void {
+    if (!this.settings.nickname) {
+      this.settings.nickname = defaultNickname();
+      saveSettings(this.settings);
+    }
+    const variant = this.settings.brawlMode;
+    const offline = () =>
+      startBrawlPractice(this, {
+        variant,
+        size: QUICK_PLAY_OFFLINE[variant],
+        skill: 'casual',
+      });
+    if (this.server.ok === false) return offline();
+    const core = this.ensureNet();
+    this.reHello(core);
+    const t0 = performance.now();
+    let sent = false;
+    let cancelled = false;
+    const screen = h(
+      'div',
+      { class: 'screen interactive flow-screen quickplay-wait' },
+      h('h2', { class: 'pause-title' }, 'Finding a match…'),
+      h(
+        'div',
+        { class: 'menu' },
+        iconButton('practice', 'Play offline vs bots', () => {
+          cancelled = true;
+          offline();
+        }),
+        backButton(() => {
+          cancelled = true;
+          if (sent && core.state === 'room') core.leaveRoom();
+          this.showTitle();
+        }, 'Cancel'),
+      ),
+    );
+    this.setScreen(screen, 'fade');
+    const poll = () => {
+      if (cancelled || this.screen !== screen) return;
+      if (core.state === 'room') return; // roomJoined starts the game
+      if (core.state === 'closed' || core.error || performance.now() - t0 > 8000) {
+        core.error = null;
+        return offline();
+      }
+      if (core.state === 'lobby' && !sent) {
+        sent = true;
+        core.quickPlay(quickPlayMode(variant));
+      }
+      window.setTimeout(poll, 100);
+    };
+    poll();
   }
 
   /** Practice choices, kept while the page is open (the menu reopens with your last setup). */
@@ -491,7 +640,20 @@ export class App {
         state: this.practiceState,
         back: () => this.showTitle(),
         start: (st) => {
-          if (st.mode === 'arena') this.startArenaPractice(st);
+          if (st.mode === 'freeroam')
+            startFreeRoam(this, {
+              mapId: practiceMapId(st),
+              kit: st.kit ?? 'lethal',
+              dummies: st.dummies !== false,
+            });
+          else if (isBrawlPractice(st.mode))
+            startBrawlPractice(this, {
+              variant: st.mode === 'brawl-ffa' ? 'ffa' : 'tdm',
+              size: st.size,
+              skill: st.skill,
+              map: practiceMapId(st),
+            });
+          else if (st.mode === 'arena') this.startArenaPractice(st);
           else if (st.mode === 'race')
             startRacePractice(this, {
               track: practiceMapId(st),
@@ -585,6 +747,7 @@ export class App {
       schedule: (fn, ms) => void window.setTimeout(fn, ms),
     });
     core.onMessage = (msg) => this.onNetMessage(core, msg);
+    account.attach(core);
     core.connect();
     window.clearInterval(this.netPing);
     this.netPing = window.setInterval(() => core.pingServer(), 1000);
@@ -604,16 +767,130 @@ export class App {
   }
 
   private myAccountId(): number | null {
-    return (this.net?.account as ClientProfile | null)?.id ?? null;
+    return (this.net?.account as ClientProfile | null)?.id ?? account.me?.id ?? null;
   }
 
-  showProfile(dir: Dir = 'forward'): void {
+  // ---------------- accounts, profiles, friends ----------------
+
+  /** Account events: toasts for friend requests / invites, logging out, the nickname. */
+  private initAccount(): void {
+    account.onNotice = (n) =>
+      socialToast(n, {
+        join: (code) => {
+          const core = this.ensureNet();
+          this.reHello(core);
+          core.joinRoom(code);
+        },
+        // a party invite: join it, then the party shows on the matchmaking screen
+        joinParty: (leader) => {
+          const core = this.ensureNet();
+          core.partyOp('join', leader);
+          if (!this.client) this.showRanked();
+        },
+        openProfile: (id) => this.openProfile(id),
+      });
+    account.onLoggedOut = (guestName) => {
+      this.settings.nickname = guestName ?? '';
+      saveSettings(this.settings);
+      this.net?.rename(this.settings.nickname || 'Pilot');
+    };
+    // a secured account's display name is its username: the nickname field follows it
+    account.onChange(() => {
+      const me = account.me;
+      if (me?.secured && this.settings.nickname !== me.name) {
+        this.settings.nickname = me.name;
+        saveSettings(this.settings);
+      }
+    });
+    // returning players go online right away (friends see them, invites arrive)
+    if (this.accountToken() && !params.has('bench')) this.ensureNet();
+  }
+
+  /** Title screen: your avatar and name (opens your profile). */
+  private profileChip(): HTMLElement {
+    const b = h('button', { class: 'profile-chip', type: 'button', title: 'Your profile' });
+    const paint = () => {
+      const me = account.me;
+      const req = account.social?.incoming.length ?? 0;
+      b.replaceChildren(
+        avatarEl(me?.avatar ?? 0, me?.banner ?? 0, 34),
+        h(
+          'span',
+          {},
+          h('span', { class: 'pc-name' }, me?.name ?? (this.settings.nickname || 'Guest')),
+          h('span', { class: 'pc-sub' }, me?.secured ? 'Profile' : 'Guest · secure account'),
+        ),
+        ...(req ? [h('span', { class: 'pc-badge', title: 'Friend requests' }, String(req))] : []),
+      );
+    };
+    paint();
+    const off = account.onChange(() => (b.isConnected ? paint() : off()));
+    b.addEventListener('click', () => this.showProfile());
+    return b;
+  }
+
+  /** Run `fn` once the server told us who we are (connecting first if needed). */
+  private withMe(fn: () => void, back: () => void): void {
     const core = this.ensureNet();
+    if (account.me && (core.state === 'lobby' || core.state === 'room')) return fn();
+    const note = h('div', { class: 'panel' }, 'Connecting to the game server…');
+    const wait = h(
+      'div',
+      { class: 'screen interactive flow-screen' },
+      screenHead('profile', 'Connecting…', back),
+      note,
+    );
+    this.setScreen(wait, 'forward');
+    const t0 = performance.now();
+    const poll = () => {
+      if (this.screen !== wait) return;
+      if (core.state === 'lobby' || core.state === 'room') return fn();
+      if (core.state === 'closed' || performance.now() - t0 > 8000)
+        note.textContent = 'Not connected to the game server (practice still works offline).';
+      else window.setTimeout(poll, 100);
+    };
+    poll();
+  }
+
+  /** Your own profile. */
+  showProfile(dir: Dir = 'forward', back: () => void = () => this.showTitle()): void {
+    this.withMe(() => {
+      const id = this.myAccountId();
+      if (id === null) return this.showAccount(back, dir);
+      const again = () => this.showProfile('back', back);
+      this.setScreen(
+        profileScreen({
+          id,
+          back,
+          openProfile: (x) => this.openProfile(x, again),
+          edit: () => this.setScreen(editProfileScreen(again), 'forward'),
+          account: () => this.showAccount(again),
+        }),
+        dir,
+      );
+    }, back);
+  }
+
+  /** Anyone's profile (leaderboards, friends, a room's players, toasts). */
+  openProfile(id: number, back?: () => void): void {
+    if (id === this.myAccountId()) return this.showProfile('forward', back);
+    const ret = back ?? (() => (this.client ? this.pause(true, 'back') : this.showTitle()));
     this.setScreen(
-      profileScreen(
+      profileScreen({ id, back: ret, openProfile: (x) => this.openProfile(x, ret) }),
+      'forward',
+    );
+  }
+
+  /** Account: secure / log in / recover (guests), password and log out (secured). */
+  showAccount(back: () => void, dir: Dir = 'forward'): void {
+    const core = this.ensureNet();
+    const again = () => this.showAccount(back, 'back');
+    this.setScreen(
+      accountScreen({
         core,
-        () => this.showTitle(),
-        (code) => {
+        back,
+        showCode: (code) => this.setScreen(recoveryCodeScreen(code, again), 'forward'),
+        useLoginCode: (code) => {
           try {
             localStorage.setItem('spaceyz.token', code);
           } catch {
@@ -621,10 +898,47 @@ export class App {
           }
           core.close();
           this.net = null;
-          this.showProfile('none');
+          this.showAccount(back, 'none');
         },
-      ),
+      }),
       dir,
+    );
+  }
+
+  /** Friends: search, requests, who is online, Join / Invite. */
+  showFriends(back: () => void, dir: Dir = 'forward'): void {
+    this.withMe(() => {
+      const core = this.ensureNet();
+      this.setScreen(
+        friendsScreen({
+          back,
+          openProfile: (id) => this.openProfile(id, () => this.showFriends(back, 'back')),
+          inRoom: () => core.state === 'room' && !core.ranked,
+          connected: () => core.state === 'lobby' || core.state === 'room',
+        }),
+        dir,
+      );
+    }, back);
+  }
+
+  /** The other humans in your online room, each opening their profile (pause menu). */
+  private roomPeople(core: NetCore): HTMLElement | null {
+    const me = this.myAccountId();
+    const people = core.roster.filter(
+      (r) => !r.bot && r.accountId !== null && r.accountId !== undefined && r.accountId !== me,
+    );
+    if (!people.length) return null;
+    return h(
+      'div',
+      { class: 'room-people' },
+      ...people.map((r) =>
+        iconButton(
+          'profile',
+          r.name,
+          () => this.openProfile(r.accountId!, () => this.pause(true, 'back')),
+          'btn tiny secondary',
+        ),
+      ),
     );
   }
 
@@ -648,7 +962,9 @@ export class App {
     if (msg.t === 'roomLeft') {
       if (this.client?.session instanceof NetSession) this.stopGame();
       this.toast(core.roomLeftReason ?? 'You left the room.');
-      this.showOnline('', 'fade');
+      // (out of a quick-play room: back to the title, its Play button is right there)
+      if (core.isPublic) this.showTitle('fade');
+      else this.showOnline('', 'fade');
     }
     if (msg.t === 'welcome') {
       const token = core.token;
@@ -660,6 +976,21 @@ export class App {
         }
     }
     if (msg.t === 'roomJoined') {
+      // already playing in this room: a Brawl moved on to its next map. The old game goes (the
+      // room stays), the new map loads with the pointer still locked.
+      const running = this.client?.session instanceof NetSession ? this.client.session : null;
+      if (running?.core === core) {
+        running.keepRoom = true;
+        this.stopGame(true);
+        this.setScreen(
+          h(
+            'div',
+            { class: 'screen flow-screen quickplay-wait' },
+            h('h2', { class: 'pause-title' }, 'Next map…'),
+          ),
+          'fade',
+        );
+      }
       // wait for the first exact snapshot, then start rendering
       const wait = () => {
         if (core.state !== 'room') return;
@@ -667,7 +998,7 @@ export class App {
           window.setTimeout(wait, 30);
           return;
         }
-        this.startOnline(core);
+        this.startOnline(core, !!running);
       };
       wait();
     }
@@ -699,6 +1030,7 @@ export class App {
           this.showTitle();
         },
         status: () => this.netStatus(core),
+        friends: () => this.showFriends(() => this.showRanked('back')),
       }),
       dir,
     );
@@ -751,16 +1083,32 @@ export class App {
     }
   }
 
-  startOnline(core: NetCore): void {
+  startOnline(core: NetCore, keepLock = false): void {
     if (core.mode === 'race') return this.startOnlineRace(core);
+    if (isBrawlMode(core.mode)) return this.startOnlineBrawl(core, keepLock);
     const session = new NetSession(core);
     const combat = new CombatFeature();
-    const match = new MatchFeature();
+    const ladder = core.ranked ? (core.ladder ?? ladderForMode(core.mode)) : null;
+    const match = new MatchFeature({ ladder: ladder ? LADDERS[ladder].name : undefined });
     // text chat + voice: online only (offline play has nobody to talk to)
     const chat = new ChatFeature(core, this.settings);
     // Arena 1v1 rooms: the arena HUD (after the match feature, which stays empty there)
     const arena = core.mode === 'arena' ? arenaOnlineFeatures(core, combat) : [];
-    const client = this.startGame(session, [combat, match, chat, ...arena], { tuning: false });
+    // ranked: the versus screen (ratings + odds) during warm-up
+    const versus = core.ranked
+      ? [
+          new VersusFeature(core, {
+            canRecall: () => {
+              const m = session.match?.();
+              return !m || m.phase === 'warmup';
+            },
+            openProfile: (id) => this.openProfile(id, () => this.pause(true, 'back')),
+          }),
+        ]
+      : [];
+    const client = this.startGame(session, [combat, match, chat, ...arena, ...versus], {
+      tuning: false,
+    });
     this.matchFeature = match;
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
@@ -780,11 +1128,52 @@ export class App {
     );
   }
 
+  /** A Brawl room (public quick play or private): the Brawl HUD, chat. */
+  private startOnlineBrawl(core: NetCore, keepLock: boolean): void {
+    const session = new NetSession(core);
+    const combat = new CombatFeature();
+    const chat = new ChatFeature(core, this.settings);
+    const brawl = brawlOnlineFeatures(core, combat, () => this.quitToTitle());
+    const client = this.startGame(session, [combat, ...brawl, chat], { tuning: false, keepLock });
+    this.roomPanel = new RoomPanel(this.ui, core);
+    client.addFeature({
+      frame: () => {
+        this.roomPanel?.update();
+        client.hud.netText = this.settings.showNetStats
+          ? `${Math.round(core.rttMs)} ms${core.inputDelay ? ` (+${core.inputDelay} delay)` : ''}`
+          : '';
+      },
+      dispose: () => {
+        this.roomPanel?.dispose();
+        this.roomPanel = null;
+      },
+    });
+    client.hud.setHint(
+      core.isPublic
+        ? `${BRAWL_HINT} · ${ChatFeature.hint(this.settings)}`
+        : `Room ${core.code} — share the code · ${BRAWL_HINT} · ${ChatFeature.hint(this.settings)}`,
+    );
+  }
+
   /** An online race room: the race HUD, see-through racers, no weapons. */
   private startOnlineRace(core: NetCore): void {
     const session = new RaceNetSession(core);
     const chat = new ChatFeature(core, this.settings);
-    const client = this.startGame(session, [...raceOnlineFeatures(core), chat], { tuning: false });
+    // ranked race: the racers, their ratings and your chance to finish first
+    const versus = core.ranked
+      ? [
+          new VersusFeature(core, {
+            canRecall: () => {
+              const r = raceFromExtra(core.extra);
+              return !r || r.phase === 'lobby' || r.phase === 'countdown';
+            },
+            openProfile: (id) => this.openProfile(id, () => this.pause(true, 'back')),
+          }),
+        ]
+      : [];
+    const client = this.startGame(session, [...raceOnlineFeatures(core), chat, ...versus], {
+      tuning: false,
+    });
     this.roomPanel = new RoomPanel(this.ui, core);
     client.addFeature({
       frame: () => {
@@ -882,12 +1271,14 @@ export class App {
     }
     const s = this.client.session;
     const match = s.match?.() ?? null;
+    // (an offline Brawl respawns you by itself)
+    const brawlOffline = this.client.session instanceof BrawlLocalSession;
     const menu = h(
       'div',
       { class: 'menu pause-menu' },
       iconButton('play', 'Resume', () => this.pause(false), 'btn primary'),
       // respawning is a practice tool: never in a match (it would skip a death mid-round)
-      s.respawn && !match
+      s.respawn && !match && !brawlOffline
         ? iconButton(
             'respawn',
             'Respawn',
@@ -899,6 +1290,18 @@ export class App {
             'btn secondary',
           )
         : null,
+      // free roam: reset the dummies, switch them on / off
+      ...(s instanceof FreeRoamSession ? s.pauseActions() : []).map((a) =>
+        iconButton(
+          a.icon,
+          a.label,
+          () => {
+            a.run();
+            this.pause(false);
+          },
+          'btn secondary',
+        ),
+      ),
       (match?.phase === 'warmup' || isRaceLobby(s)) && s.canStart?.()
         ? iconButton('next', isRaceLobby(s) ? 'Start race now' : 'Start match now', () => {
             s.startMatch?.();
@@ -917,6 +1320,14 @@ export class App {
         () => this.showControls(() => this.pause(true, 'back')),
         'btn secondary',
       ),
+      s instanceof NetSession
+        ? iconButton(
+            'team',
+            'Friends',
+            () => this.showFriends(() => this.pause(true, 'back')),
+            'btn secondary',
+          )
+        : null,
       iconButton(
         'quit',
         'Quit to title',
@@ -937,6 +1348,7 @@ export class App {
         { class: 'screen interactive pause flow-screen' },
         h('h2', { class: 'pause-title' }, this.isOffline() ? 'Paused' : 'Menu'),
         board,
+        s instanceof NetSession ? this.roomPeople(s.core) : null,
         menu,
         s instanceof NetSession ? netPanel(s.core, this.netSim) : null,
       ),

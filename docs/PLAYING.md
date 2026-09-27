@@ -51,6 +51,20 @@ next throw. The HUD shows how many throws are left ("✹ in 3") or "✹ EXPLOSIV
 - Matches: 1v1 first to 5 (max 9 rounds), 2v2 and 3v3 first to 6 (max 11), 5v5 first to 5
   (max 9). Sides swap at half time. Round timers: 1v1 1:00, 2v2 1:20, 3v3 1:30, 5v5 1:50.
   3v3 is for online rooms and Practice only (there is no Ranked 3v3).
+- **Transitions and the announcer**: a big card (and a deep 90s announcer voice) marks the
+  match start ("LETHAL RECOIL!"), every round ("Round three", **Match point**, **Final
+  round**), half time (**Switching sides**, with your new side in its colour), round won / lost
+  and **Victory / Defeat**. They only play while nobody can move (spawn lock, round end, match
+  end) and never hold the match up. **Tab** clears a card. Settings → Audio: **Announcer**
+  on/off and its volume; Settings → Game → Effects "Reduced" / "Minimal" (or your system's
+  reduced-motion setting) makes the cards shorter and calmer.
+
+## Falling
+
+- **Fall damage**: drops of up to 8 m are free; bigger falls hurt more the higher you fall,
+  and a fall of about 22 m or more kills. Landing from a **launch pad** never hurts.
+- **Leaving the map kills you** — e.g. walking off the outside of the ship with gravity boots.
+- Races are different: falling there sends you back to your last safe point.
 
 ## Power-ups
 
@@ -67,6 +81,47 @@ CS mode.
   the right). The twin hits as hard as a Quick Throw and bounces off one wall, but it never
   comes back — it vanishes at the end of its flight or on its second wall. You can't steer,
   catch or recall it.
+
+## Play = quick match (Brawl)
+
+The big **PLAY** button on the title screen puts you straight into a fight — no forms, no
+waiting. First time? You get a nickname like "Pilot4821" (change it later in Online rooms).
+
+- **Online** (the server is running): you join the busiest **public Brawl room** that still
+  has a free slot, or a new one opens. Public rooms hold up to **10 players**; **bots** keep
+  them busy at 8 and leave one by one as people join.
+- **No server** (or no answer within a few seconds): an offline Brawl against bots instead.
+- The switch next to Play picks the playlist: **Team DM** or **Free-for-all** (remembered).
+
+**Brawl rules**
+
+- **Team deathmatch**: two teams, **first team to 50 kills** wins. **Free-for-all**: everyone
+  against everyone, **first to 20 kills** wins. In free-for-all you're cyan and everyone else
+  is orange.
+- **Instant respawns**: you're back **2 s** after dying, at a **safe spawn** — the spawn point
+  farthest from your enemies and out of their sight.
+- **Spawn protection**: for **1.5 s** after spawning you have the shield (the blue shell). It
+  ends early the moment you attack (throw, Laser, slash, grenade…). Like the round-start
+  shield, a full Wind-up Throw still goes through.
+- **5-minute timer**: when it runs out, most kills wins (level = a draw).
+- **Tab** shows the scoreboard: kills, deaths and score (100 per kill + your damage).
+- Then the results — "**Next: Kestrel in 10 s**" — and the next Brawl starts by itself on the
+  **next map**: the Training Bay and the competitive maps take turns. **Back to menu** (or Esc →
+  Quit) leaves.
+- Join or leave whenever you like; in team deathmatch you join the smaller team.
+- Boomerang kit, power-ups on. Nothing is ranked.
+- Brawl is also in **Practice** (vs bots, pick the first map, team size / player count) and
+  **Online rooms** (a private Brawl room with friends).
+
+## Free roam (practice on any map)
+
+**Practice → Free roam**: pick **any map** (race tracks too) and walk around it alone — no
+rounds, no timer. **Target dummies** stand at spots all over the map (near and far, low and
+high): some stand still, some strafe, some strafe and jump. They never shoot back and pop up
+again a second after you down them. The stats panel shows your hit rates. Pick the Boomerang
+kit or the CS kit. Esc menu: **Respawn** (back to the start), **Reset dummies**, and switch
+the dummies **on / off**. Race tracks have no dummies: practise the route. If you die (a fall,
+your own grenade), you're back after 1.5 s at the nearest spawn point.
 
 ## Other modes
 
@@ -97,64 +152,103 @@ CS mode.
 
 **Race** (Practice → Race, or pick **Race** when you create an online room): no weapons, just
 movement. Up to 8 racers start together from a grid; the first over the finish line wins.
-Each track takes about **3 minutes**.
+Every course floats **high in the sky**: below you is a **sea of clouds glowing red** — touch
+it (or fall off anywhere) and you are back at your last checkpoint. Pick a **race track**
+(about **3 minutes**) or a **surf map** (listed apart as **Surf maps**, about 1½–2 minutes).
 
 - **Start**: in the lobby you can run the track freely. Then everyone is put on the grid for
   **3 – 2 – 1 – GO** (the host can start early from the Esc menu; offline it starts right
   away). Practice with **1 racer** is a **time trial**; with more, bot racers join you.
 - **Nobody can hurt anybody.** Other racers are drawn **see-through** with their name and
   place ("Nova · 2nd") and you run straight through each other — nobody can block you.
-- **Checkpoints**: numbered gates (1, 2, 3 … FINISH) you must pass **in order**; the next one
-  is marked on your screen with its distance, and floor arrows show the way. **Fall off**
-  (into a river, a crevasse, the valley) or **hold R** and you're put back at your last
-  checkpoint, frozen for **1.5 s**.
-- **SURGE** (Shift, the dash key): a burst of speed, +60 % for about a second — only **3 per
-  race**. Use them on long straights, or to clear a gap no normal jump reaches.
-- **Jetpack fuel**: in a race your tank is bigger but **never refills by itself**. Glowing
-  blue **fuel cells** on the track fill it up (each once per race, and only if it isn't
-  full); a checkpoint respawn fills it too.
-- **Forks**: every track splits several times into a **safe, longer way** (normal floor
-  arrows) and a **risky shortcut** (red arrows): narrow beams, drops, gaps that need the
-  jetpack or a surge, walls you run along with the **gravity boots** (press **F** next to the
-  wall, run along it, jump off at the end). Fall off a shortcut and the penalty eats the
-  time you hoped to save — so plan where to spend your surges and your fuel.
-- **Time limit**: a racer still out at twice the track's par time (6 minutes) is **DNF**.
-  When everyone else is done, the last racer gets **30 more seconds**.
-- **HUD**: race clock, your place (2/6), checkpoints (CP 3/7), SURGE charges and fuel (bottom
-  left), and at each checkpoint your **split** against your personal best — **green** =
-  faster, **red** = slower. Your **personal best** and its **ghost** (a faint orange racer
-  running your best line) are kept in this browser for each track.
-- **Results**: places, times and gaps; the next race starts by itself.
+- **Checkpoints** are **walled rooms** with glowing doorways and their number over the exit
+  (1, 2, 3 … FINISH). Pass them **in order**; the next one is marked on your screen. There is
+  one every **15–25 seconds**, so a fall only costs a short stretch: **fall** or **hold R** and
+  you're back in your last checkpoint room, frozen for **1.5 s** (**0.5 s** on surf maps).
+- **Big portals** (glowing rings in a stone arch) take you to the next part of the course; you
+  come out in a checkpoint room.
+- **Race movement is fast** (race courses only — the combat modes are unchanged): you
+  sprint at **12 m/s**, and you go much faster by **bunny-hopping** and **surfing**. Your
+  speed (m/s) and your best this race are shown big under the crosshair.
+  - **Air-strafing**: in the air, hold **A** (or **D**) and turn your mouse the **same way**,
+    smoothly — every moment you do it adds a little speed and bends your path. Holding **W**
+    in the air adds nothing; pressing **S** brakes hard.
+  - **Bunny hop**: jump again **the instant you land** (tap Space just before touching down,
+    or spin the **mouse wheel** bound to jump) — a jump on the first ground moment keeps all
+    your speed; land and stand for even a moment and the ground eats it. Air-strafe between
+    hops and each hop is faster: chains of small pads get **wider and wider** and only a
+    good hop line clears them. Speed tops out at 34 m/s from strafing.
+  - **Surfing** (the tilted blue/magenta/red ramps with a glowing top edge): you can't stand
+    on a surf ramp — you slide on it. Land on its face, **hold A or D toward the ramp** (never
+    W) and aim along it: you stay on and the slope turns height into speed (up to 50 m/s).
+    Let go and you slide off. Between ramps, fly across and land on the **upper part** of the
+    next face; a **flick** is a jump to a ramp on the other side (switch A ↔ D mid-air).
+  - A tip pops up the first time you reach a surf ramp and a hop chain.
+- **SURGE** (Shift, the dash key; race tracks only): a burst of speed, +60 % of sprint for
+  about a second — **3 per race**.
+- **Jetpack fuel** (race tracks only): your tank is bigger but **never refills by itself**.
+  Glowing blue **fuel cells** fill it (each once per race); a checkpoint respawn fills it too.
+  Some gaps are too wide for any jump: burn across them.
+- **No gravity boots** in races (F does nothing); **boosters** (orange strips and rings) and
+  **launch pads** throw you forward.
+- **Time limit**: a racer still out at twice the track's par time is **DNF**. When everyone else
+  is done, the last racer gets **30 more seconds**.
+- **HUD**: race clock, your place (2/6), checkpoints (CP 3/15), your speed and peak, SURGE and
+  fuel (bottom left, race tracks only), and at each checkpoint your **split** against your
+  personal best — **green** = faster, **red** = slower. Your **personal best** and its
+  **ghost** (a faint orange racer running your best line) are kept in this browser per map.
 - **Ranked races**: **Ranked → Race → Search race** puts you in the Race queue (see
-  [Ranked](#ranked)). Online, the server also keeps your **best time on every track** (your
-  profile and the track leaderboards show it); the browser best and ghost are for Practice.
+  [Ranked](#ranked)); it only picks the three **race tracks**, never surf maps. Online, the
+  server keeps your **best time on every race track and surf map** (each has its own
+  leaderboard).
 
-### Cliffline
+### Sunspire (track 1 — medium)
 
-An alpine ridge at sunrise: snow paths on rock ridges, pine forests far below, the low sun in
-the east. 7 checkpoints.
+A sky temple over pink sunrise clouds: cream stone, gold edge lines, blue surf ramps, gardens
+with waterfalls. 15 checkpoints, about 2:50 for a clean fast run.
 
-- Hut terrace and the ridge run → **switchbacks** down the cliff (shortcut: five **drops** onto
-  small ledges) → **boulder hops** over the crevasse and a climb to Peak One → a **zip-rail** to
-  Peak Two, round the notch (shortcut: **jetpack** straight across it) → a **launch pad** onto
-  the high ridge, zigzag (shortcut: **gravity boots** along the cliff face over the chasm) →
-  the **ice-cave portal** through the mountain and the long zip-rail down to the valley →
-  round the lake on the causeway (shortcut: **ice floes**, with one open lead only a
-  **surge-jump** clears) → up to the lodge and the finish arch. Fuel cells before the notch
-  and on the high ridge.
+- A hop chain curving right and a first A-frame surf → two surf ramps, a **launch pad**, a
+  **window** jump, stepping stones → portal to the high terraces → **behind the wall**: a hop
+  chain curving round two tall blocks, then a **side-switch flick** → a **pillar weave**, a
+  launch pad, a narrow **beam**, drop jumps → a surf run curving left → portal to the west
+  gardens → an **accelerating hop chain** into a 15 m **speed gap**, a **booster** onto a ramp →
+  **booster rings** through the air → a 90° surf turn → portal to the spire, a hop chain
+  curving left behind the wall → the grand surf (five ramps, two flicks) → zigzag beams and a
+  window → the last hop chain and a 15 m jump to the finish.
 
-### Canopy Run
+### Neon Drift (track 2 — hard)
 
-Jungle treetops in warm sunbeams: plank walkways along giant branches, rope zip-rails, red
-mushroom launch pads, a river gorge and temple ruins. 7 checkpoints.
+Floating fragments of a neon city at night under stars and a big moon: dark slate, cyan edges,
+magenta ramps, glowing towers. 16 checkpoints, about 2:50.
 
-- The great tree's deck and the branches → a **rope zip-rail** and **mushroom pads** up the
-  canopy → rope bridges between the tree decks (shortcut: the bare **branch beams**) → the
-  **spiral stair** round the fig trunk down to the river → the boardwalk (shortcut:
-  **stepping stones** over the rapids) → a spring up the waterfall cliff into the ruins →
-  round the temple (shortcut: **gravity boots** along the temple wall over the collapse) →
-  the long rope rail down through the canopy → the twin trees (shortcut: **jetpack** across
-  the gap) → a mushroom up to the finish in the last tree's hollow.
+- Tighter hop chains on smaller pads, **steep** surf ramps (60–64°) with flicks both ways, a
+  pillar weave on small pads, narrow windows, a **jetpack gap** with a fuel cell and a broken
+  beam, a **speed gate** (a hop chain to 14 m steps and a 17 m gap), a 90° surf spin, a
+  **royal spin** (left, then right, then right), and a last steep surf run before the final
+  chain.
+
+### Ember Spire (track 3 — very hard)
+
+Basalt islands over ash clouds at dusk, lava falls pouring off their edges, a red sun going
+down. 15 checkpoints, about 2:50.
+
+- The smallest pads, the steepest and narrowest ramps (up to 66°), **two jetpack gaps on one
+  fuel cell** (manage your burn), drop jumps with 80° turns, booster rings, a royal spin on the
+  steepest ramps, a pillar gauntlet into another jetpack gap, and a long surf descent with
+  two flicks before the last chain.
+
+### Surf maps
+
+Pure surf (no jetpack, no SURGE). Each **stage** starts in a walled room that **caps your
+speed** (you can't carry speed in) and ends on a landing with a big portal to the next
+stage's room; fall and you are back at the stage start in about a second.
+
+- **Surf Aurora** (beginner): five stages of long, forgiving 55° ramps over a frozen sea under
+  an aurora sky — straight transfers, longer transfers, side-switch flicks, a 90° turn with a
+  booster ring, a curved finale. About 1:40.
+- **Surf Cinder** (hard): seven stages of steep, narrow ramps at dusk — fast straights, a royal
+  spin, a window to thread and drop strafes, a **wall surf** (72°) into flicks, a pillar weave,
+  "the needles" (65° ramps 8 m tall), a mixed finale. About 1:50.
 
 ## What the markers mean
 
@@ -276,14 +370,17 @@ the Premier map pool). Mirrored north ↔ south: each team spawns in a covered *
 
 ## Ranked
 
-Ranked has three ladders. Premier and Duels are played with the Boomerang kit; Race has no
-weapons. Solo queue: everyone searches on their own (there are no parties).
+Ranked has four ladders: **Premier, Premier CS, Duels and Race**. Premier and Duels are
+played with the Boomerang kit, Premier CS with the CS kit (AK + Deagle); Race has no weapons.
+You can search alone or with your party (see **Parties** below).
 
-- **Premier** — the main rank. **5v5 Bomb.** When a match is found, the two teams take turns
-  **banning maps** (any player can ban for their team; 15 seconds per turn, or a random map is
-  banned for you) until one map is left, and that one is played. The pool is every map with
-  bomb sites, so new maps join by themselves. If only a few people are searching, a **4v4**
-  can start after about 90 seconds.
+- **Premier** — the main rank. **Bomb**, **3v3 by default**: the queue makes the match bigger
+  when enough people are searching — **5v5** as soon as 10 are searching, **4v4** when 8–9 are
+  searching (after 10 seconds, giving a 5v5 a moment to fill), otherwise **3v3** once 6 are
+  searching (after 20 seconds). It is one rating whatever the size. When a match is found,
+  the two teams take turns **banning maps** (any player can ban for their team; 15 seconds per
+  turn, or a random map is banned for you) until one map is left, and that one is played. The
+  pool is every map with bomb sites, so new maps join by themselves.
   - Your Premier rank is **one number**, starting at 1000, with a colour: grey under 1000,
     light blue from 1000, blue 1200, purple 1400, pink 1600, red 1800 and gold from 2000
     (named Asteroid, Moon, Planet, Gas Giant, Star, Supergiant, Galaxy).
@@ -291,8 +388,12 @@ weapons. Solo queue: everyone searches on their own (there are no parties).
   - **Seasons**: when the host starts a new season, every Premier rating moves 40 % of the way
     back to 1000 and everyone plays 5 placement wins again. Last season's final rating stays
     on your profile and on the leaderboard.
-  - The host can give Premier **opening hours** (for example Fri–Sun 18:00–23:00) while there
-    aren't many players; the Ranked screen then shows when it opens ("Premier opens in 2h 13m").
+  - Premier **opens when 20 players are online** (see _When a queue is open_ below).
+- **Premier CS** — the same as Premier (3v3 to 5v5, map veto, one number with the same
+  colours, 5 placement wins, seasons) with the **CS kit**, and its **own rating**. Before the
+  map veto everyone **votes the mode**: **Bomb** or **Elimination** (10 seconds; the most
+  votes win, a tie is decided at random; everyone voting ends it early). Then the teams ban
+  maps like in Premier. Premier CS opens when **35 players are online**.
 - **Duels** — **1v1 or 2v2** on Tower rules. Both queues share **one** rating. After 5 games
   you get a rank: **Asteroid → Moon → Planet → Gas Giant → Star → Supergiant** (each in III,
   II, I), and the very best Duels players on the server are **Galaxy**.
@@ -311,12 +412,103 @@ weapons. Solo queue: everyone searches on their own (there are no parties).
   - Only ranked races count. Private race rooms and Practice never change your rating (but
     an online finish in a private room can still set your best time).
   - The results screen shows your rating change and whether you set a new best.
-- Arena 1v1 and 3v3 are casual only (online rooms and Practice).
+- Arena 1v1 is casual only (online rooms, the casual queue and Practice).
+- **Versus screen**: when a ranked match is found you see both teams (or you vs them in a
+  1v1, or every racer), with each player's rating and colour (or "Placement 2/5"), wins /
+  games, win rate, their last 5 results and the team averages — and your odds, worked out
+  from the ratings the same way the rating system does: "You have a 23% chance of beating
+  Nova" (races: your chance to finish first). Ranked matches warm up for 7 seconds so there's
+  time to read it. **Tab** hides it; hold **Tab** during warm-up to see it again.
 - Leaving a ranked match counts as a loss. Team killing, attacking your own carrier, or
   standing still (AFK) gets a warning, then a kick and a temporary ranked ban.
-- **Leaderboards**: Premier and Race (this season and past seasons), Duels, and the
-  **fastest times on every race track** (one time per player: their best).
-- **Profile** shows your Premier and Race numbers and colours (or your placement progress),
-  your Duels rating, past seasons, your best time on every track, your recent matches and
-  races, and your **login code**. Copy it to play as
-  yourself on another PC ("Use this code" there). Keep it secret: it is your password.
+- **Leaderboards**: Premier, Premier CS and Race (this season and past seasons), Duels, and
+  the **fastest times on every race track** (one time per player: their best).
+- **Profile** shows your Premier, Premier CS and Race numbers and colours (or your placement
+  progress), your Duels rating, past seasons, your best time on every track and your recent
+  matches (see below).
+- **Names on the versus screen** open that player's profile (click them before the game takes
+  the mouse, or on a touch screen).
+
+## Queues (the Ranked button: Find a match)
+
+- **Live numbers**: every mode shows how many players are searching it right now, and for
+  Premier / Premier CS which size would start now ("5v5 ready", or "6 needed for 3v3"). The
+  top line shows how many players are online. The numbers update every few seconds.
+- **Search several ranked modes at once**: every ranked mode has a tick box, and all the open
+  ones are ticked for you. Press **Search**: the **first match that forms** takes you and your
+  other searches stop. Untick what you don't want to play.
+- **When a queue is open**: Duels and Race are always open. Premier opens when **20 players
+  are online**, Premier CS at **35**. A closed card says so: "Opens at 20 online · now 12".
+  The host can change these numbers on the host dashboard (0 = always open). If the host also
+  sets **opening hours** (for example Fri–Sun 18:00–23:00), a queue with both is open when
+  **either** is true: enough players online, or it's within the hours (the hours gather people
+  at a set time; a big crowd opens it anyway). With only hours set, the hours decide.
+- **Casual queue** (unranked): tick the modes you'd play — Tower, Bomb, Elimination, CS Bomb,
+  CS Elimination, Brawl TDM, Brawl FFA, Arena — and the team sizes (1v1, 2v2, 3v3, 5v5; for
+  Brawl FFA and Arena they mean 4–10 and 2–8 players in all). The server starts the match that
+  suits **the most people** searching. If no full match comes together, after **30 seconds**
+  the best match that includes the player who has waited longest starts with **bots in the
+  empty slots** (casual only — ranked never has bots). The title screen's **Play** button is
+  still the one-click Brawl quick play.
+- **Smaller teams play a smaller map**: in 1v1 and 2v2 (Duels, and casual 1v1 / 2v2 Tower,
+  Bomb and Elimination) glowing **force-field walls** close the side routes, so the fight is in
+  the middle of the map (and its basement where it has one) — you can't just walk around a
+  side lane to the Tower. In 3v3 some outer routes are closed. 4v4 and 5v5 play the whole map.
+  The force fields stop players, bullets, Boomerangs and sight.
+
+## Parties
+
+- **Make a party**: in **Friends**, press **Party invite** next to an online friend (you
+  become the leader). They get a pop-up with **Join**. A party holds up to **5** players.
+- The **Find a match** screen shows your party: who's in it, who's the leader, a **Ready**
+  tick (just to show you're ready), **Leave party**, and for the leader **Invite** and ✕ to
+  remove someone.
+- **The leader picks the search** and it applies to everyone: the members see it on their
+  screen. The whole party is always on **the same team**.
+- What a party can search: **casual** (any size that fits your party on one team), **Duels
+  2v2** as a duo (Duels 1v1 is solo only), **Premier / Premier CS** with up to 5 (one team),
+  **Race** is solo only.
+- **Matchmaking** rates a party by its best player: party rating = 0.6 × the highest rating +
+  0.4 × the average.
+- **Rank gap**: a party that isn't a full team (for example a duo in Premier) must be within
+  **600 rating** of each other to play ranked. A **full team** (3, 4 or 5 for Premier, a duo
+  for Duels 2v2) may queue with any gap — it then only plays at its own size — but if its
+  ratings are more than **400** apart, everyone in it wins and loses only **75 %** of the
+  usual rating.
+- If someone joins, leaves or goes offline, the party's search stops (search again).
+
+## Accounts & friends
+
+- **No sign-up needed.** The first time you play online you get a guest account on this
+  browser (your nickname, a "Pilot" name if you have none). Everything you play counts.
+- **Secure your account** (title screen → your name in the top-right corner → Account): pick
+  a **username** (3–16 letters, numbers, spaces, `_ - .`; not taken, not rude) and a
+  **password** (8+ characters). It is the same account, so your ratings, matches and best
+  times stay. You then get a **recovery code**: copy it and keep it safe (a password manager
+  or on paper) — there is no e-mail reset yet, and it is shown only once.
+- **Log in** on another PC or phone with your username and password. You can be logged in on
+  several devices at once. **Log out** ends it on this device (you go back to the guest you
+  had here); **Log out everywhere** ends it on every device. Changing your password also
+  logs every other device out.
+- **Forgot your password?** Account → Forgot password: your username + the recovery code set
+  a new password. The code works once; you get a new one to save. Lost the code too? Log in
+  and make a new one (Account → New recovery code).
+- **Your name**: a secured account's name is its username (you log in with it). You can
+  change it on your profile once every 7 days (only capital letters any time).
+- **Profiles**: click a name on the leaderboards, in the friends list, in a match's
+  scoreboard (profile → a recent match) or in the pause menu of an online room. A profile
+  shows the avatar and banner colour, a short title, when the player joined, their matches,
+  K/D, Boomerang and laser hit rates, headshots, favourite weapon, time played, wins per mode
+  (Tower, Bomb, Elimination, Brawl, Race), ratings with their colours and past seasons,
+  recent matches (click one for its full scoreboard) and race best times. On your own
+  profile, **Edit profile** picks one of 16 avatars, a banner colour, a title and your name.
+- **Friends** (title screen or the pause menu): find players by name and send a friend
+  request; accept or decline the ones you get (a pop-up tells you). The list shows where each
+  friend is: in the menus, in a room or a match (mode, map, players) or in ranked. **Join**
+  takes you into their room (any casual room, even private ones — not ranked matches);
+  **Invite** (while you are in a room) sends them a pop-up with a Join button. Up to 200
+  friends.
+- **Block** a player (on their profile or the friends list): they stop being your friend,
+  and their friend requests, invites, chat and voice no longer reach you.
+- Guests can still use the old **login code** (Account → Guest login code) to move to
+  another PC, but securing the account is safer: the code is a password in itself.

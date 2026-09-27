@@ -12,7 +12,7 @@ import { RaceRules, type RaceRecord } from '../src/game/rules/race';
 import type { Conn } from '../src/game/conn';
 import type { Room } from '../src/game/room';
 
-const TRACK = 'race-cliffline';
+const TRACK = 'race-sunspire';
 
 /** A finished race: `order` = account ids, first place first; null time = DNF. */
 const record = (
@@ -83,9 +83,13 @@ describe('Race queue', () => {
       sendJson: () => {},
     }) as unknown as Conn;
 
-  it('the track pool is every race track', () => {
-    expect(raceTrackPool()).toEqual(raceMaps().map((m) => m.id));
-    expect(raceTrackPool().length).toBeGreaterThan(0);
+  it('the track pool is every race track, never a surf map', () => {
+    expect(raceTrackPool()).toEqual(
+      raceMaps()
+        .filter((m) => !m.surf)
+        .map((m) => m.id),
+    );
+    expect(raceTrackPool()).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
   });
 
   it('gathers 2+ racers for 20 s after the 2nd joined, then starts one ranked race room', () => {
@@ -333,7 +337,7 @@ describe('migration 4 (races)', () => {
     expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(
       SCHEMA_VERSION,
     );
-    expect(SCHEMA_VERSION).toBe(4);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(4); // (5: accounts & friends)
     for (const t of ['races', 'race_players', 'race_bests'])
       expect(
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(t),

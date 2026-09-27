@@ -12,6 +12,7 @@ import type { Services } from '../services';
 import type { ConnectivityStatus } from './connectivity';
 import { capacity } from '../perf-budget';
 import { MatchRules } from '../game/rules/match';
+import { BrawlRules } from '../game/rules/brawl';
 import { describeSchedule, formatWindow, parseWindows } from '../services/schedule';
 
 export interface DashboardOptions {
@@ -92,13 +93,15 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
     const conn = opts.connectivity();
     const rooms = [...hub.rooms.values()].map((r) => {
       const rules = r.rules instanceof MatchRules ? r.rules : null;
+      const brawl = r.rules instanceof BrawlRules ? r.rules.st : null;
       return {
         code: r.code,
         mode: r.mode,
         map: r.map,
         ranked: r.ranked,
-        phase: rules?.ms.phase ?? 'practice',
-        scores: rules?.ms.scores ?? null,
+        public: r.isPublic,
+        phase: rules?.ms.phase ?? (brawl ? `brawl ${brawl.phase}` : 'practice'),
+        scores: rules?.ms.scores ?? (brawl?.variant === 'tdm' ? brawl.scores : null),
         bots: [...r.members.values()].filter((m) => !m.conn).length,
         kbps: 0,
       };
@@ -133,8 +136,14 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
       players,
       rooms,
       matches: rooms.filter((r) => r.phase !== 'warmup' && r.phase !== 'practice').length,
+      /** public Brawl rooms (quick play) per playlist: rooms, humans, bots */
+      publicBrawl: hub.publicBrawlStatus(),
       ranked: services.queue.enabled,
       queued: services.queue.size() + services.queue.vetoing(),
+      /** players online and each ranked queue: searching, open, its players-online threshold */
+      online: services.queue.onlineCount(),
+      queues: services.queue.counts().ranked,
+      thresholds: services.ranked.thresholds(),
       season: services.ranked.season(),
       premier: (() => {
         const s = services.ranked.schedule();
@@ -247,6 +256,24 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
           services.broadcastRankedInfo();
           return json(res, 200, { ok: true });
         }
+        case '/api/thresholds': {
+          // players online at which each ranked queue opens (0 = no player-count rule)
+          const patch: Record<string, number> = {};
+          for (const [k, v] of Object.entries(body)) {
+            const n = Number(v);
+            if (!Number.isInteger(n) || n < 0 || n > 10_000)
+              return json(res, 400, { error: 'Use whole numbers from 0 to 10000.' });
+            patch[k] = n;
+          }
+          services.ranked.setThresholds(patch);
+          log(
+            `Ranked opens at: ${Object.entries(services.ranked.thresholds())
+              .map(([k, v]) => `${k} ${v || 'always'}`)
+              .join(', ')}`,
+          );
+          services.queue.pushCounts();
+          return json(res, 200, { ok: true, thresholds: services.ranked.thresholds() });
+        }
         case '/api/restart': {
           for (const r of [...hub.rooms.values()]) {
             for (const m of r.humans)
@@ -347,6 +374,9 @@ button.warn{border-color:var(--orange);background:#3a2410}button.small{padding:3
 <label><input type="radio" name="phours" value="scheduled" id="hSched"> opening hours</label><span id="hState" class="dim"></span></div>
 <div class="row"><input id="hours" style="flex:1;min-width:200px" placeholder="Fri-Sun 18:00-23:00"><button class="small" id="hoursSave">Save hours</button></div>
 <div class="dim" id="hoursMsg">Local time of this PC. Example: Fri-Sun 18:00-23:00; Wed 20:00-22:00</div>
+<div class="row">Opens at players online (0 = always):</div>
+<div class="row" id="thresholds"></div>
+<div class="row"><button class="small" id="thrSave">Save</button><span class="dim" id="thrMsg">A queue with a number AND opening hours opens when either is true.</span></div>
 <div class="row"><button class="warn" id="restart">Restart all matches</button><button class="warn" id="stop">Stop server</button></div>
 <div class="dim">Closing this window does not stop the server — use Stop, or close the black Lethal Recoil window.</div></section>
 <section style="grid-column:1/-1"><h2>Players</h2><table id="players"></table></section>
@@ -375,7 +405,9 @@ async function refresh() {
   const lights = [
     ['Players online', st.players.length, st.players.length ? 'ok' : ''],
     ['Matches running', st.matches, st.matches ? 'ok' : ''],
-    ['Searching ranked', st.queued, ''],
+    ['Quick play (TDM / FFA)', st.publicBrawl ? st.publicBrawl.brawl.humans + ' / ' + st.publicBrawl['brawl-ffa'].humans + ' players' : '—', ''],
+    ['Online now', st.online, ''],
+    ['Searching (ranked + casual)', st.queued, ''],
     ['Accounts', st.accounts, ''],
     ['Unhandled reports', st.reports, st.reports ? 'warn' : 'ok'],
     ['Upload speed', st.testing ? 'measuring…' : st.uploadMbps ? st.uploadMbps + ' Mbit/s' : (st.speedError || 'not measured'), st.uploadMbps ? (st.uploadMbps >= 10 ? 'ok' : 'warn') : ''],
@@ -387,10 +419,11 @@ async function refresh() {
   $('hAlways').checked = st.premier.mode === 'always'; $('hSched').checked = st.premier.mode === 'scheduled';
   $('hState').textContent = st.premier.open ? ' · open now' : ' · closed now';
   if (document.activeElement !== $('hours') && !hoursDirty) $('hours').value = st.premier.windowsText;
+  if (!thrDirty) $('thresholds').replaceChildren(...Object.entries(st.thresholds).map(([k, v]) => { const l = el('label', k + ' '); const i = el('input'); i.type = 'number'; i.min = '0'; i.style.width = '64px'; i.value = v; i.dataset.q = k; i.oninput = () => { thrDirty = true; }; const q = st.queues && st.queues[k]; l.append(i, el('span', q ? (q.open ? ' open' : ' closed') + ' · ' + q.searching + ' searching' : '', 'dim')); return l; }));
   const pt = $('players'); pt.replaceChildren(head(['Name', 'Room', 'Ping', '']));
   for (const p of st.players) { const k = el('button', 'Kick', 'small warn'); k.onclick = () => confirm('Kick ' + p.name + '?') && api('/kick', { id: p.id }).then(refresh); pt.append(row([p.name, p.room || 'menu', p.ping + ' ms', k])); }
   const rt = $('rooms'); rt.replaceChildren(head(['Code', 'Mode', 'Type', 'Phase', 'Score', 'Bots']));
-  for (const r of st.rooms) rt.append(row([r.code, r.mode, r.ranked ? 'ranked' : 'private', r.phase, r.scores ? r.scores.join(' – ') : '', r.bots]));
+  for (const r of st.rooms) rt.append(row([r.code, r.mode, r.ranked ? 'ranked' : r.public ? 'public' : 'private', r.phase, r.scores ? r.scores.join(' – ') : '', r.bots]));
 }
 async function reports() {
   let list = []; try { list = await api('/reports'); } catch { return; }
@@ -402,7 +435,8 @@ $('copy').onclick = () => navigator.clipboard.writeText($('invite').textContent)
 $('speed').onclick = () => api('/speedtest', {}).then(refresh);
 $('mbps').onchange = () => { const v = Number($('mbps').value); if (v > 0) api('/speedtest', { mbps: v }).then(refresh); };
 $('ranked').onchange = () => api('/ranked', { on: $('ranked').checked });
-let hoursDirty = false;
+let hoursDirty = false, thrDirty = false;
+$('thrSave').onclick = () => { const body = {}; for (const i of $('thresholds').querySelectorAll('input')) body[i.dataset.q] = Number(i.value); api('/thresholds', body).then(() => { thrDirty = false; $('thrMsg').textContent = 'Saved.'; refresh(); }).catch(() => { $('thrMsg').textContent = 'Use whole numbers (0 = always open).'; }); };
 $('hours').oninput = () => { hoursDirty = true; };
 $('newSeason').onclick = () => { if (!st) return; $('seasonText').textContent = 'Start season ' + (st.season + 1) + '? Every Premier rating moves 40% toward 1000 and everyone plays 5 placement wins again. Season ' + st.season + ' is archived.'; $('seasonConfirm').hidden = false; };
 $('seasonNo').onclick = () => { $('seasonConfirm').hidden = true; };

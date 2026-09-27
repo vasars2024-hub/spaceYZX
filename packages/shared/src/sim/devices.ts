@@ -21,6 +21,7 @@ export const updateDevices = (world: WorldState, ctx: SimContext, p: PlayerState
       if (dot(p.vel, pad.vel) < 0.9 * speed * speed)
         world.events.push({ type: 'launch', player: p.id, pad: i });
       p.vel = v3(pad.vel.x, pad.vel.y, pad.vel.z);
+      p.padFlight = true; // (its landing never hurts)
       p.grounded = false;
       p.coyote = 0;
       p.jumpBuffer = 0;

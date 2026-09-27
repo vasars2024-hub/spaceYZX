@@ -21,6 +21,7 @@ import { qForward, qRight, qUp } from '../math/quat';
 import { closestSegSeg, closestPointSeg } from '../math/geom';
 import { raycast, lineOfSight } from '../level/collision';
 import type { SimContext } from './context';
+import { isEnemy, isTeammate } from './context';
 import type { PlayerInput } from './input';
 import { Btn } from './input';
 import type { PlayerState, WorldState } from './state';
@@ -105,7 +106,7 @@ export const applyDamage = (
   victim.lastHurtTick = world.tick;
   victim.lastAttacker = attackerId;
   if (victim.windup > 0) cancelWindup(world, victim);
-  const teamHit = !!attacker && attacker.id !== victim.id && attacker.team === victim.team;
+  const teamHit = !!attacker && isTeammate(ctx, attacker, victim);
   if (attacker && !teamHit && attacker.id !== victim.id)
     attacker.damageDealt += Math.min(damage, victim.hp + damage);
   world.events.push({
@@ -146,7 +147,7 @@ export const applyDamage = (
     attacker &&
     attacker.powerup === Powerup.Freeze &&
     attacker.powerupCharges > 0 &&
-    attacker.team !== victim.team &&
+    isEnemy(ctx, attacker, victim) &&
     FREEZE_KINDS.has(kind)
   ) {
     // Freeze power-up: the hit (on an enemy who survives it) also freezes them. A new freeze
@@ -186,6 +187,7 @@ export const handPos = (p: PlayerState, ctx: SimContext): Vec3 => {
 };
 
 const dropAt = (b: BoomerangState, pos: Vec3): void => {
+  b.stuck = null;
   b.phase = Phase.Dropped;
   b.pos = clone(pos);
   b.vel = v3();
@@ -203,6 +205,7 @@ const DROP_MAX_FALL = 30;
  * air where it hit a wall). In zero-G it just floats where it is.
  */
 const fallDropped = (b: BoomerangState, ctx: SimContext, world: WorldState): void => {
+  if (b.stuck) return; // embedded in the wall it hit: stays there until picked up or recalled
   const c = ctx.config.combat;
   const g = gravityAt(ctx, world, b.pos);
   const gl = len(g);
@@ -228,6 +231,7 @@ const fallDropped = (b: BoomerangState, ctx: SimContext, world: WorldState): voi
 };
 
 const toHeld = (b: BoomerangState): void => {
+  b.stuck = null;
   b.phase = Phase.Held;
   b.vel = v3();
   b.t = 0;
@@ -381,6 +385,7 @@ export const throwState = (
   b.pos = clear ? madd(eye, fwd, Math.max(0, clear.t - 0.05)) : madd(eye, fwd, 0.6);
   b.bounced = false;
   b.explosive = false;
+  b.stuck = null;
   b.phase = Phase.Out;
   b.t = 0;
   b.windup = windup;
@@ -463,9 +468,9 @@ export const predictThrow = (
   let enemyHit: PathPrediction['enemyHit'] = null;
   let bouncePoint: Vec3 | null = null;
   const others = world.players.filter((o) => o.alive && o.id !== p.id);
-  const mateHbs = others.filter((o) => o.team === p.team).map((o) => hitboxOf(o, ctx.config));
+  const mateHbs = others.filter((o) => isTeammate(ctx, o, p)).map((o) => hitboxOf(o, ctx.config));
   const foes0 = others
-    .filter((o) => o.team !== p.team)
+    .filter((o) => !isTeammate(ctx, o, p))
     .map((o) => ({ hb: hitboxOf(o, ctx.config), vel: o.vel }));
   const r0 = ctx.config.combat.boomerangRadius;
   const result = (end: PathPrediction['end'], wallPoint: Vec3 | null): PathPrediction => ({
@@ -542,6 +547,7 @@ export const throwTwin = (
     curveAxis: clone(b.curveAxis),
     tiltRef: clone(b.tiltRef),
     explosive: false,
+    stuck: null,
     steerLeft: 0,
     hitIds: [],
     recallFrom: null,
@@ -695,9 +701,9 @@ const detonate = (
   const owner = world.players.find((p) => p.id === b.owner);
   if (owner) owner.blastCount = 0;
   world.events.push({ type: 'blast', player: b.controller, boomerang: b.id, pos: clone(at) });
-  const team = world.players.find((p) => p.id === b.controller)?.team;
+  const thrower = world.players.find((p) => p.id === b.controller);
   for (const p of world.players) {
-    if (!p.alive || p.id === b.controller || p.team === team) continue;
+    if (!p.alive || p.id === b.controller || (thrower && isTeammate(ctx, p, thrower))) continue;
     if (only !== undefined && p.id !== only) continue;
     const chest = madd(p.pos, p.up, 0.2);
     if (len(sub(chest, at)) > c.blastRadius || !lineOfSight(ctx.level, at, chest)) continue;
@@ -1241,6 +1247,7 @@ export const updateCombat = (
       // (before dropAt: a deflected throw's blast is still the deflector's)
       if (b.explosive) detonate(world, ctx, b, res.outcome.point, only);
       dropAt(b, res.outcome.point);
+      b.stuck = clone(res.outcome.normal); // it sticks in the wall instead of falling
       world.events.push({ type: 'wallHit', boomerang: b.id, pos: clone(res.outcome.point) });
     } else if (res.outcome.kind === 'catch' && owner) {
       toHeld(b);

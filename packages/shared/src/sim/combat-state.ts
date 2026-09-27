@@ -31,6 +31,8 @@ export interface BoomerangState {
   recallFrom: Vec3 | null;
   recallTo: Vec3 | null;
   recallLethal: boolean;
+  /** dropped by hitting a wall: stuck in it (this is the wall's normal) instead of falling */
+  stuck: Vec3 | null;
   explosive: boolean; // this Quick Throw explodes on the first wall or player it hits
   bounced: boolean; // a Quick Throw bounces off the first wall it hits, then drops on the next
 }
@@ -113,6 +115,8 @@ export interface CombatPlayerState {
    * small Laser shot) and breaks. A charged Wind-up Throw goes straight through it.
    */
   shield: boolean;
+  /** thrown by a launch pad and not landed yet: that landing never hurts */
+  padFlight: boolean;
   lastHurtTick: number;
   lastAttacker: number;
   kills: number;

@@ -179,6 +179,74 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX race_bests_track ON race_bests(track, time_ms);
   `,
+  // 5: real accounts, profiles and friends (services/accounts.ts, social.ts, profiles.ts).
+  // - players: a username (secured accounts; unique ignoring case, stored as its key; the
+  //   display name `name` equals it), a scrypt password hash, a hashed one-time recovery code,
+  //   profile looks (avatar, banner, title) and the last display-name change.
+  // - sessions: one row per logged-in device (hash of its token). Every old login token moves
+  //   here; players.token_hash is no longer read (it keeps a unique placeholder).
+  // - matches.objective (tower / bomb / elim / brawl…; old ranked matches are known: Premier is
+  //   Bomb, Duels Tower) and per-player shooting stats + time played in match_players;
+  //   weapon_kills: kills per weapon per player (favourite weapon).
+  // - friends (both directions stored), friend_requests, blocks.
+  `
+  ALTER TABLE players ADD COLUMN username_key TEXT;
+  ALTER TABLE players ADD COLUMN pass_hash TEXT;
+  ALTER TABLE players ADD COLUMN recovery_hash TEXT;
+  ALTER TABLE players ADD COLUMN secured_at INTEGER;
+  ALTER TABLE players ADD COLUMN name_changed_at INTEGER;
+  ALTER TABLE players ADD COLUMN avatar INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE players ADD COLUMN banner INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE players ADD COLUMN title TEXT NOT NULL DEFAULT '';
+  CREATE UNIQUE INDEX players_username ON players(username_key) WHERE username_key IS NOT NULL;
+  CREATE TABLE sessions (
+    token_hash TEXT PRIMARY KEY,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+  );
+  CREATE INDEX sessions_player ON sessions(player_id);
+  INSERT INTO sessions (token_hash, player_id, created_at, last_seen)
+    SELECT token_hash, id, created_at, last_seen FROM players;
+  UPDATE players SET token_hash = 'moved:' || id;
+  ALTER TABLE matches ADD COLUMN objective TEXT;
+  UPDATE matches SET objective = 'bomb' WHERE ladder = 'premier';
+  UPDATE matches SET objective = 'tower' WHERE ladder = 'duels';
+  ALTER TABLE match_players ADD COLUMN throws INTEGER;
+  ALTER TABLE match_players ADD COLUMN throw_hits INTEGER;
+  ALTER TABLE match_players ADD COLUMN laser_shots INTEGER;
+  ALTER TABLE match_players ADD COLUMN laser_hits INTEGER;
+  ALTER TABLE match_players ADD COLUMN gun_shots INTEGER;
+  ALTER TABLE match_players ADD COLUMN gun_hits INTEGER;
+  ALTER TABLE match_players ADD COLUMN headshots INTEGER;
+  ALTER TABLE match_players ADD COLUMN play_sec INTEGER;
+  CREATE INDEX match_players_match ON match_players(match_id);
+  CREATE TABLE weapon_kills (
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    weapon TEXT NOT NULL,
+    kills INTEGER NOT NULL,
+    PRIMARY KEY (player_id, weapon)
+  );
+  CREATE TABLE friends (
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    friend_id INTEGER NOT NULL REFERENCES players(id),
+    since INTEGER NOT NULL,
+    PRIMARY KEY (player_id, friend_id)
+  );
+  CREATE TABLE friend_requests (
+    from_id INTEGER NOT NULL REFERENCES players(id),
+    to_id INTEGER NOT NULL REFERENCES players(id),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (from_id, to_id)
+  );
+  CREATE INDEX friend_requests_to ON friend_requests(to_id);
+  CREATE TABLE blocks (
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    blocked_id INTEGER NOT NULL REFERENCES players(id),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (player_id, blocked_id)
+  );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

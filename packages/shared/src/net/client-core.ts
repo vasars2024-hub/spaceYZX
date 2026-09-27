@@ -6,7 +6,7 @@ import type { GameConfig, LoadoutName } from '../config';
 import { mergeConfig, defaultConfig } from '../config';
 import type { Level } from '../level/level';
 import { buildLevel } from '../level/level';
-import { mapDef } from '../level/maps/index';
+import { mapDefForSize } from '../level/maps/index';
 import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
@@ -23,6 +23,8 @@ import {
   netView,
   parseJson,
   MSG_SNAPSHOT,
+  isFfaMode,
+  type BrawlMode,
   type ClientMsg,
   type ServerMsg,
   type SnapshotData,
@@ -33,9 +35,13 @@ import {
   type RtcSignal,
   type RankedInfo,
   type RaceRatingNotice,
+  type QueueCounts,
 } from './protocol';
-import type { RankedQueueId } from '../rating/ladders';
+import type { LadderId, RankedQueueId } from '../rating/ladders';
+import type { CasualPick } from '../modes/casual-queue';
+import type { PartyOp, PartyView } from './social';
 import type { VetoView } from '../rating/veto';
+import type { VersusInfo } from '../rating/versus';
 import { PROTOCOL_VERSION } from '../version';
 import { MAX_REWIND_MS } from './lag-limits';
 import { DEFAULT_BOT_SKILL } from '../bots/brain';
@@ -146,12 +152,27 @@ export class NetCore {
   error: string | null = null;
   /** messages from the server to show the player (drained by the UI) */
   notices: string[] = [];
-  /** ranked queue status */
-  queue: { mode: RankedQueueId | null; waitSec: number; searching: number; error?: string } = {
+  /**
+   * your search: `modes` every ranked queue searched (multi-search; `mode` the first),
+   * `casual` the casual pick, `party` = your party leader's search
+   */
+  queue: {
+    mode: RankedQueueId | null;
+    modes?: RankedQueueId[];
+    casual?: CasualPick | null;
+    party?: boolean;
+    waitSec: number;
+    searching: number;
+    error?: string;
+  } = {
     mode: null,
     waitSec: 0,
     searching: 0,
   };
+  /** live queue numbers (players online, searching per mode; null until the server sent them) */
+  queueCounts: QueueCounts | null = null;
+  /** your party (null: not in one) */
+  party: PartyView | null = null;
   /** Premier map veto in progress (null = none) */
   veto: VetoView | null = null;
   /** when `veto` arrived (this.opts.now() ms), for a smooth countdown */
@@ -162,6 +183,8 @@ export class NetCore {
   rankedInfoAt = 0;
   /** the server's word on your last race in this room (rating change, best time) */
   raceRating: RaceRatingNotice | null = null;
+  /** ranked room: everyone's ladder standing and the odds (sent once when it formed) */
+  versus: VersusInfo | null = null;
   /** why the server took us out of the last room (null = we left ourselves) */
   roomLeftReason: string | null = null;
   // room
@@ -170,6 +193,12 @@ export class NetCore {
   mode: RoomMode = 'practice';
   map = '';
   ranked = false;
+  /** ranked: the ladder the room counts for */
+  ladder: LadderId | null = null;
+  /** players per team the room's level is built for (size walls) */
+  teamSize = 5;
+  /** a public Brawl room (quick play) */
+  isPublic = false;
   level: Level | null = null;
   ctx: SimContext | null = null;
   config: GameConfig = defaultConfig();
@@ -296,16 +325,38 @@ export class NetCore {
   }
 
   /**
-   * Join a ranked queue ('premier', 'duels-1v1', 'duels-2v2') or leave it (null). During a
-   * Premier map veto, leaving (null) walks out of the veto.
+   * Search a ranked queue ('premier', 'premier-cs', 'duels-1v1', 'duels-2v2', 'race') or stop
+   * searching (null). During a map veto, stopping (null) walks out of the veto.
    */
   queueRanked(mode: RankedQueueId | null): void {
     this.sendJson(mode ? { t: 'queue', mode } : { t: 'unqueue' });
   }
 
-  /** Premier map veto: ban a map (only counts on your team's turn). */
+  /** Multi-search: every ranked queue in `modes` at once (the first match wins). */
+  queueRankedMany(modes: RankedQueueId[]): void {
+    this.sendJson(modes.length ? { t: 'queue', modes } : { t: 'unqueue' });
+  }
+
+  /** Casual matchmaking with these modes and team sizes (null: stop). */
+  queueCasual(pick: CasualPick | null): void {
+    this.sendJson(
+      pick ? { t: 'casualQueue', modes: pick.modes, sizes: pick.sizes } : { t: 'unqueue' },
+    );
+  }
+
+  /** Premier / Premier CS map veto: ban a map (only counts on your team's turn). */
   vetoBan(map: string): void {
     this.sendJson({ t: 'veto', map });
+  }
+
+  /** Premier CS: vote the mode before the map veto. */
+  voteMode(mode: MatchObjective): void {
+    this.sendJson({ t: 'modeVote', mode });
+  }
+
+  /** Party actions (net/social.ts PartyOp). */
+  partyOp(op: PartyOp, id?: number): void {
+    this.sendJson(id === undefined ? { t: 'party', op } : { t: 'party', op, id });
   }
 
   /** Create a room ('arena': an Arena 1v1 room — `map` is ignored, bots fill it up to 8). */
@@ -333,6 +384,20 @@ export class NetCore {
     this.sendJson({ t: 'joinRoom', code });
   }
 
+  /** One-click Play: the server puts you into a public Brawl room ('brawl' TDM / 'brawl-ffa'). */
+  quickPlay(mode: BrawlMode = 'brawl'): void {
+    this.sendJson({ t: 'quickPlay', mode });
+  }
+
+  /**
+   * Free-for-all rooms: which colour a player is drawn in. Teams mean nothing there (the sim
+   * runs with ctx.ffa), so this client sees itself as team 0 (cyan) and everyone else as team 1
+   * (the enemy colour): the renderer, markers and kill feed need no special case.
+   */
+  private ffaTeam(id: number): 0 | 1 {
+    return id === this.localId ? 0 : 1;
+  }
+
   /** Listen to server messages (besides onMessage); returns the unsubscribe function. */
   listen(fn: (msg: ServerMsg) => void): () => void {
     this.listeners.add(fn);
@@ -357,6 +422,7 @@ export class NetCore {
   leaveRoom(): void {
     this.sendJson({ t: 'leaveRoom' });
     this.resetRoom();
+    this.versus = null;
     this.state = 'lobby';
   }
 
@@ -412,14 +478,21 @@ export class NetCore {
         this.queue = { mode: null, waitSec: 0, searching: 0 };
         this.veto = null;
         this.raceRating = null;
+        this.versus = null;
         this.code = msg.code;
         this.mode = msg.mode;
         this.map = msg.map;
         this.ranked = msg.ranked;
+        this.ladder = msg.ladder ?? null;
+        this.teamSize = msg.teamSize ?? 5;
         this.localId = msg.playerId;
         this.config = mergeConfig(defaultConfig(), msg.config);
-        this.level = buildLevel(mapDef(msg.map));
+        // smaller teams play a smaller map: the same level the room built (size walls)
+        this.level = buildLevel(mapDefForSize(msg.map, this.teamSize));
         this.ctx = { level: this.level, config: this.config, dt: TICK_DT };
+        this.isPublic = !!msg.public;
+        // free-for-all: everyone else is an enemy (the sim), drawn in the enemy colour (below)
+        if (isFfaMode(msg.mode)) this.ctx.ffa = true;
         const rttTicks = this.rttMs / (TICK_DT * 1000);
         this.clientTick = msg.tick + rttTicks + 6;
         this.lastSentTick = Math.floor(this.clientTick);
@@ -440,6 +513,9 @@ export class NetCore {
       case 'raceRating':
         this.raceRating = msg.data;
         break;
+      case 'versus':
+        this.versus = msg.data;
+        break;
       case 'rankedInfo':
         this.rankedInfo = msg.data;
         this.rankedInfoAt = this.opts.now();
@@ -447,13 +523,23 @@ export class NetCore {
       case 'queue':
         this.queue = {
           mode: msg.mode,
+          modes: msg.modes,
+          casual: msg.casual ?? null,
+          party: msg.party,
           waitSec: msg.waitSec,
           searching: msg.searching,
           error: msg.error,
         };
         break;
+      case 'queueCounts':
+        this.queueCounts = msg.data;
+        break;
+      case 'party':
+        this.party = msg.data;
+        break;
       case 'roomLeft':
         this.resetRoom();
+        this.versus = null;
         this.roomLeftReason = msg.reason;
         this.state = 'lobby';
         break;
@@ -461,7 +547,9 @@ export class NetCore {
         this.inputDelay = Math.max(0, Math.min(3, Math.floor(msg.inputDelay)));
         break;
       case 'room':
-        this.roster = msg.players;
+        this.roster = this.ctx?.ffa
+          ? msg.players.map((p) => ({ ...p, team: this.ffaTeam(p.id) }))
+          : msg.players;
         this.hostId = msg.hostId;
         break;
       case 'error':
@@ -493,6 +581,10 @@ export class NetCore {
     if (this.bySeq.size > 120) this.bySeq.delete(snap.seq - 120);
     this.snapshots.push(snap);
     if (this.snapshots.length > 90) this.snapshots.shift();
+    if (this.ctx?.ffa) {
+      for (const [id, np] of snap.players) np.team = this.ffaTeam(id);
+      if (snap.own) snap.own.player.team = 0;
+    }
     this.latest = snap;
     this.lastAck = snap.seq;
     // a picked-up power-up is gone from the server's list: forget it (and if the server still

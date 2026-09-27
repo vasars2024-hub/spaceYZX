@@ -4,6 +4,7 @@ import type {
   BotMemory,
   BotSkillName,
   GameConfig,
+  LadderId,
   RoomMode,
   Level,
   PlayerInput,
@@ -25,7 +26,7 @@ import {
   createBotMemory,
   BOT_SKILLS,
   botSkillName,
-  mapDef,
+  mapDefForSize,
   encodeSnapshot,
   publicState,
   zoneOverrides,
@@ -111,20 +112,52 @@ export interface RoomOptions {
   lagComp?: boolean;
   /** don't send enemies a team can't see (default on) */
   losCulling?: boolean;
+  /** free-for-all (Brawl FFA): everyone else is an enemy (sim ctx.ffa, per-player vision) */
+  ffa?: boolean;
+  /** a public Brawl room (quick play) */
+  public?: boolean;
+  /**
+   * players per team the level is built for (level/size-walls.ts: smaller teams play a smaller
+   * map). Default: the mode's size (1v1 → 1 … 5v5 → 5; other rooms play the whole map).
+   */
+  teamSize?: number;
 }
+
+/** Players per team a room's level is built for (size walls): the mode's size by default. */
+export const roomTeamSize = (mode: RoomMode, teamSize?: number): number => {
+  const base = mode === '1v1' ? 1 : mode === '2v2' ? 2 : mode === '3v3' ? 3 : 5;
+  return Math.max(1, Math.min(base, Math.floor(teamSize ?? base)));
+};
 
 /** Bot fill: bots keep the room at `size` players and give up their slots to humans. */
 export interface BotFill {
   size: number;
   skill: BotSkillName;
+  /**
+   * public rooms: a bot leaves as soon as a human joins, so the room holds max(size, humans)
+   * players (private rooms keep their bots until the room is full)
+   */
+  shrink?: boolean;
 }
 
 export class Room {
   readonly code: string;
   readonly mode: RoomMode;
-  readonly map: string;
+  /** (Brawl rooms move on to the next map: changeMap) */
+  map: string;
   readonly ranked: boolean;
-  readonly level: Level;
+  /** players per team the level is built for (size walls; sent in 'roomJoined') */
+  readonly teamSize: number;
+  /** the ranked ladder this room counts for (null: casual) */
+  ladder: LadderId | null = null;
+  /**
+   * ranked: rating change multiplier per account (a wide-gap full-team party stack earns less,
+   * set by the queue: rating/ladders.ts stackMultiplier)
+   */
+  ratingScale: Map<number, number> | null = null;
+  /** a public Brawl room: quick play puts strangers in it */
+  readonly isPublic: boolean;
+  level: Level;
   readonly ctx: SimContext;
   world: WorldState;
   members = new Map<number, Member>();
@@ -149,8 +182,8 @@ export class Room {
   /** CPU time spent in tick() (ms) and ticks run, for the capacity estimate */
   tickMs = 0;
   ticksRun = 0;
-  readonly history = new LagHistory();
-  readonly vision = new TeamVision();
+  history = new LagHistory();
+  vision = new TeamVision();
   /** lag compensation stats: rewinds served, and how far back in total (ticks) */
   rewinds = 0;
   rewindTicksSum = 0;
@@ -160,9 +193,12 @@ export class Room {
     this.mode = opts.mode;
     this.map = opts.map;
     this.ranked = !!opts.ranked;
+    this.isPublic = !!opts.public;
     const config = opts.config ?? defaultConfig();
-    this.level = buildLevel(mapDef(opts.map));
+    this.teamSize = roomTeamSize(opts.mode, opts.teamSize);
+    this.level = buildLevel(mapDefForSize(opts.map, this.teamSize));
     this.ctx = { level: this.level, config, dt: TICK_DT };
+    if (opts.ffa) this.ctx.ffa = true;
     this.world = createWorld(this.level, opts.seed ?? Math.floor(Math.random() * 1e9));
     this.snapshotEvery = opts.snapshotEvery ?? 1;
     this.privateEvery = opts.privateEvery ?? 3;
@@ -176,7 +212,7 @@ export class Room {
             ? 6
             : opts.mode === 'arena' || opts.mode === 'race'
               ? 8
-              : 10);
+              : 10); // (5v5, practice and Brawl rooms)
     if (opts.lagComp !== false) {
       this.ctx.rewindHitboxes = (id) => {
         const tick = this.rewindTick(id);
@@ -191,6 +227,7 @@ export class Room {
       };
     }
     this.vision.enabled = opts.losCulling !== false;
+    this.vision.ffa = !!opts.ffa;
   }
 
   /** The (clamped) tick a human player was seeing, or null for bots / no rewind needed. */
@@ -254,7 +291,11 @@ export class Room {
    * human's team if there is one (so teams stay balanced), a dead one if possible.
    */
   private freeSlotFor(team: 0 | 1): void {
-    while (this.members.size >= this.maxPlayers) {
+    const fill = this.botFill;
+    const limit = fill?.shrink
+      ? Math.min(this.maxPlayers, Math.max(fill.size, this.humans.length + 1))
+      : this.maxPlayers;
+    while (this.members.size >= limit) {
       const bots = [...this.members.values()].filter((m) => m.bot);
       if (!bots.length) return;
       const [a, b] = this.teamCounts();
@@ -449,8 +490,7 @@ export class Room {
       if (this.vision.enabled) {
         players = new Map();
         for (const [id, np] of pub.players)
-          if (this.vision.visible(m.team, id, np.team as 0 | 1, this.world.tick))
-            players.set(id, np);
+          if (this.vision.visibleTo(m, id, np.team as 0 | 1, this.world.tick)) players.set(id, np);
       }
       // rules culling (Arena: only the pit you're in or watching)
       const canSee = this.rules?.canSee;
@@ -499,6 +539,37 @@ export class Room {
     }
   }
 
+  /**
+   * Move the room to another map (a Brawl's map rotation): a fresh world on the new map with
+   * every member (same ids, names and teams) standing on it; the rules place them. Snapshots
+   * start over from a full one; the caller tells the clients (a new 'roomJoined').
+   */
+  changeMap(map: string): void {
+    const tick = this.world.tick;
+    this.map = map;
+    this.level = buildLevel(mapDefForSize(map, this.teamSize));
+    this.ctx.level = this.level;
+    this.world = createWorld(this.level, Math.floor(Math.random() * 1e9));
+    this.world.tick = tick;
+    for (const m of this.members.values()) {
+      const s = this.spawnFor(m.team);
+      addPlayer(this.world, createPlayer(m.id, m.team, s.pos, s.yawDeg, this.ctx.config));
+      m.inputs.clear();
+      m.history.clear();
+      m.ack = 0;
+      m.sentExtra = '';
+      m.viewTick = tick;
+      m.activeTick = tick;
+    }
+    this.pendingEvents = [];
+    this.forceOwn.clear();
+    this.history = new LagHistory();
+    const vision = new TeamVision();
+    vision.enabled = this.vision.enabled;
+    vision.ffa = this.vision.ffa;
+    this.vision = vision;
+  }
+
   info(): RoomPlayerInfo[] {
     return [...this.members.values()].map((m) => ({
       id: m.id,
@@ -507,6 +578,7 @@ export class Room {
       ping: m.conn ? Math.round(m.conn.rttMs) : 0,
       bot: !m.conn,
       ready: m.ready,
+      accountId: m.conn ? m.accountId : null,
     }));
   }
 

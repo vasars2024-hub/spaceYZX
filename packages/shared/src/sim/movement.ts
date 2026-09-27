@@ -178,12 +178,15 @@ const computeWish = (p: PlayerState, buttons: number): Wish => {
 
 export interface MoveResult {
   normals: Vec3[];
+  /** the box behind each normal (level.boxes index) */
+  boxes: number[];
 }
 
 /** Sub-stepped move with depenetration and velocity clipping. */
 export const moveAndCollide = (ctx: SimContext, p: PlayerState, dt: number): MoveResult => {
   const m = ctx.config.movement;
   const normals: Vec3[] = [];
+  const boxes: number[] = [];
   const dispLen = len(p.vel) * dt;
   const steps = Math.max(1, Math.ceil(dispLen / 0.2));
   const sdt = dt / steps;
@@ -191,13 +194,14 @@ export const moveAndCollide = (ctx: SimContext, p: PlayerState, dt: number): Mov
     const target = madd(p.pos, p.vel, sdt);
     const res = depenetrate(ctx.level, capsuleOf(p, m, target));
     p.pos = res.center;
-    for (const n of res.normals) {
+    res.normals.forEach((n, k) => {
       const vn = dot(p.vel, n);
       if (vn < 0) p.vel = madd(p.vel, n, -vn);
       normals.push(n);
-    }
+      boxes.push(res.boxes[k]);
+    });
   }
-  return { normals };
+  return { normals, boxes };
 };
 
 const walkableCos = (m: MovementConfig): number => Math.cos(m.maxWalkableSlopeDeg * DEG);
@@ -209,6 +213,8 @@ const probeGround = (ctx: SimContext, p: PlayerState): Vec3 | null => {
   let best: Vec3 | null = null;
   let bestDot = walkableCos(m);
   for (const c of contacts) {
+    // a surf ramp is never ground, wherever you touch it
+    if (ctx.level.boxes[c.box].surf) continue;
     const d = dot(c.normal, p.up);
     if (d >= bestDot) {
       bestDot = d;
@@ -419,7 +425,7 @@ const nearbyWall = (ctx: SimContext, p: PlayerState, reach: number): Vec3 | null
   let best: Vec3 | null = null;
   let bestDepth = -Infinity;
   for (const c of contacts) {
-    if (Math.abs(dot(c.normal, p.up)) > 0.5) continue;
+    if (Math.abs(dot(c.normal, p.up)) > 0.5 || ctx.level.boxes[c.box].surf) continue;
     if (c.depth > bestDepth) {
       bestDepth = c.depth;
       best = c.normal;
@@ -449,6 +455,8 @@ export const updateMovement = (
 ): void => {
   const m = ctx.config.movement;
   const dt = ctx.dt;
+  // race tracks and surf maps: Source-style air control, bunny hops and surf (see the config)
+  const race = ctx.level.def.race;
   // Freeze power-up stun (sim/powerups.ts): no control at all, every button reads as released
   // (prevButtons keeps tracking the real ones, so nothing counts as a fresh press when it ends)
   const stunned = p.stun > 0 && !p.frozen;
@@ -491,7 +499,9 @@ export const updateMovement = (
   if (p.magCd > 0) p.magCd--;
   // gravity shift in normal gravity runs out after a while
   if (p.mag && !zoneZeroG && ++p.magT > Math.round(m.magMaxSec / dt)) releaseMag();
-  if (pressed & Btn.MagBoots && !p.frozen) {
+  // (no gravity shift on race tracks: it would break the courses)
+  if (race && p.mag) releaseMag();
+  if (pressed & Btn.MagBoots && !p.frozen && !race) {
     if (p.mag) releaseMag();
     else if (zoneZeroG) {
       const s = nearestSurface(ctx.level, p.pos, m.magRange);
@@ -556,10 +566,12 @@ export const updateMovement = (
 
   // Race tracks: the dash key is SURGE — a few per race, only while racing: +60 % of sprint
   // speed at once, and for a second no friction, faster running and no air speed limit
-  const race = ctx.level.def.race;
+  // (surf maps and tracks without SURGE: nothing)
   if (race) {
     if (
       pressed & Btn.Dash &&
+      !race.surf &&
+      !race.noSurge &&
       p.surgeLeft > 0 &&
       p.surgeTicks === 0 &&
       p.raceCp >= 0 &&
@@ -567,7 +579,7 @@ export const updateMovement = (
     ) {
       const dir = hasWish ? wish.dir : wish.fwdP;
       const along = dot(p.vel, dir);
-      const target = Math.max(along, m.sprintSpeed) + m.sprintSpeed * (m.raceSurgeMul - 1);
+      const target = Math.max(along, m.raceSprintSpeed) + m.raceSprintSpeed * (m.raceSurgeMul - 1);
       p.vel = madd(p.vel, dir, target - along);
       p.surgeLeft--;
       p.surgeTicks = Math.max(1, Math.round(m.raceSurgeSec / dt));
@@ -631,7 +643,8 @@ export const updateMovement = (
   const prevPlanarSpeed = len(planarOf(p.vel, p.up));
 
   // jump requests
-  if (pressed & Btn.Jump) p.jumpBuffer = Math.round(m.jumpBufferSec / dt) + 1;
+  if (pressed & Btn.Jump)
+    p.jumpBuffer = Math.round((race ? m.raceJumpBufferSec : m.jumpBufferSec) / dt) + 1;
 
   if (p.grounded || p.coyote > 0) {
     if (p.jumpBuffer > 0 && (!p.crouched || p.move === Move.Slide || setCrouch(ctx, p, false))) {
@@ -686,7 +699,13 @@ export const updateMovement = (
       // no friction during landing grace (bhop), the dash burst or a race surge
       if (p.landGrace === 0 && p.dashTicks === 0 && p.surgeTicks === 0)
         p.vel = applyFriction(p.vel, m, dt);
-      let wishSpeed = p.crouched ? m.crouchSpeed : wish.fb > 0 ? m.sprintSpeed : m.runSpeed;
+      // (races: everyone runs faster)
+      const sprint = race ? m.raceSprintSpeed : m.sprintSpeed;
+      let wishSpeed = p.crouched
+        ? m.crouchSpeed
+        : wish.fb > 0
+          ? sprint
+          : (m.runSpeed * sprint) / m.sprintSpeed;
       if (p.surgeTicks > 0) wishSpeed *= m.raceSurgeMul;
       // on a slope, run faster along it so your pace across the map stays the same
       wishSpeed /= Math.max(0.7, dot(n, p.up));
@@ -713,7 +732,8 @@ export const updateMovement = (
       const wall = nearbyWall(ctx, p, m.wallJumpReach);
       const canWallJump =
         !!wall && p.wallJumpsLeft > 0 && (!p.lastWallNormal || dot(p.lastWallNormal, wall) < 0.9);
-      if (!canWallJump) p.jetHold = 0; // arm: fires if Space stays down (see below)
+      // arm the jetpack: fires if Space stays down (see below); none on surf maps
+      if (!canWallJump && !(race && (race.surf || race.noJetpack))) p.jetHold = 0;
       if (wall && canWallJump) {
         const planar = scale(projectOnPlane(planarOf(p.vel, p.up), wall), m.wallJumpSpeedKeep);
         p.vel = add(add(planar, scale(wall, m.wallJumpOut)), scale(p.up, m.wallJumpUp));
@@ -760,11 +780,19 @@ export const updateMovement = (
       }
     }
     if (hasWish)
-      p.vel = airAccelerate(p.vel, wish.dir, m.sprintSpeed, m.airWishCap, m.airAccel, dt);
+      p.vel = race
+        ? airAccelerate(p.vel, wish.dir, m.raceSprintSpeed, m.raceAirWishCap, m.raceAirAccel, dt)
+        : airAccelerate(p.vel, wish.dir, m.sprintSpeed, m.airWishCap, m.airAccel, dt);
 
     // tap-strafe (Apex-style): a quick fresh *forward* tap in the air gives a brief sharp
-    // redirect toward the wish direction. Normal A/D air strafing is unaffected.
-    if (pressed & Btn.Forward && p.tapStrafesLeft > 0 && prevPlanarSpeed >= m.tapStrafeMinSpeed) {
+    // redirect toward the wish direction. Normal A/D air strafing is unaffected. (Not in races:
+    // there air-strafing is Source-style, and a W tap on a surf ramp would cost speed.)
+    if (
+      !race &&
+      pressed & Btn.Forward &&
+      p.tapStrafesLeft > 0 &&
+      prevPlanarSpeed >= m.tapStrafeMinSpeed
+    ) {
       p.tapWindow = Math.round(m.tapStrafeWindowSec / dt);
       p.tapStrafesLeft--;
       const planar = planarOf(p.vel, p.up);
@@ -779,7 +807,7 @@ export const updateMovement = (
       }
     }
     if (p.dashTicks === 0 && p.surgeTicks === 0 && !p.jetOn)
-      p.vel = softCap(p.vel, p.up, prevPlanarSpeed, m.airSoftCap);
+      p.vel = softCap(p.vel, p.up, prevPlanarSpeed, race ? m.raceAirSoftCap : m.airSoftCap);
 
     if (tryGrabRail(world, ctx, p)) {
       p.prevButtons = rawButtons;
@@ -791,9 +819,10 @@ export const updateMovement = (
   const slow = slowZoneMul(ctx.level.def, p.pos);
   if (slow < 1) p.vel = softCap(p.vel, p.up, 0, m.sprintSpeed * slow);
 
-  // global speed limit
+  // global speed limit (races: higher, surfing down ramps is fast)
   const total = len(p.vel);
-  if (total > m.maxSpeed) p.vel = scale(p.vel, m.maxSpeed / total);
+  const maxSpeed = race ? m.raceMaxSpeed : m.maxSpeed;
+  if (total > maxSpeed) p.vel = scale(p.vel, maxSpeed / total);
 
   // ---------- move ----------
   const prePos = clone(p.pos);
@@ -834,7 +863,7 @@ export const updateMovement = (
     if (!wasGrounded) {
       const impact = -dot(preVel, p.up);
       world.events.push({ type: 'land', player: p.id, speed: impact });
-      p.landGrace = Math.max(1, Math.round(m.landGraceSec / dt));
+      p.landGrace = Math.max(1, Math.round((race ? m.raceLandGraceSec : m.landGraceSec) / dt));
       resetAirCounters(p, m, dt);
       p.move =
         crouchHeld && len(planarOf(p.vel, p.up)) >= m.slideStartSpeed ? Move.Ground : Move.Ground;
@@ -850,7 +879,10 @@ export const updateMovement = (
 
   // mantle / climb when pushing into a wall
   if (!p.grounded || res.normals.length > 0) {
-    const walls = res.normals.filter((n) => Math.abs(dot(n, p.up)) < 0.35);
+    // (never off a surf ramp, however steep: wall surf)
+    const walls = res.normals.filter(
+      (n, k) => Math.abs(dot(n, p.up)) < 0.35 && !ctx.level.boxes[res.boxes[k]].surf,
+    );
     if (walls.length > 0 && wish.fb > 0) {
       const wall = normalize(projectOnPlane(walls[0], p.up));
       const into = scale(wall, -1);

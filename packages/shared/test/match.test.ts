@@ -24,6 +24,7 @@ import {
   MODE_RULES,
   collapseRadius,
 } from '../src/index';
+import { raycast } from '../src/level/collision';
 
 const setup = (mode: RankedMode, perTeam: number, seed = 7) => {
   const config = defaultConfig();
@@ -197,9 +198,13 @@ describe('match rules', () => {
   });
 
   // move a player to (x, z) on the floor of the map middle's height, standing still
+  // stand the player on the floor at (x, z) (keeping the old height could put them inside the
+  // floor — and falling out of the map is deadly)
   const place = (world: WorldState, id: number, at: { x: number; y: number; z: number }) => {
     const p = world.players.find((q) => q.id === id)!;
-    p.pos = { x: at.x, y: p.pos.y, z: at.z };
+    const lv = buildLevel(mapDef('kestrel'));
+    const hit = raycast(lv, v3(at.x, 30, at.z), v3(0, -1, 0), 80, 0.2);
+    p.pos = { x: at.x, y: (hit ? hit.point.y : p.pos.y) + 1, z: at.z };
     p.vel = { x: 0, y: 0, z: 0 };
   };
 

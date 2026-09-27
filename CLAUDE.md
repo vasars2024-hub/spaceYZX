@@ -44,13 +44,43 @@
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
   `packages/server/src/game/room.ts`, lag compensation `lagcomp.ts`, LOS culling `visibility.ts`.
 - Accounts/ranked/matchmaking: `packages/server/src/services/` (SQLite via `node:sqlite`).
-  Ranked is **Premier (5v5 Bomb, map veto, seasons) + Duels (1v1/2v2, one rating) + Race
-  (parkour, 2–8 racers, seasons) only**, defined in `packages/shared/src/rating/ladders.ts`;
-  no new ladders without the owner.
-- Parkour races (owner-requested, race tracks `level/maps/race-*.ts`, `rules/race.ts`, body logic
-  `sim/race.ts`): Race ladder maths `rating/race.ts`; the Race queue, ranked race rooms, race
-  results and server-side personal bests are in `services/` (`queue.ts`, `ranked.ts`
-  `recordRace`, fed by `HubServices.onRaceEnd`).
+  Accounts (`accounts.ts`): guests by default; "secured" accounts add a username + password.
+  **Security**: passwords are hashed with scrypt (`passwords.ts`, per-user salt, async so the
+  game loop never waits, constant-time compare), and are **never logged, sent back or stored
+  in plain text** (the same for recovery codes and session tokens: only hashes are stored).
+  Auth runs over the game WebSocket (`account-handler.ts`, WSS behind Caddy in production);
+  failed logins are rate-limited per address and per username (`limiter.ts`) and never say
+  whether a username exists. The public JSON API (`/api/profile`, `/api/match`,
+  `/api/players`) must only ever return public fields (tests check it). Friends / presence /
+  invites / blocks: `social.ts`; profile stats: `profiles.ts` (+ `game/match-stats.ts`).
+  Ranked is **Premier (Bomb, Boomerang kit, 3v3 default → 4v4/5v5 when enough search, map
+  veto, seasons) + Premier CS (same with the CS kit, own rating, mode vote Bomb/Elimination
+  before the veto) + Duels (1v1/2v2, one rating) + Race (parkour, 2–8 racers, seasons)
+  only**, defined in `packages/shared/src/rating/ladders.ts`; no new ladders without the
+  owner. Queues (`services/queue.ts`): multi-search, parties as one unit (`services/party.ts`,
+  in memory), players-online thresholds + opening hours (`RankedStore.queueOpen`), the casual
+  queue (`modes/casual-queue.ts`, bots fill casual only), live counts (`queueCounts`).
+  Smaller teams play a smaller map: `LevelDef.sizeWalls` (`level/size-walls.ts`); rooms and
+  clients build the level with `mapDefForSize(map, teamSize)`.
+- Parkour races (owner-requested, race tracks `level/maps/race-*.ts` and surf maps
+  `level/maps/surf-*.ts`, `rules/race.ts`, body logic `sim/race.ts`): Race ladder maths
+  `rating/race.ts`; the Race queue, ranked race rooms, race results and server-side personal
+  bests are in `services/` (`queue.ts`, `ranked.ts` `recordRace`, fed by `HubServices.onRaceEnd`).
+  Race maps are **course data** (plain JSON, `level/course/`: element format in `types.ts`,
+  `expandCourse`, the clipping check `findOverlaps`), written with the pen (`course/pen.ts`).
+  Race movement (Source-style air-strafe, bhop, surf ramps = `BoxDef.prism` + `surf`) is gated
+  on `LevelDef.race` in `sim/movement.ts` (`race*` config numbers); combat maps are untouched.
+  Check a map with `npx tsx tools/race/time-tracks.ts` (bot runs) and `tools/race/check.ts`.
+- Transition cards + announcer: plans `packages/client/src/game/transitions.ts`, overlay
+  `ui/transitions.ts` (`showTransition(kind, info)` for other HUDs), clips
+  `packages/client/public/audio/announcer/*.ogg` played by `audio/announcer.ts` (own volume bus).
+  The clips are **TTS placeholders** (Windows "Microsoft David" voice, rendered + processed by
+  `npm run announcer` = `tools/audio/announcer.ts`); that voice's licence for commercial
+  redistribution is unclear, so replace them with a recorded or licensed voice (same ids,
+  `audio/announcer-lines.ts`) before a commercial launch.
+- Ranked versus screen: `rating/versus.ts` (odds = the ladders' own expected-score maths),
+  sent by `services/queue.ts` (`buildVersus`, read-only `RankedStore.versusLine`) as
+  `{ t: 'versus' }` when a ranked room forms; client `ui/versus.ts`.
 - Host app + dashboard: `packages/server/src/host/`; exe build `tools/host/build-exe.ts`.
 - Rented server (Hetzner VPS, Docker + Caddy HTTPS, fixed domain; setup/update/DB-move scripts in
   `scripts/deploy/`, env settings `packages/server/src/prod/config.ts`): `docs/DEPLOY.md`.

@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws';
 import type {
   ClientMsg,
   GameConfig,
+  LadderId,
   LoadoutName,
   MatchObjective,
   RoomMode,
@@ -21,6 +22,13 @@ import {
   MAPS,
   ARENA_MAP_ID,
   DEFAULT_RACE_MAP,
+  DEFAULT_MATCH_MAP,
+  PUBLIC_BRAWL,
+  brawlMaps,
+  nextBrawlMap,
+  isBrawlMode,
+  isFfaMode,
+  type BrawlMode,
   RACE_DEFAULTS,
   defaultConfig,
   configForLoadout,
@@ -28,13 +36,14 @@ import {
   botSkillName,
 } from '@space-yz/shared';
 import { Conn } from './conn';
-import { Room, makeRoomCode, type Rules } from './room';
+import { Room, makeRoomCode, roomTeamSize, type Rules } from './room';
 import { Clock } from './clock';
 import { relayChat, relayRtc, relayVoice } from './chat';
 import { PracticeRules } from './rules/practice';
 import { MatchRules, type MatchResult } from './rules/match';
 import { ArenaRules, type ArenaResult } from './rules/arena';
 import { RaceRules, type RaceRecord } from './rules/race';
+import { BrawlRules, type BrawlResult } from './rules/brawl';
 
 export interface HubServices {
   /** Authenticate / create an account from a hello message; returns display name + token. */
@@ -45,17 +54,28 @@ export interface HubServices {
   ): { name: string; accountId: number; token: string; account: unknown } | null;
   /** Rules for a room (M5 match rules). Defaults to practice. */
   rulesFor?(room: Room, opts: { bots: number }): Rules;
-  /** Ranked queue: a queue id from rating/ladders.ts ('premier', 'duels-1v1'…), null = leave. */
-  queue?(hub: GameHub, conn: Conn, queue: string | null): void;
-  /** Premier map veto: this player bans a map. */
+  /**
+   * Ranked queue: queue ids from rating/ladders.ts ('premier', 'duels-1v1'…; several = a
+   * multi-search), null = stop searching (ranked and casual).
+   */
+  queue?(hub: GameHub, conn: Conn, queue: string | string[] | null): void;
+  /** Casual matchmaking: the modes and sizes this player ticked (unchecked data). */
+  casualQueue?(hub: GameHub, conn: Conn, pick: unknown): void;
+  /** Premier / Premier CS map veto: this player bans a map. */
   veto?(conn: Conn, map: string): void;
+  /** Premier CS mode vote: this player votes a mode. */
+  modeVote?(conn: Conn, mode: string): void;
+  /** Parties: create / invite / join / leave / kick… (services/party.ts). */
+  party?(hub: GameHub, conn: Conn, op: string, id: number | undefined): void;
   /** Right after a successful hello (the server sends ranked facts: season, opening hours). */
-  onHello?(conn: Conn): void;
+  onHello?(conn: Conn, hub: GameHub): void;
   onDisconnect?(hub: GameHub, conn: Conn): void;
   /** Called for every finished match (M8 records results). */
   onMatchEnd?(room: Room, result: MatchResult): void;
   /** Called for every finished Arena 1v1 match (casual: recorded in the match history). */
   onArenaEnd?(room: Room, result: ArenaResult): void;
+  /** Called for every finished Brawl (casual: recorded with each player's stats). */
+  onBrawlEnd?(room: Room, result: BrawlResult, rules: BrawlRules): void;
   /**
    * Called for every finished parkour race (rules/race.ts): stored with personal bests; in
    * ranked rooms it also updates the Race ladder (shared rating/race.ts).
@@ -67,6 +87,13 @@ export interface HubServices {
   profile?(conn: Conn): unknown;
   /** A player reported another player. */
   onReport?(conn: Conn, player: number, reason: string, room: Room): void;
+  /**
+   * Accounts, profiles and friends messages ('account', 'editProfile', 'friend', 'social',
+   * 'invite', 'joinFriend': services/account-handler.ts).
+   */
+  onSocial?(hub: GameHub, conn: Conn, msg: ClientMsg): void;
+  /** Has `to` blocked `from`? (then `from`'s chat and voice never reach `to`) */
+  blocked?(to: Conn, from: Conn): boolean;
   /** lag compensation (default on) */
   lagComp?: boolean;
   /** ping equalization: low-ping players get up to this much input delay (ms, 0 = off) */
@@ -162,7 +189,7 @@ export class GameHub {
           account: login?.account,
           token: login?.token,
         });
-        this.services.onHello?.(conn);
+        this.services.onHello?.(conn, this);
         return;
       }
     }
@@ -190,6 +217,15 @@ export class GameHub {
         this.joinRoom(conn, room);
         return;
       }
+      case 'quickPlay': {
+        // one-click Play: the fullest public Brawl room with a free slot, or a new one
+        const mode: BrawlMode = msg.mode === 'brawl-ffa' ? 'brawl-ffa' : 'brawl';
+        this.leaveRoom(conn);
+        const room = this.quickPlayRoom(mode);
+        if (!room) return conn.sendJson({ t: 'error', msg: 'The server is full right now.' });
+        this.joinRoom(conn, room);
+        return;
+      }
       case 'joinRoom': {
         const code = String(msg.code ?? '')
           .toUpperCase()
@@ -210,7 +246,7 @@ export class GameHub {
         return;
       case 'profile':
         conn.sendJson({ t: 'profile', data: this.services.profile?.(conn) ?? null });
-        this.services.onHello?.(conn);
+        this.services.onHello?.(conn, this);
         return;
       case 'startMatch': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
@@ -226,11 +262,33 @@ export class GameHub {
         return;
       }
       case 'queue':
+        this.services.queue?.(
+          this,
+          conn,
+          Array.isArray(msg.modes)
+            ? msg.modes.slice(0, 8).map((m) => String(m).slice(0, 32))
+            : String(msg.mode),
+        );
+        return;
       case 'unqueue':
-        this.services.queue?.(this, conn, msg.t === 'queue' ? String(msg.mode) : null);
+        this.services.queue?.(this, conn, null);
+        return;
+      case 'casualQueue':
+        this.services.casualQueue?.(this, conn, { modes: msg.modes, sizes: msg.sizes });
         return;
       case 'veto':
         if (typeof msg.map === 'string') this.services.veto?.(conn, msg.map.slice(0, 64));
+        return;
+      case 'modeVote':
+        if (typeof msg.mode === 'string') this.services.modeVote?.(conn, msg.mode.slice(0, 16));
+        return;
+      case 'party':
+        this.services.party?.(
+          this,
+          conn,
+          String(msg.op).slice(0, 16),
+          typeof msg.id === 'number' && Number.isInteger(msg.id) ? msg.id : undefined,
+        );
         return;
       case 'report': {
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
@@ -251,11 +309,21 @@ export class GameHub {
         // text chat, voice signaling and talk state: only between humans in the same room
         const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
         if (!room) return;
-        if (msg.t === 'chat') relayChat(room, conn, msg.text, msg.team);
-        else if (msg.t === 'rtc') relayRtc(room, conn, msg.to, msg.data);
-        else relayVoice(room, conn, msg.on, msg.all);
+        const blocked = this.services.blocked;
+        const skip = blocked ? (to: Conn) => blocked(to, conn) : undefined;
+        if (msg.t === 'chat') relayChat(room, conn, msg.text, msg.team, skip);
+        else if (msg.t === 'rtc') relayRtc(room, conn, msg.to, msg.data, skip);
+        else relayVoice(room, conn, msg.on, msg.all, skip);
         return;
       }
+      case 'account':
+      case 'editProfile':
+      case 'friend':
+      case 'social':
+      case 'invite':
+      case 'joinFriend':
+        this.services.onSocial?.(this, conn, msg);
+        return;
       default:
         conn.strike('unknown');
     }
@@ -271,18 +339,29 @@ export class GameHub {
     config?: GameConfig;
     objective?: MatchObjective;
     /**
-     * 'cs': CS mode (AK + Deagle, bomb rules, half-speed movement); never practice or ranked
+     * 'cs': CS mode (AK + Deagle, bomb rules, 70 % movement speed); never practice or ranked
      * (ranked is always the Boomerang kit)
      */
     loadout?: LoadoutName;
     /** players per team when fewer than the mode's size (Premier 4v4 in a 5v5 room) */
     teamSize?: number;
+    /**
+     * ranked: the ladder the room counts for. Premier CS rooms play the CS kit and Bomb or
+     * Elimination (the vote's result); every other ranked room the Boomerang kit.
+     */
+    ladder?: LadderId;
+    /** a public Brawl room (quick play): bots keep it busy and leave as humans join */
+    public?: boolean;
   }): Room | null {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const arena = opts.mode === 'arena';
     const race = opts.mode === 'race';
+    const brawl = isBrawlMode(opts.mode);
+    const csRanked = !!opts.ranked && opts.ladder === 'premier-cs';
     const loadout: LoadoutName =
-      opts.loadout === 'cs' && !opts.ranked && opts.mode !== 'practice' ? 'cs' : 'lethal';
+      opts.loadout === 'cs' && (!opts.ranked || csRanked) && opts.mode !== 'practice'
+        ? 'cs'
+        : 'lethal';
     let code = makeRoomCode();
     while (this.rooms.has(code)) code = makeRoomCode();
     const room = new Room({
@@ -294,11 +373,20 @@ export class GameHub {
           ? getMap(opts.map).race
             ? opts.map
             : DEFAULT_RACE_MAP
-          : opts.map,
-      ranked: opts.ranked,
+          : brawl && !brawlMaps().some((m) => m.id === opts.map)
+            ? DEFAULT_MATCH_MAP()
+            : opts.map,
+      // (Brawl is casual only; its maps are the rotation's)
+      ranked: brawl ? false : opts.ranked,
+      ffa: isFfaMode(opts.mode),
+      public: brawl && !!opts.public,
+      ...(brawl && opts.public ? { maxPlayers: PUBLIC_BRAWL.maxPlayers } : {}),
       config: configForLoadout(opts.config ?? this.services.config?.() ?? defaultConfig(), loadout),
       lagComp: this.services.lagComp ?? true,
+      // smaller teams play a smaller map (size walls): the level is built for this team size
+      teamSize: roomTeamSize(opts.mode, opts.teamSize),
     });
+    if (opts.ranked && !brawl) room.ladder = opts.ladder ?? null;
     const rules: Rules =
       this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
       (opts.mode === 'practice'
@@ -307,16 +395,22 @@ export class GameHub {
           ? new ArenaRules(loadout, { ranked: opts.ranked })
           : opts.mode === 'race'
             ? new RaceRules(room.map, opts.ranked ? { lobbySec: RACE_DEFAULTS.rankedLobbySec } : {})
-            : new MatchRules(
-                opts.mode,
-                // ranked: Tower (Duels) or Bomb (Premier), never Elimination
-                opts.ranked
-                  ? opts.objective === 'bomb'
-                    ? 'bomb'
-                    : 'tower'
-                  : (opts.objective ?? 'tower'),
-                loadout,
-              ));
+            : isBrawlMode(opts.mode)
+              ? new BrawlRules(opts.mode)
+              : new MatchRules(
+                  opts.mode,
+                  // ranked: Tower (Duels) or Bomb (Premier); Premier CS: Bomb or Elimination
+                  opts.ranked
+                    ? csRanked
+                      ? opts.objective === 'elim'
+                        ? 'elim'
+                        : 'bomb'
+                      : opts.objective === 'bomb'
+                        ? 'bomb'
+                        : 'tower'
+                    : (opts.objective ?? 'tower'),
+                  loadout,
+                ));
     room.rules = rules;
     if (rules instanceof MatchRules && opts.teamSize && opts.teamSize < rules.ms.rules.teamSize)
       rules.ms.rules.teamSize = Math.max(1, Math.floor(opts.teamSize));
@@ -341,6 +435,35 @@ export class GameHub {
         );
         this.services.onMatchEnd?.(r, result);
       };
+    if (rules instanceof BrawlRules) {
+      rules.onGrief = (r, m, action, reason) => {
+        const conn = m.conn;
+        if (!conn) return;
+        this.log(`Room ${r.code}: ${action} ${m.name} — ${reason}`);
+        this.services.onGrief?.(conn, action, reason, r);
+        if (action === 'warn') conn.sendJson({ t: 'notice', msg: reason });
+        else this.removeFromRoom(conn, reason);
+      };
+      rules.onResult = (r, result) => {
+        const top = result.players[0];
+        const who =
+          result.winner === null
+            ? 'draw'
+            : r.mode === 'brawl-ffa'
+              ? `${top?.name ?? 'nobody'} wins`
+              : `team ${result.winner === 0 ? 'cyan' : 'orange'} wins`;
+        this.log(`Room ${r.code}: brawl on ${result.map} over — ${who} (${result.reason})`);
+        this.services.onBrawlEnd?.(r, result, rules);
+      };
+      // the next Brawl: every client loads the next map (a new 'roomJoined', same code and id)
+      rules.onNextMap = (r) => {
+        r.changeMap(nextBrawlMap(r.map));
+        rules.restart(r);
+        for (const m of r.humans) if (m.conn) this.sendRoomJoined(m.conn, r, m.id);
+        this.broadcastRoom(r);
+        this.log(`Room ${r.code}: next brawl on ${r.map}`);
+      };
+    }
     if (rules instanceof ArenaRules) {
       rules.onResult = (r, result) => {
         this.log(
@@ -370,6 +493,8 @@ export class GameHub {
     room.onChanged = () => this.broadcastRoom(room);
     // bots fill the room (leaving a slot for the creator); humans who join take their slots
     if (opts.bots && !opts.ranked) room.setBotFill(opts.bots, opts.botSkill ?? '');
+    // public rooms: bots give their slots up as soon as humans come
+    if (room.botFill && room.isPublic) room.botFill.shrink = true;
     this.rooms.set(code, room);
     this.clock.add(room);
     this.log(
@@ -378,21 +503,69 @@ export class GameHub {
     return room;
   }
 
-  joinRoom(conn: Conn, room: Room, team?: 0 | 1): void {
-    this.leaveRoom(conn);
-    const m = room.addMember(conn.name, conn, { team, accountId: conn.accountId });
-    conn.roomCode = room.code;
-    conn.playerId = m.id;
+  /**
+   * Quick play: the public Brawl room of this playlist with the most humans that still has a
+   * free slot, or a new one (bots fill it up to PUBLIC_BRAWL.fillTo). Null: the server is full.
+   */
+  quickPlayRoom(mode: BrawlMode): Room | null {
+    const open = [...this.rooms.values()]
+      .filter((r) => r.isPublic && r.mode === mode && !r.closed && r.hasRoomForHuman())
+      .sort((a, b) => b.humans.length - a.humans.length || a.createdAt - b.createdAt);
+    if (open.length) return open[0];
+    const count = [...this.rooms.values()].filter((r) => r.isPublic && r.mode === mode).length;
+    if (count >= PUBLIC_BRAWL.maxRooms) return null;
+    // new rooms start at different points of the rotation
+    const maps = brawlMaps();
+    const map = maps[count % Math.max(1, maps.length)]?.id ?? DEFAULT_MATCH_MAP();
+    return this.createRoom({
+      mode,
+      map,
+      bots: PUBLIC_BRAWL.fillTo - 1,
+      botSkill: PUBLIC_BRAWL.botSkill,
+      public: true,
+    });
+  }
+
+  /** Public Brawl rooms at a glance (host dashboard): per playlist, rooms / humans / bots. */
+  publicBrawlStatus(): Record<BrawlMode, { rooms: number; humans: number; bots: number }> {
+    const out: Record<BrawlMode, { rooms: number; humans: number; bots: number }> = {
+      brawl: { rooms: 0, humans: 0, bots: 0 },
+      'brawl-ffa': { rooms: 0, humans: 0, bots: 0 },
+    };
+    for (const r of this.rooms.values()) {
+      if (!r.isPublic || !isBrawlMode(r.mode)) continue;
+      const o = out[r.mode];
+      o.rooms++;
+      o.humans += r.humans.length;
+      o.bots += r.members.size - r.humans.length;
+    }
+    return out;
+  }
+
+  /** Tell a player which room they are in (on joining, and when a Brawl moves to a new map). */
+  private sendRoomJoined(conn: Conn, room: Room, playerId: number): void {
     conn.sendJson({
       t: 'roomJoined',
       code: room.code,
       mode: room.mode,
       map: room.map,
-      playerId: m.id,
+      playerId,
       tick: room.world.tick,
       config: room.ctx.config,
       ranked: room.ranked,
+      ...(room.isPublic ? { public: true } : {}),
+      // (a smaller team size: the client builds the level with the same size walls)
+      ...(room.teamSize < 5 ? { teamSize: room.teamSize } : {}),
+      ...(room.ladder ? { ladder: room.ladder } : {}),
     });
+  }
+
+  joinRoom(conn: Conn, room: Room, team?: 0 | 1): void {
+    this.leaveRoom(conn);
+    const m = room.addMember(conn.name, conn, { team, accountId: conn.accountId });
+    conn.roomCode = room.code;
+    conn.playerId = m.id;
+    this.sendRoomJoined(conn, room, m.id);
     this.broadcastRoom(room);
   }
 

@@ -55,8 +55,17 @@ const memberOf = (room: Room, conn: Conn): Member | null => {
   return m && m.conn === conn ? m : null;
 };
 
+/** Who must not get this sender's chat / voice (they blocked the sender). */
+export type SkipFn = (to: Conn) => boolean;
+
 /** A chat message: team chat reaches the sender's team, all chat everyone in the room. */
-export const relayChat = (room: Room, conn: Conn, rawText: unknown, rawTeam: unknown): void => {
+export const relayChat = (
+  room: Room,
+  conn: Conn,
+  rawText: unknown,
+  rawTeam: unknown,
+  skip?: SkipFn,
+): void => {
   const m = memberOf(room, conn);
   if (!m) return;
   if (typeof rawText !== 'string') return conn.strike('chat');
@@ -87,11 +96,18 @@ export const relayChat = (room: Room, conn: Conn, rawText: unknown, rawTeam: unk
     teamOnly,
     dead,
   };
-  for (const r of room.humans) if (!teamOnly || r.team === m.team) r.conn?.sendJson(msg);
+  for (const r of room.humans)
+    if ((!teamOnly || r.team === m.team) && r.conn && !skip?.(r.conn)) r.conn.sendJson(msg);
 };
 
 /** Voice signaling: only to one other human in the same room, and only a known shape. */
-export const relayRtc = (room: Room, conn: Conn, to: unknown, raw: unknown): void => {
+export const relayRtc = (
+  room: Room,
+  conn: Conn,
+  to: unknown,
+  raw: unknown,
+  skip?: SkipFn,
+): void => {
   const m = memberOf(room, conn);
   if (!m) return;
   if (typeof to !== 'number' || !raw || typeof raw !== 'object') return conn.strike('rtc');
@@ -104,7 +120,7 @@ export const relayRtc = (room: Room, conn: Conn, to: unknown, raw: unknown): voi
     return conn.strike('rtc');
   if (!allowSignal(stateOf(conn))) return;
   const target = room.members.get(to);
-  if (!target?.conn || target.id === m.id) return;
+  if (!target?.conn || target.id === m.id || skip?.(target.conn)) return;
   const data: RtcSignal = hasSdp ? { kind, sdp: d.sdp } : { kind };
   target.conn.sendJson({ t: 'rtc', from: m.id, data });
 };
@@ -113,7 +129,13 @@ export const relayRtc = (room: Room, conn: Conn, to: unknown, raw: unknown): voi
  * Push-to-talk state. Teammates hear about both channels; enemies only ever learn about
  * all-channel talk (team talk stays secret, like the audio itself).
  */
-export const relayVoice = (room: Room, conn: Conn, rawOn: unknown, rawAll: unknown): void => {
+export const relayVoice = (
+  room: Room,
+  conn: Conn,
+  rawOn: unknown,
+  rawAll: unknown,
+  skip?: SkipFn,
+): void => {
   const m = memberOf(room, conn);
   if (!m) return;
   const s = stateOf(conn);
@@ -125,7 +147,7 @@ export const relayVoice = (room: Room, conn: Conn, rawOn: unknown, rawAll: unkno
   const enemyWas = prev.on && prev.all;
   const enemyNow = on && all;
   for (const r of room.humans) {
-    if (r.id === m.id || !r.conn) continue;
+    if (r.id === m.id || !r.conn || skip?.(r.conn)) continue;
     if (r.team === m.team) r.conn.sendJson({ t: 'voice', from: m.id, on, all });
     else if (enemyWas !== enemyNow)
       r.conn.sendJson({ t: 'voice', from: m.id, on: enemyNow, all: true });

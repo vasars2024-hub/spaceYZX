@@ -24,8 +24,8 @@ describe('race rooms (hub)', () => {
     const results: RaceRecord[] = [];
     const hub = new GameHub({ log: () => {}, onRaceEnd: (_r, res) => results.push(res) });
     try {
-      const room = hub.createRoom({ mode: 'race', map: 'race-canopy', bots: 3, botSkill: 'hard' })!;
-      expect(room.map).toBe('race-canopy');
+      const room = hub.createRoom({ mode: 'race', map: 'race-neon', bots: 3, botSkill: 'hard' })!;
+      expect(room.map).toBe('race-neon');
       expect(room.maxPlayers).toBe(8);
       expect(room.rules).toBeInstanceOf(RaceRules);
       expect(room.members.size).toBe(3);
@@ -37,13 +37,13 @@ describe('race rooms (hub)', () => {
       expect(results.length).toBe(1);
       const r = results[0];
       expect(r.mode).toBe('race');
-      expect(r.track).toBe('race-canopy');
+      expect(r.track).toBe('race-neon');
       expect(r.room).toBe(room.code);
       expect(r.standings.length).toBe(3);
       for (const s of r.standings) {
         expect(s.dnf).toBe(false);
-        expect(s.timeMs).toBeGreaterThan(120_000);
-        expect(s.timeMs).toBeLessThan(200_000);
+        expect(s.timeMs).toBeGreaterThan(140_000);
+        expect(s.timeMs).toBeLessThan(230_000);
         expect(s.splitsMs.length).toBe(room.level.def.race!.checkpoints.length + 1);
       }
       expect(r.standings.map((s) => s.place)).toEqual([1, 2, 3]);
@@ -60,7 +60,7 @@ describe('race rooms (hub)', () => {
     const hub = new GameHub({ log: () => {} });
     try {
       expect(hub.createRoom({ mode: 'race', map: 'split-deck' })!.map).toBe(DEFAULT_RACE_MAP);
-      expect(hub.createRoom({ mode: 'race', map: 'race-cliffline' })!.map).toBe('race-cliffline');
+      expect(hub.createRoom({ mode: 'race', map: 'race-sunspire' })!.map).toBe('race-sunspire');
     } finally {
       hub.close();
     }
@@ -91,10 +91,10 @@ describe('race rooms over WebSocket', () => {
   };
 
   it('create a race room by code, pick the track, start: countdown, then the race', async () => {
-    const host = bot('RaceHost', (core) => core.createRoom('race', 'race-cliffline', 1, 'easy'));
+    const host = bot('RaceHost', (core) => core.createRoom('race', 'race-sunspire', 1, 'easy'));
     await until(() => host.core.state === 'room');
     expect(host.core.mode).toBe('race');
-    expect(host.core.map).toBe('race-cliffline');
+    expect(host.core.map).toBe('race-sunspire');
     const room = server.hub.rooms.get(host.core.code)!;
     expect(room.rules).toBeInstanceOf(RaceRules);
     // a friend joins by the code

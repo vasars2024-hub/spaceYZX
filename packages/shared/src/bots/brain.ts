@@ -26,6 +26,7 @@ import { rngFromSeed, rngFloat, rngInt } from '../math/rng';
 import { lineOfSight, raycast } from '../level/collision';
 import { inSkyZone } from '../level/sky-arena';
 import type { SimContext } from '../sim/context';
+import { isEnemy, isTeammate } from '../sim/context';
 import type { WaypointDef } from '../level/types';
 import type { PlayerInput } from '../sim/input';
 import { Btn } from '../sim/input';
@@ -424,7 +425,7 @@ export const botThink = (
   const myB = world.boomerangs.find((b) => b.owner === self.id);
 
   // ---------------- perception ----------------
-  const enemies = world.players.filter((p) => p.alive && p.team !== self.team && p.id !== self.id);
+  const enemies = world.players.filter((p) => p.alive && isEnemy(ctx, p, self));
   const visible = enemies.filter((p) => {
     const hb = hitboxOf(p, ctx.config);
     return (
@@ -470,7 +471,7 @@ export const botThink = (
   let deflectTarget: Vec3 | null = null;
   for (const b of world.boomerangs) {
     const ctrl = world.players.find((p) => p.id === b.controller);
-    if (!ctrl || ctrl.team === self.team || !isFlying(b)) continue;
+    if (!ctrl || !isEnemy(ctx, ctrl, self) || !isFlying(b)) continue;
     const rel = sub(eye, b.pos);
     const closing = dot(normalize(b.vel), normalize(rel));
     const d = len(rel);
@@ -760,8 +761,7 @@ export const botThink = (
             const mateOnLine = world.players.some(
               (m) =>
                 m.alive &&
-                m.team === self.team &&
-                m.id !== self.id &&
+                isTeammate(ctx, m, self) &&
                 len(
                   sub(
                     madd(

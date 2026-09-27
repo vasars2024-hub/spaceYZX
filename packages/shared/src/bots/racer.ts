@@ -1,13 +1,17 @@
-// Bot racers: drive along a race track's racing line (LevelDef.race.line — the safe route) with
-// the normal player inputs, so they obey exactly the same movement as everyone else. Also the
-// "realistic pace" driver of the track timing test (sprinting, no slides, no surges, no
-// shortcuts). Deterministic: a per-bot seeded RNG, no clocks.
+// Bot racers: drive along a race track's racing line (LevelDef.race.line) with the normal player
+// inputs, so they obey exactly the same movement as everyone else — race movement included:
+// Source-style air-strafing, bunny hops on the first ground tick, surfing (strafing into the
+// ramp), and flights that land on target (airToward). Also the driver of the track timing tests
+// (STEADY_RACER: a skilled run; HUMAN_RACER: sloppier strafing). Deterministic: a per-bot
+// seeded RNG, no clocks.
 //
-// Line nodes are feet positions in order; `jump` nodes are take-off edges (and the spots under
-// a zip-rail's start: the jump grabs the rail). Launch pads, portals and mantles need no input.
-// A bot that stops making progress hops, and after a while holds the respawn key.
+// Line nodes are feet positions in order; `jump` nodes are take-off edges, `hop` nodes a
+// bunny-hop chain, `surf` nodes the line along a surf ramp's face, `strafe` a strafed flight,
+// `air` a point to fly through (a window, a ring). Launch pads, portals and mantles need no
+// input. A bot that stops making progress hops, and after a while holds the respawn key.
 import type { Vec3 } from '../math/vec3';
-import { v3, sub, dot, len, UP } from '../math/vec3';
+import { v3, add, sub, dot, len, scale, cross, UP } from '../math/vec3';
+import type { Quat } from '../math/quat';
 import { qFromYawPitch } from '../math/quat';
 import type { RngState } from '../math/rng';
 import { rngFloat, rngFromSeed } from '../math/rng';
@@ -25,19 +29,31 @@ export interface RacerSkill {
   hesitateTicks: [number, number];
   /** uses its SURGE charges on long straights */
   surges: boolean;
+  /**
+   * how well it air-strafes (0..1, default 1): the share of air ticks it gets its keys and mouse
+   * right; the rest it holds nothing (a human's sloppy strafes)
+   */
+  strafeEff?: number;
 }
 
 /** Bot racer skills by bot difficulty (the same names as the combat bots). */
 export const RACER_SKILLS: Record<BotSkillName, RacerSkill> = {
-  rookie: { hesitate: 0.3, hesitateTicks: [20, 50], surges: false },
-  casual: { hesitate: 0.2, hesitateTicks: [15, 40], surges: false },
-  easy: { hesitate: 0.12, hesitateTicks: [10, 30], surges: false },
-  normal: { hesitate: 0.05, hesitateTicks: [8, 20], surges: true },
+  rookie: { hesitate: 0.3, hesitateTicks: [20, 50], surges: false, strafeEff: 0.65 },
+  casual: { hesitate: 0.2, hesitateTicks: [15, 40], surges: false, strafeEff: 0.75 },
+  easy: { hesitate: 0.12, hesitateTicks: [10, 30], surges: false, strafeEff: 0.85 },
+  normal: { hesitate: 0.05, hesitateTicks: [8, 20], surges: true, strafeEff: 0.95 },
   hard: { hesitate: 0, hesitateTicks: [0, 0], surges: true },
 };
 
-/** The timing test's driver: never hesitates, never surges (a steady sprint on the line). */
+/** The timing test's driver: never hesitates, never surges, strafes perfectly (a skilled run). */
 export const STEADY_RACER: RacerSkill = { hesitate: 0, hesitateTicks: [0, 0], surges: false };
+/** A decent human: strafes right about 60 % of the time in the air (the tracks' feasibility test). */
+export const HUMAN_RACER: RacerSkill = {
+  hesitate: 0,
+  hesitateTicks: [0, 0],
+  surges: false,
+  strafeEff: 0.6,
+};
 
 export interface RacerMemory {
   id: number;
@@ -118,6 +134,112 @@ const lookAt = (from: Vec3, to: Vec3) => {
   return qFromYawPitch(yaw, 0, UP, v3(0, 0, -1));
 };
 
+/** View looking horizontally along `dir`. */
+const lookAlong = (dir: Vec3): Quat => {
+  const yaw = Math.atan2(-dir.x, -dir.z);
+  return qFromYawPitch(yaw, 0, UP, v3(0, 0, -1));
+};
+
+/**
+ * Source-style air-strafing toward a horizontal direction `want`: look along your velocity and
+ * press A or D, so the wish direction is at right angles to your velocity — every tick adds
+ * the most speed the air rules allow (raceAirWishCap) and bends your path toward `want`. Once
+ * you are on course it alternates sides tick by tick (a zigzag too small to see) and keeps
+ * gaining speed. Returns the view and the strafe key.
+ */
+export const strafeToward = (
+  p: PlayerState,
+  want: Vec3,
+  tick: number,
+): { view: Quat; buttons: number } => {
+  const v = flat(p.vel);
+  const s = len(v);
+  const w = flat(want);
+  const wl = len(w);
+  if (s < 2 || wl < 1e-6) return { view: lookAlong(wl > 1e-6 ? w : v3(0, 0, -1)), buttons: 0 };
+  const vd = scale(v, 1 / s);
+  const wd = scale(w, 1 / wl);
+  // the right-hand perpendicular of your velocity
+  const right = cross(vd, UP);
+  const side = dot(right, wd);
+  const aligned = dot(vd, wd) > 0.999 && Math.abs(side) < 0.03;
+  const turnRight = aligned ? tick % 2 === 0 : side > 0;
+  return { view: lookAlong(vd), buttons: turnRight ? Btn.Right : Btn.Left };
+};
+
+/**
+ * Air control toward a landing (race movement): arrive over `target` just as you come down to
+ * its height. Too slow: strafe for speed (strafeToward). Too fast: a wish direction angled back
+ * against your velocity sheds exactly what's too much. About right: turn toward it without
+ * gaining. Returns the view and keys (a strafe key; none when on course).
+ */
+export const airToward = (
+  p: PlayerState,
+  target: Vec3,
+  tick: number,
+  cap: number,
+  gravity: number,
+): { view: Quat; buttons: number } => {
+  const feet = v3(p.pos.x, p.pos.y - 0.9, p.pos.z);
+  const to = flat(sub(target, feet));
+  const dist = len(to);
+  const vy = p.vel.y;
+  const drop = feet.y - target.y;
+  const disc = vy * vy + 2 * gravity * drop;
+  // time until you are back down at the target's height (its apex when it's above you)
+  const t = disc >= 0 ? (vy + Math.sqrt(disc)) / gravity : Math.max(0.05, vy / gravity);
+  const want = dist / Math.max(0.05, t);
+  const v = flat(p.vel);
+  const s = len(v);
+  if (s < want - 0.3 || s < 2) return strafeToward(p, to, tick);
+  const vd = scale(v, 1 / s);
+  const wd = dist > 1e-6 ? scale(to, 1 / dist) : vd;
+  const right = cross(vd, UP);
+  const side = dot(right, wd) >= 0 ? 1 : -1;
+  const off = Math.acos(Math.max(-1, Math.min(1, dot(vd, wd))));
+  // along-velocity part of the wish: -cap turns without changing speed, more negative sheds
+  let c = -cap;
+  if (s > want + 0.3) {
+    const d = Math.min(s - want, 3);
+    c = -Math.sqrt(Math.max(cap * cap, s * s + cap * cap - (s - d) * (s - d)));
+  } else if (off < 0.01) return { view: lookAlong(vd), buttons: 0 };
+  const cos = Math.max(-1, Math.min(1, c / s));
+  const sin = Math.sqrt(1 - cos * cos);
+  const w = add(scale(vd, cos), scale(right, side * sin));
+  // press D with the view turned so that "right" is the wish direction
+  return { view: lookAlong(cross(UP, w)), buttons: Btn.Right };
+};
+
+/**
+ * Surfing along a ramp's line from `a` to `b` (feet points on the face): strafe for speed
+ * (strafeToward) while you ride at the line's height; once you have slipped down the face, push
+ * straight into the ramp instead (the wish at right angles to the ramp, not to your velocity:
+ * the most climb the air rules give).
+ */
+export const surfToward = (
+  p: PlayerState,
+  a: Vec3,
+  b: Vec3,
+  tick: number,
+): { view: Quat; buttons: number } => {
+  const feet = v3(p.pos.x, p.pos.y - 0.9, p.pos.z);
+  const ab = sub(b, a);
+  const abf = flat(ab);
+  const l2 = dot(abf, abf);
+  const t = l2 > 1e-6 ? Math.max(0, Math.min(1, dot(flat(sub(feet, a)), abf) / l2)) : 1;
+  const lineY = a.y + ab.y * t;
+  const below = lineY - feet.y;
+  const toB = flat(sub(b, feet));
+  if (below < 0.5 || l2 < 1e-6) return strafeToward(p, toB, tick);
+  const dir = scale(abf, 1 / Math.sqrt(l2));
+  const right = cross(dir, UP);
+  // the line (up the face) is on this side of you
+  const onLine = add(a, scale(ab, t));
+  const side = dot(right, flat(sub(onLine, feet))) >= 0 ? 1 : -1;
+  const w = scale(right, side);
+  return { view: lookAlong(cross(UP, w)), buttons: Btn.Right };
+};
+
 /** One tick of a bot racer's inputs. */
 export const racerThink = (
   world: WorldState,
@@ -167,9 +289,14 @@ export const racerThink = (
     const segLen = len(seg);
     const passed =
       segLen > 1e-6 && dot(flat(sub(feet, cur.pos)), seg) / segLen > (cur.jump ? -0.35 : 0);
-    const near = len(toCur) < (cur.jump ? 0.6 : 1.6) && Math.abs(cur.pos.y - feet.y) < 3;
-    // (a portal is only left by going through it: see the re-sync above)
-    if (cur.portal || !(near || (passed && (len(toCur) < 6 || p.rail)))) break;
+    const airy = !!(cur.strafe || cur.surf || cur.air);
+    const near =
+      len(toCur) < (cur.jump ? 0.6 : airy ? 2.5 : 1.6) &&
+      Math.abs(cur.pos.y - feet.y) < (airy ? 6 : 3);
+    // (a portal is only left by going through it: see the re-sync above; a take-off edge only
+    // by jumping off it, from the ground)
+    if (cur.portal || !(near || (passed && (len(toCur) < (airy ? 14 : 6) || p.rail)))) break;
+    if (cur.jump && !p.grounded && p.coyote === 0 && !p.rail) break;
     if (cur.jump && !p.rail && (p.grounded || p.coyote > 0)) {
       mem.node++;
       mem.jumped = true;
@@ -192,6 +319,55 @@ export const racerThink = (
     mem.stuck = 0;
     mem.jumped = false;
     return { tick, buttons: 0, view };
+  }
+  // race movement: bunny hops, surfing and strafed flights (see airToward)
+  const prev = mem.node > 0 ? line[mem.node - 1] : null;
+  const hop = !!prev?.hop;
+  const surfing = !!(prev?.surf && target.surf);
+  if (!p.grounded && !p.jetOn && mem.hold === 0 && p.airTicks > 1) {
+    mem.stuck = 0;
+    const m = ctx.config.movement;
+    // (fly through windows and rings toward where you land next)
+    let land = mem.node;
+    while (line[land].air && land < line.length - 1) land++;
+    // (coming down onto a take-off edge: land a little short of it, then run and jump)
+    let aim = line[land].pos;
+    const before = land > 0 ? line[land - 1].pos : null;
+    if (line[land].jump && before) {
+      const back = flat(sub(before, aim));
+      const bl = len(back);
+      if (bl > 1e-6) aim = add(aim, scale(back, Math.min(2.5, bl / 2) / bl));
+    }
+    const air = surfing
+      ? surfToward(p, prev!.pos, target.pos, tick)
+      : airToward(p, aim, tick, m.raceAirWishCap, m.gravity);
+    let buttons = air.buttons;
+    // a sloppy strafer lets go now and then (a fixed pattern: deterministic)
+    // (holding the key into a surf ramp is easy: there only the aim is off, less often)
+    const eff0 = mem.skill.strafeEff ?? 1;
+    const eff = surfing && eff0 > 0 ? 1 - (1 - eff0) / 3 : eff0;
+    if (eff < 1 && (tick * 0.618034) % 1 >= eff) buttons = 0;
+    // bunny hops: tap Space on the way down (buffered, it fires on the landing tick)
+    if (hop && p.vel.y < -1 && tick % 2 === 0) buttons |= Btn.Jump;
+    mem.jumped = (buttons & Btn.Jump) !== 0;
+    return { tick, buttons, view: air.view };
+  }
+  if (hop && p.grounded) {
+    // landed on the pad you were heading for: head for the next one
+    const t = flat(sub(target.pos, feet));
+    if (
+      target.hop &&
+      len(t) < 3.5 &&
+      Math.abs(target.pos.y - feet.y) < 1.5 &&
+      mem.node < line.length - 1
+    )
+      mem.node++;
+    const next = line[mem.node];
+    const v2 = lookAt(p.pos, next.pos);
+    // jump on the first ground tick (a fresh press)
+    const b2 = mem.jumped ? Btn.Forward : Btn.Forward | Btn.Jump;
+    mem.jumped = !mem.jumped;
+    return { tick, buttons: b2, view: v2 };
   }
 
   // progress watchdog: hop when stuck, respawn at the checkpoint when really stuck
@@ -238,6 +414,8 @@ export interface RaceRunReport {
   falls: { pos: Vec3; cp: number; node: number }[];
   /** the furthest line node reached */
   node: number;
+  /** the highest horizontal speed reached (m/s) */
+  topSpeed: number;
 }
 
 /**
@@ -259,6 +437,7 @@ export const driveRaceLine = (
   const splits: number[] = [];
   const falls: RaceRunReport['falls'] = [];
   let furthest = 0;
+  let topSpeed = 0;
   let lastFeet = v3(p.pos.x, p.pos.y - 0.9, p.pos.z);
   const report = (finished: boolean): RaceRunReport => ({
     finished,
@@ -267,6 +446,7 @@ export const driveRaceLine = (
     respawns: falls.length,
     falls,
     node: furthest,
+    topSpeed,
   });
   for (let t = 0; t < maxSec / ctx.dt; t++) {
     const input = racerThink(world, ctx, p, mem);
@@ -277,6 +457,7 @@ export const driveRaceLine = (
         falls.push({ pos: lastFeet, cp: e.cp, node: mem.node });
     }
     furthest = Math.max(furthest, mem.node);
+    topSpeed = Math.max(topSpeed, len(flat(p.vel)));
     lastFeet = v3(p.pos.x, p.pos.y - 0.9, p.pos.z);
     if (p.raceCp > race.checkpoints.length) return report(true);
   }

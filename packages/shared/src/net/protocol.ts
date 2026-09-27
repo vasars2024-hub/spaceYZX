@@ -19,8 +19,20 @@ import type { PlayerState, WorldState } from '../sim/state';
 import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
-import type { RankedQueueId } from '../rating/ladders';
+import type { LadderId, RankedQueueId } from '../rating/ladders';
+import type { TeamMode } from '../rating/global';
 import type { VetoView } from '../rating/veto';
+import type { VersusInfo } from '../rating/versus';
+import type { CasualModeId, CasualPick } from '../modes/casual-queue';
+import type {
+  AccountOp,
+  FriendOp,
+  MeInfo,
+  PartyOp,
+  PartyView,
+  SocialNotice,
+  SocialState,
+} from './social';
 import { createPlayer, newBoomerang } from '../sim/world';
 import { defaultConfig } from '../config';
 
@@ -36,8 +48,11 @@ export type GameMode = '1v1' | '2v2' | '3v3' | '5v5' | 'practice';
  * What a room plays: a GameMode, or Arena 1v1 ('arena': rotating 1v1 duels in separate pits,
  * rules/arena.ts). Kept apart from GameMode so menus listing the match modes stay unchanged.
  */
-export type RoomMode = GameMode | 'arena' | 'race';
-/** ('race': a parkour race room on a race track, rules/race.ts) */
+export type RoomMode = GameMode | 'arena' | 'race' | BrawlMode;
+/**
+ * ('race': a parkour race room on a race track, rules/race.ts; 'brawl' / 'brawl-ffa': Brawl
+ * team deathmatch / free-for-all with instant respawns and a map rotation, rules/brawl.ts)
+ */
 export const ROOM_MODES: readonly RoomMode[] = [
   '1v1',
   '2v2',
@@ -46,7 +61,15 @@ export const ROOM_MODES: readonly RoomMode[] = [
   'practice',
   'arena',
   'race',
+  'brawl',
+  'brawl-ffa',
 ];
+
+/** Brawl rooms: 'brawl' = team deathmatch, 'brawl-ffa' = everyone against everyone. */
+export type BrawlMode = 'brawl' | 'brawl-ffa';
+export const isBrawlMode = (m: string): m is BrawlMode => m === 'brawl' || m === 'brawl-ffa';
+/** A free-for-all room: the sim runs with ctx.ffa (everyone else is an enemy). */
+export const isFfaMode = (m: string): boolean => m === 'brawl-ffa';
 
 export interface RoomPlayerInfo {
   id: number;
@@ -55,6 +78,8 @@ export interface RoomPlayerInfo {
   ping: number;
   bot: boolean;
   ready: boolean;
+  /** the player's account (for their profile / a friend request); absent for bots */
+  accountId?: number | null;
 }
 
 export type ClientMsg =
@@ -67,20 +92,36 @@ export type ClientMsg =
       botSkill?: string;
       /** 'tower' (default), 'bomb' or 'elim' (Elimination: last team standing) */
       objective?: MatchObjective;
-      /** 'cs' = CS kit (AK + Deagle, half-speed movement): bomb rules, or Elimination */
+      /** 'cs' = CS kit (AK + Deagle, 70 % movement speed): bomb rules, or Elimination */
       loadout?: 'lethal' | 'cs';
     }
   | { t: 'joinRoom'; code: string }
+  /**
+   * One-click Play: into the fullest public Brawl room of that playlist with a free slot (the
+   * server opens a new one when all are full). Default 'brawl' (team deathmatch).
+   */
+  | { t: 'quickPlay'; mode?: BrawlMode }
   | { t: 'leaveRoom' }
   | { t: 'startMatch' }
   | { t: 'profile' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }
-  /** Ranked queue: 'premier', 'duels-1v1' or 'duels-2v2' (rating/ladders.ts). */
-  | { t: 'queue'; mode: RankedQueueId }
+  /**
+   * Ranked queue (rating/ladders.ts): search every queue in `modes` at once (multi-search: the
+   * first match that forms takes you and cancels the others), or one `mode`. A party's leader
+   * searches for the whole party. It replaces your earlier search.
+   */
+  | { t: 'queue'; mode?: RankedQueueId; modes?: RankedQueueId[] }
+  /** Stop searching (ranked and casual). */
   | { t: 'unqueue' }
-  /** Premier map veto: ban this map (your team's turn). */
+  /** Casual matchmaking: the modes and team sizes you'd play (modes/casual-queue.ts). */
+  | { t: 'casualQueue'; modes: CasualModeId[]; sizes: TeamMode[] }
+  /** Premier / Premier CS map veto: ban this map (your team's turn). */
   | { t: 'veto'; map: string }
+  /** Premier CS: your vote in the mode vote before the map veto ('bomb' or 'elim'). */
+  | { t: 'modeVote'; mode: MatchObjective }
+  /** Parties (net/social.ts PartyOp): `id` = the friend / member / leader it is about. */
+  | { t: 'party'; op: PartyOp; id?: number }
   | { t: 'report'; player: number; reason: string }
   /** While dead: take over this bot teammate's body (Counter-Strike style). */
   | { t: 'takeover'; target: number }
@@ -89,7 +130,55 @@ export type ClientMsg =
   /** Voice signaling (WebRTC offer/answer) for one other human in your room. */
   | { t: 'rtc'; to: number; data: RtcSignal }
   /** Push-to-talk state: talking or not, and on which channel. */
-  | { t: 'voice'; on: boolean; all: boolean };
+  | { t: 'voice'; on: boolean; all: boolean }
+  /**
+   * Accounts (net/social.ts; only outside rooms): 'register' secures this guest account with a
+   * username + password, 'login' / 'recover' (username + recovery code + new password) switch
+   * this connection to that account, 'password' changes it (oldPassword), 'recoveryCode' makes
+   * a new recovery code (password), 'logout' / 'logoutAll' end this / every session.
+   * Answered with 'accountResult' (and a new 'welcome' when the account or token changed).
+   */
+  | {
+      t: 'account';
+      op: AccountOp;
+      username?: string;
+      password?: string;
+      oldPassword?: string;
+      code?: string;
+    }
+  /** Edit your profile: display name (cooldown for secured accounts), avatar, banner, title. */
+  | { t: 'editProfile'; name?: string; avatar?: number; banner?: number; title?: string }
+  /** Friends: request (by account id or exact name), accept, decline, cancel, remove, block… */
+  | { t: 'friend'; op: FriendOp; id?: number; name?: string }
+  /** Ask for your friends list / requests now (it is also pushed when it changes). */
+  | { t: 'social' }
+  /** Invite a friend to your room (they get a 'socialNotice' with a Join button). */
+  | { t: 'invite'; id: number }
+  /** Join the room a friend is in (casual rooms only). */
+  | { t: 'joinFriend'; id: number };
+
+/** One ranked queue's live line on its card (QueueCounts). */
+export interface RankedQueueCount {
+  /** players searching it now (a multi-searching player counts in each) */
+  searching: number;
+  /** can you search it now? (enough players online, or Premier's opening hours) */
+  open: boolean;
+  /** it opens at this many players online (0 = always open) */
+  threshold: number;
+  /** Premier / Premier CS: the biggest team size that could start now (null: not enough) */
+  forms: number | null;
+}
+
+/**
+ * Live queue numbers, pushed every few seconds to everyone in the menus: players online, per
+ * ranked queue how many search / open or not / which size forms, per casual mode how many
+ * search it.
+ */
+export interface QueueCounts {
+  online: number;
+  ranked: Record<RankedQueueId, RankedQueueCount>;
+  casual: Record<CasualModeId, number>;
+}
 
 /** Ranked facts every player needs (season number, Premier opening hours). */
 export interface RankedInfo {
@@ -144,7 +233,23 @@ export interface ChatLine {
 
 export type ServerMsg =
   | { t: 'hello'; game: string; protocol: number }
-  | { t: 'welcome'; name: string; account?: unknown; token?: string }
+  | { t: 'welcome'; name: string; account?: unknown; token?: string; me?: MeInfo }
+  /** Your account changed (profile edit, secured…). */
+  | { t: 'me'; data: MeInfo }
+  /** The answer to an 'account' / 'editProfile' message (recoveryCode: show it once). */
+  | {
+      t: 'accountResult';
+      op: AccountOp | 'editProfile';
+      ok: boolean;
+      error?: string;
+      recoveryCode?: string;
+    }
+  /** Your friends (with where they are), friend requests and blocked players. */
+  | { t: 'social'; data: SocialState }
+  /** The answer to a 'friend' / 'invite' / 'joinFriend' message. */
+  | { t: 'socialResult'; op: FriendOp | 'invite' | 'joinFriend'; ok: boolean; error?: string }
+  /** A friend request, an accepted request or a room invite (the client shows a toast). */
+  | { t: 'socialNotice'; data: SocialNotice }
   | {
       t: 'roomJoined';
       code: string;
@@ -154,6 +259,18 @@ export type ServerMsg =
       tick: number;
       config: unknown;
       ranked: boolean;
+      /**
+       * a public Brawl room (quick play: strangers + bots). Brawl rooms send 'roomJoined' again
+       * (same code and player id) when they move on to the next map of the rotation.
+       */
+      public?: boolean;
+      /**
+       * players per team the level is built for (level/size-walls.ts: smaller teams play a
+       * smaller map; build it with mapDefForSize(map, teamSize)). Absent: the whole map.
+       */
+      teamSize?: number;
+      /** ranked: the ladder this room counts for (Premier, Premier CS, Duels, Race) */
+      ladder?: LadderId | null;
     }
   | { t: 'room'; code: string; players: RoomPlayerInfo[]; hostId: number; state: string }
   | { t: 'match'; data: unknown }
@@ -164,10 +281,29 @@ export type ServerMsg =
   | { t: 'notice'; msg: string }
   /** The server took you out of your room (match over, kicked for griefing…). */
   | { t: 'roomLeft'; reason: string }
-  /** Ranked queue status (mode null = not queued). */
-  | { t: 'queue'; mode: RankedQueueId | null; waitSec: number; searching: number; error?: string }
-  /** Premier map veto in progress (null = over / cancelled). */
+  /**
+   * Your search (mode null and no casual = not searching). `modes`: every ranked queue you
+   * search (multi-search; `mode` is the first of them); `casual`: your casual pick. `party`:
+   * the search is your party's (its leader started it).
+   */
+  | {
+      t: 'queue';
+      mode: RankedQueueId | null;
+      modes?: RankedQueueId[];
+      casual?: CasualPick | null;
+      party?: boolean;
+      waitSec: number;
+      searching: number;
+      error?: string;
+    }
+  /** Live queue numbers (players online, searching per mode), every few seconds in the menus. */
+  | { t: 'queueCounts'; data: QueueCounts }
+  /** Your party (null = you're not in one). */
+  | { t: 'party'; data: PartyView | null }
+  /** Premier / Premier CS mode vote + map veto in progress (null = over / cancelled). */
   | { t: 'veto'; data: VetoView | null }
+  /** A ranked room formed: everyone's ladder standing and the odds (rating/versus.ts). */
+  | { t: 'versus'; data: VersusInfo | null }
   /** Season and Premier opening hours. */
   | { t: 'rankedInfo'; data: RankedInfo }
   /** After a race in an online race room: your Race rating change (ranked) and best time. */
@@ -432,6 +568,8 @@ export const BOOMERANG_SCHEMA = defineSchema([
   { name: 'throwId', kind: 'uint', bits: 24 },
   { name: 't', kind: 'uint', bits: 10 },
   { name: 'explosive', kind: 'bool' },
+  /** dropped into a wall: the wall's normal (zero when not stuck) — drawn embedded */
+  { name: 'stuckN', kind: 'vel', min: -1.5, max: 1.5, bits: 9 },
   /** Quick Throw tilt, (curve + 1) * 32: drawn as the Boomerang banking */
   { name: 'curve', kind: 'uint', bits: 7 },
 ] as const);
@@ -483,6 +621,7 @@ export const toNetBoomerang = (b: BoomerangState): NetBoomerang => ({
   throwId: b.throwId % 2 ** 24,
   t: clampU(b.t, 10),
   explosive: b.explosive,
+  stuckN: b.stuck ?? v3(),
   curve: clampU((b.curve + 1) * 32, 7),
 });
 

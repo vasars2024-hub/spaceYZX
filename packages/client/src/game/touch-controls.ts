@@ -488,6 +488,8 @@ export class TouchControls implements ClientFeature {
     this.setLabel('fire', laser ? 'FIRE' : 'THROW');
     this.setLabel('alt', inHand ? 'WIND' : 'STEER');
     this.setLabel('recall', me?.weapon === 1 ? 'RELOAD' : 'RECALL');
+    // races turn the dash into SURGE (3 boosts per race)
+    this.setLabel('dash', c.session.level.def.race ? 'SURGE' : 'DASH');
     const match = c.session.match?.() ?? null;
     this.toggleButton('use', match?.objective === 'bomb');
     this.toggleButton('score', !!match);

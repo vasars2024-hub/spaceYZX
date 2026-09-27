@@ -32,6 +32,8 @@ const UP_AXIS = new THREE.Vector3(0, 1, 0);
 const bankAxis = new THREE.Vector3();
 const spinQ = new THREE.Quaternion();
 const WHITE_C = new THREE.Color(0xffffff);
+const stuckN = new THREE.Vector3();
+const stuckA = new THREE.Vector3();
 
 const tv = (v: Vec3) => new THREE.Vector3(v.x, v.y, v.z);
 
@@ -556,6 +558,13 @@ export class CombatView {
         mesh.quaternion
           .setFromAxisAngle(bankAxis, u.bank)
           .multiply(spinQ.setFromAxisAngle(UP_AXIS, u.spin));
+      } else if (b.phase === Phase.Dropped && b.stuck) {
+        // stuck in the wall it hit: edge first, half buried, no spin (a slow glow pulse)
+        const n = stuckN.set(b.stuck.x, b.stuck.y, b.stuck.z).normalize();
+        const along = Math.abs(n.y) > 0.9 ? stuckA.set(1, 0, 0) : stuckA.crossVectors(n, UP_AXIS);
+        mesh.quaternion.setFromUnitVectors(UP_AXIS, along.normalize());
+        mesh.position.set(b.pos.x - n.x * 0.12, b.pos.y - n.y * 0.12, b.pos.z - n.z * 0.12);
+        mesh.scale.setScalar(1 + Math.sin(this.time * 3) * 0.04);
       } else if (b.phase === Phase.Dropped) {
         mesh.rotation.set(0, this.time * 1.5, 0);
         mesh.scale.setScalar(1 + Math.sin(this.time * 6) * 0.08);

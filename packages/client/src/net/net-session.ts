@@ -25,6 +25,11 @@ import type { MatchInfo, RenderPlayer, Session, TickInput } from '../game/sessio
 
 export class NetSession implements Session {
   alpha = 0;
+  /**
+   * The room carries on without this session (a Brawl moved to its next map: a new session
+   * takes over the same room): disposing must not leave the room.
+   */
+  keepRoom = false;
   constructor(public core: NetCore) {}
 
   get level(): Level {
@@ -226,6 +231,6 @@ export class NetSession implements Session {
   }
 
   dispose(): void {
-    this.core.leaveRoom();
+    if (!this.keepRoom) this.core.leaveRoom();
   }
 }

@@ -166,6 +166,12 @@ export const buildOutdoorSky = (def: LevelDef, sky: OutdoorSkyDef): SkyMeshes =>
   const dome = new THREE.Mesh(g, mat);
   dome.frustumCulled = false;
   dome.renderOrder = -2;
+  // the sky goes wherever you go (like a skybox): on big courses you may be far from the map's
+  // middle, and the sun must stay a small disc far away, never a wall close by
+  dome.onBeforeRender = (_r, _s, camera) => {
+    group.position.copy(camera.position);
+    group.updateMatrixWorld(true);
+  };
   group.add(dome);
   disposables.push(g, mat);
   // a night sky: stars over the gradient (drawn after the dome, before the moon/sun disc)

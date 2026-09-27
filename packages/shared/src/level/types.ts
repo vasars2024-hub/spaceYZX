@@ -22,7 +22,10 @@ export type Material =
   | 'wood'
   | 'paper' // shoji screens (see BoxDef.boomerangPasses)
   | 'leaf' // foliage (blossom canopies, shrubs)
-  | 'forcefield'; // glowing size-wall barrier (LevelDef.sizeWalls): blocks everything
+  | 'forcefield' // glowing size-wall barrier (LevelDef.sizeWalls): blocks everything
+  // race courses (level/course): the deadly cloud sea and the glow under it
+  | 'cloud' // soft, slightly see-through, shaded bright on top: never mistaken for a platform
+  | 'glow'; // unlit, full-bright colour (danger glow, signs) that lights nothing around it
 
 export interface BoxDef {
   c: Vec3; // center
@@ -292,6 +295,8 @@ export interface RaceGateDef {
   /** where you come back (feet) after a fall or the respawn key, facing `yawDeg` */
   respawn: Vec3;
   yawDeg: number;
+  /** the stretch it starts (shown over the gate: "3 · THE GRAND SURF") */
+  name?: string;
 }
 
 /**

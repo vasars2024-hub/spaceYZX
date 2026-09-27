@@ -83,9 +83,10 @@ export class Pen {
     return this;
   }
   /** A walled checkpoint room entered from the pen (its back doorway at the pen). */
-  stage(size: P2 = [12, 14], cap?: number): this {
+  stage(size: P2 = [12, 14], cap?: number, name?: string): this {
     const e: RouteElement = { t: 'stage', at: this.relP(size[1] / 2), heading: this.heading, size };
     if (cap) e.cap = cap;
+    if (name) e.name = name;
     this.route.push(e);
     this.pos = this.rel(size[1]);
     return this;

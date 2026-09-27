@@ -21,7 +21,7 @@
 // at each end (or the jetpack). Lights are baked (no shafts: each would be a draw call).
 import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
-import { LevelBuilder } from '../builder';
+import { LevelBuilder, wedgeRamp } from '../builder';
 import { buildLevel } from '../level';
 import { lineOfSight } from '../collision';
 import type { ArenaPitDef, LevelDef, LightDef, SpawnDef, WaypointDef } from '../types';
@@ -79,17 +79,19 @@ export const buildArena = (): LevelDef => {
         b.box(v3(sx * 2, U.y, zc + s * U.inner), v3(sx * 6, U.y + 0.9, zc + s * (U.inner + 0.5)), {
           mat: 'crate',
         });
-      // ramps at both ends, 3 m over 6 m (27°)
+      // ramps at both ends, 3 m over 6 m (27°): solid wedges standing on the floor against the
+      // platform's ends
       for (const sx of [-1, 1])
-        b.ramp(
-          'x',
-          sx * A.ramp.top,
-          sx * A.ramp.foot,
-          U.y,
-          0,
-          zc + s * (U.inner + (W - U.inner) / 2),
-          A.ramp.width,
-          { mat: 'floor' },
+        b.boxes.push(
+          wedgeRamp(
+            'x',
+            sx * A.ramp.top,
+            sx * A.ramp.foot,
+            U.y,
+            0,
+            zc + s * (U.inner + (W - U.inner) / 2),
+            A.ramp.width,
+          ),
         );
     }
 

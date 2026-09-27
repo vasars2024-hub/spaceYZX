@@ -161,10 +161,11 @@ it (or fall off anywhere) and you are back at your last checkpoint. Pick a **rac
   away). Practice with **1 racer** is a **time trial**; with more, bot racers join you.
 - **Nobody can hurt anybody.** Other racers are drawn **see-through** with their name and
   place ("Nova · 2nd") and you run straight through each other — nobody can block you.
-- **Checkpoints** are **walled rooms** with glowing doorways and their number over the exit
-  (1, 2, 3 … FINISH). Pass them **in order**; the next one is marked on your screen. There is
-  one every **15–25 seconds**, so a fall only costs a short stretch: **fall** or **hold R** and
-  you're back in your last checkpoint room, frozen for **1.5 s** (**0.5 s** on surf maps).
+- **Checkpoints** are **walled rooms** with big windows, glowing doorways, their number over the
+  exit (1, 2, 3 … FINISH) and the name of the stretch ahead. Pass them **in order**; the next
+  one is marked on your screen. There is one every **15–25 seconds**, so a fall only costs a
+  short stretch: **fall** or **hold R** and you're back in your last checkpoint room, frozen for
+  **1.5 s** (**0.5 s** on surf maps).
 - **Big portals** (glowing rings in a stone arch) take you to the next part of the course; you
   come out in a checkpoint room.
 - **Race movement is fast** (race courses only — the combat modes are unchanged): you
@@ -337,12 +338,15 @@ The first map in the open air: desert mesas at sunset, the same for both teams (
 - **Camps**: walled, open to the sky, the Tower in the middle. A gate on each side leads out to
   an **outer path**; right beside it a **cliff ramp** climbs onto your mesa.
 - **Mesas**: two raised plateaus facing each other across **the gorge**. Each has a **rock
-  spire** in the middle (ramps up both sides) with a long laser line over the gorge, and
-  boulders along the edge. About 9 s from the camp to the gorge edge.
+  spire** in the middle (ramps up both sides), a waist-deep **trench** across its middle (duck
+  into it for cover from the far mesa; steps up at its outer ends), rock outcrops you can
+  climb, and waist-high rocks every few metres. One lane stays clear on purpose: straight out
+  from the spire over the gorge — the long laser line. About 9–10 s from the camp to the gorge
+  edge.
 - **The gorge**: a deep drop across the middle of the map — **fall in and you die**. Ways
   across: the **launch pads** on each mesa edge throw you over it onto the other mesa (fast,
-  but you land in the open), or the two narrow **rock bridges** near the ends (about 10 s from
-  the camp). In the middle stands the **relay rock**, a little lower than the mesas: the
+  but you land in the open), or the two narrow **rock bridges** near the ends, with
+  waist-high parapets (about 10 s from the camp). In the middle stands the **relay rock**, a little lower than the mesas: the
   power-up sits on it, and in the collapse it is the last safe spot. Drop down onto it; getting
   back up takes a jump and a climb.
 - **Slot canyons** (east and west): narrow and winding, with angled rock walls that are good for
@@ -366,7 +370,8 @@ the Premier map pool). Mirrored north ↔ south: each team spawns in a covered *
   keep throws you up onto the roof, where the power-up floats over the hatch.
 - **Paper walls (shoji)**: the pale screens in the courtyard block players, bullets, lasers and
   sight like any wall — **but the Boomerang flies straight through them**. Throw at an enemy
-  you know is behind one.
+  you know is behind one. Long screens flank the keep and face the gates; short ones break up
+  the lanes in front of the gates, next to stone lanterns and low hedges.
 
 ## Ranked
 

@@ -142,9 +142,9 @@ describe.each(TRACKS)('%s', (id) => {
       expect(capsuleOverlaps(level, cap), `spot ${JSON.stringify(s)}`).toBe(false);
       expect(raycast(level, v3(s.x, s.y + 1, s.z), v3(0, -1, 0), 1.6)).not.toBeNull();
     }
-    // every checkpoint is a room: walls on both sides and a roof over its respawn
+    // every checkpoint is a room: walls on both sides (under their big windows) and a roof
     for (const c of race.checkpoints) {
-      const at = v3(c.respawn.x, c.respawn.y + 1.2, c.respawn.z);
+      const at = v3(c.respawn.x, c.respawn.y + 0.6, c.respawn.z);
       const yaw = (-c.yawDeg * Math.PI) / 180;
       const right = v3(Math.cos(yaw), 0, Math.sin(yaw));
       for (const s of [-1, 1])

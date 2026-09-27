@@ -14,7 +14,7 @@
 //
 // Route elements (`t`):
 //   start     {at, heading, size?}                   the start platform, grid and arch
-//   stage     {at, heading, size?, cap?, n?}         a walled checkpoint room (walls, roof, glowing
+//   stage     {at, heading, size?, cap?, name?}      a walled checkpoint room (walls, roof, glowing
 //                                                    doorways): passing through it counts, you
 //                                                    respawn in it; `cap` limits entry speed (m/s,
 //                                                    surf stage starts)
@@ -38,7 +38,7 @@
 //   fuel      {at}                                   a fuel cell (jetpack tracks)
 //
 // Scenery (`scenery`): island, tree, rock, crystal, lantern, banner, waterfall, ruin, spire,
-// cloud, arrow, scatter (many of one kind, placed by a seeded hash) — see SceneryElement.
+// arch, cloud, arrow, scatter (many of one kind, placed by a seeded hash) — see SceneryElement.
 // Floors (`floors`): deadly cloud seas (kill volumes) drawn as a cloud layer at their top.
 //
 // Validation (validateCourse): surf faces ≥ 50°, stages in order along the route, the route
@@ -127,6 +127,8 @@ export interface StageEl extends RouteBase {
   size?: P2;
   /** entry speed cap, m/s (surf stage starts) */
   cap?: number;
+  /** the stretch it starts, shown over it */
+  name?: string;
 }
 export interface FinishEl extends RouteBase {
   t: 'finish';
@@ -260,6 +262,8 @@ export type SceneryElement =
   /** a landmark tower (a spire of stacked blocks) standing on `at` */
   | { t: 'spire'; at: P3; height: number; width: number; color?: number }
   | { t: 'cloud'; at: P3; size: P2 }
+  /** a monumental arch standing on `at` (two columns, a lintel with a glowing strip) */
+  | { t: 'arch'; at: P3; heading: number; width: number; height: number; color?: number }
   /** a floating arrow sign pointing along `heading` */
   | { t: 'arrow'; at: P3; heading: number; color?: number }
   /** `count` of one kind scattered over min..max (x, z) at height y..y2, seeded */
@@ -295,6 +299,13 @@ export interface CourseData {
   autoFloors?: { below: number; pad: number };
   route: RouteElement[];
   scenery?: SceneryElement[];
+  /** what the checkpoint rooms are built of (default 'rock') */
+  roomMat?: 'rock' | 'sand' | 'wood' | 'panel' | 'plate';
+  /**
+   * surf ramp colours, one per stage (the n-th stage's ramps use the n-th colour, round and
+   * round): each stretch of ramps reads as its own (default: the palette's `surf`)
+   */
+  surfColors?: number[];
   /** race tracks: the jetpack and SURGE (default on; surf maps never have them) */
   jetpack?: boolean;
   surge?: boolean;

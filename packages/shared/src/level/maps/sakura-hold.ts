@@ -49,6 +49,8 @@ const WOOD = 0x5e4030;
 const MOAT_FLOOR = 0x3f5f5a;
 const WATER = 0x7fb3c8;
 const LANTERN = 0xffc98a;
+const HEDGE = 0x4d6b55;
+const KEEP_FLOOR = 0x7a5a42;
 
 /** the middle of the map (both mirror lines) */
 const MX = 40;
@@ -77,6 +79,11 @@ export const SAKURA_HOLD = {
     [20, 54, 30, 54],
     [54, 34, 54, 46],
     [26, 34, 26, 46],
+    // short screens in the lanes between the gates and the long walls
+    [56, 20, 62, 20],
+    [18, 20, 24, 20],
+    [56, 60, 62, 60],
+    [18, 60, 24, 60],
   ] as [number, number, number, number][],
   /** keep launch pads: north one throws south onto the roof */
   padVel: v3(0, 24, 3),
@@ -158,21 +165,30 @@ export const buildSakuraHold = (): LevelDef => {
     lights.push({ pos: v3(x, y, z), color, radius, intensity: k });
 
   // ======================= ground =======================
+  // (floors stop where a floor of another look starts: under the ramps the floor is the ramp's
+  // wood, under the keep its floorboards; nothing of one colour cuts into another)
   quad(40, -1, 3, 80, 0, 12, 'sand', { color: GRAVEL }); // outer ground by the gates
-  quad(70, -1, 12, 76, 0, 40, 'sand', { color: GRAVEL }); // under the east wall
-  quad(40, -1, 16, 66, 0, 40, 'sand', { color: MOSS }); // courtyard lawn
+  quad(70, -1, 12, 71, 0, 20, 'sand', { color: GRAVEL }); // under the east wall
+  quad(75, -1, 12, 76, 0, 20, 'sand', { color: GRAVEL });
+  quad(70, -1, 20, 76, 0, 40, 'sand', { color: GRAVEL });
+  quad(71, -1, 12, 75, 0, 20, 'wood', { color: WOOD }); // under the wall ramp
+  quad(40, -1, 16, 66, 0, 32, 'sand', { color: MOSS }); // courtyard lawn
+  quad(48, -1, 32, 66, 0, 38, 'sand', { color: MOSS });
+  quad(48, -1, 38, 62, 0, 40, 'sand', { color: MOSS });
+  quad(62, -1, 38, 66, 0, 40, 'wood', { color: WOOD }); // under the ramp down into the site
+  quad(40, -1, 32, 48, 0, 40, 'wood', { color: KEEP_FLOOR }); // the keep's ground floor
   quad(40, 0, 16, 44, 0.02, 32, 'sand', { color: GRAVEL, noCollide: true }); // gravel path
   // the moat: floor (0.35 m down: you wade in and out) and the water surface
-  quad(40, -1.35, 12, 70, D, 16, 'sand', { color: MOAT_FLOOR });
+  quad(43, -1.35, 12, 70, D, 16, 'sand', { color: MOAT_FLOOR });
   quad(66, -1.35, 16, 70, D, 40, 'sand', { color: MOAT_FLOOR });
   quad(43, -0.12, 12, 70, -0.1, 16, 'skyglass', { color: WATER, noCollide: true });
-  quad(66, -0.12, 16, 70, -0.1, 40, 'skyglass', { color: WATER, noCollide: true });
+  quad(66, -0.12, 16, 70, -0.1, 38, 'skyglass', { color: WATER, noCollide: true });
   // the bridge at the gate (a wooden deck over the water)
-  quad(40, -1.35, 11, 43, 0, 17, 'wood', { color: WOOD });
+  quad(40, -1.35, 12, 43, 0, 16, 'wood', { color: WOOD });
 
   // ======================= perimeter (tall: nobody climbs out) =======================
-  masonry(40, -1, -2, 82, 8, 3);
-  masonry(76, -1, 3, 82, 8, 40);
+  masonry(40, 0, -2, 82, 8, 3);
+  masonry(76, 0, 3, 82, 8, 40);
 
   // ======================= gatehouse =======================
   masonry(50, 0, 3, 51, 5, 5);
@@ -184,17 +200,21 @@ export const buildSakuraHold = (): LevelDef => {
   quad(40, 0, 8.2, 44, 2.4, 8.8, 'wood', { color: WOOD });
   quad(47.2, 0, 3, 47.8, 2.6, 8.4, 'wood', { color: WOOD });
   // a tiled roof over the gatehouse (nobody looks down into it from the walls or the keep)
-  quad(40, 5, 2.5, 51.5, 5.4, 12.5, 'panel', { color: 0x3a3438 });
-  // torii over the bridge (posts stand in the water)
-  quad(43.2, D, 13.7, 43.8, 4.6, 14.3, 'panel', { color: TORII });
+  quad(40, 5, 3, 51.5, 5.4, 12.5, 'panel', { color: 0x3a3438 });
+  // torii over the bridge (posts stand on the deck's edges)
+  quad(42.2, 0, 13.7, 42.8, 4.2, 14.3, 'panel', { color: TORII });
   quad(40, 4.2, 13.6, 44.4, 4.6, 14.4, 'panel', { color: TORII });
   quad(40, 4.9, 13.5, 44.9, 5.3, 14.5, 'panel', { color: 0x2a2222 });
 
   // ======================= east castle wall (walkway y 4) =======================
   // ramp up from the outer ground (z 12 → 20), then the walkway to the middle
-  masonry(70, -1, 12, 71, W, 20);
-  masonry(75, -1, 12, 76, W, 20);
-  masonry(70, -1, 20, 76, W - 0.3, 40);
+  masonry(70, 0, 12, 71, W, 20);
+  masonry(75, 0, 12, 76, W, 20);
+  // (the walkway's boards reach 0.3 m over the ramp's top, where the ramp slab ends)
+  masonry(70, 0, 20.3, 76, W - 0.3, 38);
+  // where the ramp down into the site leaves the wall: its wood reaches into the wall a little
+  masonry(70.3, 0, 38, 76, W - 0.3, 40);
+  quad(70, 0, 38, 70.3, W - 0.3, 40, 'wood', { color: WOOD });
   quad(70, W - 0.3, 20, 76, W, 40, 'wood', { color: WOOD });
   for (const n of SIGNS)
     for (const s of SIGNS) {
@@ -216,32 +236,31 @@ export const buildSakuraHold = (): LevelDef => {
   for (const [x0, z0, x1, z1] of S.shoji) {
     const alongX = z0 === z1;
     const t = 0.1;
+    const p = 0.2; // post half-width: the paper runs between the posts
     if (alongX)
-      box(x0, 0, z0 - t, x1, 3, z0 + t, 'paper', { color: PLASTER, boomerangPasses: true });
-    else box(x0 - t, 0, z0, x0 + t, 3, z1, 'paper', { color: PLASTER, boomerangPasses: true });
+      box(x0 + p, 0, z0 - t, x1 - p, 3, z0 + t, 'paper', { color: PLASTER, boomerangPasses: true });
+    else
+      box(x0 - t, 0, z0 + p, x0 + t, 3, z1 - p, 'paper', { color: PLASTER, boomerangPasses: true });
     // wooden frame posts at the ends (solid), and a thin lattice painted on the paper
     for (const [px, pz] of [
       [x0, z0],
       [x1, z1],
     ])
       box(px - 0.2, 0, pz - 0.2, px + 0.2, 3.2, pz + 0.2, 'wood', { color: WOOD });
+    // lattice: thin strips laid on both faces of the paper (not through it)
     const len = alongX ? x1 - x0 : z1 - z0;
-    for (let i = 1; i < 5; i++) {
-      const u = (len * i) / 5;
-      if (alongX)
-        box(x0 + u - 0.04, 0, z0 - 0.12, x0 + u + 0.04, 3, z0 + 0.12, 'wood', {
-          color: WOOD,
-          noCollide: true,
-        });
-      else
-        box(x0 - 0.12, 0, z0 + u - 0.04, x0 + 0.12, 3, z0 + u + 0.04, 'wood', {
-          color: WOOD,
-          noCollide: true,
-        });
+    const lattice = { color: WOOD, noCollide: true };
+    for (const f of [-1, 1]) {
+      const a = f * t;
+      const c = f * (t + 0.02);
+      for (let i = 1; i < 5; i++) {
+        const u = (len * i) / 5;
+        if (alongX) box(x0 + u - 0.04, 0, z0 + a, x0 + u + 0.04, 3, z0 + c, 'wood', lattice);
+        else box(x0 + a, 0, z0 + u - 0.04, x0 + c, 3, z0 + u + 0.04, 'wood', lattice);
+      }
+      if (alongX) box(x0 + p, 1.46, z0 + a, x1 - p, 1.54, z0 + c, 'wood', lattice);
+      else box(x0 + a, 1.46, z0 + p, x0 + c, 1.54, z1 - p, 'wood', lattice);
     }
-    if (alongX)
-      box(x0, 1.46, z0 - 0.12, x1, 1.54, z0 + 0.12, 'wood', { color: WOOD, noCollide: true });
-    else box(x0 - 0.12, 1.46, z0, x0 + 0.12, 1.54, z1, 'wood', { color: WOOD, noCollide: true });
   }
 
   // ======================= cover: lanterns, shrine =======================
@@ -251,22 +270,26 @@ export const buildSakuraHold = (): LevelDef => {
   };
   lantern(56, 36.5); // A site
   lantern(47, 17.5); // by the bridge
-  // a small shrine at the back of the site (full cover)
-  quad(62, 0, 33.5, 64.5, 2.4, 35.5, 'wood', { color: WOOD });
-  quad(61.8, 2.4, 33.3, 64.7, 2.8, 35.7, 'panel', { color: TORII });
+  lantern(60, 24.5); // east lane, in front of the paper walls
+  // a small shrine behind the site (full cover)
+  quad(64.3, 0, 33.5, 65.8, 2.4, 35.5, 'wood', { color: WOOD });
+  quad(64.2, 2.4, 33.3, 65.9, 2.8, 35.7, 'panel', { color: TORII });
+  // low clipped hedges (waist-high cover) beside the gravel path
+  quad(43.5, 0, 24.5, 46.5, 1.1, 25.5, 'leaf', { color: HEDGE });
 
   // ======================= blossom trees =======================
   const tree = (x: number, z: number, h: number) => {
-    quad(x - 0.35, 0, z - 0.35, x + 0.35, h, z + 0.35, 'wood', { color: WOOD });
+    // the trunk stands on its petals and ends under the canopy
+    quad(x - 0.35, 0.04, z - 0.35, x + 0.35, h - 0.4, z + 0.35, 'wood', { color: WOOD });
     // canopies start above head height (nobody hides in them)
     deco(x - 2.4, h - 0.4, z - 2.1, x + 2.2, h + 1.4, z + 2.3, 'leaf', BLOSSOM);
-    deco(x - 1.6, h + 1.2, z - 1.5, x + 1.7, h + 2.3, z + 1.4, 'leaf', BLOSSOM_DEEP);
+    deco(x - 1.6, h + 1.4, z - 1.5, x + 1.7, h + 2.3, z + 1.4, 'leaf', BLOSSOM_DEEP);
     deco(x + 0.8, h - 0.2, z - 3, x + 3, h + 0.9, z - 0.8, 'leaf', BLOSSOM);
     // fallen petals
     deco(x - 2.6, 0.01, z - 2.4, x + 2.4, 0.04, z + 2.6, 'leaf', 0xe8b4c0);
   };
-  tree(56, 19, 3.6);
-  tree(57, 4.6, 3.8);
+  tree(52, 18, 3.6);
+  tree(60, 6.5, 3.8);
   tree(64, 29, 3.5);
 
   // ======================= Towers, spawns, Controller homes =======================
@@ -395,7 +418,7 @@ const buildKeep = (b: LevelBuilder, pair: PairFn): void => {
     b.wall('x', x, T, K.z0 + T, K.z1 - T, 0, 1.8, [door], baseOpts);
     b.wall('x', x, T, K.z0 + T, K.z1 - T, 1.8, top, [door, ...winZ(4), ...winZ(8)], wallOpts);
   }
-  const floor = { mat: 'wood' as Material, color: 0x7a5a42 };
+  const floor = { mat: 'wood' as Material, color: KEEP_FLOOR };
   const i0 = K.x0 + T;
   const i1 = K.x1 - T;
   b.wall(
@@ -423,9 +446,10 @@ const buildKeep = (b: LevelBuilder, pair: PairFn): void => {
     ],
     floor,
   );
+  // the roof deck: boards like the stairs that come up through its hatch
   b.wall('y', top + 0.2, 0.4, K.x0, K.x1, K.z0, K.z1, [{ u0: 36, u1: 44, v0: 38.5, v1: 41.5 }], {
-    mat: 'rock',
-    color: 0x55504e,
+    mat: 'wood',
+    color: KEEP_FLOOR,
   });
   // roof parapet (waist-high) and eaves
   const R = K.roof;
@@ -439,14 +463,14 @@ const buildKeep = (b: LevelBuilder, pair: PairFn): void => {
       noCollide: true,
     });
   // stairs
-  b.ramp('x', 36, 44, 0, 4, 40, 3, { mat: 'wood', color: WOOD });
+  b.ramp('x', 36, 44, 0, 4, 40, 3, { mat: 'wood', color: KEEP_FLOOR });
   fillUnder(b, 'x', 44, 36, 4, 0, 40, 3);
   for (const n of SIGNS) {
     // against the north / south wall (no gap to slip into)
-    b.ramp('x', 44, 36, 4, 8, mz(n, 34.6), 4, { mat: 'wood', color: WOOD });
+    b.ramp('x', 44, 36, 4, 8, mz(n, 34.6), 4, { mat: 'wood', color: KEEP_FLOOR });
     fillUnder(b, 'x', 36, 44, 8, 4, mz(n, 34.6), 4);
   }
-  b.ramp('x', 36, 44, 8, 12, 40, 3, { mat: 'wood', color: WOOD });
+  b.ramp('x', 36, 44, 8, 12, 40, 3, { mat: 'wood', color: KEEP_FLOOR });
   fillUnder(b, 'x', 44, 36, 12, 8, 40, 3);
 };
 
@@ -493,22 +517,25 @@ const decorate = (
     const z = (v: number) => (n > 0 ? v : 80 - v);
     const tc = n > 0 ? CYAN : ORANGE;
     light(40, 3, z(7), tc, 9, 0.6);
-    d1(36, 4.2, z(11) - 0.06, 44, 4.5, z(11) + 0.06, 'trim', tc);
+    // on the inner face of the gatehouse front wall
+    d1(36, 4.2, z(10.9), 44, 4.5, z(11), 'trim', tc);
     for (const x of [8, 72]) light(x, 5.5, z(28), LANTERN, 9, 0.7);
     light(40, 13.5, z(34), LANTERN, 8, 0.6);
   }
   for (const x of [30, 50]) light(x, 3.5, 40, LANTERN, 8, 0.8);
-  deco(55.7, 1.4, 36.2, 56.3, 1.5, 36.8, 'trim', LANTERN);
   light(59.5, 2.5, 40, LANTERN, 9, 0.7);
   light(20.5, 2.5, 40, LANTERN, 9, 0.7);
   // far scenery: hills and a pagoda silhouette in the mist
-  deco(40, 7.9, -60, 140, 8, 3, 'sand', 0x7a8f86);
-  deco(90, 8, -80, 130, 26, -40, 'leaf', 0x5d7280);
-  deco(60, 8, -120, 110, 34, -90, 'leaf', 0x4f6275);
-  deco(100, 8, -10, 125, 18, 40, 'leaf', 0x687d88);
-  deco(96, 8, -30, 104, 30, -22, 'panel', 0x3b3440);
+  deco(40, 8, -60, 140, 8.1, 3, 'sand', 0x7a8f86);
+  deco(90, 8.1, -80, 130, 26, -40, 'leaf', 0x5d7280);
+  deco(60, 8.1, -120, 110, 34, -90, 'leaf', 0x4f6275);
+  deco(100, 8.1, -10, 125, 18, 40, 'leaf', 0x687d88);
+  // a pagoda: storeys between red eaves
+  deco(96, 8.1, -30, 104, 16, -22, 'panel', 0x3b3440);
   deco(94, 16, -32, 106, 17, -20, 'panel', TORII);
+  deco(96.5, 17, -29.5, 103.5, 24, -22.5, 'panel', 0x3b3440);
   deco(94, 24, -32, 106, 25, -20, 'panel', TORII);
+  deco(97, 25, -29, 103, 30, -23, 'panel', 0x3b3440);
 };
 
 /**

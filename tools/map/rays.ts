@@ -157,7 +157,8 @@ export class RayIndex {
         this.stamp[i] = id;
         const b = boxes[i];
         const limit = bestBox >= 0 ? bestT : maxDist;
-        const t = b.rotated ? rotatedHit(b, o, dir, limit) : aabbHit(b, o, dir, limit);
+        // (a prism — a wedge ramp — is not a plain box even when unturned: the game's test)
+        const t = b.rotated || b.prism ? rotatedHit(b, o, dir, limit) : aabbHit(b, o, dir, limit);
         if (t !== null && (bestBox < 0 || t < bestT)) {
           bestT = t;
           bestBox = i;

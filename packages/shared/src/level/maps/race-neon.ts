@@ -21,7 +21,7 @@
 //  17  the last chain: 17 m of air to the finish                              → FINISH
 import type { CourseData, P2 } from '../course/types';
 import { Pen } from '../course/pen';
-import { hopChain, surfRun, wallBeside } from '../course/sections';
+import { hopChain, landmark, surfRun, wallBeside } from '../course/sections';
 
 const PALETTE = {
   ground: 0x30364f,
@@ -38,7 +38,7 @@ const PALETTE = {
   portal: 0xff4fd8,
   pad: 0xffd23c,
   arrow: 0x9ffcff,
-  cloud: 0x3b3f70,
+  cloud: 0xa99be0,
   danger: 0xff2a6d,
   leaf: 0x2ee6a6,
   leafDark: 0x1b8f73,
@@ -99,10 +99,12 @@ export const neonDriftCourse = (): CourseData => {
     max: 13,
     turn: [0, 0, 10, 10, 10, 10, 10, 10, 0],
     size: [5, 5],
+    vary: true,
   });
   wallBeside(p, 2, 4, 11, [6, 34, 18]);
   wallBeside(p, 5, 7, 11, [6, 34, 18]);
-  p.face(90).move(10).stage();
+  p.face(90).move(10).stage(undefined, undefined, 'Steep flicks');
+  landmark(p, 60, 'tower', 'neon', 0x3a4160);
   // ---- 2: steep surf: flicks both ways, a turning transfer ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -123,7 +125,8 @@ export const neonDriftCourse = (): CourseData => {
   ]);
   p.move(12, -10).platform([12, 30]);
   block(p, 0, -28, 2, [16, 16], 3);
-  p.stage();
+  p.stage(undefined, undefined, 'Pillar weave');
+  landmark(p, -60, 'arch', 'neon', 0x3a4160);
   // ---- 3: a pillar weave on small pads, a launch pad, a narrow window ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -133,6 +136,7 @@ export const neonDriftCourse = (): CourseData => {
     max: 12.5,
     turn: [0, 28, -56, 56, -56, 56, -56, 28],
     size: [5, 5],
+    vary: true,
   });
   for (let k = 0; k < 7; k++) wallBeside(p, k, k + 1, k % 2 ? -5 : 5, [2.5, 26, 2.5], 13);
   p.move(9).platform([8, 12]).launch(32, 12, 1.5);
@@ -140,10 +144,12 @@ export const neonDriftCourse = (): CourseData => {
   p.window(5, [3.6, 4.2], [14, 16], -1);
   p.move(6, -1.5).platform([8, 10]);
   p.face(180).move(2).platform([10, 10]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the east blocks');
+  landmark(p, 60, 'falls', 'neon', 0x3a4160);
   // ---- 4: the portal to the east blocks ----
   p.portal([420, 330, -260]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Jetpack gap');
+  landmark(p, -60, 'tower', 'neon', 0x3a4160);
   // ---- 5: a jetpack gap (fuel cell first), a broken beam, drop strafes ----
   p.platform([8, 14]).jet(60);
   p.fuel();
@@ -164,7 +170,8 @@ export const neonDriftCourse = (): CourseData => {
     'jump',
   );
   block(p, -8, 28, 3, [14, 14]);
-  p.move(10).stage();
+  p.move(10).stage(undefined, undefined, 'Speed gate');
+  landmark(p, 60, 'arch', 'neon', 0x3a4160);
   // ---- 6: the speed gate: accelerate, clear a 16 m gap, booster rings ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -172,14 +179,16 @@ export const neonDriftCourse = (): CourseData => {
     first: 9,
     grow: 0.55,
     max: 14,
-    turn: [0, 5, 5, -5, -5, 5, 5, -5, -5, 0],
+    turn: [0, 10, 10, 10, 0, -12, -12, -12, 0, 0],
     size: [5.5, 5.5],
+    vary: true,
   });
   p.move(19.5, -2).platform([10, 10]);
   p.booster(24, 5, false);
   p.move(18, -1.6).booster(24, 4, true, [4, 4.5]);
   p.move(14, -6).platform([10, 22]);
-  p.stage();
+  p.stage(undefined, undefined, 'The spin');
+  landmark(p, -60, 'falls', 'neon', 0x3a4160);
   // ---- 7: a 90° surf spin ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -200,10 +209,11 @@ export const neonDriftCourse = (): CourseData => {
   ]);
   p.move(12, -10).platform([12, 30]);
   block(p, 4, 30, 2, [16, 14], 3);
-  p.stage();
+  p.stage(undefined, undefined, 'Behind the wall');
+  landmark(p, 60, 'tower', 'neon', 0x3a4160);
   // ---- 8: behind the wall to the right on small pads, a launch pad ----
   p.platform([8, 8], 'hop');
-  hopChain(p, { n: 8, first: 9, grow: 0.5, max: 13, turn: 12, size: [5, 5] });
+  hopChain(p, { n: 8, first: 9, grow: 0.5, max: 13, turn: 12, size: [5, 5], vary: true });
   wallBeside(p, 1, 3, 11, [6, 34, 18]);
   wallBeside(p, 4, 6, 11, [6, 34, 18]);
   p.face(
@@ -211,10 +221,12 @@ export const neonDriftCourse = (): CourseData => {
   );
   p.move(10).platform([10, 14]).launch(34, 12, 1.5);
   p.move(-4).platform([10, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the old town');
+  landmark(p, -60, 'arch', 'neon', 0x3a4160);
   // ---- 9: the portal to the old town ----
   p.portal([-120, 360, 420]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Narrow ramps');
+  landmark(p, 60, 'falls', 'neon', 0x3a4160);
   // ---- 10: steep narrow ramps, a speed gap, the last chain ----
   p.turnPad(p.heading === 0 ? 0 : -90, 12).platform([8, 10], 'strafe');
   surfRun(p, [
@@ -233,10 +245,12 @@ export const neonDriftCourse = (): CourseData => {
     { gap: 15, fall: 8, shift: -9, length: 45, drop: 9, height: 9, angle: 64, side: 'right' },
   ]);
   p.move(12, -10).platform([12, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the west towers');
+  landmark(p, -60, 'tower', 'neon', 0x3a4160);
   // ---- 11: the portal to the west towers: a pillar gauntlet, a jetpack gap, drop strafes ----
   p.portal([-380, 330, 330]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'The gauntlet');
+  landmark(p, 60, 'arch', 'neon', 0x3a4160);
   p.platform([8, 8], 'hop');
   hopChain(p, {
     n: 8,
@@ -245,6 +259,7 @@ export const neonDriftCourse = (): CourseData => {
     max: 12.5,
     turn: [0, 30, -60, 60, -60, 60, -60, 30],
     size: [5, 5],
+    vary: true,
   });
   for (let k = 0; k < 7; k++) wallBeside(p, k, k + 1, k % 2 ? -5 : 5, [2.5, 26, 2.5], 13);
   p.move(9).platform([8, 12]).jet(60);
@@ -260,7 +275,8 @@ export const neonDriftCourse = (): CourseData => {
     'jump',
   );
   block(p, -6, -28, 3, [16, 14], 3);
-  p.move(10).stage();
+  p.move(10).stage(undefined, undefined, 'Royal spin');
+  landmark(p, -60, 'falls', 'neon', 0x3a4160);
   // ---- 12: a royal spin: right onto a left-turning ramp, then back ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -281,7 +297,8 @@ export const neonDriftCourse = (): CourseData => {
   ]);
   p.move(12, -10).face(90).platform([16, 30]);
   block(p, 0, 30, 2, [16, 14], 3);
-  p.stage();
+  p.stage(undefined, undefined, 'Beams and window');
+  landmark(p, 60, 'tower', 'neon', 0x3a4160);
   // ---- 13: up and through: a launch pad, broken beams, a narrow window ----
   p.platform([8, 12]).launch(32, 12, 1.5);
   p.move(-4).platform([8, 10]);
@@ -293,11 +310,13 @@ export const neonDriftCourse = (): CourseData => {
   p.turn(-12).move(5).platform([6, 8], 'jump');
   p.window(5, [3.6, 4.2], [14, 16], -1);
   p.move(6, -1.5).platform([10, 12]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the tower tops');
+  landmark(p, -60, 'arch', 'neon', 0x3a4160);
   // ---- 14: the portal to the tower tops; the last chain: 17 m of air to the finish ----
   p.portal([330, 380, 420]);
-  p.move(-1).stage([12, 12]);
-  p.turnPad(-90, 12, 'strafe');
+  p.move(-1).stage([12, 12], 12, 'Tower-top surf');
+  landmark(p, 60, 'falls', 'neon', 0x3a4160);
+  p.turnPad(-90, 12).platform([8, 10], 'strafe');
   surfRun(p, [
     {
       entry: true,
@@ -316,7 +335,8 @@ export const neonDriftCourse = (): CourseData => {
   ]);
   p.move(12, -10).face(0).platform([16, 30]);
   block(p, 0, -30, 2, [16, 14], 3);
-  p.stage();
+  p.stage(undefined, undefined, 'The last chain');
+  landmark(p, -60, 'tower', 'neon', 0x3a4160);
   p.platform([8, 8], 'hop');
   hopChain(p, {
     n: 10,
@@ -326,8 +346,9 @@ export const neonDriftCourse = (): CourseData => {
     turn: [0, 8, 8, 8, 0, 0, -8, -8, -8, 0],
     rise: -0.4,
     size: [5, 5],
+    vary: true,
   });
-  p.move(20, -3).finish();
+  p.move(17.5, -3).finish();
   return p.course({
     name: 'Neon Drift',
     kind: 'race',
@@ -337,12 +358,14 @@ export const neonDriftCourse = (): CourseData => {
       top: 0x060a1c,
       horizon: 0x2a1d5a,
       ground: 0x120a2a,
-      sun: { dir: [-0.4, 0.42, -0.6], color: 0xf2f0ff, sizeDeg: 11 },
+      sun: { dir: [-0.4, 0.42, -0.6], color: 0xf2f0ff, sizeDeg: 5 },
       sunLight: 0xb8c4ff,
       stars: true,
       fog: { near: 120, far: 520 },
       ambient: 0.85,
     },
+    roomMat: 'panel',
+    surfColors: [0xb13cf0, 0x22c8e8, 0xff3caa],
     killY: 60,
     floors: [],
     autoFloors: { below: 22, pad: 30 },

@@ -42,7 +42,6 @@ const PAD = 0xffc15a;
 
 // sunset palette
 const SAND = 0xd8b27a;
-const SAND_DARK = 0xb8945f;
 const CLAY = 0xb5653b;
 const SHADE = 0x3a2a3f;
 const CACTUS = 0x5d7a45;
@@ -65,6 +64,8 @@ export const CANYON_RELAY = {
   killY: -6,
   gorge: { x0: 22, x1: 98, z0: 42, z1: 58 },
   camp: { x0: 45, x1: 75, z0: 4, z1: 16 },
+  /** the trench across each mesa (north-east quarter; floor 1 m below the top, steps at x1) */
+  trench: { x0: 62, x1: 74, z0: 33, z1: 37 },
   /** the relay rock in the middle of the gorge (top y 1) */
   relay: { x0: 55, x1: 65, z0: 44, z1: 56, top: 1 },
   spire: { top: 9 },
@@ -190,20 +191,28 @@ export const buildCanyonRelay = (): LevelDef => {
   quad(77, -1, 4, 100, 0, 18, 'sand', { color: SAND });
   quad(100, -1, 4, 114, 0, 36, 'sand', { color: SAND });
   // basin (bomb site) floor, y -3, from under the canyon ramp to the middle line
-  quad(100, BY - 1, 36, 114, BY, MZ, 'sand', { color: SAND_DARK });
+  quad(100, BY - 1, 36, 114, BY, MZ, 'sand', { color: SAND });
   // the gorge's floor far below
   quad(60, GF - 1, 42, 98, GF, MZ, 'sand', { color: 0xa9825a });
 
   // ======================= the mesa =======================
   rock(60, GF - 1, 18, 92, M - 1, 42);
-  quad(60, M - 1, 18, 92, M, 42, 'sand', { color: SAND });
+  // the sand cap, with a trench (1 m deep, rock floor) across the middle of the mesa: two
+  // halves either side of the laser lane (x 58..62 stays level), steps up at the outer ends
+  const T = C.trench;
+  quad(60, M - 1, 18, 92, M, T.z0, 'sand', { color: SAND });
+  quad(60, M - 1, T.z1, 92, M, 42, 'sand', { color: SAND });
+  quad(60, M - 1, T.z0, T.x0, M, T.z1, 'sand', { color: SAND });
+  quad(T.x1 + 2, M - 1, T.z0, 92, M, T.z1, 'sand', { color: SAND });
+  quad(T.x1, M - 1, T.z0, T.x1 + 1, M - 0.67, T.z1, 'sand', { color: SAND });
+  quad(T.x1 + 1, M - 1, T.z0, T.x1 + 2, M - 0.33, T.z1, 'sand', { color: SAND });
 
   // ======================= boundary cliffs (tall: nobody climbs out) =======================
-  rock(60, -1, -6, 124, 14, 4); // north, behind the camp
-  rock(77, -1, 4, 124, 14, 8); // north, along the outer path
+  rock(60, 0, -6, 124, 14, 4); // north, behind the camp
+  rock(77, 0, 4, 124, 14, 8); // north, along the outer path
   rock(114, BY - 1, 8, 124, 14, MZ); // east, along the canyon and the basin
   // rock between the mesa and the canyon (the passage cuts through it at z 28..32)
-  rock(92, -1, 14, 100, 9.5, 28);
+  rock(92, 0, 14, 100, 9.5, 28);
   rock(92, GF - 1, 32, 100, 9.5, 42);
   // the gorge's east end wall, between the gorge and the basin
   rock(98, GF - 1, 42, 100, 9.5, MZ);
@@ -252,30 +261,38 @@ export const buildCanyonRelay = (): LevelDef => {
   // ======================= mesa cover =======================
   const boulder = (x0: number, z0: number, x1: number, z1: number, h: number) =>
     rock(x0, M, z0, x1, M + h, z1);
-  boulder(79, 36, 82, 39, 2.8); // full
+  boulder(77.5, 35.5, 80.5, 38.5, 2.8); // full
   boulder(64, 39.8, 67, 41.8, 1.2); // half, on the edge
   boulder(75, 39.5, 78, 41.8, 2.6); // full, on the edge
   boulder(88.5, 37, 91.5, 40, 2.8); // beside the bridge
+  // waist-high rocks along the edge either side of the bridge head: the way on is the bridge
+  boulder(78, 38, 83, 42, 1.2);
+  boulder(87, 38, 92, 42, 1.2);
   boulder(82, 25, 85, 27.5, 1.2); // half
   boulder(68, 22.5, 70.5, 24.5, 1.2); // half, beside the spire ramp
+  boulder(73, 18.2, 75, 19.6, 1.1); // waist-high, by the camp wall
+  boulder(66, 29.8, 69, 31.2, 1.1); // waist-high, behind the trench
+  // an outcrop in two tiers (climb the low one to reach the high one)
+  boulder(80, 24.5, 81.5, 27.5, 1.2);
+  boulder(81.5, 24.5, 83.5, 27.5, 2.4);
 
   // ======================= bridges (x 83..87) =======================
   rock(83, -2, 42, 87, M - 1, MZ);
   quad(83, M - 1, 42, 87, M, MZ, 'sand', { color: SAND });
-  // knee-high rims (step over them only with a jump)
-  quad(83, M, 42, 83.4, M + 0.5, MZ, 'rock', { color: 0xa0705a });
-  quad(86.6, M, 42, 87, M + 0.5, MZ, 'rock', { color: 0xa0705a });
+  // waist-high parapets (hop over them only with a jump; bots keep to the middle)
+  quad(83, M, 42, 83.4, M + 1.15, MZ, 'rock', { color: 0xa0705a });
+  quad(86.6, M, 42, 87, M + 1.15, MZ, 'rock', { color: 0xa0705a });
   // the arch's legs, far down
   rock(83.5, GF, 42, 86.5, -2, 44);
 
   // ======================= the relay rock =======================
   const R = C.relay;
-  rock(60, GF - 1, R.z0, R.x1, R.top - 1, MZ);
+  rock(60, GF, R.z0, R.x1, R.top - 1, MZ);
   quad(60, R.top - 1, R.z0, R.x1, R.top, MZ, 'sand', { color: SAND });
 
   // ======================= canyon: fins, dip, basin =======================
-  fin(110.5, 19, 8, 1.5, 30, -1); // from the east wall, pointing south-west
-  fin(103, 26, 8, 1.5, -30, -1); // from the west wall, screening the passage
+  fin(110.5, 19, 8, 1.5, 30, 0); // from the east wall, pointing south-west
+  fin(103, 26, 8, 1.5, -30, 0); // from the west wall, screening the passage
   quad(109, 0, 13, 111, 1.2, 14.5, 'rock', { color: 0x94634a }); // half cover
   for (const n of SIGNS)
     for (const s of SIGNS) {
@@ -285,7 +302,7 @@ export const buildCanyonRelay = (): LevelDef => {
   // the natural arch over the basin
   rock(100, 4.5, 49, 114, 6.5, MZ);
   // site cover
-  rock(110, BY, 43.5, 112.5, BY + 2.5, 45.5); // full
+  rock(110, BY, 42.4, 112.5, BY + 2.5, 44.9); // full (outside the site's outline)
   rock(103, BY, 46, 105.5, BY + 1.2, 48); // half
   rock(100, BY, 48, 101.5, BY + 2.5, MZ); // full, against the end wall
 
@@ -516,32 +533,32 @@ const decorate = (
     decoQuad(x - 1, y + h * 0.3, z - 0.25, x - 0.35, y + h * 0.4, z + 0.25, 'leaf', CACTUS);
     decoQuad(x - 1, y + h * 0.35, z - 0.25, x - 0.75, y + h * 0.65, z + 0.25, 'leaf', CACTUS);
   };
-  cactus(70, 14, -2, 3.2);
-  cactus(96, 14, 2, 2.6);
-  cactus(119, 14, 20, 3);
-  cactus(118, 14, 40, 2.4);
+  cactus(70, 14.1, -2, 3.2);
+  cactus(96, 14.1, 2, 2.6);
+  cactus(119, 14.1, 20, 3);
+  cactus(118, 14.1, 40, 2.4);
   cactus(96, 9.5, 20, 2.2);
   cactus(78, C.gorgeFloor, 46, 2.8);
   const shrub = (x: number, y: number, z: number, w: number) =>
     decoQuad(x - w, y, z - w, x + w, y + w * 0.9, z + w, 'leaf', SHRUB);
-  shrub(85, 14, 1, 1.1);
-  shrub(117, 14, 30, 0.9);
+  shrub(85, 14.1, 1, 1.1);
+  shrub(117, 14.1, 30, 0.9);
   shrub(94, 9.5, 36, 0.8);
-  shrub(70, C.gorgeFloor, 44, 1.2);
+  shrub(74, C.gorgeFloor, 44.5, 1.2);
   shrub(92, C.gorgeFloor, 47, 0.9);
   // gorge floor: a dry riverbed and fallen rocks
-  decoQuad(60, C.gorgeFloor + 0.01, 48.5, 98, C.gorgeFloor + 0.04, MZ, 'sand', 0x8f6a4a);
+  decoQuad(65.2, C.gorgeFloor + 0.01, 48.5, 98, C.gorgeFloor + 0.04, MZ, 'sand', 0x8f6a4a);
   decoQuad(66, C.gorgeFloor, 43, 70, C.gorgeFloor + 2.2, 46, 'rock', 0x7a4636);
   decoQuad(88, C.gorgeFloor, 44, 91, C.gorgeFloor + 1.5, 47.5, 'rock', 0x7a4636);
 
   // far scenery: distant mesas and buttes in the haze, and the plain beyond the cliffs
-  decoQuad(60, 13.9, -60, 200, 14, 4, 'sand', 0xc99d68);
-  decoQuad(114, 13.9, 4, 200, 14, MZ, 'sand', 0xc99d68);
-  decoQuad(80, 14, -110, 140, 42, -80, 'rock', 0xa45a3a);
-  decoQuad(150, 14, -40, 185, 30, 10, 'rock', 0xb86a42);
-  decoQuad(170, 14, 20, 200, 55, MZ, 'rock', 0x9c5438);
-  decoQuad(60, 14, -170, 95, 62, -140, 'rock', 0x8e4c34);
-  decoQuad(120, 14, -150, 135, 80, -135, 'rock', SHADE);
+  decoQuad(60, 14, -60, 200, 14.1, 4, 'sand', 0xc99d68);
+  decoQuad(114, 14, 4, 200, 14.1, MZ, 'sand', 0xc99d68);
+  decoQuad(80, 14.1, -110, 140, 42, -80, 'rock', 0xa45a3a);
+  decoQuad(150, 14.1, -40, 185, 30, 10, 'rock', 0xb86a42);
+  decoQuad(170, 14.1, 20, 200, 55, MZ, 'rock', 0x9c5438);
+  decoQuad(60, 14.1, -170, 95, 62, -140, 'rock', 0x8e4c34);
+  decoQuad(120, 14.1, -150, 135, 80, -135, 'rock', SHADE);
 };
 
 /**
@@ -642,9 +659,9 @@ const waypoints = (): WaypointDef[] => {
   add('mesaMid', 84, M, 34.5);
   add('bridge', 85, M, 40.5);
   add('bridgeMid', 85, M, MZ);
-  add('edgeE', 74, M, 34);
-  add('spineS', 65, M, 33);
-  add('midS', MX, M, 33);
+  add('edgeE', 76.5, M, 31);
+  add('spineS', 65, M, 32.3);
+  add('midS', MX, M, 32.3);
   add('edge', MX, M, 39.5);
   add('relay', MX, CANYON_RELAY.relay.top, MZ);
   // the spire

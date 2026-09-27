@@ -298,5 +298,42 @@ export const subtractHoles = (rect: Rect, holes: Rect[]): Rect[] => {
   return pieces;
 };
 
+/**
+ * A solid ramp: a right-angle wedge (BoxDef.prism) whose slope runs from (from, yFrom) to
+ * (to, yTo) along `axis`, `width` wide, centred on `across`. Unlike a tilted slab
+ * (LevelBuilder.ramp) it stands flat on the lower floor and ends flush against the ledge it
+ * climbs to, so it never pokes through either (the clipping check, level/course/overlap.ts).
+ */
+export const wedgeRamp = (
+  axis: 'x' | 'z',
+  from: number,
+  to: number,
+  yFrom: number,
+  yTo: number,
+  across: number,
+  width: number,
+  opts: Omit<BoxDef, 'c' | 'h' | 'q' | 'prism'> = {},
+): BoxDef => {
+  const lo = Math.min(yFrom, yTo);
+  const hi = Math.max(yFrom, yTo);
+  const high = yTo > yFrom ? to : from;
+  const low = yTo > yFrom ? from : to;
+  // The ridge (the tall side) lies along local x at local z = prism × h.z. The wedge is always
+  // turned around y — a quarter turn (local z → world +x) or, along z, a half turn (local z →
+  // world -z); the maps' measured layouts were made that way (tools/map/rays.ts now also tests
+  // unturned prisms as prisms).
+  const up = high > low ? 1 : -1;
+  const mid = (from + to) / 2;
+  const h = v3(width / 2, (hi - lo) / 2, Math.abs(to - from) / 2);
+  return {
+    c: axis === 'z' ? v3(across, (lo + hi) / 2, mid) : v3(mid, (lo + hi) / 2, across),
+    h,
+    prism: axis === 'z' ? -up : up,
+    q: qFromAxisAngle(v3(0, 1, 0), axis === 'z' ? Math.PI : Math.PI / 2),
+    mat: 'floor',
+    ...opts,
+  };
+};
+
 /** Mirror a level half across the plane x = 0 (swap teams). Used by symmetric maps. */
 export const mirrorX = (p: Vec3): Vec3 => v3(-p.x, p.y, p.z);

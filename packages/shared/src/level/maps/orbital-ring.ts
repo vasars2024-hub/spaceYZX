@@ -15,8 +15,8 @@
 //   SPOKES                        6 m corridors: north / south from the spawns to the ring,
 //        east / west from the ring to the sites, each with a gate in the ring's wall
 //   OUTER CORRIDORS               the long way round: from each spawn's side door along the
-//        station's edge into the sites, with a zip-rail, a gate, a tight corner and windows
-//        onto the planet
+//        station's edge into the sites, with a zip-rail, a gate and an alcove on each leg,
+//        doorway frames between the gates, a tight corner and windows onto the planet
 //   RIFT PORTALS                  at the back of each site: walk into A's and you come out of
 //        B's (and back) — the fastest rotation on the map, and the loudest
 //
@@ -276,6 +276,10 @@ export const buildOrbitalRing = (): LevelDef => {
     room(mx(s, SP.x1 + 1), 0, 8, mx(s, 110), 6, 14, outer);
     room(mx(s, 104), 0, 8, mx(s, 110), 6, ST.z0 - 1, outer);
     door(mx(s, 105), 0, ST.z0 - 1, mx(s, 109), 4.5, ST.z0);
+    // an alcove off each leg: the long leg's inner side before its gate, the leg down to the
+    // site's inner side past its gate (a corner to clear, a spot to hold)
+    room(mx(s, 84), 0, 14, mx(s, 89), 6, 17, outer);
+    room(mx(s, 101), 0, 32, mx(s, 104), 6, 37, outer);
     // windows onto the planet (skyglass fills them below)
     door(mx(s, 78), 2, 7, mx(s, 100), 5.5, 8);
     door(mx(s, 110), 2, 16, mx(s, 111), 5.5, 38);
@@ -286,7 +290,10 @@ export const buildOrbitalRing = (): LevelDef => {
   // ======================= octagons: cut corners =======================
   const ringWall = { color: RING_WALL.color };
   chamfer(RO, 1, 0, RH, 'hull', ringWall);
-  chamfer(D, 1, RH, O.dome.top, 'skyglass');
+  // the dome's cut corners: glass above the ring's ceiling slab (y RH..RH + 1); in that slab
+  // they are ceiling too (same look), so the glass never cuts through it
+  chamfer(D, 1, RH, RH + 1, 'hull');
+  chamfer(D, 1, RH + 1, O.dome.top, 'skyglass');
   chamfer(PR, 1, PY, -1, 'engine', { color: BASE_WALL.color });
   // the hole: floor fills its square's corners
   chamfer(H, H * Math.SQRT2 - H + 0.01, -1, 0, 'plate', { color: CORE_FLOOR.color });
@@ -305,10 +312,14 @@ export const buildOrbitalRing = (): LevelDef => {
   }
 
   // ======================= core detail =======================
-  // the ring's inner edge: walls on the diagonals (a 4 m door in each), pillars at the corners
+  // the ring's inner edge: walls on the diagonals (a 4 m door in each), pillars at the corners;
+  // each wall runs from the door (2 m off the middle) to the corner pillar's nearest edge (the
+  // pillar is square to the axes, so turned 45° to the wall: its tip is 0.8 √2 m before the
+  // corner)
+  const wallEnd = (O.ring.in - 0.5) * OCT - 0.8 * Math.SQRT2;
   for (const k of [1, 3, 5, 7])
-    for (const a of [-5.25, 5.25])
-      side(k, O.ring.in - 0.5, a, 3.25, 0.5, 0, RH, 'panel', {
+    for (const a of [-1, 1])
+      side(k, O.ring.in - 0.5, (a * (2 + wallEnd)) / 2, (wallEnd - 2) / 2, 0.5, 0, RH, 'panel', {
         color: 0x5a5f78,
         trim: VIOLET,
       });
@@ -354,14 +365,25 @@ export const buildOrbitalRing = (): LevelDef => {
     noCollide: true,
   });
   deco(lo(H), PY + 0.01, lo(H), hi(H), PY + 0.05, hi(H), 'trim', { color: 0x1a4a44 });
-  // the core platform's edge: an octagon of trim on the floor
-  for (let k = 0; k < 8; k++)
-    side(k, O.core, 0, O.core * OCT, 0.08, 0.01, 0.05, 'trim', { color: VIOLET, noCollide: true });
+  // the core platform's edge: an octagon of trim on the floor (east and west it stops at the
+  // console banks, 3 m either side of the middle)
+  const edge = O.core * OCT;
+  for (let k = 0; k < 8; k++) {
+    const stripe = (along: number, half: number) =>
+      side(k, O.core, along, half, 0.08, 0.01, 0.05, 'trim', { color: VIOLET, noCollide: true });
+    if (k % 4 !== 0) stripe(0, edge);
+    else for (const a of [-1, 1]) stripe((a * (edge + 3)) / 2, (edge - 3) / 2);
+  }
 
   // ======================= ring and basement cover =======================
   for (const k of [1, 3, 5, 7]) {
     // half-height crates against the outer wall of each diagonal leg
     for (const a of [-7, 7]) side(k, 26.2, a, 1, 1, 0, 1.2, 'crate');
+    // the floor between the core platform and the ring's inner wall: a full-height crate on
+    // the diagonal just off the platform's edge (it breaks the line from the ring's diagonal
+    // door across the hole) and a half-height one against the wall either side of that door
+    side(k, O.core + 1.8, 0, 1.2, 1.2, 0, 2.5, 'crate', { trim: VIOLET });
+    for (const a of [-4.6, 4.6]) side(k, O.ring.in - 1.7, a, 1, 0.7, 0, 1.2, 'crate');
   }
   for (const s of SIGNS)
     for (const n of NS) {
@@ -370,23 +392,28 @@ export const buildOrbitalRing = (): LevelDef => {
     }
 
   // ======================= ramps: stairwells and pit tunnels =======================
+  // landings and ramps are the stairwells' floor plate: a ramp slab's ends sink into its
+  // landing and the floor below, so they must look the same as those (one solid)
+  const stairFloor = { mat: RING_FLOOR.mat };
   for (const s of SIGNS)
     for (const n of NS) {
       // beside the north / south spoke: landing, ramp down along x, fill under it
-      box(mx(s, 64), BY, mz(n, 27.5), mx(s, 66), 0, mz(n, 31.5), 'panel');
-      b.ramp('x', mx(s, 66), mx(s, 74), 0, BY, mz(n, 29.5), 4, { mat: 'grate' });
+      box(mx(s, 64), BY, mz(n, 27.5), mx(s, 66), 0, mz(n, 31.5), RING_FLOOR.mat);
+      b.ramp('x', mx(s, 66), mx(s, 74), 0, BY, mz(n, 29.5), 4, stairFloor);
       fillUnder(b, 'x', mx(s, 66), mx(s, 74), 0, BY, mz(n, 29.5), 4);
       // beside the east / west spoke: the same turned along z
-      box(mx(s, 88.5), BY, mz(n, 54), mx(s, 92.5), 0, mz(n, 56), 'panel');
-      b.ramp('z', mz(n, 54), mz(n, 46), 0, BY, mx(s, 90.5), 4, { mat: 'grate' });
+      box(mx(s, 88.5), BY, mz(n, 54), mx(s, 92.5), 0, mz(n, 56), RING_FLOOR.mat);
+      b.ramp('z', mz(n, 54), mz(n, 46), 0, BY, mx(s, 90.5), 4, stairFloor);
       fillUnder(b, 'z', mz(n, 54), mz(n, 46), 0, BY, mx(s, 90.5), 4);
     }
+  // pit tunnel ramps: the basement's floor plate (their ends sink into the floors they join)
+  const tunnelFloor = { mat: BASE_FLOOR.mat, color: BASE_FLOOR.color };
   for (const n of NS) {
-    b.ramp('z', mz(n, 36), mz(n, 46), BY, PY, MID, 4, { mat: 'grate' });
+    b.ramp('z', mz(n, 36), mz(n, 46), BY, PY, MID, 4, tunnelFloor);
     fillUnder(b, 'z', mz(n, 36), mz(n, 46), BY, PY, MID, 4);
   }
   for (const s of SIGNS) {
-    b.ramp('x', mx(s, 84), mx(s, 74), BY, PY, MID, 4, { mat: 'grate' });
+    b.ramp('x', mx(s, 84), mx(s, 74), BY, PY, MID, 4, tunnelFloor);
     fillUnder(b, 'x', mx(s, 84), mx(s, 74), BY, PY, MID, 4);
   }
 
@@ -414,6 +441,16 @@ export const buildOrbitalRing = (): LevelDef => {
       box(X(104), 0, Z(27), X(105.5), RH, Z(29), 'hull', { trim: HAZARD });
       box(X(108.5), 0, Z(27), X(110), RH, Z(29), 'hull', { trim: HAZARD });
       box(X(105.5), 4.5, Z(27), X(108.5), RH, Z(29), 'hull', { trim: HAZARD });
+      // doorway frames between the gates, ~11 m apart (posts against the walls, a beam under
+      // the ceiling; 4.4 m wide, 5 m high: the zip-rail at 3.5 m runs through them)
+      for (const fx of [80, 102]) {
+        box(X(fx - 0.5), 0, Z(8), X(fx + 0.5), 5, Z(8.8), 'pillar', { trim: WHITE });
+        box(X(fx - 0.5), 0, Z(13.2), X(fx + 0.5), 5, Z(14), 'pillar', { trim: WHITE });
+        box(X(fx - 0.5), 5, Z(8), X(fx + 0.5), RH, Z(14), 'pillar');
+      }
+      box(X(104), 0, Z(17), X(104.8), 5, Z(18), 'pillar', { trim: WHITE });
+      box(X(109.2), 0, Z(17), X(110), 5, Z(18), 'pillar', { trim: WHITE });
+      box(X(104), 5, Z(17), X(110), RH, Z(18), 'pillar');
       // half-height cover, staggered
       box(X(81), 0, Z(8), X(83), 1.2, Z(10), 'crate');
       box(X(96), 0, Z(12), X(98), 1.2, Z(14), 'crate');
@@ -427,7 +464,8 @@ export const buildOrbitalRing = (): LevelDef => {
     for (const n of NS) {
       const Z = (z: number) => mz(n, z);
       box(X(101), 0, Z(49), X(104), 2.5, Z(52), 'crate', { trim: SITE }); // full
-      box(X(113), 0, Z(51), X(115), 1.2, Z(53), 'crate'); // half
+      // half, just outside the plant area's outline (its corner is at 115, 52)
+      box(X(113), 0, Z(50), X(115), 1.2, Z(52), 'crate');
       box(X(114), 0, Z(44), X(117), 2.5, Z(47), 'crate', { trim: SITE }); // full, back corner
       // a screen inside the outer corridor's door: no line runs corridor → site → corridor
       box(X(105), 0, Z(44.5), X(109), 2.5, Z(45.5), 'panel', { trim: SITE });
@@ -741,6 +779,8 @@ const decorate = (
       light(mx(s, 107), 5, mz(n, 20), WHITE, 12, 0.9);
       light(mx(s, 107), 4, mz(n, 28), AMBER, 8, 1.1); // the gate
       light(mx(s, 107), 5, mz(n, 37), WHITE, 12, 0.9);
+      light(mx(s, 86.5), 4.5, mz(n, 15.5), AMBER, 6, 0.8); // alcoves
+      light(mx(s, 102.5), 4.5, mz(n, 34.5), AMBER, 6, 0.8);
       light(mx(s, 70), 1.5, mz(n, 29.5), WHITE, 9, 0.8); // stairwell
       light(mx(s, 90.5), 1.5, mz(n, 50), WHITE, 9, 0.8); // stairwell
       // hazard stripes on the gate floors
@@ -778,11 +818,11 @@ const decorate = (
     deco(st.min.x, y0, st.min.z, st.min.x + w, y1, st.max.z, 'trim', { color: SITE });
     deco(st.max.x - w, y0, st.min.z, st.max.x, y1, st.max.z, 'trim', { color: SITE });
   }
-  // launch pad plates
+  // launch pad plates (the pit's pads lie on the hole's floor marking, y PY + 0.01..0.05)
   for (const p of pads) {
     deco(
       p.min.x + 0.1,
-      p.min.y + 0.01,
+      p.min.y + (p.min.y === PY ? 0.05 : 0.01),
       p.min.z + 0.1,
       p.max.x - 0.1,
       p.min.y + 0.08,

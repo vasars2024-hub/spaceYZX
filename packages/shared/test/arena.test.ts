@@ -102,13 +102,11 @@ describe('Arena map', () => {
   });
 
   it('keeps every ramp at 30° or less, and has upper ground along both sides', () => {
-    const tilted = DEF.boxes.filter((b) => b.q);
-    expect(tilted.length).toBe(4 * PITS.length);
-    for (const b of tilted) {
-      const q = b.q!;
-      const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
-      expect((Math.acos(Math.min(1, upY)) * 180) / Math.PI).toBeLessThanOrEqual(30);
-    }
+    // the ramps are solid wedges (prisms): the slope is their height over their run
+    const ramps = DEF.boxes.filter((b) => b.prism !== undefined);
+    expect(ramps.length).toBe(4 * PITS.length);
+    for (const b of ramps)
+      expect((Math.atan2(b.h.y, b.h.z) * 180) / Math.PI).toBeLessThanOrEqual(30);
     for (const pit of PITS)
       for (const s of [-1, 1]) {
         const top = v3(0, 6, pit.center.z + s * 9.5);

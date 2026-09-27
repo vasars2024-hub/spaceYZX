@@ -28,7 +28,13 @@
 import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
 import { qFromAxisAngle } from '../../math/quat';
-import { LevelBuilder, shellAround, type OpenVolume, type SurfaceStyle } from '../builder';
+import {
+  LevelBuilder,
+  shellAround,
+  type OpenVolume,
+  type SurfaceStyle,
+  wedgeRamp,
+} from '../builder';
 import type {
   BoxDef,
   LevelDef,
@@ -224,6 +230,8 @@ export const buildSplitDeck = (): LevelDef => {
   }
 
   // ======================= ramps (≤ 27°: full sprint speed) =======================
+  // tilted slabs, or solid wedges where a slab's ends would poke through a floor or wall of
+  // another look (the clipping check)
   const DRX = (DR.x0 + DR.x1) / 2;
   const BCX = (BC.x0 + BC.x1) / 2;
   const ramps: [
@@ -235,16 +243,18 @@ export const buildSplitDeck = (): LevelDef => {
     across: number,
     width: number,
     mat: Material,
+    solid: boolean,
   ][] = [
-    ['x', 46, 34, 0, H, 10.5, 5, 'plate'], // Cyan → B
-    ['x', 74, 86, 0, D, 10.5, 5, 'plate'], // Cyan → A
-    ['z', 48, 60, D, 0, 80.5, 7, 'grate'], // atrium ↔ gantry
-    ['z', 77, 65, 0, D, DRX, DR.x1 - DR.x0, 'grate'], // east lane ↔ deck run
-    ['z', 65, 53, 0, H, 39, 8, 'grate'], // stairs ↔ stairwell
-    ['z', 77, 65, 0, H, BCX, BC.x1 - BC.x0, 'plate'], // west lane ↔ basement
+    ['x', 46, 34, 0, H, 10.5, 5, 'plate', false], // Cyan → B
+    ['x', 74, 86, 0, D, 10.5, 5, 'plate', false], // Cyan → A
+    ['z', 48, 60, D, 0, 80.5, 7, 'grate', true], // atrium ↔ gantry
+    ['z', 77, 65, 0, D, DRX, DR.x1 - DR.x0, 'grate', false], // east lane ↔ deck run
+    ['z', 65, 53, 0, H, 39, 8, 'grate', true], // stairs ↔ stairwell
+    ['z', 77, 65, 0, H, BCX, BC.x1 - BC.x0, 'plate', true], // west lane ↔ basement
   ];
-  for (const [axis, from, to, y0, y1, across, width, mat] of ramps) {
-    b.ramp(axis, from, to, y0, y1, across, width, { mat });
+  for (const [axis, from, to, y0, y1, across, width, mat, solid] of ramps) {
+    if (solid) b.boxes.push(wedgeRamp(axis, from, to, y0, y1, across, width, { mat }));
+    else b.ramp(axis, from, to, y0, y1, across, width, { mat });
     // glowing nosings every 2 m (stair edges that read at a glance)
     const n = Math.floor(Math.abs(to - from) / 2);
     for (let i = 1; i < n; i++) {
@@ -266,16 +276,12 @@ export const buildSplitDeck = (): LevelDef => {
       );
     }
   }
-  // the gantry platform (A deck level) and the fill under its ramp (a wedge too low to crouch
-  // into)
+  // the gantry platform (A deck level; its ramp is a solid wedge: nothing to crouch under)
   box(77, 0, 41, 84, D, 48, 'grate', { trim: CYAN });
-  box(77, 0, 48, 84, 3.9, 52, 'hull');
-  box(77, 0, 52, 84, 1.9, 56, 'hull');
-  box(77, 0, 56, 84, 0.9, 58, 'hull');
   // kick-rail along the gantry's atrium edge (step over it to drop), railing posts
   box(76.9, D, 41.3, 77.1, D + 0.6, 47.7, 'pillar');
   for (let z = 42; z < 48; z += 2.9)
-    box(76.9, D, z, 77.1, D + 1.1, z + 0.12, 'pillar', { noCollide: true });
+    box(76.9, D, z, 77.1, D + 1.05, z + 0.12, 'pillar', { noCollide: true });
   box(76.9, D + 1.05, 41.3, 77.1, D + 1.15, 47.7, 'trim', { color: 0x2f6f8a, noCollide: true });
 
   // ======================= gates (open doorway frames) =======================
@@ -310,7 +316,7 @@ export const buildSplitDeck = (): LevelDef => {
     lights.push({ pos: v3(cx, y + h - 0.6, cz), color: AMBER, radius: 6, intensity: 0.9 });
   };
   frame(MC.x0 + 1.5, 61.8, MC.x0 + 6.5, 63.2, 0, 4, ORANGE); // mid → atrium
-  frame(DR.x0 + 3.5, 76.8, DR.x1 - 3.5, 78.2, 0, 4, ORANGE); // east lane → deck run
+  frame(DR.x0 + 3.5, 77, DR.x1 - 3.5, 78.2, 0, 4, ORANGE); // east lane → deck run (off the ramp)
   frame(BC.x0 + 1.5, 76.8, BC.x1 - 1.5, 78.2, 0, 3.5, ORANGE); // west lane → basement
   frame(36, 64.6, 42, 65.4, 0, 4, ORANGE); // stairs
   frame(C.x0 + 2.5, 34.8, C.x1 - 0.5, 36.2, 0, 3.5, CYAN); // connector → atrium
@@ -319,8 +325,10 @@ export const buildSplitDeck = (): LevelDef => {
   // Cyan spawn: two crates screen the doors
   box(49, 0, 13.5, 51, 1.2, 15.5, 'crate', { trim: CYAN });
   box(62, 0, 13.5, 64, 1.2, 15.5, 'crate', { trim: CYAN });
-  // connector: a console in the middle, a container by the atrium end (tight corner)
+  // connector: a console in the middle, a pillar beside it (the lane kinks round them to the
+  // east wall), a container by the atrium end (tight corner)
   box(C.x0 + 0.1, 0, 24, C.x0 + 3.5, 1.2, 26, 'panel', { trim: CYAN });
+  box(C.x0 + 3.6, 0, 26.6, C.x0 + 5.2, 5, 28.2, 'pillar', { trim: CYAN });
   box(C.x0 + 0.1, 0, 30, C.x0 + 2.5, 2.5, 34, 'crate');
   // atrium: containers in the corners, consoles along the hole, a low barrier by the gate
   box(44.1, 0, 44, 46.5, 2.5, 48, 'crate', { trim: WHITE });
@@ -348,21 +356,27 @@ export const buildSplitDeck = (): LevelDef => {
   box(102, D + 2.5, 26.5, 105, D + 5, 29.5, 'crate', { trim: WHITE });
   box(86, D, 33, 90, D + 1.2, 34.5, 'panel', { trim: CYAN });
   box(78, D, 14.1, 81, D + 2.5, 17, 'crate');
+  // + waist-high crates to fight over the site from (clear of the bots' paths)
+  box(95.5, D, 22, 98.5, D + 1.2, 23.2, 'crate');
+  box(86, D, 27, 89, D + 1.2, 28.2, 'crate');
   // deck run: staggered containers (no line down the whole run)
   box(DR.x0 + 0.1, D, 50, DR.x0 + 4, D + 2.5, 54, 'crate');
   box(DR.x1 - 4, D, 57, DR.x1 - 0.1, D + 2.5, 61, 'crate', { trim: ORANGE });
   box(DR.x1 - 3, D, 43, DR.x1 - 1, D + 1.2, 47, 'panel');
-  // mid corridor: staggered cover
+  // mid corridor: staggered cover, a pillar in the middle (the lane kinks round it)
   box(MC.x1 - 3, 0, 68, MC.x1 - 0.1, 1.2, 71, 'crate');
   box(MC.x0 + 0.1, 0, 73, MC.x0 + 3, 2.5, 76, 'crate', { trim: ORANGE });
+  box(MC.x0 + 4.2, 0, 71.8, MC.x0 + 5.8, 5, 73.4, 'pillar', { trim: ORANGE });
   // stairs landing
   box(35.1, 0, 68.5, 38, 1.2, 70.9, 'panel');
-  // west lane
+  // west lane: a wall jog off the south wall and the low crate across from it make a chicane
   box(28, 0, 83, 31, 2.5, 85.9, 'crate', { trim: ORANGE });
   box(35, 0, 84, 37, 1.2, 85.9, 'crate');
-  // east lane
+  box(36.5, 0, 78, 38, 5, 80.6, 'hull', { trim: ORANGE });
+  // east lane: a wall jog off the north wall, halfway along
   box(85, 0, 83.5, 88, 2.5, 85.9, 'crate', { trim: ORANGE });
   box(83, 0, 78.1, 85, 1.2, 80, 'crate');
+  box(90.5, 0, 83.4, 92, 5, 86, 'hull', { trim: ORANGE });
   // B hold (B site): a container stack, a crate row, consoles, a machinery block
   box(18, H, 22, 24, H + 3, 26, 'crate', { trim: AMBER });
   box(19, H + 3, 22.5, 23, H + 5.5, 25.5, 'crate');
@@ -628,6 +642,15 @@ const fixtures = (b: LevelBuilder, lights: LightDef[]): void => {
     deco(x0, y + 0.02, z - 0.06, x1, y + 0.1, z + 0.06, 'trim', { color });
   const edgeZ = (z0: number, z1: number, y: number, x: number, color: number) =>
     deco(x - 0.06, y + 0.02, z0, x + 0.06, y + 0.1, z1, 'trim', { color });
+  /** the same strip lying on a ramp along a wall: 12 m of slope centred at `at` (height `y`) */
+  const edgeRamp = (
+    axis: 'x' | 'z',
+    at: number,
+    y: number,
+    slope: number,
+    across: number,
+    color: number,
+  ) => slab(b, axis, at, 12, y, slope, across, 0.12, { mat: 'trim', color, noCollide: true });
 
   const DIM_CYAN = 0x1d6f84;
   const DIM_ORANGE = 0x84501d;
@@ -646,32 +669,42 @@ const fixtures = (b: LevelBuilder, lights: LightDef[]): void => {
   spot(41, 5, 10.5, LAMP, 9, 1.0);
   spot(79, 11, 10.5, LAMP, 10, 1.0);
   spot(90.5, 11, 10.5, LAMP, 9, 1.0);
-  edgeX(34, 46, H, 8.15, DIM_CYAN);
-  edgeX(74, 86, 0, 12.85, DIM_CYAN);
+  edgeRamp('x', 40, H / 2, H / (34 - 46), 8.15, DIM_CYAN); // on the B ramp
+  edgeRamp('x', 80, D / 2, D / (86 - 74), 12.85, DIM_CYAN); // on the A ramp
   for (const z of [21, 30]) spot(67, 5, z);
   edgeZ(17.2, 34.8, 0, S.connector.x1 - 0.15, DIM_CYAN);
   sconce(S.connector.x0 + 0.02, 3.2, 20, 'x+', 0xbff4ff);
   // ---- Orange lanes (orange accents), mid corridor, stairs ----
   for (const z of [67, 75]) spot(50.5, 5, z);
-  edgeZ(63.2, 80.8, 0, S.mid.x0 + 0.15, DIM);
-  edgeZ(63.2, 80.8, 0, S.mid.x1 - 0.15, DIM);
+  // (wall strips stop at the crates standing against the walls)
+  edgeZ(63.2, 73, 0, S.mid.x0 + 0.15, DIM);
+  edgeZ(76, 80.8, 0, S.mid.x0 + 0.15, DIM);
+  edgeZ(63.2, 68, 0, S.mid.x1 - 0.15, DIM);
+  edgeZ(71, 80.8, 0, S.mid.x1 - 0.15, DIM);
   for (const x of [22, 34]) spot(x, 5, 82);
   for (const x of [84, 97]) spot(x, 5, 82);
-  edgeX(17.2, 40.8, 0, 85.85, DIM_ORANGE);
-  edgeX(79.2, 101.8, 0, 85.85, DIM_ORANGE);
+  for (const [x0, x1] of [
+    [20, 28],
+    [31, 35],
+    [37, 40.8],
+    [79.2, 85],
+    [88, 90.5],
+    [92, 99.8],
+  ])
+    edgeX(x0, x1, 0, 85.85, DIM_ORANGE);
   sconce(40.95, 3.2, 80, 'x-', 0xffe2c4);
   sconce(79.05, 3.2, 80, 'x+', 0xffe2c4);
   spot(40, 5, 68.5);
-  edgeZ(53.2, 64.8, H, 35.15, DIM);
-  edgeZ(53.2, 64.8, H, 42.85, DIM);
+  // strips along the stairs' walls, lying on the ramp
+  for (const x of [35.15, 42.85]) edgeRamp('z', 59, H / 2, H / (53 - 65), x, DIM);
   // ---- deck run (tall): spots and a strip along the outer wall ----
   for (const z of [48, 58, 70]) spot(95, 12, z, 0xd8e8ff, 10, 1.1);
-  edgeZ(41.2, 64.8, D, S.deckRun.x1 - 0.15, DIM);
-  // ---- atrium: sconces on the walls under the glass, a rim light round the hole ----
-  for (const x of [50, 70]) {
-    sconce(x, 4, 36.02, 'z+');
-    sconce(x, 4, 61.98, 'z-');
-  }
+  edgeZ(41.2, 57, D, S.deckRun.x1 - 0.15, DIM);
+  edgeZ(61, 64.8, D, S.deckRun.x1 - 0.15, DIM);
+  // ---- atrium: sconces on the walls under the glass (clear of the gate frames), a rim light
+  // round the hole ----
+  for (const x of [50, 64]) sconce(x, 4, 36.02, 'z+');
+  for (const x of [55, 70]) sconce(x, 4, 61.98, 'z-');
   for (const z of [44, 54]) sconce(44.02, 4, z, 'x+');
   for (const z of [46, 56]) sconce(75.98, 10, z - 8, 'x-', MOON);
   // ---- A deck: sconces on the walls, screens on the consoles ----
@@ -698,7 +731,7 @@ const fixtures = (b: LevelBuilder, lights: LightDef[]): void => {
   ])
     spot(x, -1, z, 0xffc38a, 7, 0.9);
   spot(39, -1, 47, 0xffc38a, 7, 0.9);
-  spot(31, -1, 47, 0xffc38a, 7, 0.9);
+  spot(32.5, -1, 47, 0xffc38a, 7, 0.9); // (the passage, x 31..34)
   for (const z of [48, 58]) spot(22.5, -1, z, 0xffc38a, 7, 0.9);
   spot(22.5, 5, 71, LAMP, 8, 0.9);
   // pipes: two runs along the hold's north and west walls, one along the basement corridor
@@ -711,11 +744,15 @@ const fixtures = (b: LevelBuilder, lights: LightDef[]): void => {
     deco(42.8, H + 0.4, z - 1, 43, H + 1.4, z + 1, 'engine');
     deco(42.78, H + 0.6, z - 0.8, 42.8, H + 1.2, z + 0.8, 'trim', { color: 0x5a2a1a });
   }
-  // ---- glass ceiling frame: struts across the glass (atrium: along x; A deck: along z) ----
-  for (let z = 39.5; z < 62; z += 5.5) deco(43, G - 0.35, z - 0.15, 85, G, z + 0.15, 'pillar');
-  deco(59.85, G - 0.4, 35, 60.15, G, 63, 'pillar');
-  for (let x = 82; x < 110; x += 5.5) deco(x - 0.15, G - 0.35, 13, x + 0.15, G, 41, 'pillar');
-  deco(76, G - 0.4, 26.85, 111, G, 27.15, 'pillar');
+  // ---- glass ceiling frame: struts across the glass (atrium: along x; A deck: along z), from
+  // wall to wall (the atrium is x 44..76 north of z 41, x 44..84 south of it) ----
+  const AT = S.atrium;
+  const AD = S.aDeck;
+  for (let z = 39.5; z < 62; z += 5.5)
+    deco(AT.x0, G - 0.35, z - 0.15, z < 41 ? AT.x1 : 84, G, z + 0.15, 'pillar');
+  deco(59.85, G - 0.4, AT.z0, 60.15, G, AT.z1, 'pillar');
+  for (let x = 82; x < 110; x += 5.5) deco(x - 0.15, G - 0.35, AD.z0, x + 0.15, G, AD.z1, 'pillar');
+  deco(AD.x0, G - 0.4, 26.85, AD.x1, G, 27.15, 'pillar');
 };
 
 /** Soft moonlight under the glass and a few fills (fixtures bring their own lights). */
@@ -787,8 +824,8 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
     strip(HO.x0 - 0.5, 0, z, HO.x0, z + 1, HAZARD);
     strip(HO.x1, 0, z, HO.x1 + 0.5, z + 1, HAZARD);
   }
-  deco(HO.x0, -0.35, HO.z0 - 0.02, HO.x1, -0.2, HO.z0, 'trim', { color: MOON });
-  deco(HO.x0, -0.35, HO.z1, HO.x1, -0.2, HO.z1 + 0.02, 'trim', { color: MOON });
+  deco(HO.x0, -0.35, HO.z0, HO.x1, -0.2, HO.z0 + 0.02, 'trim', { color: MOON });
+  deco(HO.x0, -0.35, HO.z1 - 0.02, HO.x1, -0.2, HO.z1, 'trim', { color: MOON });
   // power-up pad: a small hovering frame over the hole, a marker on the pit floor below
   const P = S.powerup;
   for (const [dx0, dz0, dx1, dz1] of [
@@ -815,8 +852,11 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
   deco(92, D + 3, 14.02, 95, D + 6, 14.12, 'trim', { color: SITE });
   deco(42.88, H + 3, 26, 42.98, H + 6, 29, 'trim', { color: SITE });
   // floor guide lines toward each spawn's Tower
-  strip(S.connector.x0 + 3.85, 0, 17, S.connector.x0 + 4.15, 34, CYAN);
-  strip(S.mid.x0 + 5.35, 0, 64, S.mid.x0 + 5.65, 81, ORANGE);
+  // (each broken by its lane's pillar)
+  strip(S.connector.x0 + 3.85, 0, 17, S.connector.x0 + 4.15, 26.6, CYAN);
+  strip(S.connector.x0 + 3.85, 0, 28.2, S.connector.x0 + 4.15, 34, CYAN);
+  strip(S.mid.x0 + 5.35, 0, 64, S.mid.x0 + 5.65, 71.8, ORANGE);
+  strip(S.mid.x0 + 5.35, 0, 73.4, S.mid.x0 + 5.65, 81, ORANGE);
   // hazard stripes at the gates
   for (const [x0, z0, x1, z1] of [
     [S.mid.x0 + 1, 62.2, S.mid.x0 + 7, 62.8],
@@ -888,7 +928,7 @@ const waypoints = (): WaypointDef[] => {
   // connector
   add('cnDoor', (C.x0 + C.x1) / 2, Y0, 16.5);
   add('cn1', C.x0 + 4.5, Y0, 22);
-  add('cn2', C.x0 + 5.5, Y0, 29);
+  add('cn2', C.x0 + 6.5, Y0, 27.4); // east of the pillar
   add('cnGate', C.x0 + 5, Y0, 35.5);
   // atrium ring around the hole
   add('atrNW', 48, Y0, 40);
@@ -928,6 +968,7 @@ const waypoints = (): WaypointDef[] => {
   add('oeDoor', 78.5, Y0, 84);
   // mid corridor + stairs
   add('mc1', MC.x0 + 5, Y0, 68);
+  add('mcE', MC.x0 + 7.2, Y0, 72.6); // east of the pillar
   add('mc2', MC.x0 + 6, Y0, 77.5);
   add('mcDoor', MC.x0 + 5.5, Y0, 81.5);
   add('stDoor', 44.5, Y0, 67.75);
@@ -1021,7 +1062,8 @@ const waypoints = (): WaypointDef[] => {
     ['oeDoor', 'oTower'],
     // mid corridor, stairs, stairwell, pit
     ['midGate', 'mc1'],
-    ['mc1', 'mc2'],
+    ['mc1', 'mcE'],
+    ['mcE', 'mc2'],
     ['mc2', 'mcDoor'],
     ['mcDoor', 'oTower'],
     ['mc1', 'stDoor'],

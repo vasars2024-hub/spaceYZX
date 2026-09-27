@@ -13,14 +13,14 @@
 //   9  window rings, a last hop chain round the spire                          → FINISH
 import type { CourseData, IslandStyle, P2 } from '../course/types';
 import { Pen } from '../course/pen';
-import { hopChain, surfRun, wallBeside } from '../course/sections';
+import { hopChain, landmark, surfRun, wallBeside } from '../course/sections';
 
 const PALETTE = {
-  ground: 0xeadfc6,
-  ground2: 0xdccaa6,
-  rock: 0xb89c7c,
-  rockDark: 0x8c745a,
-  edge: 0xf2b441,
+  ground: 0xc9a77a,
+  ground2: 0xb99466,
+  rock: 0x9a7c5c,
+  rockDark: 0x735b43,
+  edge: 0xffe08a,
   surf: 0x5fa9d6,
   surfEdge: 0xfff2b8,
   stage: 0xf3e9d6,
@@ -30,8 +30,8 @@ const PALETTE = {
   portal: 0xa77cff,
   pad: 0xff8a3c,
   arrow: 0xfff6dc,
-  cloud: 0xfbe9e4,
-  danger: 0x6e2438,
+  cloud: 0xfff3f6,
+  danger: 0xff5a36,
   leaf: 0x86c25e,
   leafDark: 0x5f9c47,
   trunk: 0x7a5634,
@@ -115,7 +115,8 @@ export const sunspireCourse = (): CourseData => {
   ]);
   p.move(12, -9).platform([10, 26]);
   garden(p, 14, -24, 2, [12, 12]);
-  p.stage();
+  p.stage(undefined, undefined, 'Twin ramps');
+  landmark(p, 60, 'tower', 'grass', 0xf3e9d6);
   // ---- 2: two surf ramps, a launch pad up, a window jump, stepping stones ----
   p.platform([8, 8], 'strafe');
   surfRun(p, [
@@ -145,13 +146,15 @@ export const sunspireCourse = (): CourseData => {
     'jump',
   );
   garden(p, 0, 26, 3, [12, 10]);
-  p.face(270).move(10).stage();
+  p.face(270).move(10).stage(undefined, undefined, 'Portal to the terraces');
+  landmark(p, -60, 'arch', 'grass', 0xf3e9d6);
   // ---- 3: the portal up to the high terraces ----
   p.portal([440, 330, -80]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Behind the wall');
+  landmark(p, 60, 'falls', 'grass', 0xf3e9d6);
   // ---- 4: behind the wall — a hop chain curving right round two tall blocks, a flick ----
   p.platform([8, 8], 'hop');
-  hopChain(p, { n: 8, first: 9, grow: 0.4, max: 11.5, turn: 12, size: [6, 6] });
+  hopChain(p, { n: 8, first: 9, grow: 0.4, max: 11.5, turn: 12, size: [6, 6], vary: true });
   wallBeside(p, 1, 3, 12, [6, 30, 16]);
   wallBeside(p, 4, 6, 12, [6, 30, 16]);
   p.move(9).platform([8, 10], 'strafe');
@@ -171,7 +174,8 @@ export const sunspireCourse = (): CourseData => {
     { gap: 14, fall: 8, shift: -9, length: 50, drop: 10, height: 12, angle: 58, side: 'right' },
   ]);
   p.move(12, -10).platform([10, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Pillar weave');
+  landmark(p, -60, 'tower', 'grass', 0xf3e9d6);
   // ---- 5: a pillar weave, a launch pad, a beam, drop strafes ----
   p.turnPad(-82, 12, 'hop');
   hopChain(p, {
@@ -181,6 +185,7 @@ export const sunspireCourse = (): CourseData => {
     max: 12,
     turn: [0, 24, -48, 48, -48, 48, -24],
     size: [5, 5],
+    vary: true,
   });
   for (let k = 0; k < 6; k++) wallBeside(p, k, k + 1, k % 2 ? 5.5 : -5.5, [2.5, 26, 2.5], 13);
   p.move(9).platform([8, 12]).launch(30, 10, 1.4);
@@ -196,7 +201,8 @@ export const sunspireCourse = (): CourseData => {
     'jump',
   );
   garden(p, 0, -24, 2, [12, 12]);
-  p.turn(-25).move(10).stage();
+  p.turn(-25).move(10).stage(undefined, undefined, 'Curving ramps');
+  landmark(p, 60, 'arch', 'grass', 0xf3e9d6);
   // ---- 6: a curving surf run: three ramps turning left ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -215,10 +221,12 @@ export const sunspireCourse = (): CourseData => {
     { turn: -25, gap: 15, fall: 8, length: 55, drop: 10, height: 12, angle: 58, side: 'right' },
   ]);
   p.move(12, -10).face(180).platform([16, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the gardens');
+  landmark(p, -60, 'falls', 'grass', 0xf3e9d6);
   // ---- 7: the portal to the west gardens ----
   p.portal([-330, 300, -380]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Speed gap');
+  landmark(p, 60, 'tower', 'grass', 0xf3e9d6);
   // ---- 8: a bhop acceleration chain, a speed gap, a booster, surf ----
   p.platform([8, 10], 'hop');
   hopChain(p, {
@@ -226,8 +234,9 @@ export const sunspireCourse = (): CourseData => {
     first: 9,
     grow: 0.45,
     max: 13,
-    turn: [0, 6, 6, 0, -6, -6, 0, 6, 6, 0],
+    turn: [0, 10, 10, 10, 0, -12, -12, -12, 0, 8],
     size: [6, 6],
+    vary: true,
   });
   // the speed gap: 15 m of air, 3 m down (a running jump falls short: carry your hop speed)
   p.move(18.5, -3).platform([10, 10]);
@@ -241,7 +250,8 @@ export const sunspireCourse = (): CourseData => {
     ride: 'left',
   });
   p.move(12, -10).platform([10, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Booster rings');
+  landmark(p, -60, 'arch', 'grass', 0xf3e9d6);
   // ---- 9: booster rings through the air, drop strafes ----
   p.platform([8, 12], 'jump');
   p.move(6, -0.5).booster(22, 5, true, [4, 4.5]);
@@ -258,7 +268,8 @@ export const sunspireCourse = (): CourseData => {
     'jump',
   );
   garden(p, -6, 24, 3, [14, 12]);
-  p.move(11).stage();
+  p.move(11).stage(undefined, undefined, 'Flick and sweep');
+  landmark(p, 60, 'falls', 'grass', 0xf3e9d6);
   // ---- 10: surf: a side-switch flick, then a sweeping turn right ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -278,21 +289,25 @@ export const sunspireCourse = (): CourseData => {
     { turn: -30, gap: 15, fall: 8, length: 50, drop: 10, height: 12, angle: 58, side: 'right' },
   ]);
   p.move(12, -10).face(90).platform([16, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the spire');
+  landmark(p, -60, 'tower', 'grass', 0xf3e9d6);
   // ---- 11: the portal to the spire; behind the wall to the left, a launch pad up ----
   p.portal([-120, 330, 420]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Round the spire');
+  landmark(p, 60, 'arch', 'grass', 0xf3e9d6);
   p.turnPad(-90, 12, 'hop');
-  hopChain(p, { n: 8, first: 9, grow: 0.4, max: 11.5, turn: -12, size: [6, 6] });
+  hopChain(p, { n: 8, first: 9, grow: 0.4, max: 11.5, turn: -12, size: [6, 6], vary: true });
   wallBeside(p, 1, 3, -12, [6, 30, 16]);
   wallBeside(p, 4, 6, -12, [6, 30, 16]);
   p.face(270).move(10).platform([10, 14]).launch(34, 12, 1.5);
   p.move(-4).platform([10, 14]);
   garden(p, 0, 26, 3, [14, 12]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the temple');
+  landmark(p, -60, 'falls', 'grass', 0xf3e9d6);
   // ---- 13: the portal to the heart of the temple: the grand surf ----
   p.portal([10, 370, -330]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'The grand surf');
+  landmark(p, 60, 'tower', 'grass', 0xf3e9d6);
   p.turnPad(-90, 12).platform([8, 10], 'strafe');
   surfRun(p, [
     {
@@ -313,7 +328,8 @@ export const sunspireCourse = (): CourseData => {
   ]);
   p.move(12, -10).platform([12, 30]);
   garden(p, 10, 26, 2, [14, 12]);
-  p.stage();
+  p.stage(undefined, undefined, 'Beams and window');
+  landmark(p, -60, 'arch', 'grass', 0xf3e9d6);
   // ---- 14: beams and a window: launch up, zigzag beams, thread the wall ----
   p.platform([8, 12]).launch(32, 12, 1.5);
   p.move(-4).platform([8, 10]);
@@ -326,7 +342,8 @@ export const sunspireCourse = (): CourseData => {
   p.window(5, [4.5, 4.5], [14, 16], -1);
   p.move(6, -1.5).platform([8, 12]);
   garden(p, 0, -26, 3, [12, 12]);
-  p.stage();
+  p.stage(undefined, undefined, 'The last chain');
+  landmark(p, 60, 'falls', 'grass', 0xf3e9d6);
   // ---- 15: the last chain: accelerate, clear the gap to the finish ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -337,6 +354,7 @@ export const sunspireCourse = (): CourseData => {
     turn: [0, -10, -10, -10, -10, -10, -10, -10, 0, 0],
     rise: -0.4,
     size: [6, 6],
+    vary: true,
   });
   // (15 m of air, 3 m down: carry your speed or fall)
   p.move(20, -3).finish();
@@ -349,11 +367,13 @@ export const sunspireCourse = (): CourseData => {
       top: 0x5a8fd8,
       horizon: 0xffc9a2,
       ground: 0xf5d8c8,
-      sun: { dir: [0.8, 0.14, 0.3], color: 0xffd08a, sizeDeg: 9 },
+      sun: { dir: [0.8, 0.14, 0.3], color: 0xffd08a, sizeDeg: 4.5 },
       sunLight: 0xffe6c8,
       fog: { near: 140, far: 560 },
       ambient: 1.05,
     },
+    roomMat: 'sand',
+    surfColors: [0x5fa9d6, 0x55c7a4, 0x8f86e0],
     killY: 60,
     floors: [],
     autoFloors: { below: 22, pad: 30 },

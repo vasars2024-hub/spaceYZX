@@ -20,7 +20,7 @@
 //  16  the last chain: accelerate, 17 m of air to the finish               → FINISH
 import type { CourseData, P2 } from '../course/types';
 import { Pen } from '../course/pen';
-import { hopChain, surfRun, wallBeside } from '../course/sections';
+import { hopChain, landmark, surfRun, wallBeside } from '../course/sections';
 
 const PALETTE = {
   ground: 0x433836,
@@ -37,7 +37,7 @@ const PALETTE = {
   portal: 0xffb13b,
   pad: 0x5ce1ff,
   arrow: 0xffe0b0,
-  cloud: 0x5d4d55,
+  cloud: 0xc2b2b8,
   danger: 0xff4a12,
   leaf: 0x6a8a3a,
   leafDark: 0x4a6a2a,
@@ -88,10 +88,12 @@ export const emberSpireCourse = (): CourseData => {
     max: 13.5,
     turn: [0, 0, 9, 9, 9, 9, 9, 9, 9, 0],
     size: [4.5, 4.5],
+    vary: true,
   });
   wallBeside(p, 2, 4, 10, [6, 36, 18]);
   wallBeside(p, 5, 7, 10, [6, 36, 18]);
-  p.face(90).move(10).stage();
+  p.face(90).move(10).stage(undefined, undefined, 'Steep flicks');
+  landmark(p, 60, 'tower', 'basalt', 0x51443f);
   // ---- 2: steep surf: an A-frame, a flick left, a flick right ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -112,7 +114,8 @@ export const emberSpireCourse = (): CourseData => {
   ]);
   p.move(12, -10).face(0).platform([16, 30]);
   basalt(p, 0, 30, 2, [16, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'Pillar weave');
+  landmark(p, -60, 'arch', 'basalt', 0x51443f);
   // ---- 3: a pillar weave on small pads, a window, drop strafes ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -122,6 +125,7 @@ export const emberSpireCourse = (): CourseData => {
     max: 12.5,
     turn: [0, 30, -60, 60, -60, 60, -60, 30],
     size: [4.5, 4.5],
+    vary: true,
   });
   for (let k = 0; k < 7; k++) wallBeside(p, k, k + 1, k % 2 ? -4.5 : 4.5, [2.2, 28, 2.2], 14);
   p.move(9).platform([8, 10], 'jump');
@@ -136,10 +140,12 @@ export const emberSpireCourse = (): CourseData => {
     ],
     'jump',
   );
-  p.face(0).move(11).stage();
+  p.face(0).move(11).stage(undefined, undefined, 'Portal to the ash fields');
+  landmark(p, 60, 'falls', 'basalt', 0x51443f);
   // ---- 4: the portal to the ash fields ----
   p.portal([-150, 340, 300]);
-  p.move(-1).stage([12, 12]);
+  p.move(-1).stage([12, 12], undefined, 'Two jetpack gaps');
+  landmark(p, -60, 'tower', 'basalt', 0x51443f);
   // ---- 5: two jetpack gaps on one fuel cell, a broken beam ----
   p.platform([8, 14]).jet(55);
   p.fuel();
@@ -151,7 +157,8 @@ export const emberSpireCourse = (): CourseData => {
   p.turn(10).move(4.5).platform([2, 2], undefined, { style: 'plain' });
   p.path(p.relP(16, -3), 0.8, 'beam');
   p.go('jump');
-  p.turn(-10).move(6.5).stage();
+  p.turn(-10).move(6.5).stage(undefined, undefined, 'Speed gate');
+  landmark(p, 60, 'arch', 'basalt', 0x51443f);
   // ---- 6: the speed gate: a hop chain to 14 m steps, 17 m of air ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -159,12 +166,14 @@ export const emberSpireCourse = (): CourseData => {
     first: 9,
     grow: 0.55,
     max: 14.5,
-    turn: [0, 6, 6, -6, -6, 6, 6, -6, -6, 0, 0],
+    turn: [0, 12, 12, 0, -14, -14, 0, 12, 12, 0, 0],
     size: [5, 5],
+    vary: true,
   });
   p.move(20, -2).platform([10, 22]);
   basalt(p, 0, -28, 3, [14, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'The spin');
+  landmark(p, -60, 'falls', 'basalt', 0x51443f);
   // ---- 7: a surf spin: three transfers turning right ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -184,18 +193,21 @@ export const emberSpireCourse = (): CourseData => {
     { turn: 30, gap: 18, fall: 8, length: 45, drop: 9, height: 9, angle: 64, side: 'left' },
   ]);
   p.move(12, -10).face(90).platform([16, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'Behind the wall');
+  landmark(p, 60, 'tower', 'basalt', 0x51443f);
   // ---- 8: behind the wall to the left on small pads, a launch pad ----
   p.platform([8, 8], 'hop');
-  hopChain(p, { n: 9, first: 9, grow: 0.55, max: 13.5, turn: -11, size: [4.5, 4.5] });
+  hopChain(p, { n: 9, first: 9, grow: 0.55, max: 13.5, turn: -11, size: [4.5, 4.5], vary: true });
   wallBeside(p, 1, 3, -10, [6, 36, 18]);
-  wallBeside(p, 4, 6, -10, [6, 36, 18]);
+  wallBeside(p, 4, 6, -10, [6, 36, 12]);
   p.face(0).move(10).platform([10, 14]).launch(34, 12, 1.5);
   p.move(-4).platform([10, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the caldera');
+  landmark(p, -60, 'arch', 'basalt', 0x51443f);
   // ---- 9: the portal to the caldera ----
-  p.portal([180, 360, 420]);
-  p.move(-1).stage([12, 12]);
+  p.portal([270, 360, 420]);
+  p.move(-1).stage([12, 12], undefined, 'Rings and window');
+  landmark(p, 60, 'falls', 'basalt', 0x51443f);
   // ---- 10: booster rings, a narrow window, drop strafes ----
   p.platform([8, 12], 'jump');
   p.move(6, -0.5).booster(22, 5, true, [3.5, 4]);
@@ -213,7 +225,8 @@ export const emberSpireCourse = (): CourseData => {
     'jump',
   );
   basalt(p, -6, 28, 3, [14, 14]);
-  p.face(0).move(11).stage();
+  p.face(0).move(11).stage(undefined, undefined, 'Royal spin');
+  landmark(p, -60, 'tower', 'basalt', 0x51443f);
   // ---- 11: a royal spin on the steepest ramps ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -233,7 +246,8 @@ export const emberSpireCourse = (): CourseData => {
     { turn: 30, gap: 18, fall: 8, length: 45, drop: 9, height: 8, angle: 66, side: 'left' },
   ]);
   p.move(12, -10).face(0).platform([16, 30]);
-  p.stage();
+  p.stage(undefined, undefined, 'The gauntlet');
+  landmark(p, 60, 'arch', 'basalt', 0x51443f);
   // ---- 12: a pillar gauntlet into a jetpack gap ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -243,16 +257,19 @@ export const emberSpireCourse = (): CourseData => {
     max: 12.5,
     turn: [0, -30, 60, -60, 60, -60, 60, -30],
     size: [4.5, 4.5],
+    vary: true,
   });
   for (let k = 0; k < 7; k++) wallBeside(p, k, k + 1, k % 2 ? 4.5 : -4.5, [2.2, 28, 2.2], 14);
   p.move(9).platform([8, 12]).jet(60);
   p.fuel();
   p.move(26).platform([10, 12]);
   basalt(p, 0, -26, 2, [14, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'Portal to the spire');
+  landmark(p, -60, 'falls', 'basalt', 0x51443f);
   // ---- 13: the portal to the spire ----
-  p.portal([380, 400, 420]);
-  p.move(-1).stage([12, 12]);
+  p.portal([410, 400, 420]);
+  p.move(-1).stage([12, 12], undefined, 'The long descent');
+  landmark(p, 60, 'tower', 'basalt', 0x51443f);
   // ---- 14: a long surf descent with two flicks ----
   p.platform([8, 10], 'strafe');
   surfRun(p, [
@@ -274,7 +291,8 @@ export const emberSpireCourse = (): CourseData => {
   ]);
   p.move(12, -10).face(0).platform([16, 30]);
   basalt(p, 0, 30, 2, [16, 14]);
-  p.stage();
+  p.stage(undefined, undefined, 'Up the spire');
+  landmark(p, -60, 'arch', 'basalt', 0x51443f);
   // ---- 15: up the spire: a launch pad, a jetpack gap, a narrow window, drop strafes ----
   p.platform([8, 12]).launch(34, 14, 1.5);
   p.move(-4).platform([8, 14]).jet(60);
@@ -291,7 +309,8 @@ export const emberSpireCourse = (): CourseData => {
     'jump',
   );
   basalt(p, -6, -28, 3, [14, 14]);
-  p.move(11).stage();
+  p.move(11).stage(undefined, undefined, 'The last chain');
+  landmark(p, 60, 'falls', 'basalt', 0x51443f);
   // ---- 16: the last chain: accelerate, 17 m of air to the finish ----
   p.platform([8, 8], 'hop');
   hopChain(p, {
@@ -299,9 +318,10 @@ export const emberSpireCourse = (): CourseData => {
     first: 9,
     grow: 0.55,
     max: 14.5,
-    turn: [0, 7, 7, 7, 0, 0, -7, -7, -7, 0, 0],
+    turn: [0, 10, 10, 10, 0, 0, -12, -12, -12, 0, 0],
     rise: -0.4,
     size: [4.5, 4.5],
+    vary: true,
   });
   p.move(20, -3).finish();
   return p.course({
@@ -313,11 +333,13 @@ export const emberSpireCourse = (): CourseData => {
       top: 0x2a1a3a,
       horizon: 0xff7a45,
       ground: 0x3a1a1a,
-      sun: { dir: [0.9, 0.07, -0.2], color: 0xff8a4a, sizeDeg: 13 },
+      sun: { dir: [0.9, 0.07, -0.2], color: 0xff8a4a, sizeDeg: 5 },
       sunLight: 0xffb080,
       fog: { near: 110, far: 480 },
       ambient: 0.95,
     },
+    roomMat: 'rock',
+    surfColors: [0xc9432c, 0xe8801f, 0xa83ad0],
     killY: 60,
     floors: [],
     autoFloors: { below: 22, pad: 30 },

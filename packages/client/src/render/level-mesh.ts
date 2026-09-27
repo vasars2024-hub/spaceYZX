@@ -41,6 +41,8 @@ export const MATERIAL_COLORS: Record<Material, number> = {
   leaf: 0xf4b8c8,
   // size walls (level/size-walls.ts): a glowing cyan force field
   forcefield: 0x38e8ff,
+  cloud: 0xf2f4f8,
+  glow: 0xff5a2a,
 };
 
 const TEX_OF: Record<Material, TexKind | null> = {
@@ -64,6 +66,8 @@ const TEX_OF: Record<Material, TexKind | null> = {
   paper: null,
   leaf: null,
   forcefield: null,
+  cloud: null,
+  glow: null,
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -342,6 +346,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   const trims = new GeoBuilder();
   const glassGeo = new GeoBuilder();
   const fieldGeo = new GeoBuilder();
+  const cloudGeo = new GeoBuilder();
   // (force-field size walls glow: they don't cast baked shadows)
   const level = buildLevel(
     def.boxes.some((b) => b.mat === 'forcefield')
@@ -375,6 +380,36 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
         fieldGeo.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
       }
       addTrims(trims, b, base.clone().multiplyScalar(brightness));
+      return;
+    }
+    if (mat === 'cloud') {
+      // the deadly cloud sea: soft (slightly see-through, drawn after the level), bright on top
+      // and shading into the sky's own colour underneath; no lights, no texture, no tiles
+      const under = new THREE.Color(def.outdoor?.horizon ?? MATERIAL_COLORS.cloud);
+      for (const [fi, f] of FACES.entries()) {
+        const ln = localNormal(b, fi);
+        if (!ln) continue;
+        const n = b.q ? qRotate(b.q, ln) : ln;
+        const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
+        const up = n.y > 0.5 ? 1.05 : n.y < -0.5 ? 0.62 : 0.86;
+        const cols = f.corners.map(([, y]) =>
+          base
+            .clone()
+            .lerp(under, y < 0 || n.y < -0.5 ? 0.45 : 0.12)
+            .multiplyScalar(up * brightness),
+        );
+        cloudGeo.quad(pts[0], pts[1], pts[2], pts[3], cols[0], cols[1], cols[2], cols[3]);
+      }
+      return;
+    }
+    if (mat === 'glow') {
+      // full-bright colour (drawn with the strip lights, but lighting nothing)
+      const c = base.clone().multiplyScalar(brightness);
+      for (const [fi, f] of FACES.entries()) {
+        if (!localNormal(b, fi)) continue;
+        const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
+        trims.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
+      }
       return;
     }
     if (mat === 'skyglass') {
@@ -453,6 +488,19 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     disposables.push(trimGeo, trimMat);
   }
 
+  if (!cloudGeo.empty) {
+    const geo = cloudGeo.build();
+    const mat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.86,
+      fog: true,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
   if (!fieldGeo.empty) {
     const geo = fieldGeo.build();
     const mat = new THREE.MeshBasicMaterial({

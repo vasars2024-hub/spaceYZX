@@ -11,7 +11,7 @@
 //   7  the mixed finale: a booster ring, flicks, a turn                     → FINISH
 import type { CourseData } from '../course/types';
 import { Pen } from '../course/pen';
-import { surfRun, type RampOpts } from '../course/sections';
+import { landmark, surfRun, type RampOpts } from '../course/sections';
 
 const PALETTE = {
   ground: 0x433836,
@@ -28,7 +28,7 @@ const PALETTE = {
   portal: 0xffb13b,
   pad: 0x5ce1ff,
   arrow: 0xffe0b0,
-  cloud: 0x5d4d55,
+  cloud: 0xc2b2b8,
   danger: 0xff4a12,
   leaf: 0x6a8a3a,
   leafDark: 0x4a6a2a,
@@ -54,11 +54,14 @@ const LANES: [number, number, number][] = [
 ];
 
 /** Land, then the portal to the next stage's room (or the finish). */
+const NAMES = ['Royal spin', 'Window and drops', 'Wall surf', 'Pillars', 'The needles', 'Finale'];
+
 const end = (p: Pen, lane: number) => {
   p.move(14, -12).face(0).platform([22, 34]);
   if (lane < LANES.length) {
     p.portal(LANES[lane], [9, 10]);
-    p.move(-1).stage([14, 14], CAP);
+    p.move(-1).stage([14, 14], CAP, NAMES[lane]);
+    landmark(p, lane % 2 ? -60 : 60, (['tower', 'arch', 'falls'] as const)[lane % 3], 'basalt');
   } else p.finish([16, 18]);
 };
 
@@ -173,11 +176,13 @@ export const surfCinderCourse = (): CourseData => {
       top: 0x2a1a3a,
       horizon: 0xff7045,
       ground: 0x3a1a1a,
-      sun: { dir: [-0.85, 0.06, -0.3], color: 0xff7a3a, sizeDeg: 14 },
+      sun: { dir: [-0.85, 0.06, -0.3], color: 0xff7a3a, sizeDeg: 5.5 },
       sunLight: 0xffa878,
       fog: { near: 110, far: 480 },
       ambient: 0.95,
     },
+    roomMat: 'rock',
+    surfColors: [0xe0532e, 0xff9a1f, 0xd8325a, 0x8f4cff, 0x21b0ff, 0xf2c71c, 0x2fd46e],
     killY: 40,
     floors: [],
     autoFloors: { below: 14, pad: 30 },

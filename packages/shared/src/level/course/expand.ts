@@ -9,6 +9,7 @@ import type {
   BoxDef,
   LaunchPadDef,
   LevelDef,
+  LightDef,
   Material,
   PortalDef,
   RaceGateDef,
@@ -135,10 +136,17 @@ const platform = (
       });
     }
   }
+  // a bright rim under the top's edge, sticking out a hand's breadth: the outline reads from far
+  const rim = 0.35;
+  g.box(v3(at.x, at.y - thick - rim / 2, at.z), v3(w + 0.3, rim, d + 0.3), heading, {
+    mat: 'sand',
+    color: pal.edge,
+    lowDetail: true,
+  });
   if (opts.plain) return;
   const depth = opts.depth ?? Math.min(8, 1.5 + Math.max(w, d) * 0.35);
   const seed = opts.seed ?? Math.round(at.x * 7 + at.z * 13 + at.y);
-  let y = at.y - thick;
+  let y = at.y - thick - rim;
   let k = 1;
   const tiers = depth > 4 ? 3 : 2;
   for (let i = 0; i < tiers; i++) {
@@ -256,6 +264,7 @@ export const surfFrame = (e: Pick<SurfEl, 'from' | 'to' | 'height' | 'angle' | '
 const expandRoute = (
   data: CourseData,
   g: Geo,
+  lights: LightDef[],
 ): {
   line: RaceLineNode[];
   elementNodes: RaceLineNode[][];
@@ -348,6 +357,16 @@ const expandRoute = (
     pos = out.exit;
   });
 
+  /** A surf ramp's colour: its stage's (CourseData.surfColors), a shade lighter ridden left. */
+  function surfColor(e: SurfEl): number {
+    const list = data.surfColors;
+    const base = list?.length ? list[checkpoints.length % list.length] : pal.surf;
+    const face = e.side === 'both' ? (e.ride ?? 'right') : e.side;
+    if (face === 'right') return base;
+    const ch = (sh: number) => Math.min(255, Math.round(((base >> sh) & 255) * 1.18 + 12));
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+  }
+
   function rideAt(f: ReturnType<typeof surfFrame>, e: SurfEl, t: number): Vec3 {
     const face = e.side === 'both' ? (e.ride ?? 'right') : e.side;
     const depth = e.depth ?? 0.3;
@@ -409,10 +428,12 @@ const expandRoute = (
           e.heading,
           glow,
           isFinish ? 'F' : String(checkpoints.length + 1),
+          data.roomMat ?? 'rock',
+          lights,
         );
         g.slab(L(0, 0.03, 0), w - 3.2, d - 2, 0.03, e.heading, {
           mat: 'sand',
-          color: isFinish ? pal.finish : pal.start,
+          color: isFinish ? pal.finish : pal.ground2,
           noCollide: true,
         });
         if (!isFinish) chevron(g, L(0, 0.03, -d / 2 + 2.5), e.heading, pal.arrow, 1.2);
@@ -439,6 +460,7 @@ const expandRoute = (
           respawn: round3(L(0, 0, 1)),
           yawDeg: headingYaw(e.heading),
         };
+        if (e.t === 'stage' && e.name) gate.name = e.name;
         if (e.t === 'stage' && e.cap) {
           slowZones.push({ min: gate.min, max: gate.max, speedMul: e.cap / 9 });
         }
@@ -526,7 +548,7 @@ const expandRoute = (
           prism: f.prism,
           surf: true,
           mat: 'rock',
-          color: pal.surf,
+          color: surfColor(e),
           trim: pal.surfEdge,
         });
         const n = Math.max(2, Math.ceil(f.length / 10));
@@ -715,7 +737,10 @@ const expandRoute = (
 /** Room height of checkpoint stages (floor to roof). */
 const STAGE_H = 6;
 
-/** A checkpoint room on a platform: side walls, a roof, glowing door frames, its number. */
+/**
+ * A checkpoint room on a platform: side walls with big windows, a roof and a cornice, glowing
+ * door frames and window sills, a light inside, its number over the exit.
+ */
 const stageRoom = (
   g: Geo,
   pal: CoursePalette,
@@ -725,37 +750,65 @@ const stageRoom = (
   heading: number,
   glow: number,
   label: string,
+  mat: Material,
+  lights: LightDef[],
 ): void => {
   const L = frame(at, heading);
   const t = 0.8;
-  const wall = { mat: 'rock' as Material, color: pal.stage };
-  for (const s of [-1, 1])
-    g.box(L(s * (w / 2 - t / 2), STAGE_H / 2, 0), v3(t, STAGE_H, d), heading, wall);
-  g.box(L(0, STAGE_H + 0.35, 0), v3(w, 0.7, d), heading, wall);
+  const H = STAGE_H;
+  const wall = { mat, color: pal.stage };
+  const shine = { mat: 'glow' as Material, color: glow, noCollide: true, lowDetail: true };
+  // the windows: from the sill to 4.4 m, between two solid posts at each end
+  const sill = 1.2;
+  const top = 4.4;
+  const post = 1.8;
+  for (const s of [-1, 1]) {
+    const x = s * (w / 2 - t / 2);
+    g.box(L(x, sill / 2, 0), v3(t, sill, d), heading, wall);
+    g.box(L(x, top + (H - top) / 2, 0), v3(t, H - top, d), heading, wall);
+    for (const z of [-1, 1])
+      g.box(
+        L(x, sill + (top - sill) / 2, z * (d / 2 - post / 2)),
+        v3(t, top - sill, post),
+        heading,
+        wall,
+      );
+    // a glowing sill, and a glowing strip along the floor by the wall
+    g.box(L(x, sill + 0.06, 0), v3(t * 0.6, 0.12, d - 2 * post), heading, shine);
+    g.box(L(s * (w / 2 - t - 0.35), 0.03, 0), v3(0.3, 0.06, d - 1), heading, shine);
+  }
+  g.box(L(0, H + 0.35, 0), v3(w, 0.7, d), heading, wall);
+  // a cornice round the roof
+  g.box(L(0, H + 0.9, 0), v3(w + 0.8, 0.4, d + 0.8), heading, { mat, color: pal.rockDark });
   // glowing frames round both doorways (on the wall ends and the roof's edges)
   for (const z of [-1, 1]) {
     const zz = z * (d / 2 + 0.1);
     for (const s of [-1, 1])
-      g.box(L(s * (w / 2 - t / 2), STAGE_H / 2, zz), v3(t, STAGE_H, 0.2), heading, {
+      g.box(L(s * (w / 2 - t / 2), H / 2, zz), v3(t, H, 0.2), heading, {
         mat: 'sand',
         color: glow,
         noCollide: true,
       });
-    g.box(L(0, STAGE_H + 0.35, zz), v3(w - 2 * t, 0.7, 0.2), heading, {
+    g.box(L(0, H + 0.35, zz), v3(w - 2 * t, 0.7, 0.2), heading, {
       mat: 'trim',
       color: glow,
       noCollide: true,
     });
   }
-  // the stage number on a board over the exit
-  const board = L(0, STAGE_H + 0.7 + 1.3, -d / 2 + 0.3);
-  g.box(board, v3(4.2, 2.6, 0.6), heading, { mat: 'rock', color: pal.rockDark, noCollide: true });
-  digits(g, L(0, STAGE_H + 0.7 + 1.3, -d / 2), heading, label === 'F' ? '' : label, glow, 1.7);
+  lights.push({ pos: L(0, H - 1.2, 0), color: glow, radius: 10, intensity: 0.9 });
+  // the stage number on a board over the exit, standing on the cornice
+  const by = H + 1.1 + 1.3;
+  g.box(L(0, by, -d / 2 + 0.3), v3(4.2, 2.6, 0.6), heading, {
+    mat: 'rock',
+    color: pal.rockDark,
+    noCollide: true,
+  });
+  digits(g, L(0, by, -d / 2), heading, label === 'F' ? '' : label, glow, 1.7);
   if (label === 'F') {
     // a chequered strip instead of a number
     for (let k = 0; k < 6; k++)
       g.box(
-        L(-1.75 + k * 0.7, STAGE_H + 0.7 + 1.3 + (k % 2 ? 0.35 : -0.35), -d / 2 - 0.06),
+        L(-1.75 + k * 0.7, by + (k % 2 ? 0.35 : -0.35), -d / 2 - 0.06),
         v3(0.7, 0.7, 0.12),
         heading,
         {
@@ -1184,17 +1237,54 @@ const expandScenery = (
         return;
       }
       case 'cloud': {
+        // a drifting cloud: a low wide puff with rounder ones heaped on it (octagons)
         const at = p3(e.at);
         const [w, d] = e.size;
-        const t = Math.max(1.5, Math.min(w, d) * 0.08);
-        const cl = { mat: 'sand' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
-        g.box(add(at, v3(0, -t / 2, 0)), v3(w, t, d), hash01(seed) * 40, cl);
+        const cl = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
+        const turn = hash01(seed) * 45;
+        let y = at.y - Math.min(w, d) * 0.3;
+        for (const [k, hk] of [
+          [1, 0.12],
+          [0.65, 0.12],
+          [0.35, 0.1],
+        ]) {
+          const h = Math.min(w, d) * hk;
+          for (const t of [0, 45])
+            g.box(v3(at.x, y + h / 2, at.z), v3(w * k, h, d * k), turn + t, cl);
+          y += h;
+        }
+        return;
+      }
+      case 'arch': {
+        const at = p3(e.at);
+        const L = frame(at, e.heading);
+        const c = Math.max(1.5, e.width * 0.12);
+        const col = { mat: 'rock' as Material, color: e.color ?? pal.stage, noCollide: true };
+        for (const k of [-1, 1]) {
+          g.box(
+            L(k * (e.width / 2 + c / 2), 0.8 + (e.height - 0.8) / 2, 0),
+            v3(c, e.height - 0.8, c),
+            e.heading,
+            col,
+          );
+          g.box(L(k * (e.width / 2 + c / 2), 0.4, 0), v3(c * 1.4, 0.8, c * 1.4), e.heading, {
+            ...col,
+            color: pal.rockDark,
+          });
+        }
         g.box(
-          add(at, v3(0, t * 0.4, 0)),
-          v3(w * 0.6, t * 0.8, d * 0.55),
-          hash01(seed) * 40 + 20,
-          cl,
+          L(0, e.height + c * 0.4, 0),
+          v3(e.width + 2 * c + 1, c * 0.8, c * 1.1),
+          e.heading,
+          col,
         );
+        // a glowing strip under the lintel
+        g.box(L(0, e.height - 0.15, 0), v3(e.width, 0.3, c * 0.5), e.heading, {
+          mat: 'glow',
+          color: pal.stageGlow,
+          noCollide: true,
+          lowDetail: true,
+        });
         return;
       }
       case 'arrow': {
@@ -1215,9 +1305,16 @@ const expandScenery = (
           const y = e.min[1] + hash01(s * 3 + 2) * (e.max[1] - e.min[1]);
           const z = e.min[2] + hash01(s * 3 + 3) * (e.max[2] - e.min[2]);
           const size = e.size[0] + hash01(s * 7 + 5) * (e.size[1] - e.size[0]);
-          const r = e.kind === 'crystal' || e.kind === 'spire' ? size * 0.3 : size * 0.75;
+          // (towers and crystals stand on an island of their own, never float bare)
+          const r =
+            e.kind === 'crystal' ? size * 0.6 : e.kind === 'spire' ? size * 0.4 : size * 0.75;
           if (e.clear && !clearOfLine(line, x, z, e.clear + r)) continue;
-          const y0 = e.kind === 'island' ? y - size * 1.2 : y - 2;
+          const y0 =
+            e.kind === 'island'
+              ? y - size * 1.2
+              : e.kind === 'cloud'
+                ? y - size * 0.4
+                : y - (e.kind === 'crystal' ? size * 0.9 : size * 0.45) * 1.3;
           const y1 = e.kind === 'spire' || e.kind === 'crystal' ? y + size * 1.3 : y + 3;
           if (!free(x, z, y0, y1, r)) continue;
           placed.push({ x, z, y0, y1, r });
@@ -1235,8 +1332,27 @@ const expandScenery = (
             );
           else if (e.kind === 'cloud')
             one({ t: 'cloud', at: [x, y, z], size: [size, size * 0.6] }, s);
-          else if (e.kind === 'crystal') one({ t: 'crystal', at: [x, y, z], height: size }, s);
-          else one({ t: 'spire', at: [x, y, z], height: size, width: size * 0.18 }, s);
+          else {
+            const base = e.kind === 'crystal' ? size * 0.9 : size * 0.45;
+            island(
+              g,
+              pal,
+              v3(x, y, z),
+              base,
+              base * 0.85,
+              base * 0.7,
+              e.style ?? 'stone',
+              hash01(s) * 90,
+              s,
+            );
+            if (e.kind === 'crystal') {
+              one({ t: 'crystal', at: [x, y, z], height: size }, s);
+              one(
+                { t: 'crystal', at: [x + size * 0.3, y, z + size * 0.15], height: size * 0.55 },
+                s + 1,
+              );
+            } else one({ t: 'spire', at: [x, y, z], height: size, width: size * 0.18 }, s);
+          }
           made++;
         }
         return;
@@ -1320,46 +1436,91 @@ const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[]) => {
       }
     }
   }
-  const cloud = { mat: 'sand' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
+  const cloud = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
+  const glow = { mat: 'glow' as Material, color: pal.danger, noCollide: true, lowDetail: true };
   const built = g.boxes.map(aabbOf);
+  /** Add a box only where nothing is built yet (clouds and glow never cut through anything). */
+  const place = (c: Vec3, size: Vec3, heading: number, s: Style): boolean => {
+    const r = Math.hypot(size.x, size.z) / 2;
+    const bb = [c.x - r, c.y - size.y / 2, c.z - r, c.x + r, c.y + size.y / 2, c.z + r];
+    if (!clearBox(built, bb[0], bb[1], bb[2], bb[3], bb[4], bb[5])) return false;
+    g.box(c, size, heading, s);
+    built.push(bb);
+    return true;
+  };
   floors.forEach((f, fi) => {
     killVolumes.push({ min: v3(f.min[0], f.y - 25, f.min[1]), max: v3(f.max[0], f.y, f.max[1]) });
-    // cloud puffs on a grid (never touching each other), their tops at the floor's height
-    const cell = 55;
+    // lumpy cloud clusters: a wide low puff with rounder ones heaped on it and a smaller puff
+    // beside it, their tops about the floor's height; gaps between them show the glow below
+    const cell = 46;
     const nx = Math.max(1, Math.round((f.max[0] - f.min[0]) / cell));
     const nz = Math.max(1, Math.round((f.max[1] - f.min[1]) / cell));
     const cx = (f.max[0] - f.min[0]) / nx;
     const cz = (f.max[1] - f.min[1]) / nz;
     for (let i = 0; i < nx; i++)
       for (let j = 0; j < nz; j++) {
-        const s = fi * 10007 + i * 131 + j;
-        const w = cx * (0.62 + hash01(s) * 0.3);
-        const d = cz * (0.62 + hash01(s + 1) * 0.3);
-        const x = f.min[0] + (i + 0.5) * cx + (hash01(s + 2) - 0.5) * (cx - w) * 0.9;
-        const z = f.min[1] + (j + 0.5) * cz + (hash01(s + 3) - 0.5) * (cz - d) * 0.9;
-        const y = f.y - 1 - hash01(s + 4) * 3;
-        // (never through anything already built: an island, a pillar's foot)
-        if (!clearBox(built, x - w / 2, y - 3, z - d / 2, x + w / 2, y + 2.4, z + d / 2)) continue;
-        g.box(v3(x, y - 1.5, z), v3(w, 3, d), 0, cloud);
-        if (hash01(s + 5) < 0.6) g.box(v3(x, y + 1.2, z), v3(w * 0.5, 2.4, d * 0.45), 0, cloud);
+        // (a big heap if it fits, else smaller ones: never through anything)
+        let ok = false;
+        let R = 0;
+        let x = 0;
+        let z = 0;
+        let y0 = 0;
+        let turn = 0;
+        let s = 0;
+        for (let k = 0; k < 4 && !ok; k++) {
+          s = fi * 10007 + i * 131 + j + k * 7919;
+          R = Math.min(cx, cz) * (0.22 + hash01(s) * 0.14) * [1, 0.7, 0.5, 0.35][k];
+          x = f.min[0] + (i + 0.5) * cx + (hash01(s + 2) - 0.5) * (cx - 3 * R) * 0.8;
+          z = f.min[1] + (j + 0.5) * cz + (hash01(s + 3) - 0.5) * (cz - 3 * R) * 0.8;
+          turn = hash01(s + 4) * 45;
+          // (its top a little over the floor's height: touch the clouds and you're gone)
+          y0 = f.y + 1 - R * 0.96 - hash01(s + 5) * 2;
+          ok = clearBox(
+            built,
+            x - R * 2.2,
+            y0,
+            z - R * 2.2,
+            x + R * 2.2,
+            y0 + R * 0.96,
+            z + R * 2.2,
+          );
+        }
+        if (!ok) continue;
+        const bb = [x - R * 2.2, y0, z - R * 2.2, x + R * 2.2, y0 + R * 0.96, z + R * 2.2];
+        const layers: [number, number][] = [
+          [2 * R, R * 0.32],
+          [1.45 * R, R * 0.34],
+          [0.8 * R, R * 0.3],
+        ];
+        let y = y0;
+        for (const [w, h] of layers) {
+          g.box(v3(x, y + h / 2, z), v3(w, h, w), turn, cloud);
+          g.box(v3(x, y + h / 2, z), v3(w, h, w), turn + 45, cloud);
+          y += h;
+        }
+        // a smaller puff leaning on its side
+        const a = hash01(s + 6) * Math.PI * 2;
+        const w2 = R * (0.9 + hash01(s + 7) * 0.4);
+        const px = x + Math.cos(a) * R * 1.05;
+        const pz = z + Math.sin(a) * R * 1.05;
+        g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 20, cloud);
+        g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 65, cloud);
+        built.push(bb);
+        // the danger glow deep under it
+        place(v3(x, y0 - 14, z), v3(cx * 0.95, 0.6, cz * 0.95), 0, glow);
       }
   });
   // the danger glow far under every cloud sea (seen through the gaps): the global floor
-  g.box(v3(0, data.killY, 0), v3(1000, 1, 1000), 0, {
-    mat: 'sand',
-    color: pal.danger,
-    noCollide: true,
-    lowDetail: true,
-  });
+  g.box(v3(0, data.killY, 0), v3(1000, 1, 1000), 0, glow);
   return killVolumes;
 };
 
 /** Expand a course into a level (the racing line, gates, devices, scenery). */
 export const expandCourse = (data: CourseData): ExpandedCourse => {
   const g = new Geo();
-  const r = expandRoute(data, g);
+  const lights: LightDef[] = [];
+  const r = expandRoute(data, g, lights);
   if (!r.start || !r.finish) throw new Error(`${data.name}: a course needs a start and a finish`);
-  const lights: { pos: Vec3; color: number; radius: number; intensity: number }[] = [];
   expandScenery(
     data,
     g,

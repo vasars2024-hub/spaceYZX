@@ -10,13 +10,13 @@
 //   5  the curved finale: ramps swinging left and right                       → FINISH
 import type { CourseData } from '../course/types';
 import { Pen } from '../course/pen';
-import { surfRun, type RampOpts } from '../course/sections';
+import { landmark, surfRun, type RampOpts } from '../course/sections';
 
 const PALETTE = {
-  ground: 0xdfeaf2,
-  ground2: 0xc9d9e6,
-  rock: 0x6f7f95,
-  rockDark: 0x4f5c70,
+  ground: 0x5d7894,
+  ground2: 0x6b88a6,
+  rock: 0x3f4d60,
+  rockDark: 0x2c3645,
   edge: 0x5cf2c0,
   surf: 0x3aa8e8,
   surfEdge: 0xb8fff0,
@@ -27,8 +27,8 @@ const PALETTE = {
   portal: 0xb07cff,
   pad: 0xffd23c,
   arrow: 0xe8fff8,
-  cloud: 0x9fb4d0,
-  danger: 0x2a3a6a,
+  cloud: 0xe8f2fb,
+  danger: 0xff4a6a,
   leaf: 0x3f7a6a,
   leafDark: 0x2c5a4f,
   trunk: 0x4a3f38,
@@ -42,13 +42,20 @@ const PALETTE = {
 const CAP = 9.5;
 
 /** One surf stage: from the room at the pen, drop onto the ramps, land, the portal onward. */
-const stage = (p: Pen, ramps: RampOpts[], next: [number, number, number] | null) => {
+const stage = (
+  p: Pen,
+  ramps: RampOpts[],
+  next: [number, number, number] | null,
+  name = '',
+  side = 60,
+) => {
   p.platform([8, 10], 'strafe');
   surfRun(p, ramps);
   p.move(14, -12).platform([16, 34]);
   if (next) {
     p.portal(next, [9, 10]);
-    p.move(-1).stage([14, 14], CAP);
+    p.move(-1).stage([14, 14], CAP, name);
+    landmark(p, side, side > 0 ? 'tower' : 'falls', 'snow');
   } else p.finish([16, 18]);
 };
 
@@ -71,6 +78,7 @@ export const surfAuroraCourse = (): CourseData => {
       { gap: 14, fall: 8, length: 70, drop: 12, ...A, side: 'both', ride: 'right' },
     ],
     [-200, 330, 420],
+    'Longer transfers',
   );
   // ---- 2: longer straight transfers ----
   stage(
@@ -85,6 +93,8 @@ export const surfAuroraCourse = (): CourseData => {
       { gap: 18, fall: 9, length: 60, drop: 12, ...B, side: 'left' },
     ],
     [-20, 330, 420],
+    'Flicks',
+    -60,
   );
   // ---- 3: side-switch flicks ----
   stage(
@@ -99,6 +109,7 @@ export const surfAuroraCourse = (): CourseData => {
       { gap: 16, fall: 8, shift: -10, length: 55, drop: 11, ...B, side: 'right' },
     ],
     [160, 330, 420],
+    'The turn',
   );
   // ---- 4: a 90° turn in three transfers, a booster ring ----
   {
@@ -117,7 +128,8 @@ export const surfAuroraCourse = (): CourseData => {
     p.surf({ length: 70, drop: 12, ...A, side: 'both', ride: 'right' });
     p.move(14, -12, -8).face(0).platform([34, 34]);
     p.portal([400, 330, 40], [9, 10]);
-    p.move(-1).stage([14, 14], CAP);
+    p.move(-1).stage([14, 14], CAP, 'Curved finale');
+    landmark(p, -60, 'arch', 'snow');
   }
   // ---- 5: the curved finale: ramps swinging left and right ----
   stage(
@@ -141,12 +153,14 @@ export const surfAuroraCourse = (): CourseData => {
       top: 0x071a2e,
       horizon: 0x1f5a6a,
       ground: 0x0a1a2a,
-      sun: { dir: [0.3, 0.5, -0.8], color: 0xe8f4ff, sizeDeg: 8 },
+      sun: { dir: [0.3, 0.5, -0.8], color: 0xe8f4ff, sizeDeg: 4 },
       sunLight: 0xa8e8ff,
       stars: true,
       fog: { near: 140, far: 540 },
       ambient: 0.95,
     },
+    roomMat: 'sand',
+    surfColors: [0x2f9fe8, 0x19d6a0, 0xa45cff, 0xff5aa0, 0xffb02e],
     killY: 40,
     floors: [],
     autoFloors: { below: 14, pad: 30 },

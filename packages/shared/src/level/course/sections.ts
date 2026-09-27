@@ -1,7 +1,7 @@
 // Reusable route sections for authoring courses with the pen (./pen.ts): a bunny-hop chain, a
 // run of surf ramps with transfers, a window jump, a pillar weave... Each writes ordinary
 // course elements (plain data); tracks mix them with their own numbers.
-import type { P2 } from './types';
+import type { IslandStyle, P2 } from './types';
 import type { Pen } from './pen';
 
 export interface HopChainOpts {
@@ -17,16 +17,28 @@ export interface HopChainOpts {
   /** rise per hop (metres, negative = down), or a list per hop */
   rise?: number | number[];
   size?: P2;
+  /** vary the pads: sizes −10…+12 % and heights ±0.3 m in a fixed pattern (never a row of clones) */
+  vary?: boolean;
 }
+
+const VARY_SIZE = [1, 0.92, 1.12, 0.95, 1.1, 0.9, 1.08];
+const VARY_RISE = [0, -0.3, 0.2, -0.2, 0.25, -0.3, 0.15];
 
 /** A bunny-hop chain (the pen ends on the last pad; leave it with `go`). */
 export const hopChain = (p: Pen, o: HopChainOpts): Pen => {
   const steps = [];
+  const size = o.size ?? [5, 5];
   for (let i = 0; i < o.n; i++) {
     const d = Math.min(o.max ?? Infinity, o.first + (o.grow ?? 0) * i);
     const turn = Array.isArray(o.turn) ? (o.turn[i] ?? 0) : (o.turn ?? 0);
-    const rise = Array.isArray(o.rise) ? (o.rise[i] ?? 0) : (o.rise ?? 0);
-    steps.push({ d, turn: i === 0 ? 0 : turn, rise, size: o.size });
+    let rise = Array.isArray(o.rise) ? (o.rise[i] ?? 0) : (o.rise ?? 0);
+    let pad: P2 = size;
+    if (o.vary && i > 0) {
+      const k = VARY_SIZE[i % VARY_SIZE.length];
+      pad = [Math.round(size[0] * k * 10) / 10, Math.round(size[1] * k * 10) / 10];
+      rise += VARY_RISE[i % VARY_RISE.length];
+    }
+    steps.push({ d, turn: i === 0 ? 0 : turn, rise, size: pad });
   }
   return p.pads(steps, 'hop', o.size ?? [5, 5]);
 };
@@ -100,5 +112,74 @@ export const wallBeside = (
     size,
     heading: r(heading),
   });
+  return p;
+};
+
+/**
+ * A landmark beside the way (after a checkpoint: you see it from the stretch ahead): an island
+ * `side` metres to the right (negative = left) with a tower, a monumental arch or waterfalls.
+ */
+export const landmark = (
+  p: Pen,
+  side: number,
+  kind: 'tower' | 'arch' | 'falls',
+  style: IslandStyle,
+  color?: number,
+): Pen => {
+  // (on whichever side, a little further out if need be, is clear of the whole route)
+  const points: [number, number, number][] = [];
+  for (const e of p.route) {
+    if ('at' in e) points.push(e.at);
+    if ('from' in e) points.push(e.from);
+    if ('to' in e) points.push(e.to);
+    if (e.t === 'jumps') for (const pd of e.pads) points.push(pd.at);
+  }
+  const clear = (x: number, y: number, z: number) =>
+    points.every((q) => Math.hypot(q[0] - x, q[2] - z) > 34 || Math.abs(q[1] - y) > 45);
+  let f = -6;
+  for (const [s, ff] of [
+    [side, -6],
+    [-side, -6],
+    [side * 1.4, -6],
+    [-side * 1.4, -6],
+    [side, -40],
+    [-side, -40],
+  ]) {
+    const q = p.rel(ff, s, 5);
+    if (clear(q.x, q.y, q.z)) {
+      side = s;
+      f = ff;
+      break;
+    }
+  }
+  const at = p.rel(f, side, 5);
+  const top: [number, number, number] = [at.x, at.y, at.z];
+  const size: P2 = kind === 'arch' ? [26, 14] : [20, 20];
+  p.deco({ t: 'island', at: top, size, depth: 16, style, heading: p.heading });
+  if (kind === 'tower')
+    p.deco({ t: 'spire', at: top, height: 38, width: 7, ...(color ? { color } : {}) });
+  else if (kind === 'arch')
+    p.deco({
+      t: 'arch',
+      at: top,
+      heading: p.heading + 90,
+      width: 12,
+      height: 16,
+      ...(color ? { color } : {}),
+    });
+  else {
+    const q = p.rel(f, side, 5);
+    for (const s of [-1, 1]) {
+      const w = p.rel(f + s * 10, side, 5);
+      p.deco({
+        t: 'waterfall',
+        at: [w.x, w.y, w.z],
+        heading: (p.heading + (s > 0 ? 0 : 180)) % 360,
+        width: 4,
+        drop: 26,
+      });
+    }
+    p.deco({ t: 'spire', at: [q.x, q.y, q.z], height: 16, width: 5, ...(color ? { color } : {}) });
+  }
   return p;
 };

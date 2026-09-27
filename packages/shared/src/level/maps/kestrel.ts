@@ -20,7 +20,7 @@
 import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
 import { qFromAxisAngle } from '../../math/quat';
-import { LevelBuilder, type Face } from '../builder';
+import { LevelBuilder, wedgeRamp, type Face } from '../builder';
 import type {
   BoxDef,
   GravityPadDef,
@@ -43,6 +43,12 @@ const ENGINE_RED = 0xff5a3c;
 
 type Hole = { u0: number; u1: number; v0: number; v1: number };
 const FULL: Hole = { u0: -1e3, u1: 1e3, v0: -1e3, v1: 1e3 };
+/** the hangar deck's kick-rail (z ranges): gaps at the two middle ramps */
+const HANGAR_RAIL: [number, number][] = [
+  [-27.8, -10],
+  [-6, 6],
+  [10, 27.8],
+];
 
 /** Key coordinates (the +X half; the -X half is the mirror image). */
 export const KESTREL = {
@@ -127,8 +133,7 @@ export const buildKestrel = (): LevelDef => {
   );
   // the raised core platform (ramps on the lane sides, climbable on the others)
   b.box(v3(-7, 0, -6), v3(7, 2, 6), { mat: 'panel', trim: VIOLET });
-  b.ramp('x', -11, -7, 0, 2, 0, 6, { mat: 'floor' });
-  b.ramp('x', 11, 7, 0, 2, 0, 6, { mat: 'floor' });
+  b.boxes.push(wedgeRamp('x', -11, -7, 0, 2, 0, 6), wedgeRamp('x', 11, 7, 0, 2, 0, 6));
   // the reactor core: a column from the platform to the ceiling
   b.box(v3(-3, 2, -3.5), v3(3, R.h, 3.5), { mat: 'engine', trim: VIOLET });
   // north balcony (the upper level through mid), with a railing and a gap to drop from
@@ -178,11 +183,23 @@ export const buildKestrel = (): LevelDef => {
 
   // ---- Engine corridor (wall gravity, ceiling in the middle) ----
   const S = K.south;
+  // (its long walls stop at the turbine halls' walls, which close the corners)
+  const engineCorners: Hole[] = [-1, 1].map((sx) => ({
+    u0: sx > 0 ? S.x : -S.x - 1,
+    u1: sx > 0 ? S.x + 1 : -S.x,
+    v0: -1e3,
+    v1: 1e3,
+  }));
   b.room(
     v3(-S.x, 0, S.z0),
     v3(S.x, S.h, S.z1),
     1,
-    { '-x': [FULL], '+x': [FULL], '+z': [connS(1), connS(-1)] },
+    {
+      '-x': [FULL],
+      '+x': [FULL],
+      '+z': [connS(1), connS(-1), ...engineCorners],
+      '-z': engineCorners,
+    },
     { wall: 'engine', trim: VIOLET },
   );
   // a turbine hanging from the ceiling in the middle (cover while the ceiling is the floor),
@@ -235,17 +252,24 @@ export const buildKestrel = (): LevelDef => {
     // baffles inside the side doors
     box(79, 0, 12, 80, 6, 29.5, { mat: 'panel', trim: tc });
     box(79, 0, -29.5, 80, 6, -12, { mat: 'panel', trim: tc });
-    // ready deck along the back wall (spawns up here), ramps down at both ends, railing
+    // ready deck along the back wall (spawns up here), ramps down at both ends and two in the
+    // middle (a short way from the deck spawns to every door), railing
     const deckY = 5;
     box(92, deckY - 0.5, -HG.z, HG.x1, deckY, HG.z, { mat: 'floor', trim: tc });
-    b.ramp('x', X(92), X(84), deckY, 0, 30, 4, { mat: 'floor' });
-    b.ramp('x', X(92), X(84), deckY, 0, -30, 4, { mat: 'floor' });
-    box(91.8, deckY, -27.8, 92, deckY + 0.6, 27.8, { mat: 'pillar' }); // (a kick-rail: no chest cover)
+    for (const z of [-30, -8, 8, 30]) b.ramp('x', X(92), X(84), deckY, 0, z, 4, { mat: 'floor' });
+    // (a kick-rail: no chest cover; open at the middle ramps)
+    for (const [z0, z1] of HANGAR_RAIL)
+      box(91.8, deckY, z0, 92, deckY + 0.6, z1, { mat: 'pillar' });
     for (const z of [-22, -11, 11, 22])
       box(92, 0, z - 0.4, 92.8, deckY - 0.5, z + 0.4, { mat: 'pillar' });
     // hangar cover
     box(85, 0, 13, 87, 2, 15, { mat: 'crate', trim: tc });
     box(85, 0, -15, 87, 2, -13, { mat: 'crate', trim: tc });
+    // landmarks on the way to each side door: a tall container and a low crate
+    for (const sz of [-1, 1]) {
+      box(88, 0, sz * 19, 91, 3, sz * 23, { mat: 'crate', trim: tc });
+      box(85.5, 0, sz * 24, 87, 1.2, sz * 25.5, { mat: 'crate' });
+    }
     // spawns: 4 on the ready deck, 4 on the floor behind the barricade
     for (const [x, y, z] of [
       [95, deckY, -6],
@@ -291,7 +315,7 @@ export const buildKestrel = (): LevelDef => {
     // the upper shelf (continues the gallery), its railing, and the ramp down to the airlock
     box(AT.x0, 0, 6, 56, U, AT.z1, { mat: 'panel' });
     box(AT.x0, U, 6, 56, U + 0.6, 6.2, { mat: 'pillar' });
-    b.ramp('x', X(56), X(66), U, 0, 13.5, 5, { mat: 'floor' });
+    b.boxes.push(wedgeRamp('x', X(56), X(66), U, 0, 13.5, 5));
     // atrium floor cover: a low console, a crate stack, a pillar
     box(52, 0, 0, 56, 1.2, 2, { mat: 'panel', trim: tc });
     box(60, 0, -14, 63, 3, -11, { mat: 'crate' });
@@ -349,10 +373,12 @@ export const buildKestrel = (): LevelDef => {
       {
         '-z': [{ u0: 28, u1: 34, v0: U, v1: U + 5 }],
         '+z': [{ u0: 28, u1: 34, v0: CV.y0, v1: CV.y0 + 5 }],
+        // (its floor stops at the trench's wall)
+        '-y': [{ u0: -1e3, u1: 1e3, v0: TR.z1, v1: TR.z1 + 1 }],
       },
       { trim: tc },
     );
-    b.ramp('z', TR.z1 + 1, CV.z0 - 1, U, CV.y0, X(31), 6, { mat: 'floor' });
+    b.boxes.push(wedgeRamp('z', TR.z1 + 1, CV.z0 - 1, U, CV.y0, X(31), 6));
 
     // ---------------- Cargo bay: containers, loading dock ----------------
     const CB = K.cargo;
@@ -387,6 +413,11 @@ export const buildKestrel = (): LevelDef => {
         '-x': [shaftDoor],
         '+x': [{ u0: CV.z0, u1: CV.z1, v0: CV.y0, v1: CV.y0 + CV.h }],
         '-z': [{ u0: 28, u1: 34, v0: CV.y0, v1: CV.y0 + 5 }],
+        // (its floor stops at the shaft's and the cargo bay's walls)
+        '-y': [
+          { u0: CV.x0 - 1, u1: CV.x0, v0: -1e3, v1: 1e3 },
+          { u0: CV.x1, u1: CV.x1 + 1, v0: -1e3, v1: 1e3 },
+        ],
       },
       { trim: tc },
     );
@@ -421,7 +452,8 @@ export const buildKestrel = (): LevelDef => {
     box(63, 0, -34, 69, 12, -24, { mat: 'engine', trim: ENGINE_RED });
     // gantry along the north wall (y 5) with its ramp and railing
     box(TH.x0, 4.5, -24, 66, 5, TH.z1, { mat: 'floor', trim: tc });
-    b.ramp('x', X(66), X(74), 5, 0, -22, 4, { mat: 'floor' });
+    // (clear of the vent strips on the turbine beside it)
+    b.ramp('x', X(66), X(74), 5, 0, -21.975, 3.95, { mat: 'floor' });
     box(TH.x0, 5, -24.2, 62, 5.6, -24, { mat: 'pillar' });
     box(60, 0, -42, 61.2, 1.2, -38, { mat: 'panel' });
 
@@ -434,6 +466,8 @@ export const buildKestrel = (): LevelDef => {
       {
         '-z': [FULL],
         '+z': [FULL],
+        // (its ceiling stops at the engine corridor's wall)
+        '+y': [{ u0: -1e3, u1: 1e3, v0: S.z1, v1: S.z1 + 1 }],
       },
       { trim: tc },
     );
@@ -509,6 +543,11 @@ export const buildKestrel = (): LevelDef => {
     w('baseS', 84, 1, -22);
     w('sCorner', 81, 1, -31.5);
     w('sIn', 77.5, 1, -30.5);
+    // the ready deck (spawns) and the feet of its middle ramps
+    w('deckN', 92.5, 6, 8);
+    w('deckS', 92.5, 6, -8);
+    w('rampN', 82.8, 1, 8);
+    w('rampS', 82.8, 1, -8);
     // main lane: airlock, atrium, trench, reactor floor
     w('air', 72, 1, 0);
     w('atr', 62, 1, 0);
@@ -565,6 +604,13 @@ export const buildKestrel = (): LevelDef => {
       ['bS1', 'baseS'],
       ['baseS', 'sCorner'],
       ['sCorner', 'sIn'],
+      ['deckN', 'deckS'],
+      ['deckN', 'rampN'],
+      ['deckS', 'rampS'],
+      ['rampN', 'bN1'],
+      ['rampN', 'tower'],
+      ['rampS', 'bS1'],
+      ['rampS', 'tower'],
       // main
       ['air', 'atr'],
       ['atr', 'atrW'],
@@ -773,12 +819,19 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
   ) => b.box(min, max, { mat, noCollide: true, ...extra });
   const LIGHT = 0x9fc4e8;
   const HAZARD = 0xd8a21a;
-  // reactor core: glowing rings
-  for (const y of [4, 8, 12])
-    deco(v3(-3.12, y, -3.62), v3(3.12, y + 0.25, 3.62), 'trim', { color: VIOLET });
-  // reactor room: ceiling strips
-  for (const z of [-12, -4])
-    deco(v3(-16, K.reactor.h - 0.12, z - 0.25), v3(16, K.reactor.h - 0.02, z + 0.25), 'trim', {
+  // reactor core: glowing rings (a band on each face of the column, x -3..3, z -3.5..3.5)
+  for (const y of [4, 8, 12]) {
+    const ring = { color: VIOLET };
+    for (const sx of [-1, 1])
+      deco(v3(sx * 3, y, -3.62), v3(sx * 3.12, y + 0.25, 3.62), 'trim', ring);
+    for (const sz of [-1, 1]) deco(v3(-3, y, sz * 3.5), v3(3, y + 0.25, sz * 3.62), 'trim', ring);
+  }
+  // reactor room: ceiling strips (the south one clear of the chamfered corners)
+  for (const [z, hx] of [
+    [-12, 13],
+    [-4, 16],
+  ])
+    deco(v3(-hx, K.reactor.h - 0.12, z - 0.25), v3(hx, K.reactor.h - 0.02, z + 0.25), 'trim', {
       color: LIGHT,
     });
   for (const s of [-1, 1] as const) {
@@ -799,20 +852,26 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
     for (const x of [68.6, 75.4])
       for (let z = -4.5; z < 5; z += 2)
         d(x - 0.35, 0.004, z, x + 0.35, 0.02, z + 1, 'trim', { color: HAZARD });
-    // atrium: wall ribs + windows to space high on the long walls
+    // atrium: wall ribs + windows to space high on the long walls (on the north wall the ribs
+    // stand on the upper shelf, and none where the ramp runs along it)
     for (let x = 49; x < 68; x += 6)
-      for (const z of [-1, 1]) d(x - 0.3, 0, z * 16 - z * 0.35, x + 0.3, 14, z * 16, 'pillar');
+      for (const z of [-1, 1]) {
+        if (z > 0 && x > 56 && x < 66) continue;
+        const y0 = z > 0 && x < 56 ? U : 0;
+        d(x - 0.3, y0, z * 16 - z * 0.35, x + 0.3, 14, z * 16, 'pillar');
+      }
     for (let x = 52; x < 68; x += 6)
       d(x - 2.2, 9, -15.98, x + 2.2, 12.5, -15.9, 'glass', { color: 0x1a3550, trim: tc });
-    // atrium + trench: ceiling light strips
-    for (let x = 24; x < 66; x += 10)
-      d(x, 11.85, -6.25, x + 6, 11.95, -5.75, 'trim', { color: LIGHT });
+    // trench + atrium: ceiling light strips, just under each room's ceiling
+    for (const x of [23, 31, 39]) d(x, 11.85, -6.25, x + 6, 11.95, -5.75, 'trim', { color: LIGHT });
+    for (const x of [49, 55.5, 62])
+      d(x, 13.85, -6.25, x + 5, 13.95, -5.75, 'trim', { color: LIGHT });
     // trench floor guide line toward home
     d(22, 0.005, -10.7, 66, 0.02, -10.55, 'trim', { color: tc });
     // gallery floor strip
     d(22, U + 0.005, 13.9, 55, U + 0.02, 14.05, 'trim', { color: tc });
     // team banner over the airlock (atrium side)
-    d(68.1, 7, -4, 68.2, 11, 4, teamMat, { trim: tc });
+    d(67.9, 7, -4, 68, 11, 4, teamMat, { trim: tc });
     // cargo bay: dock edge stripes, windows
     for (let x = 52; x < 70; x += 2)
       d(x, K.cargo.dockY + 0.004, 31.7, x + 1, K.cargo.dockY + 0.02, 32.2, 'trim', {
@@ -821,24 +880,37 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
     for (let x = 55; x < 75; x += 7)
       d(x - 2.5, 7, 41.9, x + 2.5, 10.5, 41.98, 'glass', { color: 0x1a3550, trim: tc });
     // conveyor: guide rollers on the floor
-    for (let x = 29; x < 49; x += 1.5)
+    for (let x = 29; x < 49; x += 1.5) {
+      if (x + 0.8 > 37 && x < 38) continue; // (not under the partitions)
+      if (x + 0.8 > 43 && x < 44) continue;
       d(x, K.conveyor.y0 + 0.004, 35.85, x + 0.8, K.conveyor.y0 + 0.03, 36.15, 'trim', {
         color: 0x3c5a78,
       });
-    // turbine hall: vents on the turbines, pipes along the back wall
+    }
+    // turbine hall: vent bands round the turbines (not on the side against the back wall),
+    // pipes along the back wall
     for (const [x0, x1, z0, z1] of [
       [54, 59, -44, -31],
       [63, 69, -34, -24],
-    ])
-      for (const y of [3, 6])
-        d(x0 - 0.05, y, z0 - 0.05, x1 + 0.05, y + 0.3, z1 + 0.05, 'trim', { color: ENGINE_RED });
+    ]) {
+      const back = z0 <= K.turbine.z0;
+      const vent = { color: ENGINE_RED };
+      const za = back ? z0 : z0 - 0.05;
+      for (const y of [3.5, 6.5]) {
+        d(x0 - 0.05, y, za, x0, y + 0.3, z1 + 0.05, 'trim', vent);
+        d(x1, y, za, x1 + 0.05, y + 0.3, z1 + 0.05, 'trim', vent);
+        d(x0, y, z1, x1, y + 0.3, z1 + 0.05, 'trim', vent);
+        if (!back) d(x0, y, z0 - 0.05, x1, y + 0.3, z0, 'trim', vent);
+      }
+    }
     d(50, 10.5, -43.9, 74, 11.2, -43.2, 'engine');
     d(50, 2.5, -43.9, 74, 3.1, -43.3, 'engine');
-    // engine corridor: glowing vents along the outer wall, pipes along the inner one
-    for (let x = 18; x < 47; x += 6)
+    // engine corridor: glowing vents along the outer wall (clear of the tall coolant tank),
+    // pipes along the inner one up to the support rib
+    for (const x of [18, 24, 30, 44])
       d(x, 10.4, S.z0 + 0.02, x + 3, 11.2, S.z0 + 0.12, 'trim', { color: ENGINE_RED });
-    d(1, S.h - 1.2, S.z1 - 0.6, 47, S.h - 0.6, S.z1 - 0.05, 'engine');
-    d(1, 0.3, S.z1 - 0.6, 47, 0.8, S.z1 - 0.05, 'engine');
+    d(1, S.h - 1.2, S.z1 - 0.6, 45, S.h - 0.6, S.z1 - 0.05, 'engine');
+    d(1, 0.3, S.z1 - 0.6, 45, 0.8, S.z1 - 0.05, 'engine');
     // shaft: light rings on the long walls
     for (const y of [-6, 6, 18])
       d(0.5, y, SH.z1 - 0.12, SH.x, y + 0.3, SH.z1 - 0.02, 'trim', { color: WHITE });
@@ -849,7 +921,7 @@ const decorate = (b: LevelBuilder, spawns: SpawnDef[]): void => {
     });
     d(K.towerX - 2.6, 0.005, -2.6, K.towerX + 2.6, 0.02, 2.6, 'trim', { color: tc });
     d(K.towerX - 2.45, 0.006, -2.45, K.towerX + 2.45, 0.025, 2.45, 'floor');
-    d(91.9, 4.6, -27.8, 92.05, 4.8, 27.8, 'trim', { color: tc });
+    for (const [z0, z1] of HANGAR_RAIL) d(91.85, 4.6, z0, 92, 4.8, z1, 'trim', { color: tc });
   }
   // spawn pads
   for (const sp of spawns)

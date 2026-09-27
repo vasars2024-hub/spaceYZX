@@ -214,6 +214,8 @@ export class RaceFeature implements ClientFeature {
   private ghostModels = new PlayerModels();
   private group = new THREE.Group();
   private labels: GateLabel[] = [];
+  /** the stretch each checkpoint starts ("THE GRAND SURF"), under its number */
+  private names: (GateLabel | null)[] = [];
   private cells: THREE.Mesh[] = [];
   private cellGeo = new THREE.OctahedronGeometry(0.55);
   private cellMat = new THREE.MeshBasicMaterial({ color: 0x7fe8ff });
@@ -327,6 +329,16 @@ export class RaceFeature implements ClientFeature {
       sprite.scale.set(last ? 7 : 3.2, last ? 1.75 : 3.2, 1);
       this.group.add(sprite);
       this.labels.push({ sprite, mat, tex });
+      const name = 'name' in g ? g.name : undefined;
+      if (name && !last) {
+        const nt = nameTexture(name);
+        const nm = new THREE.SpriteMaterial({ map: nt, depthWrite: false, transparent: true });
+        const ns = new THREE.Sprite(nm);
+        ns.position.set(p.x, g.min.y + 1.5 + 4.3, p.z);
+        ns.scale.set(8, 1, 1);
+        this.group.add(ns);
+        this.names.push({ sprite: ns, mat: nm, tex: nt });
+      } else this.names.push(null);
     });
     for (const f of race.fuelCells ?? []) {
       const mesh = new THREE.Mesh(this.cellGeo, this.cellMat);
@@ -384,6 +396,9 @@ export class RaceFeature implements ClientFeature {
     const a = c.deps.audio;
     if (!finish) {
       a.play('controllerPickup', { volume: 0.7 });
+      // the stretch this checkpoint starts
+      const name = c.session.level.def.race?.checkpoints[cp - 1]?.name;
+      if (name) this.big(`CHECKPOINT ${cp}`, name.toUpperCase(), 1.6, '#ffe9a8');
       return;
     }
     this.myFinishMs = ms;
@@ -536,6 +551,8 @@ export class RaceFeature implements ClientFeature {
       const k = i === next ? 1.35 + 0.08 * Math.sin(this.time * 5) : 1;
       const base = i === this.labels.length - 1 ? [7, 1.75] : [3.2, 3.2];
       l.sprite.scale.set(base[0] * k, base[1] * k, 1);
+      const nl = this.names[i];
+      if (nl) nl.mat.opacity = i === next ? 1 : passed ? 0.2 : 0.55;
     });
     // fuel cells: spinning; yours used this race are gone
     this.cells.forEach((m, i) => {
@@ -688,9 +705,9 @@ export class RaceFeature implements ClientFeature {
     c.panelOpen = false;
     this.models.dispose();
     this.ghostModels.dispose();
-    for (const l of this.labels) {
-      l.mat.dispose();
-      l.tex.dispose();
+    for (const l of [...this.labels, ...this.names]) {
+      l?.mat.dispose();
+      l?.tex.dispose();
     }
     this.cellGeo.dispose();
     this.cellMat.dispose();
@@ -720,6 +737,28 @@ const ghostPlayer = (g: { pos: Vec3; yaw: number; vel: Vec3 }): RenderPlayer => 
 });
 
 /** A gate number (or FINISH) drawn on a small canvas. */
+/** A checkpoint's name on a wide dark tag. */
+const nameTexture = (text: string): THREE.CanvasTexture => {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 64;
+  const g = cv.getContext('2d');
+  if (g) {
+    g.fillStyle = 'rgba(12, 10, 20, 0.5)';
+    g.beginPath();
+    g.roundRect?.(4, 6, cv.width - 8, cv.height - 12, 14);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.font = '700 34px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text.toUpperCase(), cv.width / 2, cv.height / 2 + 2, cv.width - 24);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+};
+
 const labelTexture = (text: string, wide: boolean): THREE.CanvasTexture => {
   const cv = document.createElement('canvas');
   cv.width = wide ? 256 : 128;

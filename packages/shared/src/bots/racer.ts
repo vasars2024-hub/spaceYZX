@@ -260,7 +260,13 @@ export const racerThink = (
   if (racing && (p.raceCp !== mem.cp || moved > 8)) {
     const first = lineNodeForCp(line, p.raceCp);
     if (mem.node < first) mem.node = first;
-    if (moved > 8) mem.node = nearestNode(line, p.pos, first, p.raceCp);
+    if (moved > 8) {
+      // back at the checkpoint (a respawn): its section from the start; else (a portal) the
+      // nearest point of it
+      const at = p.raceCp > 0 ? race.checkpoints[p.raceCp - 1]?.respawn : race.start.respawn;
+      const home = at && Math.hypot(p.pos.x - at.x, p.pos.z - at.z) < 2;
+      mem.node = home ? first : nearestNode(line, p.pos, first, p.raceCp);
+    }
     mem.cp = p.raceCp;
     mem.stuck = 0;
   }

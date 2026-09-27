@@ -195,6 +195,8 @@ export class MapEditor {
     lift: number;
     at: [number, number] | null;
     last: [number, number];
+    /** the grabbed point on the piece (the drag slides level through it) */
+    point: V3;
   } | null = null;
   private connectTimer = 0;
 
@@ -1197,7 +1199,8 @@ export class MapEditor {
   beginTouchDrag(x: number, y: number): boolean {
     if (this.disposed || this.tool.k !== 'select') return false;
     const ref = this.refAt(x, y);
-    if (!ref) return false;
+    const point = this.aim?.hit?.point;
+    if (!ref || !point) return false;
     let refs = this.dragGroup(ref);
     this.session.history.seal();
     const key = `tdrag${++this.dragN}`;
@@ -1212,6 +1215,7 @@ export class MapEditor {
       lift: 0,
       at: [x, y],
       last: [x, y],
+      point,
     };
     return true;
   }
@@ -1240,7 +1244,12 @@ export class MapEditor {
     this.session.history.seal();
   }
 
-  /** Once a frame: the dragged pieces rest on the surface under the finger, on the grid. */
+  /**
+   * Once a frame: the dragged pieces slide level at the height they were grabbed (like the
+   * mouse drag; ▲ / ▼ change the height), on the grid, and snap flush to pieces they meet.
+   * Never onto whatever surface is behind the finger: behind a floating piece that can be the
+   * far end of the map.
+   */
   private applyTouchDrag(): void {
     const fd = this.fdrag;
     if (!fd?.at) return;
@@ -1252,8 +1261,24 @@ export class MapEditor {
     this.dragIgnore = null;
     const aim = this.aim;
     if (!aim || !fd.template.length) return;
-    const { pos } = this.placeAt(aim, fd.template);
-    const delta: V3 = [pos[0], pos[1] + fd.lift, pos[2]];
+    const o = aim.origin;
+    const dir = aim.dir;
+    const p = fd.point;
+    // where the finger's ray crosses the level plane through the grabbed point
+    if (Math.abs(dir[1]) < 1e-4) return;
+    const t = (p[1] - o[1]) / dir[1];
+    if (t <= 0) return;
+    let dx = o[0] + dir[0] * t - p[0];
+    let dz = o[2] + dir[2] * t - p[2];
+    // looking almost level, a tiny finger move is a huge distance: keep the drag in reach
+    const reach = Math.max(20, 2 * Math.hypot(p[0] - o[0], p[1] - o[1], p[2] - o[2]));
+    const far = Math.hypot(dx, dz);
+    if (far > reach) {
+      dx *= reach / far;
+      dz *= reach / far;
+    }
+    const g = this.grid;
+    const delta: V3 = [Math.round(dx / g) * g, fd.lift, Math.round(dz / g) * g];
     const snapBoxes = this.groupBoxes(fd.start, fd.refs);
     const shift = this.connect(moveBoxes(snapBoxes, delta), fd.refs);
     const d: V3 = [delta[0] + shift[0], delta[1] + shift[1], delta[2] + shift[2]];

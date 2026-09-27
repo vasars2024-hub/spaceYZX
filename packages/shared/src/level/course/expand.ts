@@ -1437,17 +1437,37 @@ const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[]) => {
     }
   }
   const cloud = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
-  const glow = { mat: 'glow' as Material, color: pal.danger, noCollide: true, lowDetail: true };
-  const built = g.boxes.map(aabbOf);
-  /** Add a box only where nothing is built yet (clouds and glow never cut through anything). */
-  const place = (c: Vec3, size: Vec3, heading: number, s: Style): boolean => {
-    const r = Math.hypot(size.x, size.z) / 2;
-    const bb = [c.x - r, c.y - size.y / 2, c.z - r, c.x + r, c.y + size.y / 2, c.z + r];
-    if (!clearBox(built, bb[0], bb[1], bb[2], bb[3], bb[4], bb[5])) return false;
-    g.box(c, size, heading, s);
-    built.push(bb);
-    return true;
+  /** The danger colour dimmed to `k` (a hint of heat far below, never a bright surface). */
+  const dim = (k: number): Style => {
+    const c = pal.danger;
+    const ch = (sh: number) => Math.round(((c >> sh) & 255) * k);
+    return {
+      mat: 'glow',
+      color: (ch(16) << 16) | (ch(8) << 8) | ch(0),
+      noCollide: true,
+      lowDetail: true,
+    };
   };
+  /**
+   * A soft patch of danger glow: three stacked octagons, a wide dark rim, a dimmer ring, a small
+   * brighter heart (the nearest thing to a gradient flat colours give).
+   */
+  const ember = (x: number, y: number, z: number, R: number, turn: number): void => {
+    const layers: [number, number][] = [
+      [2 * R, 0.14],
+      [1.3 * R, 0.24],
+      [0.6 * R, 0.36],
+    ];
+    const bb = [x - R * 1.45, y, z - R * 1.45, x + R * 1.45, y + 0.9, z + R * 1.45];
+    if (!clearBox(built, bb[0], bb[1], bb[2], bb[3], bb[4], bb[5])) return;
+    let yy = y;
+    for (const [w, k] of layers) {
+      for (const t of [0, 45]) g.box(v3(x, yy + 0.15, z), v3(w, 0.3, w), turn + t, dim(k));
+      yy += 0.3;
+    }
+    built.push(bb);
+  };
+  const built = g.boxes.map(aabbOf);
   floors.forEach((f, fi) => {
     killVolumes.push({ min: v3(f.min[0], f.y - 25, f.min[1]), max: v3(f.max[0], f.y, f.max[1]) });
     // lumpy cloud clusters: a wide low puff with rounder ones heaped on it and a smaller puff
@@ -1506,12 +1526,12 @@ const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[]) => {
         g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 20, cloud);
         g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 65, cloud);
         built.push(bb);
-        // the danger glow deep under it
-        place(v3(x, y0 - 14, z), v3(cx * 0.95, 0.6, cz * 0.95), 0, glow);
+        // a soft danger glow deep under about half of them
+        if (hash01(s + 8) < 0.55) ember(x, y0 - 26, z, R * 0.9, turn + 10);
       }
   });
   // the danger glow far under every cloud sea (seen through the gaps): the global floor
-  g.box(v3(0, data.killY, 0), v3(1000, 1, 1000), 0, glow);
+  g.box(v3(0, data.killY, 0), v3(1000, 1, 1000), 0, dim(0.2));
   return killVolumes;
 };
 

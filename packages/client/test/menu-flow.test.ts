@@ -229,9 +229,10 @@ describe('menu flow: online room wizard', () => {
     ).toMatchObject({ mode: 'arena', bots: 5 });
   });
 
-  it('ranked is two cards: Premier (one queue) and Duels (1v1 + 2v2, one rating); no Arena', () => {
+  it('ranked is three cards: Premier, Duels (1v1 + 2v2, one rating) and Race; no Arena', () => {
     const cards = rankedCards();
-    expect(cards.map((c) => c.ladder)).toEqual(['premier', 'duels']);
+    expect(cards.map((c) => c.ladder)).toEqual(['premier', 'duels', 'race']);
+    expect(cards[2].queues).toEqual([{ id: 'race', label: 'Search race' }]);
     expect(cards[0].queues.map((q) => q.id)).toEqual(['premier']);
     expect(cards[1].queues.map((q) => [q.id, q.label])).toEqual([
       ['duels-1v1', '1v1'],
@@ -240,6 +241,7 @@ describe('menu flow: online room wizard', () => {
     expect(cards.flatMap((c) => c.queues).some((q) => q.id.includes('arena'))).toBe(false);
     expect(rankedQueueName('premier')).toBe('Premier');
     expect(rankedQueueName('duels-2v2')).toBe('Duels 2v2');
+    expect(rankedQueueName('race')).toBe('Race');
   });
 
   it('ranked texts: countdown and placement', () => {

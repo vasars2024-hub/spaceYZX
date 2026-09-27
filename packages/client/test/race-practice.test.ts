@@ -8,6 +8,7 @@ import {
   ordinal,
   raceFromExtra,
   racePlace,
+  raceRatingLine,
   raceTag,
   saveGhost,
   savePersonalBests,
@@ -133,5 +134,27 @@ describe('race HUD helpers', () => {
     });
     expect(mats).toBeGreaterThan(0);
     models.dispose();
+  });
+});
+
+describe('ranked race results line', () => {
+  it('shows the rating change (or placement) and the server best', () => {
+    const base = {
+      race: 1,
+      track: 'race-cliffline',
+      placement: { done: 5, need: 5 },
+      timeMs: 61_230,
+      newBest: false,
+      bestMs: 60_000,
+    };
+    expect(raceRatingLine({ ...base, delta: 12.4, rating: 1044 })).toBe(
+      'Race rating +12 · 1044 · Server best 1:00.00',
+    );
+    expect(
+      raceRatingLine({ ...base, delta: -3, rating: null, placement: { done: 2, need: 5 } }),
+    ).toBe('Race placement 2/5 races · Server best 1:00.00');
+    expect(raceRatingLine({ ...base, delta: null, rating: null, newBest: true })).toBe(
+      'New server best 1:01.23',
+    );
   });
 });

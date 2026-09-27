@@ -10,7 +10,14 @@
 //   left     SURGE charges and the jetpack tank (in the movement HUD)
 //   results  places, times, gaps, your best
 import * as THREE from 'three';
-import type { PlayerState, RaceResult, RaceView, SimEvent, Vec3 } from '@space-yz/shared';
+import type {
+  PlayerState,
+  RaceRatingNotice,
+  RaceResult,
+  RaceView,
+  SimEvent,
+  Vec3,
+} from '@space-yz/shared';
 import {
   formatRaceTime,
   formatSplitDelta,
@@ -39,6 +46,20 @@ export const GHOST_EVERY = 6;
 
 const GREEN = '#5dff9a';
 const RED = '#ff5b5b';
+
+/** The results screen's line from the server after an online race. */
+export const raceRatingLine = (n: RaceRatingNotice): string => {
+  const parts: string[] = [];
+  if (n.delta !== null)
+    parts.push(
+      n.rating === null
+        ? `Race placement ${n.placement.done}/${n.placement.need} races`
+        : `Race rating ${n.delta >= 0 ? '+' : '−'}${Math.abs(Math.round(n.delta))} · ${n.rating}`,
+    );
+  if (n.newBest && n.timeMs !== null) parts.push(`New server best ${formatRaceTime(n.timeMs)}`);
+  else if (n.bestMs !== null) parts.push(`Server best ${formatRaceTime(n.bestMs)}`);
+  return parts.join(' · ');
+};
 
 /** "1st", "2nd", "3rd", "4th"... */
 export const ordinal = (n: number): string => {
@@ -158,6 +179,8 @@ export interface RaceFeatureOptions {
   trackName: string;
   /** where personal bests and the ghost are kept (default: this browser's storage) */
   store?: RaceStore;
+  /** online: the server's word on your last race (Race rating change, server best time) */
+  rated?: () => RaceRatingNotice | null;
 }
 
 interface GateLabel {
@@ -198,7 +221,7 @@ export class RaceFeature implements ClientFeature {
   private ghost: GhostRun | null;
   private recording: number[] = [];
   private recordedTick = -1;
-  private resultsShownFor = -1;
+  private resultsShownFor = '';
   private store: RaceStore;
 
   constructor(private opts: RaceFeatureOptions) {
@@ -545,12 +568,15 @@ export class RaceFeature implements ClientFeature {
     c.panelOpen = !!res;
     if (!res) {
       this.resultsEl.classList.add('hidden');
-      this.resultsShownFor = -1;
+      this.resultsShownFor = '';
       return;
     }
     this.resultsEl.classList.remove('hidden');
-    if (this.resultsShownFor === res.race) return;
-    this.resultsShownFor = res.race;
+    const rated = this.opts.rated?.() ?? null;
+    const mine = rated && rated.race === res.race && rated.track === res.track ? rated : null;
+    const key = `${res.race}:${mine ? JSON.stringify(mine) : ''}`;
+    if (this.resultsShownFor === key) return;
+    this.resultsShownFor = key;
     const win = res.standings[0]?.timeMs ?? null;
     const pb = this.personalBest;
     this.resultsEl.replaceChildren(
@@ -588,6 +614,7 @@ export class RaceFeature implements ClientFeature {
         { class: 'race-results-pb' },
         pb ? `Your best on ${this.opts.trackName}: ${formatRaceTime(pb.timeMs)}` : '',
       ),
+      h('p', { class: 'race-results-rating' }, mine ? raceRatingLine(mine) : ''),
     );
   }
 

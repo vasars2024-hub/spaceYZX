@@ -105,6 +105,24 @@ export interface RankedInfo {
   };
 }
 
+/** What the server tells a racer after a race (the results screen shows it). */
+export interface RaceRatingNotice {
+  /** race number in the room (RaceResult.race) */
+  race: number;
+  track: string;
+  /** ranked race: rating change; null = not rated (private room) */
+  delta: number | null;
+  /** new Race rating (null while placing: it stays hidden) */
+  rating: number | null;
+  placement: { done: number; need: number };
+  /** your time this race (null: DNF / left) */
+  timeMs: number | null;
+  /** it beat your server-side personal best on this track */
+  newBest: boolean;
+  /** your best on this track now (null: none) */
+  bestMs: number | null;
+}
+
 /** Voice signaling payload: SDP offers/answers (ICE candidates included), bye/hi. */
 export interface RtcSignal {
   kind: 'offer' | 'answer' | 'bye' | 'hi';
@@ -152,6 +170,8 @@ export type ServerMsg =
   | { t: 'veto'; data: VetoView | null }
   /** Season and Premier opening hours. */
   | { t: 'rankedInfo'; data: RankedInfo }
+  /** After a race in an online race room: your Race rating change (ranked) and best time. */
+  | { t: 'raceRating'; data: RaceRatingNotice }
   /** Your account profile (ratings, ranks, recent matches). */
   | { t: 'profile'; data: unknown }
   /** Ping equalization: extra input delay (ticks) this client should apply. */

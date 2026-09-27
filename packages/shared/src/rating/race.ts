@@ -1,5 +1,6 @@
 // The Race ladder (parkour races, rules/race.ts): its own rating, separate from every combat
-// ladder. Pure functions only — the server's database / queue / ranked screens plug it in later.
+// ladder. Pure functions only — the server's Race queue and ranked store (services/queue.ts,
+// services/ranked.ts recordRace) apply them to ranked races; rating/ladders.ts lists the ladder.
 //
 // Rating: multiplayer Elo from the finishing order. Every pair of racers in a race is one
 // game (ahead = a win, same place = a draw: DNFs all tie for last), and a racer's change is

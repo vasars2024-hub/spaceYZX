@@ -1,11 +1,11 @@
-// Ranked data: the ladders (Premier + Duels, shared rating/ladders.ts) with Glicko-2 ratings,
-// Premier seasons and opening hours, match history, leaderboards, profiles, reports and
-// anti-grief bans. All rating maths lives in @space-yz/shared (rating/*).
+// Ranked data: the ladders (Premier, Duels, Race — shared rating/ladders.ts; Glicko-2 for the
+// match ladders, pairwise Elo for Race), seasons, Premier opening hours, match and race
+// history, race personal bests, leaderboards, profiles, reports and anti-grief bans. All
+// rating maths lives in @space-yz/shared (rating/*).
 //
-// A ladder's ratings are rows of `ratings` with mode = the ladder id. Adding a ladder (the
-// planned 'race' rank) needs no new table: record its results with save() under its id, and
-// profile() / leaderboard() pick it up from LADDER_IDS.
-import type { LadderId, RankDisplay, Rating } from '@space-yz/shared';
+// A ladder's ratings are rows of `ratings` with mode = the ladder id: profile() /
+// leaderboard() / startNewSeason() pick every ladder up from LADDER_IDS.
+import type { LadderId, RankDisplay, RaceRatingNotice, Rating } from '@space-yz/shared';
 import {
   applyInactivity,
   DEFAULT_RD,
@@ -14,12 +14,15 @@ import {
   LADDERS,
   ladderForMode,
   ladderRank,
+  raceMaps,
   seasonResetRating,
+  updateRaceRatings,
   updateTeamMatch,
 } from '@space-yz/shared';
 import type { Db } from './db';
 import type { MatchResult } from '../game/rules/match';
 import type { ArenaResult } from '../game/rules/arena';
+import type { RaceRecord } from '../game/rules/race';
 import {
   DEFAULT_SCHEDULE,
   describeSchedule,
@@ -61,7 +64,7 @@ export interface LadderStanding {
   wins: number;
   placed: boolean;
   /** placement progress, e.g. 2 of 5 wins */
-  placement: { done: number; need: number; unit: 'wins' | 'games' };
+  placement: { done: number; need: number; unit: 'wins' | 'games' | 'races' };
   /** null while the rating is hidden */
   rank: RankDisplay | null;
   position: number | null;
@@ -74,8 +77,25 @@ export interface Profile {
   season: number;
   /** every ladder (rating/ladders.ts), in LADDER_IDS order */
   ladders: Record<LadderId, LadderStanding>;
-  /** Premier's finished seasons, newest first (rating only if placed that season) */
-  pastSeasons: { season: number; rating: number | null; rank: RankDisplay | null }[];
+  /** finished seasons of the seasonal ladders, newest first (rating only if placed) */
+  pastSeasons: {
+    season: number;
+    ladder: LadderId;
+    rating: number | null;
+    rank: RankDisplay | null;
+  }[];
+  /** your best time on every race track (null: no finish yet), with your place on its board */
+  raceBests: { track: string; timeMs: number | null; position: number | null; at: number }[];
+  /** your last races (online race rooms) */
+  recentRaces: {
+    track: string;
+    ranked: boolean;
+    place: number;
+    racers: number;
+    timeMs: number | null;
+    delta: number;
+    at: number;
+  }[];
   recent: {
     mode: string;
     /** the ladder a ranked match counted for (null: casual, or an old removed ladder) */
@@ -116,12 +136,35 @@ const newLadderRating = (ladder: LadderId): Rating => ({
   vol: DEFAULT_VOL,
 });
 
+/** The `ratings` column placement counts: this season's wins / games, or all-time games. */
+const placementCol = (ladder: LadderId): 'season_wins' | 'season_games' | 'games' =>
+  LADDERS[ladder].placement.unit === 'wins'
+    ? 'season_wins'
+    : LADDERS[ladder].seasonal
+      ? 'season_games'
+      : 'games';
+
 /** Placement progress on a ladder. */
 const placementOf = (ladder: LadderId, s: StoredRating) => {
   const p = LADDERS[ladder].placement;
-  const done = p.unit === 'wins' ? s.seasonWins : s.games;
+  const col = placementCol(ladder);
+  const done =
+    col === 'season_wins' ? s.seasonWins : col === 'season_games' ? s.seasonGames : s.games;
   return { done: Math.min(done, p.count), need: p.count, unit: p.unit, placed: done >= p.count };
 };
+
+/** One racer's line as recordRace() stores it. */
+interface RaceLine {
+  accountId: number | null;
+  name: string;
+  bot: boolean;
+  place: number;
+  timeMs: number | null;
+  splitsMs: number[];
+  dnf: boolean;
+  left: boolean;
+  respawns: number;
+}
 
 export class RankedStore {
   constructor(
@@ -386,7 +429,7 @@ export class RankedStore {
     wins: number;
   }[] {
     const p = LADDERS[ladder].placement;
-    const col = p.unit === 'wins' ? 'r.season_wins' : 'r.games';
+    const col = `r.${placementCol(ladder)}`;
     return (
       this.db
         .prepare(
@@ -490,15 +533,18 @@ export class RankedStore {
     const pastSeasons = (
       this.db
         .prepare(
-          `SELECT season, rating, placed FROM season_results
-           WHERE player_id = ? AND ladder = 'premier' ORDER BY season DESC`,
+          `SELECT season, ladder, rating, placed FROM season_results
+           WHERE player_id = ? ORDER BY season DESC, ladder DESC`,
         )
-        .all(playerId) as { season: number; rating: number; placed: number }[]
-    ).map((r) => ({
-      season: r.season,
-      rating: r.placed ? Math.round(r.rating) : null,
-      rank: r.placed ? ladderRank('premier', r.rating) : null,
-    }));
+        .all(playerId) as { season: number; ladder: string; rating: number; placed: number }[]
+    )
+      .filter((r) => (LADDER_IDS as readonly string[]).includes(r.ladder))
+      .map((r) => ({
+        season: r.season,
+        ladder: r.ladder as LadderId,
+        rating: r.placed ? Math.round(r.rating) : null,
+        rank: r.placed ? ladderRank(r.ladder as LadderId, r.rating) : null,
+      }));
     const recent = (
       this.db
         .prepare(
@@ -547,9 +593,211 @@ export class RankedStore {
       ladders,
       pastSeasons,
       recent,
+      raceBests: this.raceBests(playerId),
+      recentRaces: this.recentRaces(playerId),
       bannedUntil: this.bannedUntil(playerId),
       warnings: p.warnings,
     };
+  }
+
+  // ---------------- races ----------------
+
+  /**
+   * Store a finished race from an online race room (rules/race.ts). Every finish may set a
+   * personal best (race_bests: only ever improved). Ranked races (the Race queue) also update
+   * the Race ladder (rating/race.ts: pairwise Elo, placement races count double, leaving =
+   * last + a penalty). `roster`: the accounts the queue put in the room — any of them missing
+   * from the results left before the start, and counts as a leaver. Returns what to tell each
+   * account (RaceRatingNotice).
+   */
+  recordRace(input: {
+    ranked: boolean;
+    record: RaceRecord;
+    roster?: { accountId: number; name: string }[];
+  }): Map<number, RaceRatingNotice> {
+    const { record } = input;
+    const t = this.now();
+    const out = new Map<number, RaceRatingNotice>();
+    const who = new Map(record.racers.map((r) => [r.id, r]));
+    const lines: RaceLine[] = record.standings.map((s) => {
+      const w = who.get(s.id);
+      return {
+        accountId: w?.bot ? null : (w?.accountId ?? null),
+        name: w?.name ?? `Racer ${s.id}`,
+        bot: !!w?.bot,
+        place: s.place,
+        timeMs: s.timeMs,
+        splitsMs: s.splitsMs,
+        dnf: s.dnf,
+        left: s.left,
+        respawns: s.respawns,
+      };
+    });
+    // queued racers who never made it to the start: leavers, sharing the last place
+    const maxPlace = Math.max(0, ...lines.map((l) => l.place));
+    const last = lines.some((l) => l.dnf || l.left) ? maxPlace : maxPlace + 1;
+    for (const r of input.roster ?? [])
+      if (!lines.some((l) => l.accountId === r.accountId))
+        lines.push({
+          accountId: r.accountId,
+          name: r.name,
+          bot: false,
+          place: last,
+          timeMs: null,
+          splitsMs: [],
+          dnf: true,
+          left: true,
+          respawns: 0,
+        });
+    // one line per account (a racer who somehow appears twice counts once)
+    const rated = lines.filter(
+      (l, i) => l.accountId !== null && lines.findIndex((x) => x.accountId === l.accountId) === i,
+    );
+    const deltas = new Map<number, number>();
+    this.db.exec('BEGIN');
+    try {
+      if (input.ranked && rated.length >= 2) {
+        const stored = rated.map((l) => this.rating(l.accountId!, 'race'));
+        const updates = updateRaceRatings(
+          rated.map((l, i) => ({
+            rating: stored[i].rating.rating,
+            races: placementOf('race', stored[i]).done,
+            place: l.place,
+            left: l.left,
+          })),
+        );
+        rated.forEach((l, i) => {
+          const s = stored[i];
+          const won = l.place === 1 && !l.dnf && !l.left ? 1 : 0;
+          this.save(l.accountId!, 'race', {
+            rating: { ...s.rating, rating: updates[i].rating },
+            games: s.games + 1,
+            wins: s.wins + won,
+            seasonGames: s.seasonGames + 1,
+            seasonWins: s.seasonWins + won,
+            lastPlayed: t,
+          });
+          deltas.set(l.accountId!, updates[i].delta);
+        });
+      }
+      const race = this.db
+        .prepare(
+          'INSERT INTO races (track, ranked, room, duration_sec, created_at) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(record.track, input.ranked ? 1 : 0, record.room, Math.round(record.durationSec), t);
+      const raceId = Number(race.lastInsertRowid);
+      const ins = this.db.prepare(
+        `INSERT INTO race_players (race_id, player_id, name, bot, place, time_ms, dnf, left_early, respawns, rating_delta)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const l of lines)
+        ins.run(
+          raceId,
+          l.accountId,
+          l.name,
+          l.bot ? 1 : 0,
+          l.place,
+          l.timeMs,
+          l.dnf ? 1 : 0,
+          l.left ? 1 : 0,
+          l.respawns,
+          l.accountId !== null ? (deltas.get(l.accountId) ?? 0) : 0,
+        );
+      for (const l of rated) {
+        const prev = this.raceBest(l.accountId!, record.track);
+        const newBest = l.timeMs !== null && l.timeMs > 0 && (prev === null || l.timeMs < prev);
+        if (newBest)
+          this.db
+            .prepare(
+              `INSERT INTO race_bests (player_id, track, time_ms, splits, at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(player_id, track) DO UPDATE SET time_ms = excluded.time_ms,
+                 splits = excluded.splits, at = excluded.at`,
+            )
+            .run(l.accountId!, record.track, l.timeMs!, JSON.stringify(l.splitsMs), t);
+        const st = this.standing(l.accountId!, 'race');
+        const d = deltas.get(l.accountId!);
+        out.set(l.accountId!, {
+          race: record.race,
+          track: record.track,
+          delta: d === undefined ? null : d,
+          rating: st.rating,
+          placement: { done: st.placement.done, need: st.placement.need },
+          timeMs: l.timeMs,
+          newBest,
+          bestMs: newBest ? l.timeMs : prev,
+        });
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return out;
+  }
+
+  /** A player's best time on a track (ms), or null. */
+  raceBest(playerId: number, track: string): number | null {
+    const row = this.db
+      .prepare('SELECT time_ms FROM race_bests WHERE player_id = ? AND track = ?')
+      .get(playerId, track) as { time_ms: number } | undefined;
+    return row?.time_ms ?? null;
+  }
+
+  /** A player's best on every race track, with their place on the track's board. */
+  raceBests(playerId: number): Profile['raceBests'] {
+    return raceMaps().map((m) => {
+      const row = this.db
+        .prepare('SELECT time_ms, at FROM race_bests WHERE player_id = ? AND track = ?')
+        .get(playerId, m.id) as { time_ms: number; at: number } | undefined;
+      if (!row) return { track: m.id, timeMs: null, position: null, at: 0 };
+      const faster = (
+        this.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM race_bests
+             WHERE track = ? AND (time_ms < ? OR (time_ms = ? AND (at < ? OR (at = ? AND player_id < ?))))`,
+          )
+          .get(m.id, row.time_ms, row.time_ms, row.at, row.at, playerId) as { n: number }
+      ).n;
+      return { track: m.id, timeMs: row.time_ms, position: faster + 1, at: row.at };
+    });
+  }
+
+  /** Fastest times on a track: one entry per player (their best), fastest first. */
+  trackLeaderboard(
+    track: string,
+    limit = 50,
+  ): { position: number; playerId: number; name: string; timeMs: number; at: number }[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT b.player_id AS playerId, p.name AS name, b.time_ms AS timeMs, b.at AS at
+           FROM race_bests b JOIN players p ON p.id = b.player_id
+           WHERE b.track = ? ORDER BY b.time_ms ASC, b.at ASC, b.player_id ASC LIMIT ?`,
+        )
+        .all(track, limit) as { playerId: number; name: string; timeMs: number; at: number }[]
+    ).map((r, i) => ({ position: i + 1, ...r }));
+  }
+
+  private recentRaces(playerId: number): Profile['recentRaces'] {
+    return (
+      this.db
+        .prepare(
+          `SELECT r.track AS track, r.ranked AS ranked, rp.place AS place, rp.time_ms AS timeMs,
+                  rp.rating_delta AS delta, r.created_at AS at,
+                  (SELECT COUNT(*) FROM race_players x WHERE x.race_id = r.id) AS racers
+           FROM race_players rp JOIN races r ON r.id = rp.race_id
+           WHERE rp.player_id = ? ORDER BY r.id DESC LIMIT 10`,
+        )
+        .all(playerId) as {
+        track: string;
+        ranked: number;
+        place: number;
+        timeMs: number | null;
+        delta: number;
+        at: number;
+        racers: number;
+      }[]
+    ).map((r) => ({ ...r, ranked: !!r.ranked, delta: Math.round(r.delta) }));
   }
 
   // ---------------- seasons ----------------
@@ -574,7 +822,7 @@ export class RankedStore {
       for (const ladder of LADDER_IDS) {
         const def = LADDERS[ladder];
         if (!def.seasonal) continue;
-        const placedCol = def.placement.unit === 'wins' ? 'season_wins' : 'games';
+        const placedCol = placementCol(ladder);
         this.db
           .prepare(
             `INSERT OR REPLACE INTO season_results (season, player_id, ladder, rating, games, wins, placed)
@@ -588,7 +836,7 @@ export class RankedStore {
         const upd = this.db.prepare(
           'UPDATE ratings SET rating = ?, season_wins = 0, season_games = 0 WHERE player_id = ? AND mode = ?',
         );
-        for (const r of rows) upd.run(seasonResetRating(r.rating), r.id, ladder);
+        for (const r of rows) upd.run(seasonResetRating(r.rating, def.startRating), r.id, ladder);
         players += rows.length;
       }
       this.db

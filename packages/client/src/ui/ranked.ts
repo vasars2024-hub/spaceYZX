@@ -1,8 +1,9 @@
-// Ranked UI: the ranked screen (Premier + Duels cards, the Premier map veto), leaderboards and
-// the player profile with the "login code" for moving an account to another PC. Names are
-// always rendered as text. The ladders come from shared rating/ladders.ts (ui/flow.ts cards).
+// Ranked UI: the ranked screen (Premier, Duels and Race cards, the Premier map veto),
+// leaderboards (ladders and race track times) and the player profile with the "login code" for
+// moving an account to another PC. Names are always rendered as text. The ladders come from
+// shared rating/ladders.ts (ui/flow.ts cards).
 import type { LadderId, NetCore, RankedInfo, VetoView } from '@space-yz/shared';
-import { LADDER_IDS, LADDERS, mapDef } from '@space-yz/shared';
+import { formatRaceTime, getMap, LADDER_IDS, LADDERS, mapDef, raceMaps } from '@space-yz/shared';
 import { h, button } from './menus';
 import { icon } from './icons';
 import {
@@ -31,7 +32,18 @@ export interface ClientProfile {
   name: string;
   season: number;
   ladders: Partial<Record<LadderId, Standing>>;
-  pastSeasons?: { season: number; rating: number | null; rank: Rank | null }[];
+  pastSeasons?: { season: number; ladder?: LadderId; rating: number | null; rank: Rank | null }[];
+  /** your best time per race track (null: none yet) and your place on its board */
+  raceBests?: { track: string; timeMs: number | null; position: number | null }[];
+  recentRaces?: {
+    track: string;
+    ranked: boolean;
+    place: number;
+    racers: number;
+    timeMs: number | null;
+    delta: number;
+    at: number;
+  }[];
   recent: {
     mode: string;
     ladder: LadderId | null;
@@ -127,6 +139,28 @@ const vetoPanel = (core: NetCore, v: VetoView): { el: HTMLElement; timer: HTMLEl
   return { el, timer };
 };
 
+/** The race tracks with your best time on each (the Race card). */
+const raceTrackList = (p: ClientProfile | null): HTMLElement =>
+  h(
+    'div',
+    { class: 'race-tracks' },
+    ...raceMaps().map((m) => {
+      const b = p?.raceBests?.find((x) => x.track === m.id);
+      return h(
+        'div',
+        { class: 'race-track-row' },
+        h('span', {}, m.name),
+        h(
+          'span',
+          { class: 'rank-rating' },
+          b?.timeMs
+            ? `${formatRaceTime(b.timeMs)}${b.position ? ` · #${b.position}` : ''}`
+            : 'no time yet',
+        ),
+      );
+    }),
+  );
+
 /** Premier's opening hours in words for its card ('' = always open). */
 const hoursLine = (info: RankedInfo | null, at: number): { text: string; closed: boolean } => {
   if (!info) return { text: '', closed: false };
@@ -221,7 +255,7 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
             st?.position ? ` · #${st.position}` : '',
           ),
         ),
-        c.ladder === 'premier' && st && st.rating === null
+        def.hideWhilePlacing && st && st.rating === null
           ? h(
               'div',
               { class: 'placement-bar' },
@@ -232,6 +266,7 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
           : null,
         def.seasonal ? h('div', { class: 'ladder-season' }, `Season ${p?.season ?? 1}`) : null,
         hours ? hoursText : null,
+        c.ladder === 'race' ? raceTrackList(p) : null,
         h('div', { class: 'ladder-buttons' }, ...buttons),
       );
       grid.append(card);
@@ -273,6 +308,7 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
     }
     const key = JSON.stringify([
       p?.ladders,
+      p?.raceBests,
       p?.season,
       q.mode,
       q.error,
@@ -335,6 +371,8 @@ export const rankedScreen = (core: NetCore, hd: RankedScreenHandlers): HTMLEleme
 export const leaderboardScreen = (back: () => void, myId: number | null): HTMLElement => {
   let which: LadderId = 'premier';
   let season: number | null = null;
+  /** Race: a track's fastest times instead of the rating board */
+  let track: string | null = null;
   let current = 1;
   const tabs = h('div', { class: 'choice-row' });
   const table = h('div', { class: 'leaderboard' }, 'Loading…');
@@ -354,6 +392,19 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
           ),
         );
       }
+    const trackButtons =
+      which === 'race'
+        ? raceMaps().map((m) =>
+            button(
+              `${m.name} times`,
+              () => {
+                track = m.id;
+                void load();
+              },
+              `btn small ${track === m.id ? '' : 'secondary'}`,
+            ),
+          )
+        : [];
     tabs.replaceChildren(
       ...LADDER_IDS.map((m) =>
         button(
@@ -361,14 +412,20 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
           () => {
             which = m;
             season = null;
+            track = null;
             void load();
           },
-          `btn small ${which === m ? '' : 'secondary'}`,
+          `btn small ${which === m && !track ? '' : 'secondary'}`,
         ),
       ),
-      ...seasonButtons,
+      ...(track ? [] : seasonButtons),
+      ...trackButtons,
     );
     table.textContent = 'Loading…';
+    if (track) {
+      await loadTrack(track);
+      return;
+    }
     try {
       const res = await fetch(
         `/api/leaderboard?mode=${which}&limit=100${season ? `&season=${season}` : ''}`,
@@ -394,7 +451,9 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
         table.textContent =
           which === 'premier'
             ? 'No one has placed yet — win 5 Premier matches to appear here.'
-            : 'No ranked players yet — play 5 Duels to appear here.';
+            : which === 'race'
+              ? 'No one has placed yet — finish 5 ranked races to appear here.'
+              : 'No ranked players yet — play 5 Duels to appear here.';
         return;
       }
       table.replaceChildren(
@@ -411,6 +470,40 @@ export const leaderboardScreen = (back: () => void, myId: number | null): HTMLEl
               h('td', { style: `color:${r.rank.color};font-weight:800` }, String(r.rating)),
               h('td', {}, rankBadge(r.rank)),
               h('td', {}, String(r.games)),
+            ),
+          ),
+        ),
+      );
+    } catch {
+      table.textContent = 'Leaderboards need the game server (not available offline).';
+    }
+  };
+  /** A race track's fastest times: one per player. */
+  const loadTrack = async (id: string) => {
+    try {
+      const res = await fetch(`/api/race-times?track=${encodeURIComponent(id)}&limit=100`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as {
+        rows: { position: number; playerId: number; name: string; timeMs: number; at: number }[];
+      };
+      if (track !== id) return; // another tab was picked meanwhile
+      if (!data.rows.length) {
+        table.textContent = `No times on ${getMap(id).name} yet — finish a race there online.`;
+        return;
+      }
+      table.replaceChildren(
+        h(
+          'table',
+          {},
+          h('tr', {}, ...['#', 'Player', 'Time', 'Set'].map((x) => h('th', {}, x))),
+          ...data.rows.map((r) =>
+            h(
+              'tr',
+              { class: r.playerId === myId ? 'me' : '' },
+              h('td', {}, String(r.position)),
+              h('td', {}, r.name),
+              h('td', { style: 'font-weight:800' }, formatRaceTime(r.timeMs)),
+              h('td', {}, new Date(r.at).toLocaleDateString()),
             ),
           ),
         ),
@@ -495,7 +588,11 @@ export const profileScreen = (
                   rankBadge(s.rank),
                 )
               : h('span', { class: 'tier' }, 'not placed'),
-            h('span', { class: 'rank-rating' }, `Premier season ${s.season} final`),
+            h(
+              'span',
+              { class: 'rank-rating' },
+              `${LADDERS[s.ladder ?? 'premier'].name} season ${s.season} final`,
+            ),
           ),
         ),
       ),
@@ -527,6 +624,41 @@ export const profileScreen = (
             ),
           )
         : h('div', {}, 'No matches yet.'),
+      h('div', { class: 'label' }, 'Race best times'),
+      h(
+        'table',
+        { class: 'recent' },
+        ...(p.raceBests ?? []).map((b) =>
+          h(
+            'tr',
+            {},
+            h('td', {}, getMap(b.track).name),
+            h('td', {}, b.timeMs ? formatRaceTime(b.timeMs) : 'no time yet'),
+            h('td', {}, b.position ? `#${b.position}` : ''),
+          ),
+        ),
+      ),
+      p.recentRaces?.length ? h('div', { class: 'label' }, 'Recent races') : null,
+      p.recentRaces?.length
+        ? h(
+            'table',
+            { class: 'recent' },
+            ...p.recentRaces.map((r) =>
+              h(
+                'tr',
+                {},
+                h('td', {}, `${getMap(r.track).name}${r.ranked ? ' ranked' : ''}`),
+                h(
+                  'td',
+                  { class: r.place === 1 && r.timeMs !== null ? 'win' : '' },
+                  r.timeMs !== null ? `${r.place}/${r.racers}` : 'DNF',
+                ),
+                h('td', {}, r.timeMs !== null ? formatRaceTime(r.timeMs) : ''),
+                h('td', {}, r.ranked ? `${r.delta >= 0 ? '+' : ''}${r.delta}` : ''),
+              ),
+            ),
+          )
+        : null,
     ];
     body.replaceChildren(...parts.filter((x): x is Node => x !== null));
   };

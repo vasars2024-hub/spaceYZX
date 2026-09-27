@@ -20,6 +20,7 @@ import {
   vetoBan,
   vetoTick,
   vetoRemaining,
+  pickGroup,
   applyInactivity,
   findMatches,
   searchWindow,
@@ -153,16 +154,31 @@ describe('tiers', () => {
   });
 });
 
-describe('ladders: Premier + Duels only', () => {
-  it('has exactly two ladders; 5v5 counts for Premier, 1v1 and 2v2 share Duels', () => {
-    expect(LADDER_IDS).toEqual(['premier', 'duels']);
-    expect(RANKED_QUEUES.map((q) => q.id)).toEqual(['premier', 'duels-1v1', 'duels-2v2']);
+describe('ladders: Premier, Duels and Race only', () => {
+  it('Race: its own ladder, 2-8 racers, number + colour band like Premier, seasonal', () => {
+    const race = RANKED_QUEUES.find((q) => q.id === 'race')!;
+    expect(race).toMatchObject({ kind: 'race', ladder: 'race', group: { min: 2, max: 8 } });
+    expect(LADDERS.race).toMatchObject({
+      startRating: 1000,
+      placement: { count: 5, unit: 'races' },
+      hideWhilePlacing: true,
+      seasonal: true,
+    });
+    expect(ladderRank('race', 1450)).toEqual(ladderRank('premier', 1450));
+    expect(seasonResetRating(1500, LADDERS.race.startRating)).toBeCloseTo(1300, 9);
+  });
+
+  it('has the approved ladders; 5v5 counts for Premier, 1v1 and 2v2 share Duels', () => {
+    expect(LADDER_IDS).toEqual(['premier', 'duels', 'race']);
+    expect(RANKED_QUEUES.map((q) => q.id)).toEqual(['premier', 'duels-1v1', 'duels-2v2', 'race']);
     expect(ladderForMode('5v5')).toBe('premier');
     expect(ladderForMode('1v1')).toBe('duels');
     expect(ladderForMode('2v2')).toBe('duels');
     expect(ladderForMode('3v3')).toBeNull();
     expect(ladderForMode('arena')).toBeNull();
+    expect(ladderForMode('race')).toBe('race');
     const premier = RANKED_QUEUES.find((q) => q.id === 'premier')!;
+    if (premier.kind !== 'team') throw new Error('Premier is a team queue');
     expect(premier).toMatchObject({ mode: '5v5', objective: 'bomb', veto: true });
     expect(premier.smaller).toEqual({ teamSize: 4, afterSec: 90 });
     expect(LADDERS.premier).toMatchObject({
@@ -237,6 +253,29 @@ describe('Premier map veto', () => {
 
   it('a pool of one map needs no bans', () => {
     expect(createVeto(['kestrel'], 0, { banMs: 1 }).picked).toBe('kestrel');
+  });
+});
+
+describe('race queue groups', () => {
+  const e = (id: string, rating: number, joinedAtMs: number): QueueEntry => ({
+    id,
+    rating,
+    pingMs: 20,
+    joinedAtMs,
+  });
+  const opts = { minPlayers: 2, maxPlayers: 8, gatherMs: 20_000 };
+  it('8 start at once; else 2+ start together ~20 s after the 2nd joined', () => {
+    expect(pickGroup([e('a', 1000, 0)], 99_000, opts)).toBeNull();
+    const three = [e('a', 1000, 0), e('b', 1000, 5_000), e('c', 1000, 10_000)];
+    expect(pickGroup(three, 24_999, opts)).toBeNull();
+    expect(pickGroup(three, 25_000, opts)).toEqual(['a', 'b', 'c']);
+    const ten = Array.from({ length: 10 }, (_, i) => e(`p${i}`, 1000 + i * 100, i));
+    const g = pickGroup(ten, 20, opts)!;
+    expect(g.length).toBe(8);
+    expect(g[0]).toBe('p0');
+    // the nearest ratings to the longest waiter: the two strongest wait for the next race
+    expect(g).not.toContain('p9');
+    expect(g).not.toContain('p8');
   });
 });
 

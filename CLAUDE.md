@@ -44,11 +44,13 @@
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
   `packages/server/src/game/room.ts`, lag compensation `lagcomp.ts`, LOS culling `visibility.ts`.
 - Accounts/ranked/matchmaking: `packages/server/src/services/` (SQLite via `node:sqlite`).
-  Ranked is **Premier (5v5 Bomb, map veto, seasons) + Duels (1v1/2v2, one rating) only**,
-  defined in `packages/shared/src/rating/ladders.ts`; no new ladders without the owner.
+  Ranked is **Premier (5v5 Bomb, map veto, seasons) + Duels (1v1/2v2, one rating) + Race
+  (parkour, 2–8 racers, seasons) only**, defined in `packages/shared/src/rating/ladders.ts`;
+  no new ladders without the owner.
 - Parkour races (owner-requested, race tracks `level/maps/race-*.ts`, `rules/race.ts`, body logic
-  `sim/race.ts`) have their own **Race ladder**: rating functions in `rating/race.ts`; DB/queue
-  integration pending (`HubServices.onRaceEnd` already gets each race's result record).
+  `sim/race.ts`): Race ladder maths `rating/race.ts`; the Race queue, ranked race rooms, race
+  results and server-side personal bests are in `services/` (`queue.ts`, `ranked.ts`
+  `recordRace`, fed by `HubServices.onRaceEnd`).
 - Host app + dashboard: `packages/server/src/host/`; exe build `tools/host/build-exe.ts`.
 - Rented server (Hetzner VPS, Docker + Caddy HTTPS, fixed domain; setup/update/DB-move scripts in
   `scripts/deploy/`, env settings `packages/server/src/prod/config.ts`): `docs/DEPLOY.md`.

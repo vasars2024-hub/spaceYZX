@@ -144,6 +144,41 @@ const MIGRATIONS: string[] = [
         AND (b.rating > r.rating OR (b.rating = r.rating AND b.mode < r.mode))
     );
   `,
+  // 4: the Race ladder (rating/race.ts; its ratings are `ratings` rows with mode 'race').
+  // races / race_players: every online race (ranked or private room) with each racer's place
+  // and time; race_bests: each player's fastest finish per track (the authoritative PB).
+  `
+  CREATE TABLE races (
+    id INTEGER PRIMARY KEY,
+    track TEXT NOT NULL,
+    ranked INTEGER NOT NULL,
+    room TEXT NOT NULL,
+    duration_sec INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE race_players (
+    race_id INTEGER NOT NULL REFERENCES races(id),
+    player_id INTEGER REFERENCES players(id),
+    name TEXT NOT NULL,
+    bot INTEGER NOT NULL,
+    place INTEGER NOT NULL,
+    time_ms INTEGER,
+    dnf INTEGER NOT NULL,
+    left_early INTEGER NOT NULL,
+    respawns INTEGER NOT NULL,
+    rating_delta REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX race_players_player ON race_players(player_id);
+  CREATE TABLE race_bests (
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    track TEXT NOT NULL,
+    time_ms INTEGER NOT NULL,
+    splits TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (player_id, track)
+  );
+  CREATE INDEX race_bests_track ON race_bests(track, time_ms);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

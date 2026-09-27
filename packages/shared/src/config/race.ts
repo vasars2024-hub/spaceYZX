@@ -5,6 +5,8 @@
 export const RACE_DEFAULTS = {
   /** lobby: the countdown starts this long after the first racer is in (host can start sooner) */
   lobbySec: 20,
+  /** ranked races (the Race queue): everyone arrives together, so a short lobby */
+  rankedLobbySec: 8,
   /** 3-2-1: everyone frozen on the start grid */
   countdownSec: 3,
   /** a racer still out when the clock reaches `dnfParMul` × the track's par time: DNF */

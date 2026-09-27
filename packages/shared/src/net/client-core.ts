@@ -32,6 +32,7 @@ import {
   type RoomPlayerInfo,
   type RtcSignal,
   type RankedInfo,
+  type RaceRatingNotice,
 } from './protocol';
 import type { RankedQueueId } from '../rating/ladders';
 import type { VetoView } from '../rating/veto';
@@ -159,6 +160,8 @@ export class NetCore {
   rankedInfo: RankedInfo | null = null;
   /** when `rankedInfo` arrived (this.opts.now() ms): its seconds count from here */
   rankedInfoAt = 0;
+  /** the server's word on your last race in this room (rating change, best time) */
+  raceRating: RaceRatingNotice | null = null;
   /** why the server took us out of the last room (null = we left ourselves) */
   roomLeftReason: string | null = null;
   // room
@@ -408,6 +411,7 @@ export class NetCore {
         this.roomLeftReason = null;
         this.queue = { mode: null, waitSec: 0, searching: 0 };
         this.veto = null;
+        this.raceRating = null;
         this.code = msg.code;
         this.mode = msg.mode;
         this.map = msg.map;
@@ -432,6 +436,9 @@ export class NetCore {
       case 'veto':
         this.veto = msg.data;
         this.vetoAt = this.opts.now();
+        break;
+      case 'raceRating':
+        this.raceRating = msg.data;
         break;
       case 'rankedInfo':
         this.rankedInfo = msg.data;

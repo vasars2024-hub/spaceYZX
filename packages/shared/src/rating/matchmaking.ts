@@ -146,3 +146,39 @@ export const findMatches = (
 
   return { matches, remaining: queue.filter((p) => !taken.has(p.id)) };
 };
+
+export interface GroupOptions {
+  minPlayers: number;
+  maxPlayers: number;
+  /** once `minPlayers` wait, how long to gather more (ms) */
+  gatherMs: number;
+}
+
+/**
+ * The next free-for-all group (the Race queue) to start, or null (keep waiting). A full group
+ * starts right away: the longest waiter plus the players nearest their rating. Otherwise, once
+ * `minPlayers` are waiting, everyone waiting starts together `gatherMs` after the
+ * `minPlayers`-th joined. Pure: call again with the rest until it returns null.
+ */
+export const pickGroup = (
+  entries: readonly QueueEntry[],
+  nowMs: number,
+  opts: GroupOptions,
+): string[] | null => {
+  const min = Math.max(2, opts.minPlayers);
+  if (entries.length < min) return null;
+  const byJoin = [...entries].sort((a, b) => a.joinedAtMs - b.joinedAtMs || byId(a.id, b.id));
+  if (byJoin.length >= opts.maxPlayers) {
+    const anchor = byJoin[0];
+    const rest = byJoin
+      .slice(1)
+      .sort(
+        (a, b) =>
+          Math.abs(a.rating - anchor.rating) - Math.abs(b.rating - anchor.rating) ||
+          a.joinedAtMs - b.joinedAtMs ||
+          byId(a.id, b.id),
+      );
+    return [anchor.id, ...rest.slice(0, opts.maxPlayers - 1).map((e) => e.id)];
+  }
+  return nowMs - byJoin[min - 1].joinedAtMs >= opts.gatherMs ? byJoin.map((e) => e.id) : null;
+};

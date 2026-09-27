@@ -21,6 +21,7 @@ import {
   MAPS,
   ARENA_MAP_ID,
   DEFAULT_RACE_MAP,
+  RACE_DEFAULTS,
   defaultConfig,
   configForLoadout,
   loadoutName,
@@ -56,8 +57,8 @@ export interface HubServices {
   /** Called for every finished Arena 1v1 match (casual: recorded in the match history). */
   onArenaEnd?(room: Room, result: ArenaResult): void;
   /**
-   * Called for every finished parkour race (rules/race.ts): the record the Race ladder
-   * (shared rating/race.ts) and personal bests will be built from. Not stored yet.
+   * Called for every finished parkour race (rules/race.ts): stored with personal bests; in
+   * ranked rooms it also updates the Race ladder (shared rating/race.ts).
    */
   onRaceEnd?(room: Room, result: RaceRecord): void;
   /** Anti-grief: a warning was given / a player was kicked (ranked bans live here). */
@@ -305,7 +306,7 @@ export class GameHub {
         : opts.mode === 'arena'
           ? new ArenaRules(loadout, { ranked: opts.ranked })
           : opts.mode === 'race'
-            ? new RaceRules(room.map)
+            ? new RaceRules(room.map, opts.ranked ? { lobbySec: RACE_DEFAULTS.rankedLobbySec } : {})
             : new MatchRules(
                 opts.mode,
                 // ranked: Tower (Duels) or Bomb (Premier), never Elimination
@@ -352,7 +353,7 @@ export class GameHub {
         if (this.rooms.has(r.code)) this.closeRoom(r);
       };
     }
-    if (rules instanceof RaceRules)
+    if (rules instanceof RaceRules) {
       rules.onResult = (r, result) => {
         const first = result.standings[0];
         this.log(
@@ -360,6 +361,11 @@ export class GameHub {
         );
         this.services.onRaceEnd?.(r, result);
       };
+      rules.onFinished = (r) => {
+        for (const m of r.humans) if (m.conn) this.removeFromRoom(m.conn, 'Race over');
+        if (this.rooms.has(r.code)) this.closeRoom(r);
+      };
+    }
     (rules as Rules).setup?.(room);
     room.onChanged = () => this.broadcastRoom(room);
     // bots fill the room (leaving a slot for the creator); humans who join take their slots

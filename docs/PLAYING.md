@@ -125,8 +125,9 @@ Each track takes about **3 minutes**.
   faster, **red** = slower. Your **personal best** and its **ghost** (a faint orange racer
   running your best line) are kept in this browser for each track.
 - **Results**: places, times and gaps; the next race starts by itself.
-- **Race ladder**: races will get their **own rank** (separate from Premier and Duels), rated
-  from finishing order. The rating is ready; the ranked race queue comes later.
+- **Ranked races**: **Ranked → Race → Search race** puts you in the Race queue (see
+  [Ranked](#ranked)). Online, the server also keeps your **best time on every track** (your
+  profile and the track leaderboards show it); the browser best and ghost are for Practice.
 
 ### Cliffline
 
@@ -275,8 +276,8 @@ the Premier map pool). Mirrored north ↔ south: each team spawns in a covered *
 
 ## Ranked
 
-Ranked has two ladders, both played with the Boomerang kit. Solo queue: everyone searches on
-their own (there are no parties).
+Ranked has three ladders. Premier and Duels are played with the Boomerang kit; Race has no
+weapons. Solo queue: everyone searches on their own (there are no parties).
 
 - **Premier** — the main rank. **5v5 Bomb.** When a match is found, the two teams take turns
   **banning maps** (any player can ban for their team; 15 seconds per turn, or a random map is
@@ -295,10 +296,27 @@ their own (there are no parties).
 - **Duels** — **1v1 or 2v2** on Tower rules. Both queues share **one** rating. After 5 games
   you get a rank: **Asteroid → Moon → Planet → Gas Giant → Star → Supergiant** (each in III,
   II, I), and the very best Duels players on the server are **Galaxy**.
+- **Race** — parkour races, **2 to 8 racers** on a **random race track**. A race starts as soon
+  as 8 are searching, or about **20 seconds** after the second racer joined the queue (everyone
+  searching then races together). After a short warm-up in the start area the countdown
+  begins; after the results you're back in the menu.
+  - Your Race rank is **one number** starting at 1000, with the same colours as Premier. It
+    is rated from the **finishing order**: finishing ahead of a racer counts as a win against
+    them, behind as a loss, and everyone who doesn't finish (DNF) ties for last. Beating
+    stronger racers is worth more.
+  - It stays hidden for your first **5 races** ("Placement 2/5 races"); those count double.
+  - **Leaving a ranked race** (or not showing up at the start) counts as last place, plus 10
+    rating points.
+  - Seasons work like Premier: 40 % back toward 1000 and 5 placement races again.
+  - Only ranked races count. Private race rooms and Practice never change your rating (but
+    an online finish in a private room can still set your best time).
+  - The results screen shows your rating change and whether you set a new best.
 - Arena 1v1 and 3v3 are casual only (online rooms and Practice).
 - Leaving a ranked match counts as a loss. Team killing, attacking your own carrier, or
   standing still (AFK) gets a warning, then a kick and a temporary ranked ban.
-- **Leaderboards**: Premier (this season and past seasons) and Duels.
-- **Profile** shows your Premier number and colour (or your placement progress), your Duels
-  rating, past seasons, your recent matches, and your **login code**. Copy it to play as
+- **Leaderboards**: Premier and Race (this season and past seasons), Duels, and the
+  **fastest times on every race track** (one time per player: their best).
+- **Profile** shows your Premier and Race numbers and colours (or your placement progress),
+  your Duels rating, past seasons, your best time on every track, your recent matches and
+  races, and your **login code**. Copy it to play as
   yourself on another PC ("Use this code" there). Keep it secret: it is your password.

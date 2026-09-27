@@ -1,20 +1,26 @@
 // Ranked matchmaking: one queue per ranked queue (rating/ladders.ts RANKED_QUEUES — Premier,
-// Duels 1v1, Duels 2v2). Every second it groups players by their ladder rating (window widens
-// the longer you wait, similar ping preferred, teams balanced by rating).
+// Duels 1v1, Duels 2v2, Race). Every second it groups players by their ladder rating (window
+// widens the longer you wait, similar ping preferred, teams balanced by rating).
 // - Duels: the room starts right away on the default match map (Tower rules).
 // - Premier: 5v5 (4v4 after a long wait with few searching), then a map veto (the teams take
 //   turns banning from every competitive map with bomb sites until one is left), then the
 //   room starts on that map with Bomb rules. Premier can be closed outside its opening hours.
+// - Race: 2–8 racers (8 start at once; else everyone waiting ~20 s after the 2nd joined) on a
+//   random race track; one ranked race, then the room closes.
 // Solo queue only (there is no party system).
 import type {
+  GroupQueueDef,
   QueueEntry,
   RankedQueueDef,
   RankedQueueId,
+  TeamQueueDef,
   VetoState,
   VetoView,
 } from '@space-yz/shared';
 import {
   createVeto,
+  pickGroup,
+  raceMaps,
   DEFAULT_MATCH_MAP,
   findMatches,
   MAPS,
@@ -47,9 +53,12 @@ interface Waiting {
   entry: QueueEntry;
 }
 
+/** Race tracks the Race queue picks from (maps flagged `race`). */
+export const raceTrackPool = (): string[] => raceMaps().map((m) => m.id);
+
 /** A Premier match being set up: the teams are known, the map veto is running. */
 interface PendingMatch {
-  queue: RankedQueueDef;
+  queue: TeamQueueDef;
   teams: [Waiting[], Waiting[]];
   teamSize: number;
   veto: VetoState;
@@ -68,6 +77,13 @@ export class RankedQueue {
   rand: () => number = Math.random;
   /** the veto's maps (tests may use a fixed pool) */
   mapPool: () => string[] = premierMapPool;
+  /** the Race queue's tracks (one is picked at random) */
+  trackPool: () => string[] = raceTrackPool;
+  /**
+   * Ranked race rooms the queue started: who was sent in (room code -> accounts). Whoever
+   * never reached the start counts as a leaver (services: takeRaceRoster).
+   */
+  private raceRosters = new Map<string, { accountId: number; name: string }[]>();
 
   constructor(
     private ranked: RankedStore,
@@ -92,6 +108,13 @@ export class RankedQueue {
     let n = 0;
     for (const w of this.waiting.values()) if (!queue || w.queue.id === queue) n++;
     return n;
+  }
+
+  /** The accounts the queue sent into a ranked race room (once: it forgets them). */
+  takeRaceRoster(room: string): { accountId: number; name: string }[] | undefined {
+    const r = this.raceRosters.get(room);
+    this.raceRosters.delete(room);
+    return r;
   }
 
   /** Players in a map veto right now. */
@@ -217,6 +240,10 @@ export class RankedQueue {
       const list = [...this.waiting.values()].filter((w) => w.queue.id === q.id);
       if (!list.length) continue;
       const byId = (id: string) => list.find((w) => w.entry.id === id)!;
+      if (q.kind === 'race') {
+        this.startRaces(q, list, now);
+        continue;
+      }
       const res = findMatches(
         list.map((w) => w.entry),
         now,
@@ -253,7 +280,48 @@ export class RankedQueue {
     for (const conn of this.waiting.keys()) this.status(conn);
   }
 
-  private startVeto(q: RankedQueueDef, teams: [Waiting[], Waiting[]], teamSize: number): void {
+  /** Race: start every group the queue can fill. */
+  private startRaces(q: GroupQueueDef, list: Waiting[], now: number): void {
+    let left = list;
+    for (;;) {
+      const group = pickGroup(
+        left.map((w) => w.entry),
+        now,
+        { minPlayers: q.group.min, maxPlayers: q.group.max, gatherMs: q.group.gatherSec * 1000 },
+      );
+      if (!group) return;
+      const racers = group.map((id) => left.find((w) => w.entry.id === id)!);
+      left = left.filter((w) => !racers.includes(w));
+      for (const w of racers) this.waiting.delete(w.conn);
+      const tracks = this.trackPool();
+      const track = tracks[Math.min(tracks.length - 1, Math.floor(this.rand() * tracks.length))];
+      const room = this.hub?.createRoom({ mode: 'race', map: track, ranked: true });
+      if (!room) {
+        this.log(`Ranked: couldn't open a room for a race (server full?)`);
+        for (const w of racers) this.serverFull(w.conn);
+        return;
+      }
+      this.matchesMade++;
+      this.raceRosters.set(
+        room.code,
+        racers.map((w) => ({ accountId: w.conn.accountId!, name: w.conn.name })),
+      );
+      this.log(`Ranked race on ${track}: ${racers.map((w) => w.conn.name).join(', ')}`);
+      for (const w of racers) this.hub!.joinRoom(w.conn, room);
+    }
+  }
+
+  private serverFull(conn: Conn): void {
+    conn.sendJson({
+      t: 'queue',
+      mode: null,
+      waitSec: 0,
+      searching: 0,
+      error: 'The server is full right now — try again in a minute.',
+    });
+  }
+
+  private startVeto(q: TeamQueueDef, teams: [Waiting[], Waiting[]], teamSize: number): void {
     const p: PendingMatch = {
       queue: q,
       teams,
@@ -309,7 +377,7 @@ export class RankedQueue {
   }
 
   private startRoom(
-    q: RankedQueueDef,
+    q: TeamQueueDef,
     teams: [Waiting[], Waiting[]],
     map: string,
     teamSize: number,
@@ -326,15 +394,7 @@ export class RankedQueue {
     });
     if (!room) {
       this.log(`Ranked: couldn't open a room for a ${q.id} match (server full?)`);
-      for (const t of teams)
-        for (const w of t)
-          w.conn.sendJson({
-            t: 'queue',
-            mode: null,
-            waitSec: 0,
-            searching: 0,
-            error: 'The server is full right now — try again in a minute.',
-          });
+      for (const t of teams) for (const w of t) this.serverFull(w.conn);
       return;
     }
     this.matchesMade++;

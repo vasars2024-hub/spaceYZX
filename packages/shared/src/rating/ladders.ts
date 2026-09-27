@@ -5,24 +5,34 @@
 //            wins, seasons (soft reset toward 1000), optional opening hours.
 //   DUELS    the side ladder: 1v1 and 2v2 (Tower rules) share ONE Glicko-2 rating, with the
 //            space-object tiers (rating/tiers.ts).
+//   RACE     parkour races (rules/race.ts): 2–8 racers on a random race track, a pairwise-Elo
+//            rating (rating/race.ts, start 1000) shown like Premier (number + colour band),
+//            hidden until 5 placement races; seasonal like Premier.
 //
 // Everything else (server DB, queue, profiles, leaderboards, ranked screen) reads this data, so
-// a new ladder (the planned 'race' rank) is: add its id to LadderId / LADDER_IDS, a LADDERS
-// entry, a case in ladderRank(), and its queue(s) / result recording on the server.
+// a new ladder is: add its id to LadderId / LADDER_IDS, a LADDERS entry, a case in
+// ladderRank(), and its queue(s) / result recording on the server. No new ladders without the
+// owner.
 import type { MatchObjective } from '../rules/match';
 import type { RankedMode } from './global';
 import { tierFor } from './tiers';
+import { RACE_PLACEMENT_RACES, RACE_START_RATING } from './race';
 
-export type LadderId = 'premier' | 'duels';
+export type LadderId = 'premier' | 'duels' | 'race';
 /** Every ladder, in the order menus and leaderboards show them. */
-export const LADDER_IDS: readonly LadderId[] = ['premier', 'duels'];
+export const LADDER_IDS: readonly LadderId[] = ['premier', 'duels', 'race'];
 
 /** A ranked queue players can join (one ladder can have several queues). */
-export type RankedQueueId = 'premier' | 'duels-1v1' | 'duels-2v2';
+export type RankedQueueId = 'premier' | 'duels-1v1' | 'duels-2v2' | 'race';
 
-export interface RankedQueueDef {
+interface QueueBase {
   id: RankedQueueId;
   ladder: LadderId;
+}
+
+/** A team match queue (Premier, Duels): teams balanced by rating. */
+export interface TeamQueueDef extends QueueBase {
+  kind: 'team';
   /** team size of the room it starts */
   mode: RankedMode;
   objective: MatchObjective;
@@ -35,23 +45,55 @@ export interface RankedQueueDef {
   smaller?: { teamSize: number; afterSec: number };
 }
 
+/** A free-for-all queue (Race): gathers a group, everyone for themselves. */
+export interface GroupQueueDef extends QueueBase {
+  kind: 'race';
+  mode: 'race';
+  /** a full group starts at once; else once `min` wait, the group starts `gatherSec` later */
+  group: { min: number; max: number; gatherSec: number };
+}
+
+export type RankedQueueDef = TeamQueueDef | GroupQueueDef;
+
 export const RANKED_QUEUES: readonly RankedQueueDef[] = [
   {
     id: 'premier',
     ladder: 'premier',
+    kind: 'team',
     mode: '5v5',
     objective: 'bomb',
     veto: true,
     smaller: { teamSize: 4, afterSec: 90 },
   },
-  { id: 'duels-1v1', ladder: 'duels', mode: '1v1', objective: 'tower', veto: false },
-  { id: 'duels-2v2', ladder: 'duels', mode: '2v2', objective: 'tower', veto: false },
+  {
+    id: 'duels-1v1',
+    ladder: 'duels',
+    kind: 'team',
+    mode: '1v1',
+    objective: 'tower',
+    veto: false,
+  },
+  {
+    id: 'duels-2v2',
+    ladder: 'duels',
+    kind: 'team',
+    mode: '2v2',
+    objective: 'tower',
+    veto: false,
+  },
+  {
+    id: 'race',
+    ladder: 'race',
+    kind: 'race',
+    mode: 'race',
+    group: { min: 2, max: 8, gatherSec: 20 },
+  },
 ];
 
 export const rankedQueue = (id: unknown): RankedQueueDef | undefined =>
   RANKED_QUEUES.find((q) => q.id === id);
 
-/** The ladder a ranked room of this team size counts for (null: no ranked queue plays it). */
+/** The ladder a ranked room of this mode counts for (null: no ranked queue plays it). */
 export const ladderForMode = (mode: string): LadderId | null =>
   RANKED_QUEUES.find((q) => q.mode === mode)?.ladder ?? null;
 
@@ -60,8 +102,11 @@ export interface LadderDef {
   name: string;
   /** rating of a new player */
   startRating: number;
-  /** before this many wins / games the ladder counts as "placing" */
-  placement: { count: number; unit: 'wins' | 'games' };
+  /**
+   * before this many wins / games / races the ladder counts as "placing" (on a seasonal
+   * ladder: this season's)
+   */
+  placement: { count: number; unit: 'wins' | 'games' | 'races' };
   /** placing hides the rating (Premier) or only labels it "Unranked" (Duels) */
   hideWhilePlacing: boolean;
   /** has seasons (soft reset, archived results) */
@@ -98,6 +143,16 @@ export const LADDERS: Record<LadderId, LadderDef> = {
     seasonal: false,
     queues: ['duels-1v1', 'duels-2v2'],
   },
+  race: {
+    id: 'race',
+    name: 'Race',
+    startRating: RACE_START_RATING,
+    placement: { count: RACE_PLACEMENT_RACES, unit: 'races' },
+    hideWhilePlacing: true,
+    seasonal: true,
+    decayFloor: 1800,
+    queues: ['race'],
+  },
 };
 
 export interface RatingBand {
@@ -124,9 +179,9 @@ export const premierBand = (rating: number): RatingBand => {
   return band;
 };
 
-/** A new season's starting rating: pulled SEASON_PULL of the way back to 1000. */
-export const seasonResetRating = (rating: number): number =>
-  rating + (PREMIER_START - rating) * SEASON_PULL;
+/** A new season's starting rating: pulled SEASON_PULL of the way back to the start (1000). */
+export const seasonResetRating = (rating: number, start = PREMIER_START): number =>
+  rating + (start - rating) * SEASON_PULL;
 
 /** How a rating shows up in menus: a label and its colour. */
 export interface RankDisplay {
@@ -142,7 +197,8 @@ export const ladderRank = (
   rating: number,
   opts: { position?: number; placed?: boolean; placementPlayed?: number } = {},
 ): RankDisplay => {
-  if (ladder === 'premier') {
+  if (ladder === 'premier' || ladder === 'race') {
+    // Race uses Premier's number + colour bands (both start at 1000)
     const b = premierBand(rating);
     return { label: b.name, color: b.color };
   }

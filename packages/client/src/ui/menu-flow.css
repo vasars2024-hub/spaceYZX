@@ -706,6 +706,21 @@
   color: #ffd24a;
   font-weight: 700;
 }
+.card.ladder-race {
+  --accent: #5dff9a;
+  --accent-soft: rgba(93, 255, 154, 0.16);
+}
+.race-tracks {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  font-size: 13px;
+}
+.race-track-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
 .ladder-buttons {
   display: flex;
   flex-wrap: wrap;

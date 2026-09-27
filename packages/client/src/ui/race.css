@@ -141,6 +141,11 @@
   color: #ffc14a;
   font-weight: 800;
 }
+.race-results-rating {
+  margin: 4px 0 0;
+  font-weight: 800;
+  color: #5dff9a;
+}
 .race-results-pb {
   margin: 10px 0 0;
   font-size: 13px;
@@ -157,4 +162,7 @@
   .race-list {
     display: none;
   }
+}
+.race-results-rating:empty {
+  display: none;
 }

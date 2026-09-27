@@ -2,7 +2,7 @@
 // the small JSON API (leaderboards, profiles).
 import type http from 'node:http';
 import type { LadderId } from '@space-yz/shared';
-import { LADDER_IDS, LADDERS, ladderForMode } from '@space-yz/shared';
+import { LADDER_IDS, LADDERS, ladderForMode, raceMaps } from '@space-yz/shared';
 import type { HubServices } from '../game/hub';
 import { openDb, type Db } from './db';
 import { Accounts } from './accounts';
@@ -123,6 +123,31 @@ export const createServices = (opts: {
         m.conn.sendJson({ t: 'profile', data: ranked.profile(m.accountId) });
   };
 
+  // Races: every online race is stored (personal bests); ranked ones (the Race queue) also
+  // update the Race ladder. Each racer hears their rating change / best time.
+  hub.onRaceEnd = (room, record) => {
+    const roster = room.ranked ? queue.takeRaceRoster(room.code) : undefined;
+    const notes = ranked.recordRace({ ranked: room.ranked, record, roster });
+    for (const m of room.humans) {
+      if (!m.conn || m.accountId === null) continue;
+      const n = notes.get(m.accountId);
+      if (!n) continue;
+      m.conn.sendJson({ t: 'raceRating', data: n });
+      m.conn.sendJson({ t: 'profile', data: ranked.profile(m.accountId) });
+    }
+    // queued racers who left before the start are told too, if still connected
+    for (const r of roster ?? []) {
+      if (room.humans.some((m) => m.accountId === r.accountId)) continue;
+      const c = [...(queue.hub?.conns ?? [])].find((x) => x.accountId === r.accountId);
+      const n = notes.get(r.accountId);
+      if (c && n && n.delta !== null)
+        c.sendJson({
+          t: 'notice',
+          msg: `You left a ranked race: Race rating ${n.delta >= 0 ? '+' : ''}${Math.round(n.delta)}`,
+        });
+    }
+  };
+
   const api = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (!url.pathname.startsWith('/api/')) return false;
@@ -147,6 +172,14 @@ export const createServices = (opts: {
           currentSeason: current,
           rows: ranked.leaderboard(ladder, limit, season),
         });
+      }
+      case '/api/race-times': {
+        // ?track=ID: fastest times on a race track, one per player
+        const track = url.searchParams.get('track') ?? '';
+        if (!raceMaps().some((m) => m.id === track))
+          return json(res, 400, { error: 'unknown track' });
+        const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit')) || 50));
+        return json(res, 200, { track, rows: ranked.trackLeaderboard(track, limit) });
       }
       case '/api/ranked':
         return json(res, 200, ranked.info());

@@ -495,6 +495,11 @@ const RANKED_CARD_INFO: Record<
     icon: 'ranked',
     labels: { 'duels-1v1': '1v1', 'duels-2v2': '2v2' },
   },
+  race: {
+    desc: 'Parkour race · 2–8 racers on a random track · no weapons.',
+    icon: 'race',
+    labels: { race: 'Search race' },
+  },
 };
 
 export const rankedCards = (): RankedCardDef[] =>
@@ -530,7 +535,7 @@ export const countdown = (sec: number): string => {
 export interface LadderStandingView {
   rating: number | null;
   placed: boolean;
-  placement: { done: number; need: number; unit: 'wins' | 'games' };
+  placement: { done: number; need: number; unit: 'wins' | 'games' | 'races' };
   rank: { label: string; color: string; top?: boolean } | null;
 }
 

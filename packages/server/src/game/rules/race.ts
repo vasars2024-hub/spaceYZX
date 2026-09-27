@@ -3,8 +3,9 @@
 // loop lobby → countdown → race → results by themselves; the host can start early. Bots drive
 // the racing line (shared/bots/racer.ts).
 //
-// Each finished race produces a RaceResult record (onResult): the Race ladder (rating/race.ts)
-// and personal bests are built from it once the ranked services store races.
+// Each finished race produces a RaceResult record (onResult): the ranked services store it
+// (personal bests; ranked rooms also the Race ladder, rating/race.ts). Ranked rooms (the Race
+// queue) run one race after a short lobby, then close after the results (onFinished).
 import type { PlayerInput, PlayerState, RaceResult, RaceState } from '@space-yz/shared';
 import {
   createRace,
@@ -32,6 +33,8 @@ export class RaceRules implements Rules {
   readonly name = 'race';
   readonly st: RaceState;
   onResult: ((room: Room, result: RaceRecord) => void) | null = null;
+  /** ranked rooms: the results screen is over (the room should close) */
+  onFinished: ((room: Room) => void) | null = null;
   private who = new Map<number, { accountId: number | null; name: string; bot: boolean }>();
   private drivers = new Map<number, RacerMemory>();
 
@@ -51,6 +54,7 @@ export class RaceRules implements Rules {
     updateRace(this.st, room.world, room.ctx);
     if (!wasResults && this.st.phase === 'results' && this.st.result)
       this.onResult?.(room, this.record(room));
+    if (wasResults && this.st.phase !== 'results' && room.ranked) this.onFinished?.(room);
     // everyone races on one team (one colour, every name tag shown)
     for (const m of room.members.values()) m.team = 0;
   }

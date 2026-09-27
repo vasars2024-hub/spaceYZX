@@ -9,7 +9,8 @@
 //                                                     racers on this PC, your best's ghost
 //   createRaceRoom(core, { track, bots, skill })      private race room (share core.code)
 //   RaceNetSession / raceOnlineFeatures(core)         what App.startOnline uses in race rooms
-// The Race ladder (rating/race.ts) and a race queue come with the ranked rebuild.
+// Ranked races come from the Race queue (Ranked screen); the server sends your rating change
+// after the race (core.raceRating), shown on the results screen.
 import type {
   BotSkillName,
   GameConfig,
@@ -168,5 +169,6 @@ export const raceOnlineFeatures = (core: NetCore): ClientFeature[] => [
     view: () => raceFromExtra(core.extra),
     track: core.map,
     trackName: getMap(core.map).name,
+    rated: () => core.raceRating,
   }),
 ];

@@ -6,6 +6,7 @@ import type {
   GameConfig,
   LadderId,
   RoomMode,
+  RoomCustomMap,
   Level,
   PlayerInput,
   PlayerState,
@@ -26,7 +27,7 @@ import {
   createBotMemory,
   BOT_SKILLS,
   botSkillName,
-  mapDefForSize,
+  roomLevelDef,
   encodeSnapshot,
   publicState,
   zoneOverrides,
@@ -121,6 +122,11 @@ export interface RoomOptions {
    * map). Default: the mode's size (1v1 → 1 … 5v5 → 5; other rooms play the whole map).
    */
   teamSize?: number;
+  /**
+   * the map is a player's custom map, or the built-in map's official edit (the Map Maker): the
+   * level is built from this doc (net/custom-maps.ts roomLevelDef), sent to every client
+   */
+  custom?: RoomCustomMap | null;
 }
 
 /** Players per team a room's level is built for (size walls): the mode's size by default. */
@@ -148,6 +154,11 @@ export class Room {
   readonly ranked: boolean;
   /** players per team the level is built for (size walls; sent in 'roomJoined') */
   readonly teamSize: number;
+  /**
+   * a custom map / the official edit this room plays (null: the plain built-in map). Kept for
+   * the room's life: a newer official edit only reaches rooms created (or moving map) later.
+   */
+  custom: RoomCustomMap | null;
   /** the ranked ladder this room counts for (null: casual) */
   ladder: LadderId | null = null;
   /**
@@ -196,7 +207,8 @@ export class Room {
     this.isPublic = !!opts.public;
     const config = opts.config ?? defaultConfig();
     this.teamSize = roomTeamSize(opts.mode, opts.teamSize);
-    this.level = buildLevel(mapDefForSize(opts.map, this.teamSize));
+    this.custom = opts.custom ?? null;
+    this.level = buildLevel(roomLevelDef(opts.map, this.teamSize, this.custom));
     this.ctx = { level: this.level, config, dt: TICK_DT };
     if (opts.ffa) this.ctx.ffa = true;
     this.world = createWorld(this.level, opts.seed ?? Math.floor(Math.random() * 1e9));
@@ -542,12 +554,14 @@ export class Room {
   /**
    * Move the room to another map (a Brawl's map rotation): a fresh world on the new map with
    * every member (same ids, names and teams) standing on it; the rules place them. Snapshots
-   * start over from a full one; the caller tells the clients (a new 'roomJoined').
+   * start over from a full one; the caller tells the clients (a new 'roomJoined'). `custom`: the
+   * new map's official edit, if one is published.
    */
-  changeMap(map: string): void {
+  changeMap(map: string, custom: RoomCustomMap | null = null): void {
     const tick = this.world.tick;
     this.map = map;
-    this.level = buildLevel(mapDefForSize(map, this.teamSize));
+    this.custom = custom;
+    this.level = buildLevel(roomLevelDef(map, this.teamSize, custom));
     this.ctx.level = this.level;
     this.world = createWorld(this.level, Math.floor(Math.random() * 1e9));
     this.world.tick = tick;

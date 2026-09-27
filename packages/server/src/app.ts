@@ -3,7 +3,7 @@ import http from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { PROTOCOL_VERSION, GAME_NAME } from '@space-yz/shared';
 import { serveStatic, type AssetSource } from './static';
-import { GameHub, type HubServices } from './game/hub';
+import { GameHub, MAX_MAP_MESSAGE, type HubServices } from './game/hub';
 
 export interface GameServerOptions {
   port: number;
@@ -25,7 +25,8 @@ export interface GameServer {
   close(): Promise<void>;
 }
 
-const MAX_MESSAGE_BYTES = 16 * 1024;
+// (the hub itself keeps every message but the Map Maker's under 16 KB: game/hub.ts)
+const MAX_MESSAGE_BYTES = MAX_MAP_MESSAGE;
 
 export const isLoopback = (ip: string): boolean =>
   ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');

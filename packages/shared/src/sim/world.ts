@@ -19,6 +19,7 @@ import { updateDevices } from './devices';
 import { applyDamage, updateCombat } from './combat';
 import { updatePowerupPickups } from './powerups';
 import { updateRaceBody, updateRaceInput } from './race';
+import { moverHazards, updateMovers } from './movers';
 
 export const DEG = Math.PI / 180;
 
@@ -223,6 +224,8 @@ export const step = (
 ): void => {
   world.events = [];
   world.tick++;
+  // moving blocks go to this tick's place (carrying their riders) before anyone moves
+  updateMovers(world, ctx);
   updateGravityPads(ctx, world);
   const prevButtons: Record<number, number> = {};
   for (const p of world.players) prevButtons[p.id] = p.prevButtons;
@@ -250,6 +253,8 @@ export const step = (
       if (dmg > 0)
         applyDamage(world, ctx, p.id, p, dmg, 'world', false, clone(p.pos), clone(p.pos));
     }
+    // crushed by a moving block, or its kill paint (races: back to the checkpoint)
+    moverHazards(world, ctx, p);
     if (!p.alive) continue;
     // fell into a deadly volume (a gorge): gone, like falling off the sky duel arena
     const kills = ctx.level.def.killVolumes;
@@ -292,6 +297,7 @@ export const stepPredict = (
 ): void => {
   world.events = [];
   world.tick = input.tick;
+  updateMovers(world, ctx, localId);
   const p = world.players.find((pp) => pp.id === localId);
   if (!p) return;
   const prev = { [localId]: p.prevButtons };
@@ -301,6 +307,7 @@ export const stepPredict = (
     updateMovement(world, ctx, p, input);
     updateDevices(world, ctx, p);
     if (race) updateRaceBody(world, ctx, p);
+    moverHazards(world, ctx, p, true);
   } else {
     p.prevButtons = input.buttons;
     p.view = input.view;

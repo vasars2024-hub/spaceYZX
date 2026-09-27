@@ -43,6 +43,11 @@ export interface BoxDef {
    */
   boomerangPasses?: boolean;
   /**
+   * Sight passes through it (glass blocks of player-made maps): it still collides and stops
+   * bullets, but never blocks line of sight (bots, the server's visibility culling, baked light).
+   */
+  seeThrough?: boolean;
+  /**
    * A triangular prism instead of a box (surf ramps): the local top face shrinks to a ridge
    * along local x at local z = prism × h.z (-1..1: 0 = a symmetric A-frame, ±1 = a right-angle
    * wedge). The base (local -y) and the ends (±x) stay as they are. Collision matches
@@ -269,6 +274,31 @@ export interface LevelDef {
    * build the level for the room's team size (mapDefForSize).
    */
   sizeWalls?: SizeWallDef[];
+  /**
+   * Moving blocks (player-made maps, level/custom): boxes that travel between 2-4 points and
+   * loop. Where they are is a pure function of the world tick (level/movers.ts), so the server
+   * and every client's prediction agree; they collide at that spot (level.ts setLevelTick) and
+   * carry whoever stands on them (sim/world.ts). Absent = nothing moves.
+   */
+  movers?: MoverDef[];
+}
+
+/**
+ * A moving block (level/movers.ts): its boxes are drawn and collide at their authored place
+ * plus the mover's offset for the current tick. At tick 0 it waits `delay` at path[0], travels
+ * at `speed` to path[1], waits, ... and after the last point travels back to path[0], forever.
+ */
+export interface MoverDef {
+  /** indices into LevelDef.boxes of the boxes it moves */
+  boxes: number[];
+  /** 2..4 offsets from the boxes' authored place, in order (path[0] is usually 0,0,0) */
+  path: Vec3[];
+  /** m/s along the path */
+  speed: number;
+  /** seconds it waits at each point */
+  delay: number;
+  /** deadly volumes that ride along (red kill paint on a moving block), at the authored place */
+  killVolumes?: KillVolumeDef[];
 }
 
 /**

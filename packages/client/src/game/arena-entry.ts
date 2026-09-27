@@ -40,7 +40,6 @@ import {
   createBotMemory,
   createPlayer,
   loadoutName,
-  mapDef,
   updateArena,
 } from '@space-yz/shared';
 import type { App } from '../app';
@@ -51,6 +50,7 @@ import type { RenderPlayer } from './session';
 import { ArenaFeature, arenaFromExtra } from './arena-feature';
 import { BOT_NAMES } from './practice';
 import { loadTuning } from '../ui/tuning';
+import { officialMapDef } from '../net/official-maps';
 
 export const ARENA_AVAILABLE = true;
 
@@ -99,7 +99,7 @@ export const createArenaPractice = (
   const skill = BOT_SKILLS[botSkillName(opts.skill)];
   const session = new ArenaLocalSession(
     {
-      levelDef: mapDef(ARENA_MAP_ID),
+      levelDef: officialMapDef(ARENA_MAP_ID),
       config,
       seed: 1 + Math.floor(Math.random() * 1e6),
       names,

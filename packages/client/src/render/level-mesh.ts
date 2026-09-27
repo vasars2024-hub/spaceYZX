@@ -16,34 +16,13 @@ import {
   madd,
   buildLevel,
   lineOfSight,
+  MATERIAL_COLORS,
 } from '@space-yz/shared';
 import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
 import { buildOutdoorSky, buildSky } from './sky';
 
-export const MATERIAL_COLORS: Record<Material, number> = {
-  hull: 0x3a4660,
-  floor: 0x4b5670,
-  plate: 0x4e586c,
-  grate: 0x5a6478,
-  panel: 0x5d6b88,
-  crate: 0x7c6242,
-  pillar: 0x4d5a78,
-  engine: 0x4f3c50,
-  teamA: 0x2a8296,
-  teamB: 0x96602a,
-  glass: 0xffffff,
-  skyglass: 0x9fd0ff,
-  trim: 0xffffff,
-  rock: 0xb5653b,
-  sand: 0xd8b27a,
-  wood: 0x6b4a34,
-  paper: 0xede3d1,
-  leaf: 0xf4b8c8,
-  // size walls (level/size-walls.ts): a glowing cyan force field
-  forcefield: 0x38e8ff,
-  cloud: 0xf2f4f8,
-  glow: 0xff5a2a,
-};
+// (one table with the Map Maker: level/materials.ts)
+export { MATERIAL_COLORS };
 
 const TEX_OF: Record<Material, TexKind | null> = {
   hull: 'hull',
@@ -332,6 +311,8 @@ export interface LevelMeshOptions {
   dust?: boolean;
   /** light glows and light shafts */
   atmosphere?: boolean;
+  /** only the boxes: no sky, no portals / pads / rails, no dust or glows (moving blocks) */
+  boxesOnly?: boolean;
 }
 
 export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): LevelMeshes => {
@@ -366,9 +347,11 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   const tintNeg = def.sideTint ? new THREE.Color(def.sideTint.neg) : null;
   const tintPos = def.sideTint ? new THREE.Color(def.sideTint.pos) : null;
   const sun = def.outdoor?.sunLight !== undefined ? new THREE.Color(def.outdoor.sunLight) : null;
+  // moving blocks are drawn on their own (render/mover-mesh.ts), never merged in here
+  const moving = new Set((def.movers ?? []).flatMap((m) => m.boxes));
 
   def.boxes.forEach((b, bi) => {
-    if (b.noRender) return;
+    if (b.noRender || moving.has(bi)) return;
     const mat = b.mat ?? 'hull';
     const base = new THREE.Color(b.color ?? MATERIAL_COLORS[mat]);
     if (mat === 'forcefield') {
@@ -420,6 +403,9 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
         const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
         glassGeo.quad(pts[0], pts[1], pts[2], pts[3], c, c, c, c);
       }
+      // (a glass block of a player-made map shows its edges)
+      if (b.trim !== undefined)
+        addTrims(trims, b, new THREE.Color(b.trim).multiplyScalar(brightness));
       return;
     }
     if (def.sideTint && mat !== 'trim' && mat !== 'teamA' && mat !== 'teamB' && mat !== 'glass') {
@@ -532,6 +518,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     group.add(mesh);
     disposables.push(geo, mat);
   }
+  if (opts.boxesOnly) return { group, dispose: () => disposables.forEach((d) => d.dispose()) };
   // space outside the ship: stars + moons (2 draws; shown in every effects level, it's scenery
   // players look at through the glass, not decoration)
   if (def.sky) {

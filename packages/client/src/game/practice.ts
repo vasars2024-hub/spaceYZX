@@ -14,12 +14,12 @@ import {
   startMatch,
   updateMatch,
   applyBotObjectives,
-  mapDefForSize,
   csConfig,
   DEFAULT_MATCH_MAP,
   type MatchState,
 } from '@space-yz/shared';
 import { LocalSession } from './local-session';
+import { officialMapDef } from '../net/official-maps';
 
 export const BOT_NAMES = [
   'Nova',
@@ -65,7 +65,7 @@ export const createPracticeSession = (
   const levelDef =
     opts.levelDef ??
     (isMatch
-      ? mapDefForSize(opts.mapId ?? DEFAULT_MATCH_MAP(), Math.min(5, Math.max(1, opts.size)))
+      ? officialMapDef(opts.mapId ?? DEFAULT_MATCH_MAP(), Math.min(5, Math.max(1, opts.size)))
       : buildTrainingBay());
   const mems: BotMemory[] = [];
   const match: MatchState | undefined = isMatch

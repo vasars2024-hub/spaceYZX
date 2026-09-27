@@ -31,7 +31,6 @@ import {
   createBotMemory,
   createBrawl,
   createPlayer,
-  mapDef,
   nextBrawlMap,
   startBrawl,
   updateBrawl,
@@ -43,6 +42,7 @@ import { LocalSession, type LocalSessionOptions } from './local-session';
 import { BrawlFeature, brawlFromExtra } from './brawl-feature';
 import { BOT_NAMES } from './practice';
 import { loadTuning } from '../ui/tuning';
+import { officialMapDef } from '../net/official-maps';
 
 export interface BrawlPracticeOptions {
   variant: BrawlVariant;
@@ -88,7 +88,7 @@ export const createBrawlPractice = (opts: BrawlPracticeOptions): BrawlLocalSessi
   let nextDue = false;
   return new BrawlLocalSession(
     {
-      levelDef: mapDef(mapId),
+      levelDef: officialMapDef(mapId),
       config,
       seed: 1 + Math.floor(Math.random() * 1e6),
       names,

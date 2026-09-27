@@ -33,6 +33,14 @@ import type {
   SocialNotice,
   SocialState,
 } from './social';
+import type {
+  CustomMapInfo,
+  CustomMapOp,
+  CustomPlayMode,
+  OfficialVersion,
+  RoomCustomMap,
+} from './custom-maps';
+import type { CustomMapDoc } from '../level/custom/types';
 import { createPlayer, newBoomerang } from '../sim/world';
 import { defaultConfig } from '../config';
 
@@ -155,7 +163,26 @@ export type ClientMsg =
   /** Invite a friend to your room (they get a 'socialNotice' with a Join button). */
   | { t: 'invite'; id: number }
   /** Join the room a friend is in (casual rooms only). */
-  | { t: 'joinFriend'; id: number };
+  | { t: 'joinFriend'; id: number }
+  /**
+   * The Map Maker (net/custom-maps.ts CustomMapOp): list / load / save / delete your maps,
+   * publish / restore / undo / history of a built-in map's official edit (admins), play a map in
+   * a new room. `req` comes back in the answer ('customMapResult'). A message carrying a doc may
+   * be up to CUSTOM_MAP_LIMITS.maxBytes long (every other message 16 KB).
+   */
+  | {
+      t: 'customMap';
+      op: CustomMapOp;
+      req?: number;
+      /** a saved map's id (load, save over, delete, play) */
+      id?: string;
+      /** a built-in map's id (loadOfficial, publish, restore, undo, history) */
+      map?: string;
+      /** save / publish / play (an unsaved map); the server validates it */
+      doc?: unknown;
+      /** play: free roam or a race */
+      mode?: CustomPlayMode;
+    };
 
 /** One ranked queue's live line on its card (QueueCounts). */
 export interface RankedQueueCount {
@@ -271,6 +298,11 @@ export type ServerMsg =
       teamSize?: number;
       /** ranked: the ladder this room counts for (Premier, Premier CS, Duels, Race) */
       ladder?: LadderId | null;
+      /**
+       * the room plays a custom map, or the built-in map with its official edit: build the level
+       * with roomLevelDef(map, teamSize, custom) (net/custom-maps.ts). Absent: the plain map.
+       */
+      custom?: RoomCustomMap;
     }
   | { t: 'room'; code: string; players: RoomPlayerInfo[]; hostId: number; state: string }
   | { t: 'match'; data: unknown }
@@ -317,7 +349,28 @@ export type ServerMsg =
   /** Voice signaling from another human in your room. */
   | { t: 'rtc'; from: number; data: RtcSignal }
   /** Someone started/stopped talking (enemies only ever hear about all-channel talk). */
-  | { t: 'voice'; from: number; on: boolean; all: boolean };
+  | { t: 'voice'; from: number; on: boolean; all: boolean }
+  /** The answer to a 'customMap' message (same op and req). */
+  | {
+      t: 'customMapResult';
+      op: CustomMapOp;
+      req?: number;
+      ok: boolean;
+      error?: string;
+      /** list */
+      list?: CustomMapInfo[];
+      /** load / loadOfficial (null: that map has no official edit) */
+      doc?: CustomMapDoc | null;
+      /** save: the map's id */
+      id?: string;
+      /** history (newest first) */
+      history?: OfficialVersion[];
+    }
+  /**
+   * The built-in maps with an official edit published: map id -> version hash (sent after the
+   * hello and whenever it changes). Offline modes play these edits too (loadOfficial).
+   */
+  | { t: 'officialMaps'; data: Record<string, string> };
 
 export const CHAT_MAX_LEN = 140;
 /** Longest SDP a voice offer/answer may carry. */

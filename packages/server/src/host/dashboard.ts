@@ -6,7 +6,7 @@ import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import qrcode from 'qrcode-generator';
 import type { RankedMode } from '@space-yz/shared';
-import { RANKED_MODES } from '@space-yz/shared';
+import { MAPS, RANKED_MODES } from '@space-yz/shared';
 import type { GameHub } from '../game/hub';
 import type { Services } from '../services';
 import type { ConnectivityStatus } from './connectivity';
@@ -207,6 +207,25 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
       if (req.method === 'GET' && url.pathname === '/api/status') return json(res, 200, status());
       if (req.method === 'GET' && url.pathname === '/api/reports')
         return json(res, 200, services.ranked.reports(100));
+      if (req.method === 'GET' && url.pathname === '/api/accounts')
+        // secured accounts (search by name) with their admin flag; admins always listed
+        return json(
+          res,
+          200,
+          services.accounts.listForHost((url.searchParams.get('q') ?? '').slice(0, 32), 50),
+        );
+      if (req.method === 'GET' && url.pathname === '/api/official-maps')
+        // built-in maps with an official edit (or a history of them)
+        return json(
+          res,
+          200,
+          MAPS.flatMap((m) => {
+            const history = services.maps.history(m.id, 5);
+            if (!history.length) return [];
+            const o = services.maps.override(m.id);
+            return [{ map: m.id, name: m.name, edited: !!o, editName: o?.doc.name ?? '', history }];
+          }),
+        );
       if (req.method === 'GET' && url.pathname === '/api/qr') {
         const text = url.searchParams.get('text') ?? '';
         if (!/^https?:\/\/[\w.:[\]-]+\/?$/.test(text)) return json(res, 400, { error: 'bad link' });
@@ -308,6 +327,39 @@ export const startDashboard = (opts: DashboardOptions): Promise<Dashboard> => {
         case '/api/unban':
           services.ranked.unban(Number(body.playerId));
           return json(res, 200, { ok: true });
+        case '/api/admin': {
+          // Map Maker admins: may publish edits of the real maps (secured accounts only)
+          const id = Number(body.id);
+          const r = services.accounts.setAdmin(id, !!body.on);
+          if (!r.ok) return json(res, 400, { error: r.error });
+          const who = services.accounts.byId(id);
+          log(
+            `Host ${body.on ? 'made' : 'removed'} ${who?.name ?? `#${id}`} ${body.on ? 'an admin' : 'as admin'}`,
+          );
+          // their open game tabs learn it right away (the Map Maker shows the Publish button)
+          const me = services.accounts.me(id);
+          if (me)
+            for (const c of services.social.online.get(id) ?? []) c.sendJson({ t: 'me', data: me });
+          return json(res, 200, { ok: true });
+        }
+        case '/api/official-map': {
+          // undo the last publish / go back to the original map (new rooms play it)
+          const map = String(body.map ?? '');
+          if (!MAPS.some((m) => m.id === map)) return json(res, 404, { error: 'no such map' });
+          const by = { id: null, name: 'host' };
+          const done =
+            body.action === 'restore'
+              ? services.maps.restore(map, by)
+              : body.action === 'undo'
+                ? services.maps.undo(map, by)
+                : false;
+          if (!done) return json(res, 409, { error: 'Nothing to change.' });
+          log(
+            `Host: official edit of ${map} ${body.action === 'restore' ? 'restored to the original' : 'undone'}`,
+          );
+          services.broadcastOfficialMaps();
+          return json(res, 200, { ok: true });
+        }
         default:
           return json(res, 404, { error: 'not found' });
       }
@@ -382,6 +434,11 @@ button.warn{border-color:var(--orange);background:#3a2410}button.small{padding:3
 <section style="grid-column:1/-1"><h2>Players</h2><table id="players"></table></section>
 <section style="grid-column:1/-1"><h2>Matches</h2><table id="rooms"></table></section>
 <section style="grid-column:1/-1"><h2>Reports</h2><table id="reports"></table></section>
+<section style="grid-column:1/-1"><h2>Map Maker admins</h2>
+<div class="dim">Admins may publish their edits of the real maps (everyone then plays the edited map) and restore the originals. Only accounts with a username and password can be admins.</div>
+<div class="row"><input id="accQ" style="flex:1;min-width:200px" placeholder="Search a player's name"><button class="small" id="accFind">Search</button><span class="dim" id="accMsg"></span></div>
+<table id="accounts"></table></section>
+<section style="grid-column:1/-1"><h2>Edited maps</h2><div class="dim">New matches play the edited version; matches already running keep theirs.</div><table id="official"></table></section>
 </main>
 <script>
 const token = location.hash.slice(1);
@@ -430,6 +487,24 @@ async function reports() {
   const t = $('reports'); t.replaceChildren(head(['When', 'Player', 'Reason', 'Room', 'Times reported', '']));
   for (const r of list) { const b = el('button', r.handled ? 'Done' : 'Mark done', 'small'); b.disabled = r.handled; b.onclick = () => api('/report-handled', { id: r.id }).then(reports); t.append(row([new Date(r.at).toLocaleString(), r.reportedName, r.reason, r.room, r.count, b])); }
 }
+async function accounts() {
+  let list = []; try { list = await api('/accounts?q=' + encodeURIComponent($('accQ').value)); } catch { return; }
+  const t = $('accounts'); t.replaceChildren(head(['Name', 'Account', 'Last seen', 'Admin']));
+  for (const a of list) { const c = el('input'); c.type = 'checkbox'; c.checked = a.admin; c.disabled = !a.secured && !a.admin;
+    c.onchange = () => api('/admin', { id: a.id, on: c.checked }).then(() => { $('accMsg').textContent = a.name + (c.checked ? ' is now an admin.' : ' is no longer an admin.'); accounts(); }).catch(() => { $('accMsg').textContent = 'Could not change that.'; accounts(); });
+    const l = el('label'); l.append(c, el('span', ' admin')); t.append(row([a.name, a.secured ? 'secured' : 'guest', new Date(a.lastSeen).toLocaleString(), l])); }
+  if (!list.length) t.append(row(['No accounts found (only secured accounts are listed).']));
+}
+async function official() {
+  let list = []; try { list = await api('/official-maps'); } catch { return; }
+  const t = $('official'); t.replaceChildren(head(['Map', 'Now', 'Last change', '']));
+  for (const m of list) { const h = m.history[0]; const u = el('button', 'Undo last change', 'small'); u.onclick = () => confirm('Undo the last change to ' + m.name + '?') && api('/official-map', { map: m.map, action: 'undo' }).then(official).catch(official);
+    const r = el('button', 'Restore original', 'small warn'); r.disabled = !m.edited; r.onclick = () => confirm('Put the original ' + m.name + ' back? (The edit stays in the history: Undo brings it back.)') && api('/official-map', { map: m.map, action: 'restore' }).then(official).catch(official);
+    const b = el('span'); b.append(u, r); t.append(row([m.name, m.edited ? 'edited: ' + m.editName : 'original', h ? h.action + ' by ' + h.by + ', ' + new Date(h.at).toLocaleString() : '', b])); }
+  if (!list.length) t.append(row(['No map has been edited yet.']));
+}
+$('accFind').onclick = accounts; $('accQ').onkeydown = (e) => { if (e.key === 'Enter') accounts(); };
+accounts(); official(); setInterval(official, 15000);
 $('play').onclick = () => window.open(st ? st.localUrl : '/', '_blank');
 $('copy').onclick = () => navigator.clipboard.writeText($('invite').textContent);
 $('speed').onclick = () => api('/speedtest', {}).then(refresh);

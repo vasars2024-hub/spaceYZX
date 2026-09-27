@@ -247,6 +247,38 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (player_id, blocked_id)
   );
   `,
+  // 6: the Map Maker (services/custom-maps.ts).
+  // - players.admin: may publish official edits of the built-in maps (granted on the host
+  //   dashboard).
+  // - custom_maps: players' saved maps (the CustomMapDoc as JSON), `base` = the built-in map it
+  //   started from ('' = empty map).
+  // - map_overrides: every version of each built-in map's official edit, newest = the one
+  //   everyone plays (doc NULL = the original map restored). Old rows are the history
+  //   (undo / restore).
+  `
+  ALTER TABLE players ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE custom_maps (
+    id TEXT PRIMARY KEY,
+    owner_id INTEGER NOT NULL REFERENCES players(id),
+    name TEXT NOT NULL,
+    base TEXT NOT NULL,
+    doc TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX custom_maps_owner ON custom_maps(owner_id, updated_at DESC);
+  CREATE TABLE map_overrides (
+    id INTEGER PRIMARY KEY,
+    map TEXT NOT NULL,
+    doc TEXT,
+    hash TEXT NOT NULL,
+    action TEXT NOT NULL,
+    by_id INTEGER REFERENCES players(id),
+    by_name TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX map_overrides_map ON map_overrides(map, id DESC);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

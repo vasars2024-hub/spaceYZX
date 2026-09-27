@@ -9,11 +9,14 @@ import './ui/social.css';
 import type { Vec3 } from '@space-yz/shared';
 import { yawToView, qFromBasis, normalize, cross, sub, v3, dot } from '@space-yz/shared';
 import { App } from './app';
+import { bindCustomMapsApp } from './net/custom-maps';
 
 const app = new App(
   document.getElementById('game') as HTMLCanvasElement,
   document.getElementById('ui') as HTMLDivElement,
 );
+// the Map Maker's playMap starts games through the app
+bindCustomMapsApp(app);
 
 // Test/debug hooks used by automated browser checks (harmless for players).
 const tools = {

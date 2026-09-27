@@ -7,6 +7,7 @@ import type {
   LadderId,
   LoadoutName,
   MatchObjective,
+  RoomCustomMap,
   RoomMode,
 } from '@space-yz/shared';
 import {
@@ -34,7 +35,9 @@ import {
   configForLoadout,
   loadoutName,
   botSkillName,
+  CUSTOM_MAP_LIMITS,
 } from '@space-yz/shared';
+import { Limiter } from '../services/limiter';
 import { Conn } from './conn';
 import { Room, makeRoomCode, roomTeamSize, type Rules } from './room';
 import { Clock } from './clock';
@@ -92,6 +95,16 @@ export interface HubServices {
    * 'invite', 'joinFriend': services/account-handler.ts).
    */
   onSocial?(hub: GameHub, conn: Conn, msg: ClientMsg): void;
+  /**
+   * The Map Maker's messages ('customMap': saved maps, official edits, playing a map;
+   * services/custom-map-handler.ts).
+   */
+  onCustomMap?(hub: GameHub, conn: Conn, msg: Extract<ClientMsg, { t: 'customMap' }>): void;
+  /**
+   * The official edit of a built-in map, if one is published: new rooms on that map play it
+   * (rooms already running keep their version).
+   */
+  mapOverride?(map: string): RoomCustomMap | null;
   /** Has `to` blocked `from`? (then `from`'s chat and voice never reach `to`) */
   blocked?(to: Conn, from: Conn): boolean;
   /** lag compensation (default on) */
@@ -109,6 +122,10 @@ const MAX_ROOMS = 200;
  * drop it, so a vanished player (Wi-Fi died, laptop closed) doesn't hold a room slot forever.
  */
 const SILENT_DROP_MS = 30_000;
+/** Every message but the Map Maker's (which may carry a whole map) stays under this. */
+const MAX_JSON = 16384;
+/** A Map Maker message carrying a map: the doc plus a little room for the message around it. */
+export const MAX_MAP_MESSAGE = CUSTOM_MAP_LIMITS.maxBytes + 4096;
 
 export class GameHub {
   conns = new Set<Conn>();
@@ -116,6 +133,13 @@ export class GameHub {
   clock = new Clock();
   private pingTimer: NodeJS.Timeout;
   kickedIps = new Map<string, number>();
+  /** big messages (a map being saved / played) per address: 20 a minute */
+  private bigLimit = new Limiter({
+    max: 20,
+    windowMs: 60_000,
+    lockMs: 60_000,
+    maxLockMs: 10 * 60_000,
+  });
 
   constructor(public services: HubServices = {}) {
     this.pingTimer = setInterval(() => this.pingAll(), 1000);
@@ -158,9 +182,19 @@ export class GameHub {
   }
 
   private onJson(conn: Conn, text: string): void {
-    // 16 KB: voice offers/answers carry an SDP of a few KB
-    const msg = parseJson<ClientMsg>(text, 16384);
+    // 16 KB: voice offers/answers carry an SDP of a few KB. Only a Map Maker message (after the
+    // hello) may be bigger: it can carry a whole map (a few of those a minute)
+    const big = text.length > MAX_JSON;
+    if (big) {
+      if (!conn.helloDone || !text.startsWith('{"t":"customMap"')) return conn.strike('size');
+      if (this.bigLimit.lockedFor(conn.ip) > 0 || this.bigLimit.hit(conn.ip) > 0) {
+        conn.sendJson({ t: 'error', msg: 'Too many maps sent — wait a minute.' });
+        return;
+      }
+    }
+    const msg = parseJson<ClientMsg>(text, big ? MAX_MAP_MESSAGE : MAX_JSON);
     if (!msg || typeof msg.t !== 'string') return conn.strike('json');
+    if (big && msg.t !== 'customMap') return conn.strike('size');
     switch (msg.t) {
       case 'ping':
         if (typeof msg.c === 'number')
@@ -316,6 +350,9 @@ export class GameHub {
         else relayVoice(room, conn, msg.on, msg.all, skip);
         return;
       }
+      case 'customMap':
+        this.services.onCustomMap?.(this, conn, msg);
+        return;
       case 'account':
       case 'editProfile':
       case 'friend':
@@ -352,6 +389,11 @@ export class GameHub {
     ladder?: LadderId;
     /** a public Brawl room (quick play): bots keep it busy and leave as humans join */
     public?: boolean;
+    /**
+     * the room plays this custom map (the Map Maker's play: `map` is then its room map id, kept
+     * as given). Absent: the map's official edit if one is published, else the plain map.
+     */
+    custom?: RoomCustomMap;
   }): Room | null {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const arena = opts.mode === 'arena';
@@ -364,10 +406,9 @@ export class GameHub {
         : 'lethal';
     let code = makeRoomCode();
     while (this.rooms.has(code)) code = makeRoomCode();
-    const room = new Room({
-      code,
-      mode: opts.mode,
-      map: arena
+    const map = opts.custom
+      ? opts.map
+      : arena
         ? ARENA_MAP_ID
         : race
           ? getMap(opts.map).race
@@ -375,7 +416,13 @@ export class GameHub {
             : DEFAULT_RACE_MAP
           : brawl && !brawlMaps().some((m) => m.id === opts.map)
             ? DEFAULT_MATCH_MAP()
-            : opts.map,
+            : opts.map;
+    const room = new Room({
+      code,
+      mode: opts.mode,
+      map,
+      // a custom map, or the official edit of this built-in map (if published)
+      custom: opts.custom ?? this.services.mapOverride?.(map) ?? null,
       // (Brawl is casual only; its maps are the rotation's)
       ranked: brawl ? false : opts.ranked,
       ffa: isFfaMode(opts.mode),
@@ -457,7 +504,8 @@ export class GameHub {
       };
       // the next Brawl: every client loads the next map (a new 'roomJoined', same code and id)
       rules.onNextMap = (r) => {
-        r.changeMap(nextBrawlMap(r.map));
+        const next = nextBrawlMap(r.map);
+        r.changeMap(next, this.services.mapOverride?.(next) ?? null);
         rules.restart(r);
         for (const m of r.humans) if (m.conn) this.sendRoomJoined(m.conn, r, m.id);
         this.broadcastRoom(r);
@@ -498,7 +546,7 @@ export class GameHub {
     this.rooms.set(code, room);
     this.clock.add(room);
     this.log(
-      `Room ${code} created (${opts.mode}, ${room.map}${opts.ranked ? ', ranked' : ''}${loadout === 'cs' ? ', CS mode' : ''})`,
+      `Room ${code} created (${opts.mode}, ${room.map}${room.custom ? ` [${room.custom.kind} ${room.custom.hash}]` : ''}${opts.ranked ? ', ranked' : ''}${loadout === 'cs' ? ', CS mode' : ''})`,
     );
     return room;
   }
@@ -557,6 +605,8 @@ export class GameHub {
       // (a smaller team size: the client builds the level with the same size walls)
       ...(room.teamSize < 5 ? { teamSize: room.teamSize } : {}),
       ...(room.ladder ? { ladder: room.ladder } : {}),
+      // a custom map / official edit: the doc, which every client builds the same way
+      ...(room.custom ? { custom: room.custom } : {}),
     });
   }
 

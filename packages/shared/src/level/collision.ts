@@ -455,7 +455,11 @@ export const raycast = (
       }
       return false;
     });
-    if (walked) return r.best;
+    if (walked) {
+      // moving blocks are not in the grid: test them on their own
+      for (const i of level.moverBoxes) test(i);
+      return r.best;
+    }
   }
   const end = madd(origin, dir, maxDist);
   const pad = radius + 0.01;
@@ -473,7 +477,12 @@ export const raycast = (
   return r.best;
 };
 
-/** Is the straight line between two points free of level geometry? */
+/**
+ * Is the straight line between two points free of level geometry? Static geometry only: moving
+ * blocks never block sight (the server's visibility culling must never hide someone a client
+ * can see past a block drawn a moment earlier or later), and neither does see-through glass
+ * (BoxDef.seeThrough).
+ */
 export const lineOfSight = (level: Level, a: Vec3, b: Vec3): boolean => {
   const d = sub(b, a);
   const l = len(d);
@@ -487,12 +496,18 @@ export const lineOfSight = (level: Level, a: Vec3, b: Vec3): boolean => {
     for (const i of list) {
       if (stamp[i] === id) continue;
       stamp[i] = id;
-      if (rayBox(level.boxes[i], a, dir, l)) return (blocked = true);
+      if (!level.boxes[i].seeThrough && rayBox(level.boxes[i], a, dir, l)) return (blocked = true);
     }
     return false;
   });
   if (walked) return !blocked;
-  return raycast(level, a, dir, l) === null;
+  if (!level.moverBoxes.length && !level.seeThrough) return raycast(level, a, dir, l) === null;
+  const mn = v3(Math.min(a.x, b.x) - 0.01, Math.min(a.y, b.y) - 0.01, Math.min(a.z, b.z) - 0.01);
+  const mx = v3(Math.max(a.x, b.x) + 0.01, Math.max(a.y, b.y) + 0.01, Math.max(a.z, b.z) + 0.01);
+  for (const i of queryBoxes(level, mn, mx))
+    if (level.boxes[i].mover < 0 && !level.boxes[i].seeThrough && rayBox(level.boxes[i], a, dir, l))
+      return false;
+  return true;
 };
 
 /** Nearest surface point (and outward normal) within `range` of a point. */

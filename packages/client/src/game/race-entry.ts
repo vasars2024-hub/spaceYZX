@@ -14,6 +14,7 @@
 import type {
   BotSkillName,
   GameConfig,
+  LevelDef,
   NetCore,
   PlayerInput,
   RaceState,
@@ -27,7 +28,6 @@ import {
   createRacerMemory,
   DEFAULT_RACE_MAP,
   getMap,
-  mapDef,
   raceJoin,
   racerThink,
   RACER_SKILLS,
@@ -44,6 +44,7 @@ import { NetSession } from '../net/net-session';
 import { RaceFeature, raceFromExtra, raceTag } from './race-feature';
 import { BOT_NAMES } from './practice';
 import { loadTuning } from '../ui/tuning';
+import { officialMapDef } from '../net/official-maps';
 
 export interface RacePracticeOptions {
   /** map id of a race track (default: the first one) */
@@ -52,6 +53,10 @@ export interface RacePracticeOptions {
   bots: number;
   skill: BotSkillName;
   config?: GameConfig;
+  /** race on this level instead of a track's (the Map Maker's test run; `track` names it) */
+  levelDef?: LevelDef;
+  /** the name the race HUD shows (default: the track's) */
+  trackName?: string;
 }
 
 /** The track to race: a race track's id, else the default one. */
@@ -84,7 +89,7 @@ export class RaceLocalSession extends LocalSession {
 export const createRacePractice = (
   opts: RacePracticeOptions,
 ): { session: RaceLocalSession; race: RaceState } => {
-  const track = raceTrackId(opts.track);
+  const track = opts.levelDef ? (opts.track ?? 'custom') : raceTrackId(opts.track);
   const bots = Math.max(0, Math.min(7, Math.floor(opts.bots)));
   // offline: the countdown starts right away, and the next race soon after the results
   const race = createRace(track, { lobbySec: 2, resultsSec: 10 });
@@ -93,7 +98,7 @@ export const createRacePractice = (
   const skill = RACER_SKILLS[botSkillName(opts.skill)];
   const session = new RaceLocalSession(
     {
-      levelDef: mapDef(track),
+      levelDef: opts.levelDef ?? officialMapDef(track),
       config: opts.config ?? loadTuning(),
       seed: 1 + Math.floor(Math.random() * 1e6),
       names,
@@ -133,7 +138,7 @@ export const startRacePractice = (app: App, opts: RacePracticeOptions): void => 
   const feature = new RaceFeature({
     view: () => raceView(race, session.ctx),
     track,
-    trackName: getMap(track).name,
+    trackName: opts.trackName ?? getMap(track).name,
   });
   const client = app.startGame(session, [feature], { tuning: false });
   client.hud.setHint(RACE_HINT, 16);
@@ -168,7 +173,7 @@ export const raceOnlineFeatures = (core: NetCore): ClientFeature[] => [
   new RaceFeature({
     view: () => raceFromExtra(core.extra),
     track: core.map,
-    trackName: getMap(core.map).name,
+    trackName: core.custom?.kind === 'custom' ? core.custom.name : getMap(core.map).name,
     rated: () => core.raceRating,
   }),
 ];

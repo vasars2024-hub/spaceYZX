@@ -13,6 +13,8 @@ import { Social } from './social';
 import { Parties } from './party';
 import { ProfileStore } from './profiles';
 import { accountHandler } from './account-handler';
+import { CustomMapStore } from './custom-maps';
+import { customMapHandler } from './custom-map-handler';
 import type { ScryptCost } from './passwords';
 
 export interface Services {
@@ -23,6 +25,10 @@ export interface Services {
   social: Social;
   parties: Parties;
   profiles: ProfileStore;
+  /** the Map Maker: saved maps and the official edits of the built-in maps */
+  maps: CustomMapStore;
+  /** Tell every connected player which built-in maps have an official edit now. */
+  broadcastOfficialMaps(): void;
   hub: HubServices;
   /** Tell every connected player the season / Premier hours changed. */
   broadcastRankedInfo(): void;
@@ -60,6 +66,8 @@ export const createServices = (opts: {
   parties.onChange = (p, why) => queue.partyChanged(p, why);
   const profiles = new ProfileStore(db);
   const accountMsgs = accountHandler({ accounts, ranked, queue, social, log });
+  const maps = new CustomMapStore(db, now);
+  const mapMsgs = customMapHandler({ accounts, store: maps, queue, log, now });
 
   const hub: HubServices = {
     login: (conn, name, token) => {
@@ -94,6 +102,8 @@ export const createServices = (opts: {
     onHello: (conn, h) => {
       queue.start(h);
       conn.sendJson({ t: 'rankedInfo', data: ranked.info() });
+      // (the built-in maps with an official edit: offline modes play them too)
+      conn.sendJson({ t: 'officialMaps', data: maps.overrides() });
       queue.pushCounts(conn);
       if (conn.accountId === null) return;
       social.connect(conn);
@@ -109,6 +119,11 @@ export const createServices = (opts: {
       parties.disconnected(conn.accountId);
     },
     onSocial: (h, conn, msg) => accountMsgs.handle(h, conn, msg),
+    onCustomMap: (h, conn, msg) => mapMsgs.handle(h, conn, msg),
+    mapOverride: (map) => {
+      const o = maps.override(map);
+      return o ? { kind: 'official', doc: o.doc, hash: o.hash, name: o.doc.name } : null;
+    },
     blocked: (to, from) => social.blocks(to, from),
     onReport: (conn, player, reason, room) => {
       const m = room.members.get(player);
@@ -198,6 +213,8 @@ export const createServices = (opts: {
   // Races: every online race is stored (personal bests); ranked ones (the Race queue) also
   // update the Race ladder. Each racer hears their rating change / best time.
   hub.onRaceEnd = (room, record) => {
+    // (a player's own map: no personal bests or ratings on it)
+    if (room.custom?.kind === 'custom') return;
     const roster = room.ranked ? queue.takeRaceRoster(room.code) : undefined;
     const notes = ranked.recordRace({ ranked: room.ranked, record, roster });
     for (const m of room.humans) {
@@ -298,6 +315,10 @@ export const createServices = (opts: {
     social,
     parties,
     profiles,
+    maps,
+    broadcastOfficialMaps: () => {
+      if (queue.hub) mapMsgs.broadcastOfficial(queue.hub);
+    },
     hub,
     broadcastRankedInfo: () => {
       const msg = { t: 'rankedInfo' as const, data: ranked.info() };

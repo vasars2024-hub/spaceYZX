@@ -100,10 +100,12 @@ import { onlineMenu, RoomPanel, netPanel } from './ui/online';
 import { settingsScreen } from './ui/settings-screen';
 import { rankedScreen, leaderboardScreen, type ClientProfile } from './ui/ranked';
 import { account } from './net/account';
+import { attachOfficialMaps } from './net/official-maps';
 import { accountScreen, recoveryCodeScreen } from './ui/account-screen';
 import { editProfileScreen, profileScreen } from './ui/profile-screen';
 import { friendsScreen, socialToast } from './ui/friends';
 import { avatarEl } from './ui/avatars';
+import './editor/menu-tile.css';
 
 export const params = new URLSearchParams(location.search);
 export const AUTOTEST = params.has('autotest');
@@ -125,6 +127,13 @@ export class App {
   private titleTime = 0;
   /** touch layout (phones/tablets or forced in Settings): on-screen controls, no pointer lock */
   mobile = false;
+  /**
+   * Where leaving a game goes instead of the title screen (a Map Maker test run: back to the
+   * editor). Set right before the game starts (net/custom-maps.ts playMap); used once.
+   */
+  afterGame: (() => void) | null = null;
+  /** The Map Maker's own 3D view (editor/): drawn instead of the title scene while it is open. */
+  editorView: { frame(dt: number): void; resize(w: number, h: number): void } | null = null;
 
   constructor(
     public canvas: HTMLCanvasElement,
@@ -238,6 +247,7 @@ export class App {
     this.titleCam.aspect = w / hgt;
     this.titleCam.updateProjectionMatrix();
     this.client?.resize(w, hgt);
+    this.editorView?.resize(w, hgt);
   }
 
   private loop(): void {
@@ -252,6 +262,8 @@ export class App {
       const c0 = performance.now();
       this.client.frame(dt);
       this.cpuStats.add(performance.now() - c0);
+    } else if (this.editorView) {
+      this.editorView.frame(dt);
     } else {
       this.titleTime += dt;
       const t = this.titleTime * 0.05;
@@ -420,7 +432,19 @@ export class App {
         () => this.showTraining(),
         'training',
       ],
+      [
+        'map',
+        'Map Maker',
+        'Build your own maps, or change the real ones.',
+        () => this.showMapMaker(),
+        'mapmaker',
+      ],
     ];
+  }
+
+  /** The Map Maker (editor/, loaded on first use): pick a map to edit, then the editor. */
+  showMapMaker(dir: Dir = 'forward'): void {
+    void import('./editor').then((m) => m.openMapMaker(this, dir));
   }
 
   /** Training: the practice range and the movement playground. */
@@ -567,10 +591,16 @@ export class App {
     this.refreshLayout(); // a touch-controls setting changed during the game applies now
   }
 
-  /** Leave the game for the title screen (a Brawl's Back to menu button). */
+  /**
+   * Leave the game for the title screen (a Brawl's Back to menu button), or back to the Map
+   * Maker after a test run (afterGame).
+   */
   quitToTitle(): void {
     this.stopGame();
-    this.showTitle('fade');
+    const back = this.afterGame;
+    this.afterGame = null;
+    if (back) back();
+    else this.showTitle('fade');
   }
 
   /**
@@ -748,6 +778,8 @@ export class App {
     });
     core.onMessage = (msg) => this.onNetMessage(core, msg);
     account.attach(core);
+    // (the official map edits: offline modes play them too)
+    attachOfficialMaps(core);
     core.connect();
     window.clearInterval(this.netPing);
     this.netPing = window.setInterval(() => core.pingServer(), 1000);
@@ -962,8 +994,15 @@ export class App {
     if (msg.t === 'roomLeft') {
       if (this.client?.session instanceof NetSession) this.stopGame();
       this.toast(core.roomLeftReason ?? 'You left the room.');
+      // (a Map Maker test room: back to the editor)
+      const back = this.afterGame;
+      this.afterGame = null;
+      if (back) back();
+      else if (this.editorView) {
+        /* already back in the Map Maker: stay there */
+      }
       // (out of a quick-play room: back to the title, its Play button is right there)
-      if (core.isPublic) this.showTitle('fade');
+      else if (core.isPublic) this.showTitle('fade');
       else this.showOnline('', 'fade');
     }
     if (msg.t === 'welcome') {
@@ -1330,11 +1369,8 @@ export class App {
         : null,
       iconButton(
         'quit',
-        'Quit to title',
-        () => {
-          this.stopGame();
-          this.showTitle('fade');
-        },
+        this.afterGame ? 'Back to the Map Maker' : 'Quit to title',
+        () => this.quitToTitle(),
         'btn orange',
       ),
     );

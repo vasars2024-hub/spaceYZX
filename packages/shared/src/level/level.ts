@@ -2,7 +2,9 @@
 import type { Vec3 } from '../math/vec3';
 import { v3, sub, dot, add, scale, len, normalize } from '../math/vec3';
 import { qRotate } from '../math/quat';
-import type { LevelDef, GravityZoneDef } from './types';
+import type { LevelDef, GravityZoneDef, KillVolumeDef } from './types';
+import type { MoverTimeline } from './movers';
+import { moverTimeline, timelineAt } from './movers';
 
 export interface BoxShape {
   index: number;
@@ -24,6 +26,28 @@ export interface BoxShape {
   prism: PrismShape | null;
   /** a surf ramp (BoxDef.surf): never ground, no wall-jumps off it */
   surf: boolean;
+  /** sight passes through it (BoxDef.seeThrough) */
+  seeThrough: boolean;
+  /** index into Level.movers of the mover carrying it (-1: it never moves) */
+  mover: number;
+}
+
+/**
+ * A moving block (LevelDef.movers) as built: its boxes are kept out of the grid and tested on
+ * their own (queryBoxes, raycast) wherever setLevelTick last put them.
+ */
+export interface LevelMover {
+  timeline: MoverTimeline;
+  /** box indices it carries */
+  boxes: number[];
+  /** each box's authored centre and AABB (the offset is added to these) */
+  baseC: Vec3[];
+  baseMin: Vec3[];
+  baseMax: Vec3[];
+  /** its offset at Level.moverTick */
+  offset: Vec3;
+  /** deadly volumes riding along (at the authored place) */
+  killVolumes: KillVolumeDef[];
 }
 
 export interface PrismShape {
@@ -77,6 +101,14 @@ export interface Level {
   zones: GravityZoneDef[];
   zoneIndex: Map<string, number>;
   rails: RailShape[];
+  /** moving blocks (empty on most maps) */
+  movers: LevelMover[];
+  /** colliding boxes carried by movers, ascending (never in the grid) */
+  moverBoxes: number[];
+  /** the tick the movers were last placed at (setLevelTick; NaN = never) */
+  moverTick: number;
+  /** some box is see-through (lineOfSight skips those) */
+  seeThrough: boolean;
   /** scratch for de-duplicating grid queries */
   stamp: Uint32Array;
   stampId: number;
@@ -110,14 +142,40 @@ export const buildLevel = (def: LevelDef): Level => {
       boomerangPasses: !!b.boomerangPasses,
       prism: b.prism !== undefined ? prismShape(b.h, b.prism) : null,
       surf: !!b.surf,
+      seeThrough: !!b.seeThrough,
+      mover: -1,
     };
   });
+
+  // moving blocks: their boxes get centres of their own (moved in place by setLevelTick)
+  const movers: LevelMover[] = [];
+  for (const m of def.movers ?? []) {
+    const mi = movers.length;
+    const ids = m.boxes.filter((i) => i >= 0 && i < def.boxes.length && boxes[i].mover < 0);
+    for (const i of ids) boxes[i].mover = mi;
+    movers.push({
+      timeline: moverTimeline(m.path, m.speed, m.delay),
+      boxes: ids,
+      baseC: ids.map((i) => v3(boxes[i].c.x, boxes[i].c.y, boxes[i].c.z)),
+      baseMin: ids.map((i) => v3(boxes[i].min.x, boxes[i].min.y, boxes[i].min.z)),
+      baseMax: ids.map((i) => v3(boxes[i].max.x, boxes[i].max.y, boxes[i].max.z)),
+      offset: v3(),
+      killVolumes: m.killVolumes ?? [],
+    });
+    for (const i of ids) {
+      const b = boxes[i];
+      b.c = v3(b.c.x, b.c.y, b.c.z);
+      b.min = v3(b.min.x, b.min.y, b.min.z);
+      b.max = v3(b.max.x, b.max.y, b.max.z);
+    }
+  }
+  const moverBoxes = boxes.filter((b) => b.mover >= 0 && b.collide).map((b) => b.index);
 
   // the grid covers the bounds and every colliding box (the sky arena floats far above them)
   const lo = v3(def.boundsMin.x, def.boundsMin.y, def.boundsMin.z);
   const hi = v3(def.boundsMax.x, def.boundsMax.y, def.boundsMax.z);
   for (const b of boxes) {
-    if (!b.collide) continue;
+    if (!b.collide || b.mover >= 0) continue;
     lo.x = Math.min(lo.x, b.min.x);
     lo.y = Math.min(lo.y, b.min.y);
     lo.z = Math.min(lo.z, b.min.z);
@@ -136,6 +194,7 @@ export const buildLevel = (def: LevelDef): Level => {
   for (const b of boxes) {
     if (!b.collide) continue;
     colliders++;
+    if (b.mover >= 0) continue;
     const [x0, y0, z0] = cellOf(gridMin, dims, b.min);
     const [x1, y1, z1] = cellOf(gridMin, dims, b.max);
     for (let x = x0; x <= x1; x++)
@@ -158,7 +217,7 @@ export const buildLevel = (def: LevelDef): Level => {
   const zoneIndex = new Map<string, number>();
   def.zones.forEach((z, i) => zoneIndex.set(z.name, i));
 
-  return {
+  const level: Level = {
     def,
     boxes,
     colliders,
@@ -169,9 +228,43 @@ export const buildLevel = (def: LevelDef): Level => {
     zones: def.zones,
     zoneIndex,
     rails,
+    movers,
+    moverBoxes,
+    moverTick: NaN,
+    seeThrough: boxes.some((b) => b.seeThrough),
     stamp: new Uint32Array(boxes.length),
     stampId: 0,
   };
+  if (movers.length) setLevelTick(level, 0);
+  return level;
+};
+
+/**
+ * Put the moving blocks where they are at world tick `tick` (level/movers.ts). The sim calls it
+ * at the start of every step (sim/world.ts), so collisions and hits during a tick see that
+ * tick's positions on the server and in the client's prediction alike. Cheap when nothing moves.
+ */
+export const setLevelTick = (level: Level, tick: number): void => {
+  if (!level.movers.length || level.moverTick === tick) return;
+  level.moverTick = tick;
+  for (const m of level.movers) {
+    const o = timelineAt(m.timeline, tick, m.offset);
+    for (let k = 0; k < m.boxes.length; k++) {
+      const b = level.boxes[m.boxes[k]];
+      const c = m.baseC[k];
+      const lo = m.baseMin[k];
+      const hi = m.baseMax[k];
+      b.c.x = c.x + o.x;
+      b.c.y = c.y + o.y;
+      b.c.z = c.z + o.z;
+      b.min.x = lo.x + o.x;
+      b.min.y = lo.y + o.y;
+      b.min.z = lo.z + o.z;
+      b.max.x = hi.x + o.x;
+      b.max.y = hi.y + o.y;
+      b.max.z = hi.z + o.z;
+    }
+  }
 };
 
 /** A fresh id for `level.stamp` (marks boxes already visited by one query). */
@@ -225,6 +318,20 @@ export const queryBoxes = (level: Level, min: Vec3, max: Vec3): number[] => {
           out.push(i);
         }
       }
+  // moving blocks live outside the grid
+  for (const i of level.moverBoxes) {
+    const b = level.boxes[i];
+    if (
+      b.max.x < min.x ||
+      b.min.x > max.x ||
+      b.max.y < min.y ||
+      b.min.y > max.y ||
+      b.max.z < min.z ||
+      b.min.z > max.z
+    )
+      continue;
+    out.push(i);
+  }
   out.sort((a, b) => a - b);
   return out;
 };

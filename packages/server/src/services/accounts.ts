@@ -63,10 +63,11 @@ interface PlayerRow {
   avatar: number;
   banner: number;
   title: string;
+  admin: number;
 }
 
 const COLS =
-  'id, name, created_at, username_key, pass_hash, recovery_hash, name_changed_at, avatar, banner, title';
+  'id, name, created_at, username_key, pass_hash, recovery_hash, name_changed_at, avatar, banner, title, admin';
 
 export type AuthResult =
   | { ok: true; account: Account; token: string; recoveryCode?: string }
@@ -234,7 +235,64 @@ export class Accounts {
       title: r.title,
       createdAt: r.created_at,
       nameChangeAt: secured && next > this.now() ? next : null,
+      ...(r.admin ? { admin: true } : {}),
     };
+  }
+
+  // ---------------- admins (host dashboard) ----------------
+
+  /** May this account publish official edits of the built-in maps? */
+  isAdmin(id: number | null): boolean {
+    return id !== null && !!this.row(id)?.admin;
+  }
+
+  /**
+   * Make a secured account an admin (or not). Guests can't be: anyone holding a guest's browser
+   * token would be one.
+   */
+  setAdmin(id: number, on: boolean): { ok: true } | { ok: false; error: string } {
+    const r = this.row(id);
+    if (!r) return { ok: false, error: 'No such account.' };
+    if (on && r.pass_hash === null)
+      return { ok: false, error: 'Only a secured account (username + password) can be an admin.' };
+    this.db.prepare('UPDATE players SET admin = ? WHERE id = ?').run(on ? 1 : 0, id);
+    return { ok: true };
+  }
+
+  /**
+   * Accounts for the host dashboard: the admins first, then secured accounts matching `q`
+   * (name, or all of them when empty), most recently seen first.
+   */
+  listForHost(
+    q = '',
+    limit = 50,
+  ): { id: number; name: string; secured: boolean; admin: boolean; lastSeen: number }[] {
+    const like = q
+      .normalize('NFKC')
+      .replace(/[^\p{L}\p{N} _\-.]/gu, '')
+      .trim()
+      .slice(0, 16)
+      .replace(/[%_\\]/g, (c) => `\\${c}`);
+    const rows = this.db
+      .prepare(
+        `SELECT id, name, pass_hash IS NOT NULL AS secured, admin, last_seen FROM players
+         WHERE admin = 1 OR (pass_hash IS NOT NULL AND name LIKE ? ESCAPE '\\')
+         ORDER BY admin DESC, last_seen DESC LIMIT ?`,
+      )
+      .all(`%${like}%`, Math.max(1, Math.min(200, limit))) as {
+      id: number;
+      name: string;
+      secured: number;
+      admin: number;
+      last_seen: number;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      secured: !!r.secured,
+      admin: !!r.admin,
+      lastSeen: r.last_seen,
+    }));
   }
 
   /** Name + looks for lists (friends, requests, search). */

@@ -186,6 +186,8 @@ export interface MeInfo {
   createdAt: number;
   /** secured: when the name may change again (ms since 1970; null = now) */
   nameChangeAt: number | null;
+  /** may publish official edits of the built-in maps (the host grants it on the dashboard) */
+  admin?: boolean;
 }
 
 /** What a player shows in lists: name, avatar, banner colour. */

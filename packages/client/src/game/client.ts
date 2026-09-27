@@ -6,6 +6,7 @@ import type { RenderPlayer, Session } from './session';
 import { FpsCamera } from './camera';
 import type { InputManager } from './input';
 import { buildLevelMeshes, type LevelMeshes } from '../render/level-mesh';
+import { buildMoverMeshes, type MoverMeshes } from '../render/mover-mesh';
 import { QUALITY } from '../render/perf';
 import { effects } from '../render/effects';
 import { Hud } from '../ui/hud';
@@ -37,6 +38,8 @@ export class GameClient {
   paused = false;
   fovOverride: number | null = null; // aiming zoom (horizontal degrees)
   private levelMeshes: LevelMeshes;
+  /** moving blocks (player-made maps), drawn at the local player's predicted tick */
+  private moverMeshes: MoverMeshes | null;
   private wind: LoopHandle | null = null;
   private slide: LoopHandle | null = null;
   private features: ClientFeature[] = [];
@@ -78,6 +81,10 @@ export class GameClient {
       atmosphere: q.atmosphere && effects.decoration,
     });
     this.scene.add(this.levelMeshes.group);
+    this.moverMeshes = buildMoverMeshes(def, {
+      brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
+    });
+    if (this.moverMeshes) this.scene.add(this.moverMeshes.group);
     this.scene.add(this.camera);
     const p = session.local();
     this.fps = new FpsCamera(p?.view ?? { x: 0, y: 0, z: 0, w: 1 }, p?.up);
@@ -169,6 +176,8 @@ export class GameClient {
         return { buttons: raw & ~this.muteButtons, view: this.fps.quat };
       });
     }
+    // moving blocks: where the sim has them between the last two ticks (like your own eye)
+    this.moverMeshes?.update(this.session.world().tick - 1 + this.session.alpha);
     const up = this.session.localUp();
     if (up) this.fps.followUp(up, cameraRotationRate(settings.cameraRotation), dt);
 
@@ -317,6 +326,7 @@ export class GameClient {
     this.wind?.stop(0.05);
     this.slide?.stop(0.05);
     this.levelMeshes.dispose();
+    this.moverMeshes?.dispose();
     this.hud.root.remove();
     this.session.dispose();
   }

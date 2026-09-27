@@ -1,0 +1,700 @@
+/* ---------- Map Maker (editor/): panels over the 3D view ----------
+   The root lets clicks through to the canvas; only the panels take the mouse. */
+
+.ed-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-size: 13px;
+}
+.ed-root .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* top bar */
+.ed-top {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+}
+.ed-top .btn.small {
+  padding: 6px 11px;
+  font-size: 13px;
+}
+.ed-spacer {
+  flex: 1;
+}
+.ed-sq.icon-btn {
+  padding: 6px 7px !important;
+  gap: 0;
+}
+.ed-name {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 6px 10px;
+  width: 210px;
+}
+.ed-name:focus {
+  outline: none;
+  border-color: var(--team-a);
+}
+.ed-count {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ed-count.warn {
+  color: #ffd23f;
+}
+.ed-count.bad {
+  color: var(--danger);
+  font-weight: 700;
+}
+.ed-kind.official {
+  border-color: var(--team-b);
+  color: var(--team-b);
+}
+.ed-status {
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.ed-status.ok {
+  color: var(--ok);
+}
+.ed-status.warn {
+  color: #ffd23f;
+  background: rgba(255, 210, 63, 0.1);
+  cursor: pointer;
+}
+.ed-status.bad {
+  color: #fff;
+  background: rgba(255, 74, 94, 0.55);
+  cursor: pointer;
+}
+
+/* side panels */
+.ed-panel {
+  position: absolute;
+  top: 64px;
+  bottom: 118px;
+  width: 262px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+}
+.ed-left {
+  left: 8px;
+  width: 238px;
+}
+.ed-right {
+  right: 8px;
+  width: 318px;
+}
+.ed-tabs {
+  align-self: stretch;
+}
+.ed-tabs button {
+  flex: 1;
+}
+.ed-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ed-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 2px;
+  font-size: 16px;
+}
+.ed-title .icon-wrap {
+  color: var(--team-a);
+}
+.ed-tip {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.ed-danger {
+  color: #ff8795;
+}
+.ed-warn {
+  color: #ffd23f;
+}
+
+/* palette */
+.ed-brushes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.ed-brush {
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.15;
+}
+.ed-brush:hover {
+  background: rgba(25, 227, 255, 0.12);
+}
+.ed-brush.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.2);
+}
+.ed-brush .icon-wrap {
+  color: var(--team-a);
+}
+.ed-mats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ed-mat {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ed-mat.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.18);
+}
+.ed-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+.ed-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ed-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.ed-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+}
+.ed-swatch.on {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+.ed-color {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.ed-grid button {
+  flex: 1;
+  padding: 5px 4px;
+  white-space: nowrap;
+}
+
+/* inspector rows */
+.ed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+}
+.ed-label {
+  flex: 0 0 72px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ed-block > .ed-label {
+  flex: none;
+}
+.ed-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.ed-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.ed-axis > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ed-num,
+.ed-text,
+.ed-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 3px 4px;
+  min-width: 0;
+}
+.ed-num {
+  width: 100%;
+  max-width: 76px;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.ed-num::-webkit-inner-spin-button,
+.ed-num::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ed-text,
+.ed-select {
+  flex: 1;
+}
+.ed-select option {
+  background: #0b1020;
+}
+.ed-num:focus,
+.ed-text:focus,
+.ed-select:focus {
+  outline: none;
+  border-color: var(--team-a);
+}
+.ed-range {
+  flex: 1;
+  min-width: 70px;
+  accent-color: var(--team-a);
+}
+.ed-row .ed-range + .ed-num {
+  max-width: 58px;
+}
+.ed-unit {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ed-toggle {
+  cursor: pointer;
+  gap: 8px;
+}
+.ed-toggle input {
+  accent-color: var(--team-a);
+}
+.ed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+.ed-actions .btn.small,
+.ed-panel .btn.small {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.ed-panel .btn.tiny {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.ed-panel .btn .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.ed-racebar {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.ed-ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+.ed-no {
+  color: var(--muted);
+}
+.ed-cps,
+.ed-points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ed-cps li,
+.ed-points li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ed-link {
+  font: inherit;
+  flex: 1;
+  text-align: left;
+  color: #ffd23f;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.ed-link:hover {
+  text-decoration: underline;
+}
+.ed-mover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 210, 63, 0.05);
+}
+.ed-pnum {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 800;
+  color: #05070d;
+  background: #ffd23f;
+}
+.ed-pxyz {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* hotbar */
+.ed-hotbar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+.ed-slot {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ed-slot .icon {
+  width: 24px;
+  height: 24px;
+}
+.ed-slot:hover {
+  background: rgba(25, 227, 255, 0.12);
+}
+.ed-slot.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.22);
+  box-shadow: 0 0 14px rgba(25, 227, 255, 0.35);
+}
+.ed-key {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.ed-slot-name {
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* hints, hover, crosshair, box select */
+.ed-hint {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 600px);
+  min-width: 300px;
+  text-align: center;
+  color: #dfe9ff;
+  text-shadow: 0 1px 3px #000;
+  font-size: 13px;
+}
+.ed-hover {
+  position: absolute;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(5, 7, 13, 0.7);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ed-hover.on {
+  opacity: 1;
+}
+.ed-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+  display: none;
+}
+.ed-cross.on {
+  display: block;
+}
+.ed-rect {
+  position: fixed;
+  border: 1px solid var(--team-a);
+  background: rgba(25, 227, 255, 0.12);
+  display: none;
+}
+.ed-rect.on {
+  display: block;
+}
+.ed-toasts {
+  position: absolute;
+  bottom: 118px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ed-toast {
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(5, 7, 13, 0.85);
+  border: 1px solid var(--panel-border);
+  transition: opacity 0.4s;
+}
+.ed-toast.fade {
+  opacity: 0;
+}
+
+/* dialogs + help */
+.ed-modal-back {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 7, 13, 0.55);
+  z-index: 20;
+}
+.ed-modal {
+  width: min(480px, calc(100% - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ed-modal-title {
+  margin: 0;
+}
+.ed-modal-body p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+.ed-modal-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ed-problems {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+.ed-problems .bad {
+  color: #ff8795;
+}
+.ed-problems .warn {
+  color: #ffd23f;
+}
+.ed-help {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(620px, calc(100% - 600px));
+  min-width: 420px;
+  max-height: calc(100% - 190px);
+  overflow-y: auto;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ed-help h3 {
+  margin: 0;
+}
+.ed-steps {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.5;
+}
+.ed-keys td {
+  padding: 3px 8px;
+}
+
+/* start screen */
+.ed-start-body {
+  width: var(--flow-w);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ed-start-note {
+  color: var(--muted);
+  margin: 0;
+  width: var(--flow-w);
+}
+.ed-start .card {
+  position: relative;
+}
+.card.ed-continue {
+  --accent: var(--ok);
+  --accent-soft: rgba(61, 255, 154, 0.14);
+}
+.card.ed-official {
+  --accent: var(--team-b);
+  --accent-soft: rgba(255, 138, 31, 0.16);
+}
+.ed-card-del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ed-card-del:hover {
+  color: var(--danger);
+  background: rgba(255, 74, 94, 0.14);
+}
+
+/* curve settings */
+.ed-kinds {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.ed-kind-btn {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ed-kind-btn .icon-wrap {
+  color: var(--team-a);
+}
+.ed-kind-btn.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.2);
+}
+.ed-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ed-preset {
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text);
+}
+.ed-preset:hover {
+  border-color: var(--team-a);
+}
+.ed-dir button {
+  flex: 1;
+  padding: 4px 8px;
+}

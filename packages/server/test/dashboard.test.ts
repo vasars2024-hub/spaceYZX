@@ -127,6 +127,27 @@ describe('host dashboard', () => {
     expect(services.ranked.thresholds()).toMatchObject({ premier: 8, race: 2, 'premier-cs': 35 });
   });
 
+  it('lists accounts and makes a secured one a Map Maker admin (never a guest)', async () => {
+    const guest = services.accounts.login('Wanda').account.id;
+    const g2 = services.accounts.login('Mapowner').account.id;
+    expect(
+      (await services.accounts.register(g2, 'Mapowner', 'mapowner-pass-1', '1.2.3.4')).ok,
+    ).toBe(true);
+    const list = (await (await api('/accounts?q=mapo')).json()) as { id: number; admin: boolean }[];
+    expect(list).toEqual([expect.objectContaining({ id: g2, admin: false, secured: true })]);
+    expect((await api('/admin', { id: guest, on: true })).status).toBe(400);
+    expect((await api('/admin', { id: g2, on: true })).status).toBe(200);
+    expect(services.accounts.isAdmin(g2)).toBe(true);
+    // admins are always listed
+    const all = (await (await api('/accounts')).json()) as { id: number; admin: boolean }[];
+    expect(all[0]).toMatchObject({ id: g2, admin: true });
+    expect((await api('/admin', { id: g2, on: false })).status).toBe(200);
+    expect(services.accounts.isAdmin(g2)).toBe(false);
+    // edited maps: none yet; undo / restore of an unedited map changes nothing
+    expect(await (await api('/official-maps')).json()).toEqual([]);
+    expect((await api('/official-map', { map: 'kestrel', action: 'restore' })).status).toBe(409);
+  });
+
   it('toggles ranked, restarts and stops', async () => {
     await api('/ranked', { on: false });
     expect(services.queue.enabled).toBe(false);

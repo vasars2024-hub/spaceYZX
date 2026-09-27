@@ -35,7 +35,6 @@ import {
   len,
   lineOfSight,
   loadoutName,
-  mapDef,
   pointInAabb,
   raycast,
   respawnPlayer,
@@ -50,6 +49,7 @@ import { CombatFeature } from './combat-feature';
 import { LocalSession, type LocalSessionOptions } from './local-session';
 import { dummyInput, type DummyKind } from './range';
 import { loadTuning } from '../ui/tuning';
+import { officialMapDef } from '../net/official-maps';
 
 export interface DummySpot {
   /** feet position */
@@ -257,6 +257,8 @@ export interface FreeRoamOptions {
   dummies?: boolean;
   /** default: your saved tuning */
   config?: GameConfig;
+  /** play this level instead of the map's (the Map Maker's test run; mapId names it) */
+  levelDef?: LevelDef;
 }
 
 interface LiveDummy extends DummySpot {
@@ -326,7 +328,7 @@ export class FreeRoamSession extends LocalSession {
 }
 
 export const createFreeRoamSession = (opts: FreeRoamOptions): FreeRoamSession => {
-  const def = mapDef(opts.mapId);
+  const def = opts.levelDef ?? officialMapDef(opts.mapId);
   const kit = loadoutName(opts.kit);
   const config = configForLoadout(opts.config ?? loadTuning(), kit);
   const spots = placeDummies(def, config);

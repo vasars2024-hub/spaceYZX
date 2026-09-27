@@ -6,7 +6,7 @@ import type { GameConfig, LoadoutName } from '../config';
 import { mergeConfig, defaultConfig } from '../config';
 import type { Level } from '../level/level';
 import { buildLevel } from '../level/level';
-import { mapDefForSize } from '../level/maps/index';
+import { roomLevelDef, type RoomCustomMap } from './custom-maps';
 import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
@@ -199,6 +199,10 @@ export class NetCore {
   teamSize = 5;
   /** a public Brawl room (quick play) */
   isPublic = false;
+  /** the room plays a custom map / an official edit (null: the plain built-in map) */
+  custom: RoomCustomMap | null = null;
+  /** built-in maps with an official edit published: map id -> version hash */
+  officialMaps: Record<string, string> = {};
   level: Level | null = null;
   ctx: SimContext | null = null;
   config: GameConfig = defaultConfig();
@@ -428,6 +432,7 @@ export class NetCore {
 
   private resetRoom(): void {
     this.level = null;
+    this.custom = null;
     this.ctx = null;
     this.predWorld = null;
     this.snapshots = [];
@@ -444,7 +449,8 @@ export class NetCore {
 
   private onData(data: unknown): void {
     if (typeof data === 'string') {
-      const msg = parseJson<ServerMsg>(data, 1 << 20);
+      // (a room playing a custom map sends its doc: up to CUSTOM_MAP_LIMITS.maxBytes)
+      const msg = parseJson<ServerMsg>(data, 4 << 20);
       if (msg) this.onJson(msg);
       return;
     }
@@ -487,8 +493,16 @@ export class NetCore {
         this.teamSize = msg.teamSize ?? 5;
         this.localId = msg.playerId;
         this.config = mergeConfig(defaultConfig(), msg.config);
-        // smaller teams play a smaller map: the same level the room built (size walls)
-        this.level = buildLevel(mapDefForSize(msg.map, this.teamSize));
+        // smaller teams play a smaller map: the same level the room built (size walls); a custom
+        // map or an official edit: the doc the room sent, built the same way
+        this.custom = msg.custom ?? null;
+        try {
+          this.level = buildLevel(roomLevelDef(msg.map, this.teamSize, this.custom));
+        } catch {
+          this.error = 'This map could not be loaded.';
+          this.leaveRoom();
+          break;
+        }
         this.ctx = { level: this.level, config: this.config, dt: TICK_DT };
         this.isPublic = !!msg.public;
         // free-for-all: everyone else is an enemy (the sim), drawn in the enemy colour (below)
@@ -533,6 +547,9 @@ export class NetCore {
         break;
       case 'queueCounts':
         this.queueCounts = msg.data;
+        break;
+      case 'officialMaps':
+        this.officialMaps = msg.data;
         break;
       case 'party':
         this.party = msg.data;

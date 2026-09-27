@@ -488,7 +488,7 @@ async function reports() {
   for (const r of list) { const b = el('button', r.handled ? 'Done' : 'Mark done', 'small'); b.disabled = r.handled; b.onclick = () => api('/report-handled', { id: r.id }).then(reports); t.append(row([new Date(r.at).toLocaleString(), r.reportedName, r.reason, r.room, r.count, b])); }
 }
 async function accounts() {
-  let list = []; try { list = await api('/accounts?q=' + encodeURIComponent($('accQ').value)); } catch { return; }
+  let list = []; try { list = await api('/accounts?q=' + encodeURIComponent($('accQ').value)); } catch (e) { $('accMsg').textContent = e === 401 ? 'This page has lost its key: open the dashboard with the full link the Lethal Recoil window printed (it ends in #…).' : 'The server is not running.'; return; }
   const t = $('accounts'); t.replaceChildren(head(['Name', 'Account', 'Last seen', 'Admin']));
   for (const a of list) { const c = el('input'); c.type = 'checkbox'; c.checked = a.admin; c.disabled = !a.secured && !a.admin;
     c.onchange = () => api('/admin', { id: a.id, on: c.checked }).then(() => { $('accMsg').textContent = a.name + (c.checked ? ' is now an admin.' : ' is no longer an admin.'); accounts(); }).catch(() => { $('accMsg').textContent = 'Could not change that.'; accounts(); });

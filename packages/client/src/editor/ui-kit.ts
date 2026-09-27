@@ -75,6 +75,26 @@ export const row = (label: string, ...controls: (Node | null)[]): HTMLElement =>
     h('span', { class: 'ed-ctl' }, ...controls),
   );
 
+/**
+ * The touch editor's controls (editor/touch-ui.ts): every number gets big − / + buttons and
+ * x / y / z fields sit on their own lines. The desktop editor leaves this off.
+ */
+let touchKit = false;
+export const setTouchKit = (on: boolean): void => {
+  touchKit = on;
+};
+
+const stepBtn = (label: string, onClick: () => void): HTMLButtonElement => {
+  const b = h('button', { type: 'button', class: 'ed-step', 'aria-label': label }, label);
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  return b;
+};
+
+const roundStep = (v: number): number => Math.round(v * 1000) / 1000;
+
 /** x / y / z number boxes. */
 export const vecRow = (
   label: string,
@@ -83,6 +103,29 @@ export const vecRow = (
   opts: { step?: number; min?: number; names?: [string, string, string] } = {},
 ): HTMLElement => {
   const names = opts.names ?? ['x', 'y', 'z'];
+  if (touchKit) {
+    const step = opts.step ?? 0.5;
+    const set = (k: number, x: number) => {
+      const out = [...v] as [number, number, number];
+      out[k] = opts.min !== undefined ? Math.max(opts.min, roundStep(x)) : roundStep(x);
+      onCommit(out);
+    };
+    return h(
+      'div',
+      { class: 'ed-block ed-vec-touch' },
+      h('div', { class: 'ed-label' }, label),
+      ...[0, 1, 2].map((k) =>
+        h(
+          'div',
+          { class: 'ed-row ed-axis-touch' },
+          h('span', { class: 'ed-axis-name' }, names[k]),
+          stepBtn('−', () => set(k, v[k] - step)),
+          numBox(v[k], (x) => set(k, x), { step, min: opts.min }),
+          stepBtn('+', () => set(k, v[k] + step)),
+        ),
+      ),
+    );
+  }
   return row(
     label,
     ...[0, 1, 2].map((k) =>
@@ -131,6 +174,31 @@ export const sliderRow = (
     onChange(Number(r.value), false);
   });
   r.addEventListener('change', () => onChange(Number(r.value), true));
+  if (touchKit) {
+    const nudge = (d: number) => {
+      const v = Math.max(min, Math.min(max, roundStep(Number(r.value) + d * step)));
+      r.value = n.value = String(v);
+      onChange(v, true);
+    };
+    return h(
+      'div',
+      { class: 'ed-block ed-slider-touch' },
+      h(
+        'div',
+        { class: 'ed-row' },
+        h('span', { class: 'ed-label' }, label),
+        n,
+        h('span', { class: 'ed-unit' }, unit),
+      ),
+      h(
+        'div',
+        { class: 'ed-row' },
+        stepBtn('−', () => nudge(-1)),
+        r,
+        stepBtn('+', () => nudge(1)),
+      ),
+    );
+  }
   return row(label, r, n, h('span', { class: 'ed-unit' }, unit));
 };
 

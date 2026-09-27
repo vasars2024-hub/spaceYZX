@@ -36,6 +36,7 @@ import {
   moverOf,
   moveRefs,
   refKey,
+  removeMoverPoint,
   rotateRefs,
   scaleRefs,
   setFinish,
@@ -169,11 +170,22 @@ export class MapEditor {
   private disposed = false;
   private listeners: [EventTarget, string, EventListener, AddEventListenerOptions?][] = [];
 
+  /** the phone / tablet editor (editor/touch-ui.ts): taps, holds, a stick; no mouse or keys */
+  readonly touch: boolean;
+  /** touch: the stick (x right, y forward, -1..1) and the fly up / down buttons (-1, 0, 1) */
+  touchMove = { x: 0, y: 0 };
+  touchFly = 0;
+  /** touch: the fast-fly toggle */
+  touchFast = false;
+  private flashTimer = 0;
+
   constructor(
     public app: App,
     public session: EditorSession,
     public hooks: EditorHooks,
+    opts: { touch?: boolean } = {},
   ) {
+    this.touch = !!opts.touch;
     const doc = this.doc;
     if (doc.patch && doc.base) {
       try {
@@ -190,6 +202,8 @@ export class MapEditor {
       }
     }
     this.view = new EditorViewport(app.renderer);
+    // phones: a shorter view distance keeps big maps smooth
+    if (this.touch) this.view.camera.far = 1200;
     this.view.setLook(this.look());
     this.cam = session.camera ?? this.startCamera();
     this.ui = new EditorUI(this);
@@ -297,6 +311,7 @@ export class MapEditor {
     saveDraft(this.session);
     window.clearTimeout(this.autosaveTimer);
     window.clearTimeout(this.checkTimer);
+    window.clearTimeout(this.flashTimer);
     for (const [t, type, fn, opts] of this.listeners) t.removeEventListener(type, fn, opts);
     if (document.pointerLockElement) document.exitPointerLock();
     this.app.canvas.style.cursor = '';
@@ -651,7 +666,9 @@ export class MapEditor {
     if (m.points.length >= CUSTOM_MAP_LIMITS.moverPoints[1])
       return this.ui.toast('4 points is the most (it goes back to 1 after 4)');
     this.setTool({ k: 'moverPoint', id });
-    this.ui.toast(`Click where point ${m.points.length + 1} goes`);
+    // (touch: the sheet steps aside so the next tap can place the point)
+    if (this.touch) this.ui.closeSheet();
+    this.ui.toast(`${this.touch ? 'Tap' : 'Click'} where point ${m.points.length + 1} goes`);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -668,8 +685,11 @@ export class MapEditor {
     cam.fov = this.app.settings.fov ?? 90;
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
-    this.updateAim();
-    this.updateTool();
+    // (touch: no hover or ghost following a pointer; taps aim for themselves)
+    if (!this.touch) {
+      this.updateAim();
+      this.updateTool();
+    }
     this.view.frame(dt);
     this.ui.frame();
   }
@@ -682,13 +702,15 @@ export class MapEditor {
     const k = this.held;
     const typing = isTyping();
     if (typing) return;
-    const f = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
-    const r = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
     const ctrl = k.has('ControlLeft') || k.has('ControlRight');
+    const f = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0) + this.touchMove.y;
+    const r = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + this.touchMove.x;
     const u =
-      (k.has('Space') || k.has('KeyE') ? 1 : 0) - (k.has('KeyC') || k.has('KeyQ') || ctrl ? 1 : 0);
+      (k.has('Space') || k.has('KeyE') ? 1 : 0) -
+      (k.has('KeyC') || k.has('KeyQ') || ctrl ? 1 : 0) +
+      this.touchFly;
     if (!f && !r && !u) return;
-    const fast = k.has('ShiftLeft') || k.has('ShiftRight') ? 3 : 1;
+    const fast = k.has('ShiftLeft') || k.has('ShiftRight') || this.touchFast ? 3 : 1;
     const speed = BASE_SPEED * this.flySpeed * fast * dt;
     const a = this.cam.heading * DEG;
     const p = this.cam.pitch * DEG;
@@ -1003,7 +1025,7 @@ export class MapEditor {
     this.ghostKey = '';
     if (t.k === 'place' && t.brush === 'portal') {
       this.setTool({ k: 'portalExit', i: res.doc.portals.length - 1 });
-      this.ui.toast('Now click where the portal comes out');
+      this.ui.toast(`Now ${this.touch ? 'tap' : 'click'} where the portal comes out`);
     } else if (t.k === 'portalExit') {
       this.setTool({ k: 'place', brush: 'portal' });
       this.ui.toast('Portal done');
@@ -1013,8 +1035,90 @@ export class MapEditor {
       if (n >= CUSTOM_MAP_LIMITS.moverPoints[1]) {
         this.setTool({ k: 'select' });
         this.ui.toast('4 points placed: it loops 1 → 2 → 3 → 4 → 1');
-      } else this.ui.toast(`Point ${n} placed. Click for point ${n + 1}, or Esc when done`);
+        if (this.touch) this.ui.openSheet();
+      } else
+        this.ui.toast(
+          this.touch
+            ? `Point ${n} placed. Tap for point ${n + 1}, or Done`
+            : `Point ${n} placed. Click for point ${n + 1}, or Esc when done`,
+        );
     }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // touch (editor/touch-ui.ts turns taps, holds and drags into these)
+
+  /** What is under a screen point (and aim there). */
+  refAt(x: number, y: number): Ref | null {
+    this.mouse = { x, y, inCanvas: true };
+    this.updateAim();
+    return this.aim?.hit?.piece.ref ?? null;
+  }
+
+  /** A tap: with the hand, select (and open its sheet); holding a piece, place it there. */
+  tapAt(x: number, y: number): void {
+    if (this.disposed) return;
+    const ref = this.refAt(x, y);
+    const aim = this.aim;
+    if (this.tool.k === 'select') {
+      this.select(ref ? [ref] : []);
+      if (ref) this.ui.openSheet();
+      else this.ui.closeSheet();
+      return;
+    }
+    if (!aim || this.tool.k === 'grab') return;
+    const pl = this.computePlacement(aim);
+    this.placement = pl;
+    if (!pl) return;
+    this.placeClick();
+    // a short flash of the ghost where it went (red: it could not go there)
+    this.view.setGhost(pl.boxes, pl.ok);
+    window.clearTimeout(this.flashTimer);
+    this.flashTimer = window.setTimeout(() => {
+      if (!this.disposed) this.view.setGhost(null);
+    }, 320);
+  }
+
+  /** A long press: break what is under the finger (undoable). */
+  breakAt(x: number, y: number): boolean {
+    if (this.disposed) return false;
+    const ref = this.refAt(x, y);
+    if (!ref) return false;
+    const name = this.describe(ref);
+    const next =
+      ref.k === 'point' ? removeMoverPoint(this.doc, ref.id, ref.i) : deleteRefs(this.doc, [ref]);
+    const k = refKey(ref);
+    this.commit(
+      next,
+      null,
+      this.selection.filter((r) => refKey(r) !== k),
+    );
+    try {
+      navigator.vibrate?.(35);
+    } catch {
+      /* no vibration here */
+    }
+    this.ui.toast(`${name} broken · ↶ undoes it`, 'break');
+    return true;
+  }
+
+  /** Touch look: a finger drag turns the view (the touch sensitivity setting). */
+  lookBy(dx: number, dy: number): void {
+    const sens = this.app.settings.touchLookSensitivity ?? 0.3;
+    const inv = this.app.settings.invertY ? -1 : 1;
+    this.cam.heading = ((((this.cam.heading + dx * sens) % 360) + 540) % 360) - 180;
+    this.cam.pitch = Math.max(-89, Math.min(89, this.cam.pitch - dy * sens * inv));
+  }
+
+  /** Two-finger pinch: fly forward (spread) or back. */
+  pinchBy(d: number): void {
+    const a = this.cam.heading * DEG;
+    const p = this.cam.pitch * DEG;
+    const k = d * 0.06 * this.flySpeed * (this.touchFast ? 3 : 1);
+    const pos = this.cam.pos;
+    pos[0] += Math.sin(a) * Math.cos(p) * k;
+    pos[1] += Math.sin(p) * k;
+    pos[2] -= Math.cos(a) * Math.cos(p) * k;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1112,7 +1216,8 @@ export class MapEditor {
     }
   }
 
-  private nudgeDir(code: string): V3 {
+  /** One grid step in a direction (arrow keys / the touch move pad), turned with the camera. */
+  nudgeDir(code: string): V3 {
     const g = this.grid;
     if (code === 'PageUp') return [0, g, 0];
     if (code === 'PageDown') return [0, -g, 0];
@@ -1163,7 +1268,7 @@ export class MapEditor {
   }
 
   private onMouseDown(e: MouseEvent): void {
-    if (this.disposed || this.app.client || this.ui.modalOpen()) return;
+    if (this.disposed || this.touch || this.app.client || this.ui.modalOpen()) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     if (e.button === 2) {
       // right mouse: look around while held (also cancels a placing tool when just clicked)
@@ -1209,7 +1314,7 @@ export class MapEditor {
   private rightDown: { x: number; y: number; moved: number } | null = null;
 
   private onMouseUp(e: MouseEvent): void {
-    if (this.disposed) return;
+    if (this.disposed || this.touch) return;
     if (e.button === 2) {
       this.looking = false;
       if (!this.lockMode && document.pointerLockElement) document.exitPointerLock();
@@ -1259,7 +1364,7 @@ export class MapEditor {
   }
 
   private onMouseMove(e: MouseEvent): void {
-    if (this.disposed) return;
+    if (this.disposed || this.touch) return;
     const locked = document.pointerLockElement === this.app.canvas;
     if (locked && (this.looking || this.lockMode)) {
       const sens = this.app.settings.sensitivity ?? 0.1;
@@ -1313,6 +1418,8 @@ export class MapEditor {
         { kind: 'height', pos: [end[0], end[1] + HANDLE_UP, end[2]] },
       ];
     }
+    // (touch edits curves with the sheet's sliders: no tiny handles to hit)
+    if (this.touch) this.handles = [];
     this.view.setHandles(this.handles);
   }
 
@@ -1434,7 +1541,7 @@ export class MapEditor {
   }
 
   private onWheel(e: WheelEvent): void {
-    if (this.disposed || this.app.client) return;
+    if (this.disposed || this.touch || this.app.client) return;
     e.preventDefault();
     if (e.altKey) return this.scaleSelection(e.deltaY < 0 ? 1.25 : 1 / 1.25);
     this.flySpeed = Math.max(0.1, Math.min(20, this.flySpeed * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));

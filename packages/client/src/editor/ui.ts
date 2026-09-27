@@ -67,6 +67,7 @@ import {
   type BrushId,
 } from './palette';
 import { GRID_SIZES } from './snap';
+import { TOUCH_HELP_ROWS, TouchLayer } from './touch-ui';
 import { saveDraft } from './session';
 import {
   confirmBox,
@@ -77,6 +78,7 @@ import {
   numBox,
   row,
   selectRow,
+  setTouchKit,
   sliderRow,
   swatchRow,
   toggleRow,
@@ -168,6 +170,11 @@ export class EditorUI {
   private leftTab: 'build' | 'game' = 'build';
   private inspectorDirty = false;
   private toastKeys = new Map<string, HTMLElement>();
+  /** the phone / tablet layer (editor/touch-ui.ts); null on desktop */
+  touchLayer: TouchLayer | null = null;
+  /** touch: the edit sheet (the inspector in a bottom sheet) and whether it is up */
+  private sheet: HTMLElement | null = null;
+  private sheetOpen = false;
 
   constructor(private ed: MapEditor) {
     this.top = h('div', { class: 'ed-top interactive' });
@@ -180,6 +187,27 @@ export class EditorUI {
     this.toasts = h('div', { class: 'ed-toasts' });
     this.cross = h('div', { class: 'ed-cross' });
     this.rect = h('div', { class: 'ed-rect' });
+    if (ed.touch) {
+      setTouchKit(true);
+      this.touchLayer = new TouchLayer(ed, this);
+      this.right.className = 'ed-sheet-body';
+      this.sheet = h('div', { class: 'ed-sheet interactive' }, this.right);
+      this.root = h(
+        'div',
+        { class: 'ed-root ed-touch' },
+        this.top,
+        ...this.touchLayer.elements(),
+        this.sheet,
+        this.hint,
+        this.cross,
+        this.toasts,
+      );
+      this.right.addEventListener('pointerdown', () => (this.pointerHeld = true));
+      window.addEventListener('pointerup', this.onPointerUp);
+      this.refreshMode();
+      this.touchLayer.start();
+      return;
+    }
     this.root = h(
       'div',
       { class: 'ed-root' },
@@ -207,19 +235,48 @@ export class EditorUI {
 
   dispose(): void {
     window.removeEventListener('pointerup', this.onPointerUp);
+    this.touchLayer?.dispose();
+    if (this.touchLayer) setTouchKit(false);
     this.closeModal();
     this.root.remove();
   }
 
   frame(): void {
+    if (this.touchLayer) {
+      this.touchLayer.frame();
+      // (placing points / a portal exit: the centre dot shows where "At the dot" puts it)
+      const t = this.ed.tool.k;
+      this.cross.classList.toggle('on', t === 'moverPoint' || t === 'portalExit');
+      return;
+    }
     const locked = document.pointerLockElement === this.ed.app.canvas;
     this.cross.classList.toggle('on', locked);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // touch: the edit sheet
+
+  /** Show the edit sheet for the selection (touch). */
+  openSheet(): void {
+    if (!this.sheet || !this.ed.selection.length) return;
+    this.sheetOpen = true;
+    this.refreshInspector();
+  }
+
+  /** Hide the edit sheet (touch); the selection goes too. */
+  closeSheet(): void {
+    if (!this.sheet) return;
+    const was = this.sheetOpen;
+    this.sheetOpen = false;
+    this.sheet.classList.remove('on');
+    if (was && this.ed.selection.length) this.ed.select([]);
   }
 
   // -------------------------------------------------------------------------------------------
   // top bar
 
   refreshTop(): void {
+    if (this.touchLayer) return this.refreshTouchTop();
     const ed = this.ed;
     const doc = ed.doc;
     const s = ed.session;
@@ -340,6 +397,7 @@ export class EditorUI {
   // palette (left)
 
   buildLeft(): void {
+    if (this.touchLayer) return; // (touch: the bag in the hotbar)
     const ed = this.ed;
     const tabs = h(
       'div',
@@ -476,6 +534,7 @@ export class EditorUI {
   // hotbar + mode
 
   private buildHotbar(): void {
+    if (this.touchLayer) return this.touchLayer.refreshHotbar();
     const ed = this.ed;
     const cur = ed.tool.k === 'place' ? ed.tool.brush : ed.tool.k === 'select' ? 'select' : null;
     this.hotbar.replaceChildren(
@@ -513,6 +572,16 @@ export class EditorUI {
     this.refreshInspector();
     const ed = this.ed;
     const t = ed.tool;
+    if (this.touchLayer) {
+      this.touchLayer.refreshBanner();
+      this.hint.textContent =
+        t.k === 'select'
+          ? 'Tap a piece to change it · hold to break'
+          : t.k === 'place'
+            ? `Tap to place ${brushLabel(t.brush)} · hold to break`
+            : '';
+      return;
+    }
     const look = ed.lockMode ? 'Tab: free the mouse' : 'Hold right mouse to look · Tab: mouse look';
     let text = '';
     if (t.k === 'select')
@@ -545,6 +614,18 @@ export class EditorUI {
       return;
     }
     this.inspectorDirty = false;
+    if (this.sheet) {
+      // touch: only the edit sheet, and only while it is up with something selected
+      if (!this.sheetOpen || !this.ed.selection.length) {
+        this.sheetOpen = false;
+        this.sheet.classList.remove('on');
+        return;
+      }
+      this.sheet.classList.add('on');
+      const head = this.touchLayer!.sheetHead(() => this.closeSheet());
+      this.sheet.querySelector('.ed-t-sheethead')?.remove();
+      this.sheet.prepend(head);
+    }
     // the field you are in stays focused after the rebuild (same place in the panel)
     const fields = () => Array.from(this.right.querySelectorAll<HTMLElement>('input, select'));
     const at = focused ? fields().indexOf(focused) : -1;
@@ -552,6 +633,7 @@ export class EditorUI {
     const sel = ed.selection;
     let content: (Node | null)[];
     if (
+      !this.sheet &&
       ed.tool.k === 'place' &&
       BLOCK_BRUSHES.some((b) => b.id === (ed.tool as { brush: BrushId }).brush)
     )
@@ -581,7 +663,8 @@ export class EditorUI {
     return h('div', { class: 'ed-actions' }, ...b);
   }
 
-  private commonActions(): HTMLElement {
+  private commonActions(): HTMLElement | null {
+    if (this.touchLayer) return null; // (touch: the sheet's quick buttons)
     const ed = this.ed;
     return this.actions(
       edButton('copy', 'Copy', () => ed.duplicateSelection(), undefined, 'Ctrl+D'),
@@ -1324,7 +1407,11 @@ export class EditorUI {
           (v, fin) => setC({ amplitude: v }, fin),
         );
         // no room at all: the climb / drop alone is as steep as a surf ramp may wave
-        if (cap <= 0) for (const i of waveRow.querySelectorAll('input')) i.disabled = true;
+        if (cap <= 0)
+          for (const i of waveRow.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+            'input, button',
+          ))
+            i.disabled = true;
         out.push(
           waveRow,
           sliderRow('Waves', L.waves[0], L.waves[1], L.waves[2], curve.waves ?? 2, '', (v, fin) =>
@@ -1615,9 +1702,87 @@ export class EditorUI {
   }
 
   // -------------------------------------------------------------------------------------------
+  // touch: the compact top bar and the ☰ menu
+
+  private refreshTouchTop(): void {
+    const ed = this.ed;
+    const btn = (label: string, fn: () => void, cls = '', aria = label) => {
+      const b = h(
+        'button',
+        { type: 'button', class: `ed-t-topbtn ${cls}`.trim(), 'aria-label': aria },
+        label,
+      );
+      b.addEventListener('click', fn);
+      return b;
+    };
+    const unsaved = ed.session.history.current !== ed.session.savedDoc;
+    this.top.replaceChildren(
+      btn('☰', () => this.openTouchMenu(), '', 'Menu'),
+      h('span', { class: 'ed-t-name' }, `${ed.doc.name}${unsaved ? ' •' : ''}`),
+      this.status,
+      h('span', { class: 'ed-spacer' }),
+      btn('↶', () => ed.undo(), '', 'Undo'),
+      btn('↷', () => ed.redo(), '', 'Redo'),
+      btn('▶ Test', () => this.testMenu(), 'primary', 'Test'),
+    );
+    this.refreshStatus();
+  }
+
+  private openTouchMenu(): void {
+    const ed = this.ed;
+    const official = ed.session.kind === 'official' && isAdmin();
+    const name = h('input', {
+      class: 'ed-text ed-t-rename',
+      value: ed.doc.name,
+      maxlength: String(CUSTOM_MAP_LIMITS.nameLength),
+      'aria-label': 'Map name',
+    });
+    name.addEventListener('change', () => {
+      const v = name.value.trim().slice(0, CUSTOM_MAP_LIMITS.nameLength);
+      if (v && v !== ed.doc.name) ed.commit({ ...ed.doc, name: v });
+    });
+    this.openModal(
+      'Map Maker',
+      [
+        h('label', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Name'), name),
+        h(
+          'p',
+          {},
+          `${ed.pieceCount()} / ${ed.maxPieces} pieces · your work is kept on this device.`,
+        ),
+      ],
+      [
+        { label: 'Back to building', cls: 'btn small primary' },
+        { label: 'Save', onClick: () => void this.save() },
+        ...(official
+          ? [
+              {
+                label: 'Publish to the real map',
+                cls: 'btn small orange',
+                onClick: () => void this.publish(),
+              },
+              { label: 'Restore…', onClick: () => this.restoreMenu() },
+            ]
+          : []),
+        { label: 'Map settings', onClick: () => this.mapSheet() },
+        { label: 'How to', onClick: () => this.toggleHelp(true) },
+        { label: 'Exit Map Maker', cls: 'btn small orange', onClick: () => this.exit() },
+      ],
+    );
+  }
+
+  /** Touch: the map's own settings (sky, race, spawns) in a dialog. */
+  private mapSheet(): void {
+    this.openModal('Map settings', nn(this.mapPanel()).slice(1) as Node[], [
+      { label: 'Done', cls: 'btn small primary' },
+    ]);
+  }
+
+  // -------------------------------------------------------------------------------------------
   // menu, help, dialogs, toasts
 
   openMenu(): void {
+    if (this.touchLayer) return this.openTouchMenu();
     const ed = this.ed;
     this.openModal(
       'Map Maker',
@@ -1666,6 +1831,23 @@ export class EditorUI {
     }
     if (this.help) return;
     const close = edButton(null, 'Got it', () => this.toggleHelp(false), 'btn small primary');
+    if (this.touchLayer) {
+      this.help = h(
+        'div',
+        { class: 'ed-help panel interactive' },
+        h('h3', {}, 'How to build'),
+        h(
+          'table',
+          { class: 'controls ed-keys' },
+          ...TOUCH_HELP_ROWS.map(([k, d]) =>
+            h('tr', {}, h('td', { class: 'key' }, k), h('td', {}, d)),
+          ),
+        ),
+        close,
+      );
+      this.root.append(this.help);
+      return;
+    }
     this.help = h(
       'div',
       { class: 'ed-help panel interactive' },

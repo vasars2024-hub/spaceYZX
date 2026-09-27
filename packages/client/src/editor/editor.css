@@ -698,3 +698,535 @@
   flex: 1;
   padding: 4px 8px;
 }
+
+/* ---------- the touch editor (editor/touch-ui.ts): phones and tablets ---------- */
+.ed-touch {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --slot: clamp(34px, calc((100vw - var(--safe-l) - var(--safe-r) - 36px) / 10), 56px);
+  font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+.ed-touch .ed-top {
+  top: calc(4px + var(--safe-t));
+  left: calc(4px + var(--safe-l));
+  right: calc(4px + var(--safe-r));
+  padding: 3px 4px;
+  gap: 4px;
+}
+.ed-t-topbtn {
+  font: inherit;
+  font-size: 18px;
+  white-space: nowrap;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+.ed-t-topbtn.primary {
+  font-size: 15px;
+  font-weight: 800;
+  color: #03121c;
+  background: linear-gradient(180deg, #5ff0ff, var(--team-a));
+  border-color: #9ff6ff;
+}
+.ed-t-topbtn:active,
+.ed-t-slot:active,
+.ed-t-qbtn:active,
+.ed-t-tile:active,
+.ed-step:active {
+  transform: scale(0.95);
+}
+.ed-t-name {
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.ed-touch .ed-status {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* stick + fly buttons */
+.ed-t-stickzone {
+  position: absolute;
+  left: calc(10px + var(--safe-l));
+  bottom: calc(var(--slot) + 22px + var(--safe-b));
+  width: 150px;
+  height: 150px;
+  --tb-alpha: 0.7;
+  touch-action: none;
+}
+.ed-t-stick {
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%);
+}
+.ed-t-stick.idle {
+  opacity: 0.5;
+}
+.ed-t-flybox {
+  position: absolute;
+  right: calc(10px + var(--safe-r));
+  bottom: calc(var(--slot) + 22px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  touch-action: none;
+}
+.ed-t-fly {
+  width: 60px;
+  height: 60px;
+  font-size: 24px;
+  color: var(--text);
+  background: rgba(8, 14, 26, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+}
+.ed-t-fly.held {
+  background: rgba(25, 227, 255, 0.35);
+  border-color: var(--team-a);
+}
+.ed-t-fast {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 60px;
+  height: 44px;
+  color: var(--text);
+  background: rgba(8, 14, 26, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+}
+.ed-t-fast.on {
+  color: #03121c;
+  background: #ffd23f;
+}
+
+/* hotbar */
+.ed-t-hotbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(6px + var(--safe-b));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: rgba(5, 7, 13, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+}
+.ed-t-slot {
+  width: var(--slot);
+  height: var(--slot);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+.ed-t-slot .icon {
+  width: calc(var(--slot) * 0.5);
+  height: calc(var(--slot) * 0.5);
+}
+.ed-t-slot.on {
+  border-color: #fff;
+  background: rgba(25, 227, 255, 0.28);
+  box-shadow: 0 0 0 2px var(--team-a);
+}
+.ed-t-slot-name {
+  font-size: 9px;
+  line-height: 1;
+  max-width: calc(var(--slot) - 4px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-t-bag {
+  border-style: dashed;
+}
+.ed-touch .ed-hint {
+  bottom: calc(var(--slot) + 16px + var(--safe-b));
+  max-width: 60vw;
+  min-width: 0;
+  font-size: 12px;
+}
+.ed-touch .ed-toasts {
+  bottom: calc(var(--slot) + 40px + var(--safe-b));
+}
+@media (orientation: portrait) {
+  .ed-touch .ed-hint {
+    display: none;
+  }
+}
+
+/* hold-to-break ring */
+.ed-t-ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+  display: none;
+}
+.ed-t-ring.on {
+  display: block;
+}
+
+/* "tap where it goes" banner */
+.ed-t-banner {
+  position: absolute;
+  top: calc(60px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  background: rgba(5, 7, 13, 0.85);
+  border: 1px solid #ffd23f;
+  border-radius: 999px;
+  color: #ffd23f;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ed-t-banner.on {
+  display: flex;
+}
+.ed-t-banner .btn {
+  min-height: 40px;
+}
+
+/* the edit sheet */
+.ed-sheet {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(680px, 100%);
+  height: 58vh;
+  transform: translate(-50%, 105%);
+  transition: transform 0.2s ease-out;
+  display: flex;
+  flex-direction: column;
+  padding: 0 calc(10px + var(--safe-r)) var(--safe-b) calc(10px + var(--safe-l));
+  background: rgba(8, 12, 22, 0.95);
+  border: 1px solid var(--panel-border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  z-index: 5;
+}
+.ed-sheet.on {
+  transform: translate(-50%, 0);
+}
+/* sideways: the sheet docks on the right, so the piece stays in view */
+@media (orientation: landscape) {
+  .ed-sheet {
+    left: auto;
+    right: 0;
+    top: calc(56px + var(--safe-t));
+    height: auto;
+    width: min(400px, 52vw);
+    transform: translateX(105%);
+    border-radius: 16px 0 0 0;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .ed-sheet.on {
+    transform: none;
+  }
+}
+.ed-t-grip {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 6px;
+  touch-action: none;
+}
+.ed-t-grip span {
+  width: 48px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.4);
+}
+.ed-t-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-bottom: 6px;
+}
+.ed-t-qbtn {
+  font: inherit;
+  font-size: 12px;
+  flex: none;
+  min-width: 52px;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+}
+.ed-t-qbtn.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.22);
+}
+.ed-t-qbtn.danger {
+  border-color: rgba(255, 74, 94, 0.6);
+  color: #ff8795;
+}
+.ed-t-qbtn.close {
+  margin-left: auto;
+  font-size: 18px;
+}
+.ed-t-pad {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.ed-t-arrows {
+  display: grid;
+  grid-template-columns: repeat(3, 48px);
+  gap: 4px;
+}
+.ed-t-updown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ed-t-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ed-t-qbtn.arrow {
+  min-width: 48px;
+  font-size: 18px;
+}
+.ed-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 16px;
+}
+.ed-touch .ed-label {
+  font-size: 13px;
+}
+.ed-touch .ed-num,
+.ed-touch .ed-text,
+.ed-touch .ed-select {
+  min-height: 40px;
+  font-size: 15px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ed-touch .ed-num {
+  max-width: 90px;
+  text-align: center;
+}
+.ed-touch .ed-range {
+  height: 36px;
+}
+.ed-step {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+.ed-step:disabled {
+  opacity: 0.4;
+}
+.ed-axis-touch {
+  gap: 8px;
+}
+.ed-axis-name {
+  width: 36px;
+  color: var(--muted);
+}
+.ed-touch .btn.small,
+.ed-touch .ed-panel .btn.small,
+.ed-touch .ed-actions .btn.small {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.ed-touch .ed-mat,
+.ed-touch .ed-kind-btn,
+.ed-touch .ed-preset {
+  min-height: 40px;
+  padding: 6px 12px;
+}
+.ed-touch .ed-swatch {
+  width: 36px;
+  height: 36px;
+}
+.ed-touch .ed-toggle input {
+  width: 24px;
+  height: 24px;
+}
+.ed-touch .ed-modal .btn {
+  min-height: 44px;
+}
+.ed-touch .ed-modal {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.ed-touch .ed-help {
+  width: calc(100% - 20px);
+  min-width: 0;
+  top: calc(56px + var(--safe-t));
+  max-height: calc(100% - 80px);
+  touch-action: pan-y;
+}
+
+/* the bag: every piece, big tiles */
+.ed-t-inv {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  overflow-y: auto;
+  touch-action: pan-y;
+  padding: calc(10px + var(--safe-t)) calc(12px + var(--safe-r)) calc(16px + var(--safe-b))
+    calc(12px + var(--safe-l));
+  background: rgba(5, 7, 13, 0.96);
+}
+.ed-t-inv header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ed-t-inv h2 {
+  margin: 0;
+}
+.ed-t-inv h3 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ed-t-inv-close {
+  min-height: 44px;
+}
+.ed-t-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.ed-t-tile {
+  font: inherit;
+  font-size: 12px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+}
+.ed-t-tile .icon {
+  width: 34px;
+  height: 34px;
+  color: var(--team-a);
+}
+.ed-t-tile.on {
+  border-color: var(--team-a);
+  background: rgba(25, 227, 255, 0.18);
+}
+.ed-t-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+/* first-time tutorial bubbles */
+.ed-t-tut {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  background: rgba(5, 7, 13, 0.35);
+}
+.ed-t-bubble {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 260px;
+  padding: 12px 16px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #03121c;
+  background: #ffd23f;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.ed-t-bubble small {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+.ed-t-bubble.stick {
+  left: calc(24px + var(--safe-l));
+  bottom: calc(var(--slot) + 190px + var(--safe-b));
+}
+.ed-t-bubble.look {
+  right: calc(90px + var(--safe-r));
+  top: 38%;
+}
+.ed-t-bubble.tap,
+.ed-t-bubble.hold {
+  left: 50%;
+  top: 34%;
+  transform: translateX(-50%);
+}
+.ed-touch .ed-top .ed-spacer {
+  flex: 0;
+}
+.ed-t-name {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (orientation: portrait) {
+  .ed-touch .ed-status.ok {
+    display: none;
+  }
+}

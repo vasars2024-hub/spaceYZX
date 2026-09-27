@@ -65,6 +65,12 @@ export const EDITOR_ICONS = {
     '<rect x="3" y="9" width="7" height="6" rx="1"/><path d="M13 12h8M18 9l3 3-3 3" /><path d="M13 8h3M13 16h3" stroke-width="1.2"/>',
   ),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  hand: svg(
+    '<path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v6M14 10V5.5a1.5 1.5 0 0 1 3 0V13M17 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L3.8 15a1.6 1.6 0 0 1 2.5-2L8 15"/>',
+  ),
+  bag: svg(
+    '<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/><path d="M9 12h6" stroke-width="1.3"/>',
+  ),
   // curve types
   kindArc: svg('<path d="M4 20A16 16 0 0 1 20 4"/>'),
   kindS: svg('<path d="M4 20c0-8 16-8 16-16"/>'),

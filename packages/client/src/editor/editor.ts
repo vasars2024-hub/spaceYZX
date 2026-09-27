@@ -50,7 +50,9 @@ import {
   type Ref,
   type V3,
 } from './model';
-import { pickNearest } from './pick';
+import { boxBounds, pickNearest } from './pick';
+import { CONNECT_DIST, connectSnap } from './connect-snap';
+import { structureKeys, type StructItem } from './structure';
 import { placeInAir, placeOnSurface } from './snap';
 import { BLOCK_BRUSHES, blockBrush, makeBlock, type BrushId } from './palette';
 import {
@@ -88,6 +90,8 @@ interface DownState {
   moveStart?: EditDoc;
   moveRefs?: Ref[];
   adopted?: boolean;
+  /** the moving pieces where the drag started (for the connect magnet) */
+  template?: BoxDef[];
   /** dragging a curve handle */
   handle?: { kind: 'end' | 'height'; id: number; start: EditDoc; pos: V3 };
 }
@@ -178,6 +182,21 @@ export class MapEditor {
   /** touch: the fast-fly toggle */
   touchFast = false;
   private flashTimer = 0;
+  /** pieces the aim looks through (the ones being dragged) */
+  private dragIgnore: Set<string> | null = null;
+  /** "Just this piece": drags, the move pad and turning leave the rest of the structure */
+  justThis = readJustThis();
+  /** a touch drag of a piece (its whole structure) under way */
+  private fdrag: {
+    start: EditDoc;
+    refs: Ref[];
+    template: BoxDef[];
+    key: string;
+    lift: number;
+    at: [number, number] | null;
+    last: [number, number];
+  } | null = null;
+  private connectTimer = 0;
 
   constructor(
     public app: App,
@@ -312,6 +331,7 @@ export class MapEditor {
     window.clearTimeout(this.autosaveTimer);
     window.clearTimeout(this.checkTimer);
     window.clearTimeout(this.flashTimer);
+    window.clearTimeout(this.connectTimer);
     for (const [t, type, fn, opts] of this.listeners) t.removeEventListener(type, fn, opts);
     if (document.pointerLockElement) document.exitPointerLock();
     this.app.canvas.style.cursor = '';
@@ -476,6 +496,7 @@ export class MapEditor {
       return;
     }
     if (!this.selection.length) return;
+    this.expandToStructure();
     const refs = this.adoptSelection();
     this.commit(rotateRefs(this.doc, refs, deg), `rotate:${refs.map(refKey).join()}`);
   }
@@ -511,6 +532,7 @@ export class MapEditor {
   /** Move the selection by `d` (arrow keys). */
   nudge(d: V3): void {
     if (!this.selection.length) return;
+    this.expandToStructure();
     const refs = this.adoptSelection();
     this.commit(moveRefs(this.doc, refs, d), `nudge:${refs.map(refKey).join()}`);
   }
@@ -686,6 +708,7 @@ export class MapEditor {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     // (touch: no hover or ghost following a pointer; taps aim for themselves)
+    if (this.fdrag?.at) this.applyTouchDrag();
     if (!this.touch) {
       this.updateAim();
       this.updateTool();
@@ -749,6 +772,7 @@ export class MapEditor {
     const hit = pickNearest(v3(...origin), v3(...dir), this.pieces, 1500, (i) => {
       const r = this.pieces[i].ref;
       if (grabbed?.has(refKey(r))) return true;
+      if (this.dragIgnore?.has(refKey(r))) return true;
       if (moving && refKey(r).startsWith(moving)) return true;
       return false;
     });
@@ -995,9 +1019,11 @@ export class MapEditor {
       // the whole selection moves so its bottom sits where you aim
       const boxes = t.refs.flatMap((r) => boxesInDoc(t.start, r, this));
       if (!boxes.length) return null;
-      const { pos, floor } = this.placeAt(aim, boxes);
+      const { pos: at, floor } = this.placeAt(aim, boxes);
       // pos = where the template's origin goes; the template is in world space, so pos is
-      // the move itself
+      // the move itself (then the connect magnet)
+      const shift = this.connect(moveBoxes(this.groupBoxes(t.start, t.refs), at), t.refs);
+      const pos: V3 = [at[0] + shift[0], at[1] + shift[1], at[2] + shift[2]];
       return {
         boxes: boxes.map((x) => ({ ...x, c: v3(x.c.x + pos[0], x.c.y + pos[1], x.c.z + pos[2]) })),
         floor,
@@ -1043,6 +1069,195 @@ export class MapEditor {
             : `Point ${n} placed. Click for point ${n + 1}, or Esc when done`,
         );
     }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // structures: what a drag takes along (editor/structure.ts), and the connect magnet
+
+  setJustThis(on: boolean): void {
+    this.justThis = on;
+    try {
+      localStorage.setItem(JUST_THIS_KEY, on ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+    this.ui.refreshInspector();
+  }
+
+  /** The layered structure of a piece (the map's own blocks and the built-in boxes). */
+  structureOf(ref: Ref): { refs: Ref[]; pieces: number; capped: boolean } {
+    if (ref.k !== 'block' && ref.k !== 'base') return { refs: [ref], pieces: 1, capped: false };
+    const items: StructItem[] = [];
+    const byKey = new Map<string, Ref>();
+    for (const p of this.pieces) {
+      if (p.ref.k !== 'block' && p.ref.k !== 'base') continue;
+      const k = refKey(p.ref);
+      byKey.set(k, p.ref);
+      items.push({ key: k, min: p.min, max: p.max });
+    }
+    const s = structureKeys(items, refKey(ref));
+    return {
+      refs: [...s.keys].map((k) => byKey.get(k)!).filter(Boolean),
+      pieces: s.pieces,
+      capped: s.capped,
+    };
+  }
+
+  /**
+   * What dragging `ref` moves: the selection when it is part of a bigger one, else the piece's
+   * structure (just the piece with "Just this piece", or when the structure is too big).
+   */
+  dragGroup(ref: Ref): Ref[] {
+    const k = refKey(ref);
+    if (this.selection.length > 1 && this.selection.some((r) => refKey(r) === k))
+      return this.selection;
+    if (this.justThis) return [ref];
+    const s = this.structureOf(ref);
+    if (s.capped) {
+      this.ui.toast('Too big to drag together: use Just this piece or select fewer', 'drag');
+      return [ref];
+    }
+    if (s.refs.length > 1) this.ui.toast(`Moving ${s.pieces} pieces`, 'drag');
+    return s.refs;
+  }
+
+  /** Select connected: the whole structure of the selected piece. */
+  selectConnected(): void {
+    const r = this.selection[0];
+    if (!r) return this.ui.toast('Select a piece first');
+    const s = this.structureOf(r);
+    if (s.capped) return this.ui.toast('Too big to select together (over 400 pieces)');
+    this.select(s.refs);
+    this.ui.toast(`${s.pieces} piece${s.pieces === 1 ? '' : 's'} selected`);
+  }
+
+  /** The move pad / turning on one piece: its structure comes along (not "Just this piece"). */
+  private expandToStructure(): void {
+    const s = this.selection;
+    if (this.justThis || s.length !== 1 || (s[0].k !== 'block' && s[0].k !== 'base')) return;
+    const refs = this.dragGroup(s[0]);
+    if (refs.length > 1) this.select(refs);
+  }
+
+  /** The pieces of these things in a doc (the blocks' own, the rest as drawn now). */
+  private groupBoxes(doc: EditDoc, refs: Ref[]): BoxDef[] {
+    return refs.flatMap((r) => (r.k === 'block' || r.k === 'base' ? boxesInDoc(doc, r, this) : []));
+  }
+
+  /**
+   * The connect magnet: how much more to move pieces (at their new place) so they sit flush
+   * against a nearby piece that is not part of the move. The piece they connect to glows.
+   */
+  private connect(moved: BoxDef[], refs: Ref[]): V3 {
+    if (!moved.length) return [0, 0, 0];
+    const skip = new Set(refs.map(refKey));
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const b of moved) {
+      const bb = boxBounds(b);
+      min.x = Math.min(min.x, bb.min.x);
+      min.y = Math.min(min.y, bb.min.y);
+      min.z = Math.min(min.z, bb.min.z);
+      max.x = Math.max(max.x, bb.max.x);
+      max.y = Math.max(max.y, bb.max.y);
+      max.z = Math.max(max.z, bb.max.z);
+    }
+    const r = CONNECT_DIST + 0.05;
+    const near = this.pieces.filter(
+      (p) =>
+        (p.ref.k === 'block' || p.ref.k === 'base') &&
+        p.min.x <= max.x + r &&
+        p.max.x >= min.x - r &&
+        p.min.y <= max.y + r &&
+        p.max.y >= min.y - r &&
+        p.min.z <= max.z + r &&
+        p.max.z >= min.z - r &&
+        !skip.has(refKey(p.ref)),
+    );
+    const res = connectSnap(
+      moved.slice(0, 200),
+      near.map((p) => p.box),
+    );
+    window.clearTimeout(this.connectTimer);
+    if (res.hit < 0) {
+      this.view.setConnect([]);
+      return [0, 0, 0];
+    }
+    this.view.setConnect(this.boxesOf(near[res.hit].ref));
+    this.connectTimer = window.setTimeout(() => {
+      if (!this.disposed) this.view.setConnect([]);
+    }, 700);
+    return res.shift;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // touch drags: a piece (and its structure) follows the finger over the surfaces
+
+  /** A finger started dragging at (x, y) with the hand: true when it grabbed a piece. */
+  beginTouchDrag(x: number, y: number): boolean {
+    if (this.disposed || this.tool.k !== 'select') return false;
+    const ref = this.refAt(x, y);
+    if (!ref) return false;
+    let refs = this.dragGroup(ref);
+    this.session.history.seal();
+    const key = `tdrag${++this.dragN}`;
+    // built-in boxes become blocks first (the same undo step as the drag)
+    if (refs.some((r) => r.k === 'base')) refs = this.adoptSelection(refs, key);
+    this.select(refs);
+    this.fdrag = {
+      start: this.doc,
+      refs,
+      template: refs.flatMap((r) => boxesInDoc(this.doc, r, this)),
+      key,
+      lift: 0,
+      at: [x, y],
+      last: [x, y],
+    };
+    return true;
+  }
+
+  get touchDragging(): boolean {
+    return !!this.fdrag;
+  }
+
+  touchDragTo(x: number, y: number): void {
+    if (!this.fdrag) return;
+    this.fdrag.at = [x, y];
+    this.fdrag.last = [x, y];
+  }
+
+  /** ▲ / ▼ while dragging: up or down one grid step. */
+  touchDragLift(dir: number): void {
+    if (!this.fdrag) return;
+    this.fdrag.lift += dir * this.grid;
+    this.fdrag.at = this.fdrag.last;
+  }
+
+  endTouchDrag(): void {
+    if (!this.fdrag) return;
+    if (this.fdrag.at) this.applyTouchDrag();
+    this.fdrag = null;
+    this.session.history.seal();
+  }
+
+  /** Once a frame: the dragged pieces rest on the surface under the finger, on the grid. */
+  private applyTouchDrag(): void {
+    const fd = this.fdrag;
+    if (!fd?.at) return;
+    const [x, y] = fd.at;
+    fd.at = null;
+    this.dragIgnore = new Set(fd.refs.map(refKey));
+    this.mouse = { x, y, inCanvas: true };
+    this.updateAim();
+    this.dragIgnore = null;
+    const aim = this.aim;
+    if (!aim || !fd.template.length) return;
+    const { pos } = this.placeAt(aim, fd.template);
+    const delta: V3 = [pos[0], pos[1] + fd.lift, pos[2]];
+    const snapBoxes = this.groupBoxes(fd.start, fd.refs);
+    const shift = this.connect(moveBoxes(snapBoxes, delta), fd.refs);
+    const d: V3 = [delta[0] + shift[0], delta[1] + shift[1], delta[2] + shift[2]];
+    this.commit(moveRefs(fd.start, fd.refs, d), fd.key, fd.refs);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1192,6 +1407,8 @@ export class MapEditor {
         return this.scaleSelection(1.25);
       case 'KeyG':
         return this.startGrab();
+      case 'KeyL':
+        return this.selectConnected();
       case 'KeyF':
         return this.focusSelection();
       case 'KeyH':
@@ -1386,8 +1603,11 @@ export class MapEditor {
     if (!d.dragging && !locked && moved > 5) {
       if (d.ref && !d.shift && this.isSelected(d.ref) && d.point) {
         d.dragging = 'move';
+        // the piece brings its whole layered structure (unless "Just this piece")
+        const refs = this.dragGroup(d.ref);
+        if (refs.length !== this.selection.length) this.select(refs);
         d.moveStart = this.doc;
-        d.moveRefs = this.selection;
+        d.moveRefs = refs;
       } else d.dragging = 'box';
     }
     if (d.dragging === 'box') this.ui.boxRect([d.x, d.y, e.clientX, e.clientY]);
@@ -1514,6 +1734,9 @@ export class MapEditor {
       d.moveRefs = this.adoptSelection(d.moveRefs, key);
       d.moveStart = this.doc;
     }
+    d.template ??= this.groupBoxes(d.moveStart, d.moveRefs);
+    const shift = this.connect(moveBoxes(d.template, delta), d.moveRefs);
+    delta = [delta[0] + shift[0], delta[1] + shift[1], delta[2] + shift[2]];
     this.commit(moveRefs(d.moveStart, d.moveRefs, delta), key, d.moveRefs);
   }
 
@@ -1587,6 +1810,19 @@ export class MapEditor {
     this.commit(setMoverPoint(this.doc, id, i, p));
   }
 }
+
+const JUST_THIS_KEY = 'spaceyz.mapmaker.justThis';
+const readJustThis = (): boolean => {
+  try {
+    return localStorage.getItem(JUST_THIS_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/** Boxes moved by `d`. */
+const moveBoxes = (boxes: BoxDef[], d: V3): BoxDef[] =>
+  boxes.map((b) => ({ ...b, c: v3(b.c.x + d[0], b.c.y + d[1], b.c.z + d[2]) }));
 
 const isTyping = (): boolean => {
   const a = document.activeElement as HTMLElement | null;

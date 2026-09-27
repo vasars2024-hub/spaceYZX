@@ -17,7 +17,13 @@ export type GestureEvent =
   | { k: 'hold'; x: number; y: number }
   /** hold progress 0..1 at (x, y); p < 0: the hold was given up (hide the ring) */
   | { k: 'holdProgress'; x: number; y: number; p: number }
-  | { k: 'look'; dx: number; dy: number }
+  /**
+   * a drag begins (the finger went down at x0, y0): the editor decides whether it moves a piece
+   * (✋ on a piece) or looks around; the drag's moves follow as 'look' with the finger at x, y
+   */
+  | { k: 'dragStart'; x0: number; y0: number }
+  | { k: 'look'; dx: number; dy: number; x: number; y: number }
+  | { k: 'dragEnd'; x: number; y: number }
   /** change of the distance between two fingers (px; + = spreading) */
   | { k: 'pinch'; d: number };
 
@@ -47,6 +53,7 @@ export class GestureTracker {
       // a second finger: both pinch (whatever the first was about to do is off)
       for (const o of this.fingers.values()) {
         if (o.ring) out.push({ k: 'holdProgress', x: o.x, y: o.y, p: -1 });
+        if (o.state === 'drag') out.push({ k: 'dragEnd', x: o.x, y: o.y });
         o.ring = false;
         o.state = 'pinch';
       }
@@ -78,10 +85,13 @@ export class GestureTracker {
       if (f.ring) out.push({ k: 'holdProgress', x, y, p: -1 });
       f.ring = false;
       // (the look starts from where the finger went down: no jump)
-      out.push({ k: 'look', dx: x - f.x0, dy: y - f.y0 });
+      out.push(
+        { k: 'dragStart', x0: f.x0, y0: f.y0 },
+        { k: 'look', dx: x - f.x0, dy: y - f.y0, x, y },
+      );
       return out;
     }
-    if (f.state === 'drag') out.push({ k: 'look', dx: x - px, dy: y - py });
+    if (f.state === 'drag') out.push({ k: 'look', dx: x - px, dy: y - py, x, y });
     return out;
   }
 
@@ -92,6 +102,7 @@ export class GestureTracker {
     const out: GestureEvent[] = [];
     if (f.ring) out.push({ k: 'holdProgress', x: f.x, y: f.y, p: -1 });
     if (f.state === 'pending' && t - f.t0 < HOLD_MS) out.push({ k: 'tap', x: f.x, y: f.y });
+    if (f.state === 'drag') out.push({ k: 'dragEnd', x: f.x, y: f.y });
     // the finger left in a pinch keeps doing nothing until it lifts
     for (const o of this.fingers.values()) if (o.state === 'pinch') o.state = 'done';
     return out;
@@ -102,7 +113,10 @@ export class GestureTracker {
     const f = this.fingers.get(id);
     this.fingers.delete(id);
     for (const o of this.fingers.values()) if (o.state === 'pinch') o.state = 'done';
-    return f?.ring ? [{ k: 'holdProgress', x: f.x, y: f.y, p: -1 }] : [];
+    const out: GestureEvent[] = [];
+    if (f?.ring) out.push({ k: 'holdProgress', x: f.x, y: f.y, p: -1 });
+    if (f?.state === 'drag') out.push({ k: 'dragEnd', x: f.x, y: f.y });
+    return out;
   }
 
   /** Call every frame: holds complete here (and their ring fills). */

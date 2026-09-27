@@ -141,6 +141,7 @@ export const HELP_ROWS: [string, string][] = [
   ['Drag', 'Move what is selected (hold Alt: up / down) · on empty space: select an area'],
   ['Arrows · PgUp / PgDn', 'Move the selection one grid step'],
   ['G', 'Move the selection to where you aim (click to drop)'],
+  ['L', 'Select connected (everything built onto the piece)'],
   ['R / Shift + R', 'Turn 15°'],
   ['[ and ]  (or Alt + wheel)', 'Smaller / bigger'],
   ['Delete / X', 'Delete'],
@@ -666,11 +667,30 @@ export class EditorUI {
   private commonActions(): HTMLElement | null {
     if (this.touchLayer) return null; // (touch: the sheet's quick buttons)
     const ed = this.ed;
-    return this.actions(
-      edButton('copy', 'Copy', () => ed.duplicateSelection(), undefined, 'Ctrl+D'),
-      edButton('move', 'Move to aim', () => ed.startGrab(), undefined, 'G'),
-      edButton('rotate', 'Turn', () => ed.rotateSelection(15), undefined, 'R'),
-      edButton('trash', 'Delete', () => ed.deleteSelection(), 'btn small orange', 'Delete / X'),
+    const piece = ed.selection.some((r) => r.k === 'block' || r.k === 'base');
+    return h(
+      'div',
+      { class: 'ed-block' },
+      this.actions(
+        edButton('copy', 'Copy', () => ed.duplicateSelection(), undefined, 'Ctrl+D'),
+        edButton('move', 'Move to aim', () => ed.startGrab(), undefined, 'G'),
+        edButton('rotate', 'Turn', () => ed.rotateSelection(15), undefined, 'R'),
+        edButton('trash', 'Delete', () => ed.deleteSelection(), 'btn small orange', 'Delete / X'),
+        piece
+          ? edButton(
+              'select',
+              'Select connected',
+              () => ed.selectConnected(),
+              undefined,
+              'Everything built onto it (L)',
+            )
+          : null,
+      ),
+      piece
+        ? toggleRow('Just this piece (drags leave what is built onto it)', ed.justThis, (v) =>
+            ed.setJustThis(v),
+          )
+        : null,
     );
   }
 
@@ -788,7 +808,12 @@ export class EditorUI {
   private multiPanel(): (Node | null)[] {
     const ed = this.ed;
     return [
-      this.title(`${ed.selection.length} things selected`, 'select'),
+      this.title(
+        ed.selection.every((r) => r.k === 'block' || r.k === 'base')
+          ? `${ed.selection.length} pieces`
+          : `${ed.selection.length} things selected`,
+        'select',
+      ),
       this.commonActions(),
       this.actions(
         edButton(null, 'Smaller', () => ed.scaleSelection(1 / 1.25), undefined, '['),

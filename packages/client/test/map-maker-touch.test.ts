@@ -47,13 +47,17 @@ describe('tap, hold or drag', () => {
     g.tick(HOLD_SHOW_MS + 10); // the ring started...
     const ev = g.move(1, TAP_MOVE_PX + 5, 0, HOLD_SHOW_MS + 20);
     // ...and goes away; the look includes the whole move (no jump)
+    // (dragStart says where the finger went down: on a piece with ✋, the piece moves)
     expect(ev).toEqual([
       { k: 'holdProgress', x: TAP_MOVE_PX + 5, y: 0, p: -1 },
-      { k: 'look', dx: TAP_MOVE_PX + 5, dy: 0 },
+      { k: 'dragStart', x0: 0, y0: 0 },
+      { k: 'look', dx: TAP_MOVE_PX + 5, dy: 0, x: TAP_MOVE_PX + 5, y: 0 },
     ]);
-    expect(g.move(1, TAP_MOVE_PX + 8, -4, 300)).toEqual([{ k: 'look', dx: 3, dy: -4 }]);
+    expect(g.move(1, TAP_MOVE_PX + 8, -4, 300)).toEqual([
+      { k: 'look', dx: 3, dy: -4, x: TAP_MOVE_PX + 8, y: -4 },
+    ]);
     expect(g.tick(HOLD_MS * 3)).toEqual([]);
-    expect(g.up(1, HOLD_MS * 3)).toEqual([]);
+    expect(g.up(1, HOLD_MS * 3)).toEqual([{ k: 'dragEnd', x: TAP_MOVE_PX + 8, y: -4 }]);
   });
 
   it('two fingers pinch (the first finger does not tap or break)', () => {
@@ -69,11 +73,22 @@ describe('tap, hold or drag', () => {
     expect(g.active).toBe(0);
   });
 
-  it('a cancelled touch does nothing', () => {
+  it('a cancelled touch does nothing (a cancelled drag just ends)', () => {
     const g = new GestureTracker();
     g.down(1, 0, 0, 0);
     expect(g.cancel(1)).toEqual([]);
     expect(g.tick(HOLD_MS * 2)).toEqual([]);
+    g.down(2, 0, 0, 0);
+    g.move(2, 50, 0, 10);
+    expect(g.cancel(2)).toEqual([{ k: 'dragEnd', x: 50, y: 0 }]);
+  });
+
+  it('a second finger ends a drag and pinches instead', () => {
+    const g = new GestureTracker();
+    g.down(1, 0, 0, 0);
+    g.move(1, 40, 0, 10);
+    expect(g.down(2, 200, 0, 20)).toEqual([{ k: 'dragEnd', x: 40, y: 0 }]);
+    expect(kinds(g.move(2, 230, 0, 30))).toEqual(['pinch']);
   });
 });
 

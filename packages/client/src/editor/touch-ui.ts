@@ -67,6 +67,7 @@ export const TOUCH_HELP_ROWS: [string, string][] = [
   ['Tap', 'Place the piece in your hand on the face you tap'],
   ['Hold (½ second)', 'Break the piece under your finger (↶ brings it back)'],
   ['✋ (slot 1) + tap', 'Select a piece and change it in the sheet'],
+  ['✋ + drag a piece', 'Move it, with everything built onto it (Just this: only it)'],
   ['Bag (end of the hotbar)', 'All pieces, game items, materials and colours'],
   ['Swipe the sheet down', 'Close it'],
 ];
@@ -86,6 +87,8 @@ export class TouchLayer {
   private inv: HTMLElement | null = null;
   private tutorial: HTMLElement | null = null;
   private movePad = false;
+  /** a finger is dragging a piece (not looking) */
+  private movingPiece = false;
   private listeners: [EventTarget, string, EventListener, AddEventListenerOptions?][] = [];
   private oldTouchAction = '';
 
@@ -124,6 +127,12 @@ export class TouchLayer {
       };
       b.addEventListener('pointerdown', (e) => {
         b.setPointerCapture?.((e as PointerEvent).pointerId);
+        // dragging a piece: ▲ / ▼ lift it one grid step instead of flying
+        if (this.ed.touchDragging) {
+          e.preventDefault();
+          this.ed.touchDragLift(dir);
+          return;
+        }
         set(dir)(e);
       });
       b.addEventListener('pointerup', set(0));
@@ -264,12 +273,24 @@ export class TouchLayer {
   }
 
   private handle(events: GestureEvent[]): void {
+    const ed = this.ed;
+    // (✋ Edit: a hold does nothing; pieces are dragged instead of broken)
+    const hand = ed.tool.k === 'select';
     for (const ev of events) {
-      if (ev.k === 'look') this.ed.lookBy(ev.dx, ev.dy);
-      else if (ev.k === 'pinch') this.ed.pinchBy(ev.d);
-      else if (ev.k === 'tap') this.ed.tapAt(ev.x, ev.y);
-      else if (ev.k === 'hold') this.ed.breakAt(ev.x, ev.y);
-      else if (ev.k === 'holdProgress') this.paintRing(ev.x, ev.y, ev.p);
+      if (ev.k === 'dragStart') this.movingPiece = hand && ed.beginTouchDrag(ev.x0, ev.y0);
+      else if (ev.k === 'look') {
+        if (this.movingPiece) ed.touchDragTo(ev.x, ev.y);
+        else ed.lookBy(ev.dx, ev.dy);
+      } else if (ev.k === 'dragEnd') {
+        if (this.movingPiece) ed.endTouchDrag();
+        this.movingPiece = false;
+      } else if (ev.k === 'pinch') ed.pinchBy(ev.d);
+      else if (ev.k === 'tap') ed.tapAt(ev.x, ev.y);
+      else if (ev.k === 'hold') {
+        if (!hand) ed.breakAt(ev.x, ev.y);
+      } else if (ev.k === 'holdProgress') {
+        if (!hand || ev.p < 0) this.paintRing(ev.x, ev.y, ev.p);
+      }
     }
   }
 
@@ -523,6 +544,13 @@ export class TouchLayer {
       btn('rotate', '⟳ 15°', () => ed.rotateSelection(15)),
       btn(null, 'Smaller', () => ed.scaleSelection(1 / 1.25)),
       btn(null, 'Bigger', () => ed.scaleSelection(1.25)),
+      btn('select', 'Connected', () => ed.selectConnected()),
+      btn(
+        null,
+        ed.justThis ? '☑ Just this' : '☐ Just this',
+        () => ed.setJustThis(!ed.justThis),
+        ed.justThis ? 'on' : '',
+      ),
       btn('copy', 'Copy', () => ed.duplicateSelection()),
       btn('trash', 'Delete', () => ed.deleteSelection(), 'danger'),
       btn(null, '✕', close, 'close'),

@@ -311,6 +311,8 @@ export class EditorViewport {
   private sky: SkyMeshes | null = null;
   private selLines: THREE.LineSegments;
   private hoverLines: THREE.LineSegments;
+  /** the piece a dragged piece just connected to (its edges glow) */
+  private connectLines: THREE.LineSegments;
   private ghost: THREE.Group | null = null;
   private ghostMats: { ok: THREE.Material; bad: THREE.Material; line: THREE.LineBasicMaterial };
   private grid: THREE.GridHelper | null = null;
@@ -402,11 +404,18 @@ export class EditorViewport {
     );
     this.hoverLines.renderOrder = 7;
     this.hoverLines.frustumCulled = false;
+    this.connectLines = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x3dff9a, depthTest: false, transparent: true }),
+    );
+    this.connectLines.renderOrder = 8;
+    this.connectLines.frustumCulled = false;
     this.scene.add(
       this.markerLayer,
       this.moverLayer,
       this.selLines,
       this.hoverLines,
+      this.connectLines,
       this.handleLayer,
     );
   }
@@ -584,6 +593,11 @@ export class EditorViewport {
     this.selLines.geometry = outlineGeometry(boxes);
   }
 
+  setConnect(boxes: BoxDef[]): void {
+    this.connectLines.geometry.dispose();
+    this.connectLines.geometry = outlineGeometry(boxes);
+  }
+
   setHover(boxes: BoxDef[]): void {
     this.hoverLines.geometry.dispose();
     this.hoverLines.geometry = outlineGeometry(boxes);
@@ -717,6 +731,7 @@ export class EditorViewport {
     for (const m of Object.values(this.handleMats)) m.dispose();
     this.selLines.geometry.dispose();
     this.hoverLines.geometry.dispose();
+    this.connectLines.geometry.dispose();
     this.setGhost(null);
     this.scene.clear();
   }

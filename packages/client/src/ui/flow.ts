@@ -294,6 +294,20 @@ export const MAP_BLURBS: Record<string, string> = {
     'Basalt islands at dusk (very hard): small pads, the steepest ramps, two jetpack gaps on one fuel cell.',
   'surf-copper-reef':
     'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
+  'surf-glass-garden':
+    'Surf, Beginner: glazed troughs through a glass conservatory round a great tree — S-curves, petal windows and a flower portal to the roof.',
+  'surf-cloud-foundry':
+    'Surf, Beginner: steel scoops round a stopped turbine above the clouds — bell windows, bhop pads and a lifting portal.',
+  'surf-lantern-canal':
+    'Surf, Beginner: timber canal banks through a lantern-lit town at dusk — ferry stones, a court curve and twin turning doors.',
+  'surf-neon-spillway':
+    'Surf, Intermediate: storm channels under a neon city — linked S-curves, a pump spiral with an early exit, a window and a turning portal.',
+  'surf-basalt-cathedral':
+    'Surf, Intermediate: a basalt cathedral round a hanging bronze bell — a 360° helix under a red cornice, A-frame spines, tracery windows and the rose window.',
+  'surf-cyclone-observatory':
+    'Surf, Intermediate: rings round a storm caged in glass — a narrowing orbit, a bhop comb, a 390° helix with an early slot exit and a counter-rotating portal.',
+  'surf-prism-relay':
+    'Surf, Intermediate: portals that turn you through a dark optical facility — offset exits, a split with a high portal, bhop prisms and a red core.',
 };
 
 /** Short feature tags of a map from its layout (Towers, bomb sites, sky duel). */

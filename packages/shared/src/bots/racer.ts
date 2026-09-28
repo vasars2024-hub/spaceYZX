@@ -21,6 +21,7 @@ import { rngFloat, rngFromSeed } from '../math/rng';
 import type { SimContext } from '../sim/context';
 import type { PlayerInput } from '../sim/input';
 import { Btn } from '../sim/input';
+import { slowZoneMul } from '../sim/movement';
 import type { PlayerState, WorldState } from '../sim/state';
 import type { RaceDef, RaceGateDef, RaceLineNode } from '../level/types';
 import type { BotSkillName } from './brain';
@@ -71,6 +72,8 @@ export interface RacerMemory {
   wait: number;
   /** ticks without progress */
   stuck: number;
+  /** ticks spent wading in a slow zone (a canal) well below the line */
+  wading: number;
   /** ticks to keep holding the respawn key */
   reset: number;
   /** jump was pressed last tick (a jump needs a fresh press) */
@@ -95,6 +98,7 @@ export const createRacerMemory = (id: number, skill: RacerSkill, seed: number): 
   lastPos: null,
   wait: 0,
   stuck: 0,
+  wading: 0,
   reset: 0,
   jumped: false,
   surgedCp: -1,
@@ -429,8 +433,13 @@ export const racerThink = (
   // progress watchdog: hop when stuck, respawn at the checkpoint when really stuck
   const speed = len(flat(p.vel));
   mem.stuck = speed < 1 && mem.wait === 0 ? mem.stuck + 1 : Math.max(0, mem.stuck - 2);
-  if (mem.stuck > 60 * 5) {
+  // fell into shallow water under the line: wading keeps it moving, so the speed check above
+  // never fires; give it 3 s to climb out, then respawn
+  const wading = slowZoneMul(ctx.level.def, p.pos) < 1 && target.pos.y - feet.y > 3;
+  mem.wading = wading ? mem.wading + 1 : 0;
+  if (mem.stuck > 60 * 5 || mem.wading > 60 * 3) {
     mem.stuck = 0;
+    mem.wading = 0;
     mem.reset = Math.round(ctx.config.movement.raceRespawnHoldSec / ctx.dt) + 2;
     return { tick, buttons: Btn.Recall, view };
   }

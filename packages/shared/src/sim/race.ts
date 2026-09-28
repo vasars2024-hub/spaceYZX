@@ -134,7 +134,9 @@ const touchingRed = (ctx: SimContext, p: PlayerState): boolean => {
   const m = ctx.config.movement;
   const h = p.crouched ? m.crouchHeight : m.standHeight;
   const cap = { center: p.pos, up: p.up, halfSeg: Math.max(0, h / 2 - m.radius), radius: m.radius };
-  for (const c of capsuleContacts(ctx.level, cap, 0.02))
+  // the same reach as the ground check (movement.ts): a racer resting on a flat red top sits a
+  // few cm above it and must still count as touching it
+  for (const c of capsuleContacts(ctx.level, cap, 0.06))
     if (ctx.level.boxes[c.box].kill) return true;
   return false;
 };

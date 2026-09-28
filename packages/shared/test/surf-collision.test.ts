@@ -422,6 +422,9 @@ describe('shallow water', () => {
     expect(validateCourse(data)).toEqual([]);
     const { def } = expandCourse(data);
     expect(def.slowZones?.length).toBe(1);
+    // (its floor, under the water, is drawn cheaply: one quad per face)
+    const floor = def.boxes.find((b) => b.mat === 'sand' && b.c.y > 28 && b.c.y < 29);
+    expect(floor?.lowDetail).toBe(true);
     const config = defaultConfig();
     const ctx = { level: buildLevel(def), config, dt: TICK_DT };
     const world = createWorld(ctx.level, 1);

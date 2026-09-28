@@ -1519,8 +1519,14 @@ const expandScenery = (
       case 'block': {
         const at = p3(e.at);
         const [w, h, d] = e.size;
-        const s: Style = { mat: e.mat ?? 'rock', color: e.color ?? pal.rock };
+        const glass = e.color ?? pal.crystal;
+        const s: Style =
+          e.mat === 'glass'
+            ? // a see-through pane (edges drawn): never collides, never a floor or a wall
+              { mat: 'skyglass', color: glass, trim: glass, noCollide: true }
+            : { mat: e.mat ?? 'rock', color: e.color ?? pal.rock };
         if (!e.solid) s.noCollide = true;
+        if (e.lowDetail) s.lowDetail = true;
         if (e.round) {
           // an eight-sided column: two squares a quarter turn apart (one solid)
           for (const t of [0, 45])
@@ -1538,10 +1544,12 @@ const expandScenery = (
           noCollide: true,
           lowDetail: true,
         });
+        // (the floor under the water is never seen up close: one flat quad per face)
         if (e.shallow)
           g.box(add(at, v3(0, -(e.depth ?? 1) - 0.5, 0)), v3(e.size[0], 1, e.size[1]), 0, {
             mat: 'sand',
             color: pal.rockDark,
+            lowDetail: true,
           });
         return;
       }
@@ -1785,10 +1793,14 @@ const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[], solid: num
     }
   }
   const cloud = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
-  /** The danger colour dimmed to `k` (a hint of heat far below, never a bright surface). */
+  /**
+   * The cloud colour warmed `k` of the way to the danger colour (a hint of heat through the
+   * cloud, never a bright surface). Fading into the cloud, not to black, keeps the patches from
+   * reading as dark holes, above all from under them.
+   */
   const dim = (k: number): Style => {
-    const c = pal.danger;
-    const ch = (sh: number) => Math.round(((c >> sh) & 255) * k);
+    const ch = (sh: number) =>
+      Math.round(((pal.cloud >> sh) & 255) * (1 - k) + ((pal.danger >> sh) & 255) * k);
     return {
       mat: 'glow',
       color: (ch(16) << 16) | (ch(8) << 8) | ch(0),

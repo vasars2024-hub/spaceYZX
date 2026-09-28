@@ -116,7 +116,7 @@ the client's `fps.quat`, not the player's):
 const c = __spaceyz.app.client,
   t = __spaceyz.tools;
 const place = (from, yaw, pitch) => {
-  // yaw 0 = north, 90 = east
+  // yaw is the negative of the course heading: 0 = north, -90 = east, 90 = west
   const q = t.view(yaw, pitch);
   Object.assign(c.fps.quat, q);
   for (const p of Object.values(c.session.w.players))
@@ -129,6 +129,8 @@ const place = (from, yaw, pitch) => {
 };
 ```
 
+Set `c.session.race.phase` to anything but the countdown first, or the race countdown puts
+the player back on the start grid. Use your own Browser tab: other builders share the pane.
 `c.session.level.def.race.line` holds the racing line (walk it to find spots). Wait ~1 s
 before each screenshot. Check: the next landing is visible before each release, ramp edges
 and ridges read, red zones read as red (not copper), portals show their destination, gates

@@ -32,6 +32,13 @@ export * from './level/maps/race-sunspire';
 export * from './level/maps/race-neon';
 export * from './level/maps/race-ember';
 export * from './level/maps/surf-copper-reef';
+export * from './level/maps/surf-glass-garden';
+export * from './level/maps/surf-cloud-foundry';
+export * from './level/maps/surf-lantern-canal';
+export * from './level/maps/surf-neon-spillway';
+export * from './level/maps/surf-basalt-cathedral';
+export * from './level/maps/surf-cyclone-observatory';
+export * from './level/maps/surf-prism-relay';
 
 export * from './sim/input';
 export * from './sim/state';

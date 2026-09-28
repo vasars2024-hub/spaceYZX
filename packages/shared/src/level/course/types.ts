@@ -414,7 +414,9 @@ export type SceneryElement =
   | { t: 'cloud'; at: P3; size: P2 }
   /**
    * architecture: a plain block (bottom middle at `at`, [width, height, depth]) or an
-   * eight-sided column (`round`); scenery never collides unless `solid`
+   * eight-sided column (`round`); scenery never collides unless `solid` — `glass`: a
+   * see-through pane (a faint tint, its edges drawn as thin lines) that never collides, even
+   * when `solid`; `lowDetail`: one flat quad per face (surfaces never seen up close)
    */
   | {
       t: 'block';
@@ -422,9 +424,10 @@ export type SceneryElement =
       size: P3;
       heading?: number;
       color?: number;
-      mat?: 'rock' | 'sand' | 'wood' | 'panel' | 'plate' | 'glow' | 'trim';
+      mat?: 'rock' | 'sand' | 'wood' | 'panel' | 'plate' | 'glow' | 'trim' | 'glass';
       round?: boolean;
       solid?: boolean;
+      lowDetail?: boolean;
     }
   /**
    * a flat sea or pool surface (its middle at `at`), never collides — or, `shallow`, a canal

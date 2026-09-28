@@ -1,419 +1,406 @@
-# I02 — Basalt Cathedral (build spec)
+# I02 — Basalt Cathedral (as built)
 
-Intermediate surf • MOVEMENT_PROFILE v1 • map id `surf-basalt-cathedral` (suggested) • brief §10 I02
-Conventions, symbols and formulas: [README.md](README.md#conventions-used-in-every-spec). Every
-number is a first blockout value **to calibrate** unless it quotes the movement profile.
+Intermediate surf • MOVEMENT_PROFILE v1 • map id `surf-basalt-cathedral` •
+source `packages/shared/src/level/maps/surf-basalt-cathedral.ts` • brief §10 I02.
+Built, tested and timed. The pen sequence in the source is authoritative; the numbers below
+are copied from it and from the tools (`tools/race/*`). This page replaced the build spec it
+was built from (the original spec is in git history: commit c03b4d0); §8 lists where the build
+differs from that spec and why, §9 answers its open questions. Conventions and formulas: [README.md](README.md#conventions-used-in-every-spec).
 
 ## 1. Identity
 
-|                     |                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mode / discipline   | Intermediate / surf                                                                                                                                                                                                                                                                                                                                              |
-| Movement identity   | _Hold your height band as the cathedral narrows it: round the bell, over the stone ridges, out through the high light._                                                                                                                                                                                                                                          |
-| Dominant techniques | 1. height-band management in a 360° descending helix (a red lower edge plus a red-lined overhead cornice in its second half); 2. spine crossings on A-frame ridges (`side: 'both'`, `ride` switch); 3. window transfers, ending at the high, broad rose window (two-contact main line, one-transfer faster line)                                                 |
-| Supporting          | an A-frame crossing in Act 1, climbing scoops before windows, 8 short contacts between choir columns, a 3-pad bhop bridge, a 90° portal, a relaxed sweep round the bell                                                                                                                                                                                          |
-| Landmark            | **the suspended bronze bell** over the circular nave (O = 0, 0): mouth Ø 30 m, y 118–150, hung from a 6 m chain-and-rod shaft that rises through the helix to the dome (y 500). Framed by W1 (Act 1), circled from above (Act 2), seen back through the great arch (Act 3), in P5's preview (Act 5), swept round at crown height (Act 6), in view at the finish. |
-| Palette             | basalt `#292D33` (structure, sky, fog), ash stone `#8E9296` (rough structural stone: walls, piers, ramp backs), old bronze `#A48B60` (the bell, ridge trim lines, window rims, anchors), pale light `#E5E2D5` (light shafts, window glow, polished-band sheen, mist), hazard red `#E8242C` + black hatching (red zones only)                                     |
-| Materials           | surf faces: **polished basalt bands** (dark, glossy, long streaks along the ramp direction, a bronze line on every usable ridge); structure: **rough ash stone** (matte, chiselled, never glossy), so the two never read alike; bell and machinery: old bronze (hazard parts hatched red); tracery: ash stone, visual only outside each collision rectangle      |
-| Lighting            | pale light falls in long columns from broken vaults and crosses the nave above the route, never through a window target; every window target is lit from behind (pale rectangle / rose); the bell keeps one warm key highlight from the east                                                                                                                     |
-| Fog                 | `#292D33`, near 150 m, far 700 m; low pale mist below **y 80 only** (nave floor y 40); every route level and window target is above y 104                                                                                                                                                                                                                        |
-| Sound               | long reverberation, sparse bell overtones (a low hum rising with speed near the bell), restrained low choral textures; wind at W1, W5 and P5; chain creak at red machinery; contact sounds never masked                                                                                                                                                          |
-| Poetic              | _Circle the silent bell, cross the stone's old ridges, and leave through the highest light._                                                                                                                                                                                                                                                                     |
-| Practical           | _Keep every window target and the bell's silhouette visible from its decision point: light the openings, keep mist below the route, and let polished bands, not ornament, draw the line._                                                                                                                                                                        |
-
-Architecture (plan): rotunda nave, inner wall r 100, floor y 40; ambulatory ring to the outer
-wall r 170, buttresses to r 200; the long north transept arm (x −60…120, z −100…−1300); the choir
-hall north-east (x 330…470, z −1300…−600, rows of columns); the rose apse east (x 300…450,
-z −200…+30, rose window in its east wall at x 432). `killY` 60.
+|                   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Theme             | a cathedral carved into volcanic stone: polished stone surf bands with a bronze line on every ridge, dark stone supports and arcades, a suspended bronze bell over the nave, pale light falling in long columns, grey kill mist with a warm glow under the route                                                                                                                                                                                                                                                                  |
+| Movement identity | _hold your height band as the cathedral narrows it: round the bell, over the stone ridges, out through the high light_                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Palette           | basalt #292D33 (fog, sky ground, the dark stone #3D4249 of the supports), ash stone #8E9296 (window walls, gates, choir columns, the tower; the nave arcades a shade darker #5F6368), old bronze #A48B60 (bell, ridge lines #D2B27A, anchors #C9A66B, rose studs, pads), pale light #E5E2D5 (gate and window glow, light shafts), mist #6E706E with an ember glow #8A5234 under it, hazard red #E8242C with black hatching (red zones only)                                                                                       |
+| Landmark          | **the suspended bronze bell** on the helix's axis: seven stepped bronze octagons (mouth Ø 31 m, 34 m tall) with a clapper, a headstock ringed by the red bell wheel, and a 4 m rod rising through the helix to y 520; a red bell frame of eight radial beams below it. Circled from above by the helix (Act 2), swept round at crown height in Act 6                                                                                                                                                                              |
+| Architecture      | the nave: an inner arcade (18 piers, a cornice ring at y 440) at the nave arch's radius (≈ 103 m: C1 and the great arch W2 are in it) and an outer arcade (24 piers, cornice at y 455) at the clerestory's (≈ 171 m: W1 is in it), piers left out wherever the route passes (the arcades never collide: they stand 12 m clear of the route, and a fall passes through them into the mist); the south buttress tower (Ø 18) that 1B bends round; supports under the ramps; pale see-through light shafts; seven choir column pairs |
+| Fog / sky         | fog 150–700 m, dark basalt sky (top #1B1E22, horizon #3A3D42), a warm key light from the east (sun #F2D9A8) for the bell's highlight; the dark nave floor at y 44 far below; the kill mist (§5b) is the only mist; everything of the route is above y 126                                                                                                                                                                                                                                                                         |
 
 ## 2. Route sketch
 
-Top-down, north up, x east, north = −z (schematic, not to scale; ≈ ±15 m; pen sequence authoritative):
+Top-down, north up, drawn by `npx tsx tools/race/sketch.ts surf-basalt-cathedral` (SVG:
+[I02-basalt-cathedral.svg](I02-basalt-cathedral.svg), `--svg`). Line characters are the racing
+line's height in tens of metres (0–9, then a = 100 m … z = 350 m and above); `1`–`5` gates,
+`R` anchors, `b` restart bays, `x` red zones, `O`/`o` portal in/out, `S` start, `F` finish.
 
 ```
- z \ x -250        -150          -50    0     50          150         250          350          450
- -1290                             ╭═══3E══════════════════C3══4A═══════════════════════════════╮
- -1250                             ║ G3 lower gallery                                           ║ 4A outside +90
- -1150                             ║                                                          R4a
- -1100                              W3b◇ 3D⌒ scoop                                            K1┊K2  8 SHORT faces zig-zag S,
- -1030                              ║                                                         K3┊K4  one column pair per gap,
-  -970                             3C⋀ spine 2 (L→R)                                          K5┊K6  red choir floor below
-  -920                              ║                                                         K7┊K8
-  -870                              ║                                                         P1·P2·P3 bhop bridge
-  -813                                 W3a◇ = R3a                                              ╲ 4E angled entry
-  -790                                 3B⌒ scoop                                                ║
-  -694                                   3A⋀ spine 1 (R→L)                                      ║
-  -629                                    ║                                                    C4
-  -535                                    C2                                                 ║ 5A rose stair (±35° S)
-  -450                                    ║ 2C                                              ║
-  -300                                     ║ 2B (G2 lower aisle below)                     ║
-  -165                       F◁═══════════╫═══6C═════════╮ north arcade gallery          R5a
-  -140                       C5◁P5′        ║             ║                    5B ╭────⊙────╮ loop centre (382,−84)
-   -94     S                 ║6A           W2=R2a        ║                       ╰P1═══fast═══▶W5◇▷P5
-   -60     ║                 ║              ║        6B══╝R6a                   5C ↺ 5D kicker ▓ red ceiling
-     0     ║                 ║ ╭═══H2═══ O ═══╮ helix R70→60 round the shaft, y 401→383
-    35     ║                 ╲ ╰ red frame   W6◇           (bell hangs at O, y 118–150)
-    75     ║                  ╲═════6A══════╯ ║ 2A x≈70
-    90     ║                                  C1
-   158     ╲1A                                W1◇
-   209       ╚═════════R1a═══1B⋀══════════════╯ (south buttress tower ≈ (21,188))
+                                                                                                 O    :eeee:
+                                                                                                    cccccc:ddddd:
+                                                                                                   :e:      :ee:dd
+               ::xxxxxxxxxxxx: b                    ::zzzz:                                         ee:      :e:dd
+           :xx:                                            zzz                                             :ddf
+         :x:                                                 :z                                             :R b
+        :w                                                    z:                                            :g
+       :w                                                    z:                                             :g:
+       :ww                               b                   :z:                                             :g:
+        :ww:                             :w:                   zz                                              gg:
+          wv:                            :w:                    zz: :                                            :g:
+           :v:         z:                :w:                     z: :                                              gg:
+           :v:         :z:               :w:                     z: :                                               g:
+          u:            :z               :w:   :ssssssssssssssssssssstttttt:                                        g:
+         uu              zz              :wss::                 b R :        :tt:                                   g:
+         u:               z:            ssw:         zzzzzzzzzzzz:z:           :t:                                  g:
+         uu:              :z            s:w:      zz:x  xxxxxx  xxzz            t:                                  :g
+       :t::                zz           s:w:     :z x xxx x xxxx xz:z          u: b                                 :g
+     :u::                   z:          s:wv:     zz:x  xxxxxx  xzz:z         uu:                                   :h
+  ::tt                       zz         s: :v::     :zzzzzzzzzzz:  :z     uuuu:                                     :h
+ :tt                          :zz       s:   :vvv:                :1::v::                                           :h
+ :t::                            zzz    r:        ::vvvvvvvvvvvvvvvz                                                :h
+   s:                               :zzz                          :z                                                 :4
+   s:                                    :zzzz  ::                 :z:                                               :i
+  :s:                                             :zzzzz::        :zz:                                               ii
+  r::                                                    ::zzzzzz::                                                iii
+  :r::::                                                                                               ::::::iiiii:
+    rrr::::::::: :                                                                      ::jjjjjjjj:
+        :rrrrrqqqqqqq3:ppppppppppppppR:ooo:oon :nnn :mmm: lll:kkkk:kkj :jjjj  j j  j
+x -434..468 (→ east), z -473..362 (↓ south), 7.5 m per column (rows abridged)
 ```
 
-Key points (x, y, z) and headings:
+The nave (the bell's axis O ≈ (12, 17)) is in the middle. Act 1 starts west of it and runs
+south round the outside to the south buttress tower, then north through the clerestory into
+the nave arch (C1, `1`). The helix circles the bell at y 401 → 387 (the `zzz` ring with its red
+cornice `x`); Act 2 leaves north through the great arch and turns west along the north aisle
+(C2, `2`). Act 3 runs south down the west aisle (`w`…`r`: the two spine-and-window sequences),
+Act 4 east along the south aisle (the choir `q`…`j`), Act 5 north up the east
+aisle to the rose loop in the north-east corner (`c`…`e`, the portal `O`). The portal lifts you ≈ 210 m
+to the north-west of the nave (`o`, y 330); Act 6 runs south (`w`), sweeps round the south of the
+bell at r ≈ 125 (`v`… under the helix's ring `z`), out north-east through W6, north past R6, west
+along the north of the nave (`s`/`t`) and south down its west side to the finish (`F`).
 
-| Point               | ≈ position                  |   h | Point              | ≈ position                          |       h |
-| ------------------- | --------------------------- | --: | ------------------ | ----------------------------------- | ------: |
-| S start             | (−228, 472, −94)            | 170 | C3 Spine Merge     | (162, 269, −1286)                   |      90 |
-| R1a Buttress        | (−66, 437, 209)             | 120 | R4a Choir Stall    | (418, 239, −1150)                   |     180 |
-| W1 clerestory       | (65, 416, 158)              |   0 | pads P1 / P3       | (425, 205, −884) / (420, 205, −847) | 180/195 |
-| C1 Nave Arch        | (59, 407, 84)               |   0 | C4 Choir Bridge    | (402, 190, −629)                    |     180 |
-| helix φ 0 / φ 360   | (70, 401, 0) / (60, 383, 0) |   0 | R5a Rose Stair     | (353, 153, −148)                    |     180 |
-| W2 great arch = R2a | (54, 371, −88)              |   0 | P1 (fork, 5B φ 90) | (382, 140, −45)                     |      90 |
-| C2 Transept Door    | (27, 333, −535)             |   0 | W5 rose / P5       | (432, 111, −49) / (436, 116, −49)   |      90 |
-| W3a = R3a           | (6, 311, −813)              | 350 | P5 exit, C5        | (−71, 175, −148), (−71, 174, −138)  |     180 |
-| W3b                 | (−25, 290, −1093)           |   0 | W6 / R6a           | (66, 140, 41) / (133, 126, −64)     |  60 / 0 |
-|                     |                             |     | F finish           | (−73, 104, −162)                    |     270 |
-
-Side elevation (racing-line height vs route distance; the portal lifts the route ≈ 60 m):
+## 3. Phrase graph
 
 ```
- y 472 S╲1A 437 ╲1B⋀ W1 C1 407 ╲2A 401 ⟳H2 383 ╲W2 371 ╲2B 2C C2 333
-   311          ╲3A⋀ 3B⌒ W3a  3C⋀ 3D⌒ W3b 290 ╲3E C3 269 ╲4A R4a 239
-   206          ╲K1‥K8 P1-P3 205 ╲4E C4 190 ╲5A R5a 153 ╲5B P1 140 ══fast══╮
-   111          main: 5B↺ 5C↺ 5D╱ ─────────────────────────────────────── W5 111–125 ▷ P5
-   175  P5′ C5 ╲6A 152 (bell sweep, crown height) W6 140 ╲6B R6a 126 ╲6C ══ F 104
- distance ≈ 0 · R1a 380 · C1 670 · C2 1750 · C3 2690 · C4 3610 · R5a 4110 · P1 4250 · P5 4650 · F 5400 m
+S ─drop 8─▶ [1A MID left, 190 + −50° R230 + 30 (banked)] ─R1 Buttress─ T(15,−5,−9)
+  ▶ [1B A-frame, right face: 14 + a 30 m climb to the crest ─ crossing ─ left face: a settle
+     + −120° R50 round the buttress tower + 20] ─clerestory W1 (18×12) in the flight─▶
+  [1C MID right, 60] ─▶ C1 Nave Arch
+  ─T(14,−5,+9)▶ [2A + helix TIGHT left: 70 approach + −180° R70 + −180° R70→60 (red ≥ 0.7,
+     red cornice over the top band) + 80 exit straight under the first half]
+  ─great arch W2 (20×14, R2 Great Arch in it)─▶ [2B MID right, 70 + S ±25° R160]
+        └ salvage: a weak release falls onto G2 (WIDE, 22 m lower) ▶ launch 2.0 s ▶ 2B at s 170
+  ─T(14,−5,+9)▶ [2C MID left, 10 + −90° R100 + 140 (west along the north aisle)] ─▶ C2 Transept Door
+  ─T(14,−5,−9)▶ [3Z MID right, 40 + −90° R100 (outside) + 10: south down the west aisle]
+  ─T(14,−5,+9)▶ [3A A-frame, left face: −20° R120 + climb ─ crossing ─ right face: settle + 30° R110]
+  ─T(15,−5,+9)▶ [3B MID left scoop, 32 down 5 / 30 up 4] ─tracery W3a (9×7; R3 Tracery past it)─
+  ─▶ [3C A-frame, right face: 20° R120 + climb ─ crossing ─ left face: settle + −30° R110]
+  ─T(15,−5,−9)▶ [3D MID right scoop] ─tracery W3b (9×7)─▶
+  [3E STD left, 15 + −90° R100 (banked) + 40: east] ─▶ C3 Spine Merge
+        └ salvage: a weak W3b flight falls onto G3 (WIDE, inside the bend, 20 m lower) ▶ launch 1.4 s ▶ 3E at s 195
+  ─T(14,−5,−9)▶ [4A MID right, 80 + 20] ─R4 Choir Stall─
+  ─▶ K1…K8: SHORT (9×65°) faces, 16 m each, alternately left/right, red below depth 0.8;
+     gaps T(20,−7,±5) between column pairs; K8 climbs 3 m ─T(18,−1,+6)▶
+  3 bhop pads (6×9.5; 18.6, 19.0 m, the last turned −15°) ─hop T(25,−2,−4)▶
+  [4E MID left, 120 + 15° R150 + −90° R90 (banked) + 40: north] ─▶ C4 Choir Bridge
+  ─T(14,−5,−9)▶ [5A STD right, 270 + S ∓35° R160 + 40: the rose stair north] ─R5 Rose Stair─
+  ─T(14,−5,+9)▶ [5B MID left: 60 + −90° R40 (P1: facing the rose) + −180° R40 + 10]
+        faster line (rose chord): leave 5B over its outer ridge at φ 66–94, fly ≈ 60 m through W5
+  ─T(16,−4,+3)▶ [5C MID left, −180° R38 + 10 (under 5B's quarter turn)]
+  ─T(16,−4,0)▶ [5D MID right kicker, 10 + 24 climbing 4, under a red ceiling]
+  ─▶ rose W5 (22×17, a ring of bronze studs round it) ─▶ portal P5 (24×24, turn −90°, level exit)
+  ▶ (y 330) C5 Rose Gallery ─T(12,−6)▶ [6A WIDE left, lead 8, 240 south + −120° R130 round the bell + 20]
+  ─low window W6 (16×9)─▶ [6B STD right, 30 + −60° R60 (outside) + 20] ─R6 East Arcade─
+  ─T(15,−5,+9)▶ [6C STD left, 20 + −90° R70 + 150 west + −90° R90 + 160 south] ─▶ F (finish)
 ```
 
-## 3. Phrase tables
+## 4. Numeric parameters
 
-Speeds are practiced-human (0.6 strafe) estimates; the steady bot runs higher.
+Face shapes: MID 12 × 60°, TIGHT 11 × 63°, SHORT 9 × 65°, STD 14 × 58°, WIDE 18 × 55°, the
+A-frames 12 × 60° both sides. Racing depth 0.35 (the helix's second half 0.4, the scoops 0.3,
+the short faces 0.25, 6A 0.5). Every ramp has a 5 m lead-in unless noted (12 on the A-frames, 9
+on K2–K8, 8 on 6A after the portal). `len` is the ridge's flat length with the lead-in.
 
-### Act 1 — Outer buttress (target 25 s)
+| #       | shape   | side       | legs (flat m, drop m)                                                               | len   | turn rate at the steady bot's speed |
+| ------- | ------- | ---------- | ----------------------------------------------------------------------------------- | ----- | ----------------------------------- |
+| 1A      | MID     | left       | 190, 10 · −50° R230, 16 · 30, 2                                                     | 426   | ≈ 9°/s                              |
+| 1B      | A-frame | right→left | 14, 0.7 · climb 30, 1.5 ─ crossing ─ 8 + 12 + 16 settle, 1.8 · −120° R50, 7 · 20, 1 | 217   | R 48 banked, 34 m/s: ≈ 41°/s        |
+| 1C      | MID     | right      | 60, 4                                                                               | 65    | —                                   |
+| 2A + H  | TIGHT   | left       | 70, 3 · −180° R70, 7 · −180° R70→60, 7 (red 0.7, depth 0.4) · 80, 2                 | 579   | R 68→58, 35 m/s: 29–35°/s           |
+| 2B      | MID     | right      | 70, 2 · −25° R160, 3 · 25° R160, 3                                                  | 215   | ≈ 12°/s                             |
+| 2C      | MID     | left       | 10, 1 · −90° R100, 6 · 140, 3                                                       | 312   | ≈ 20°/s                             |
+| 3Z      | MID     | right      | 40, 2 · −90° R100, 8 (outside) · 10, 1                                              | 212   | ≈ 20°/s                             |
+| 3A      | A-frame | left→right | −20° R120, 3 · climb ─ crossing ─ settle · 30° R110, 4                              | 178   | ≈ 18°/s                             |
+| 3B / 3D | MID     | left/right | 32, 5 · 30, −4 (scoop), depth 0.3                                                   | 67    | —                                   |
+| 3C      | A-frame | right→left | 20° R120, 3 · climb ─ crossing ─ settle · −30° R110, 4                              | 178   | ≈ 18°/s                             |
+| 3E      | STD     | left       | 15, 1 · −90° R100, 10 · 40, 3                                                       | 217   | ≈ 22°/s                             |
+| 4A      | MID     | right      | 80, 4 · 20, 1                                                                       | 105   | —                                   |
+| K1–K8   | SHORT   | alt.       | 16, 1 (K8: 8, 0.5 · 16, −3), red 0.8, depth 0.25                                    | 21–33 | ≈ 0.4 s per contact at 38–42 m/s    |
+| 4E      | MID     | left       | 120, 3 · 15° R150, 2 · −90° R90, 5 · 40, 3                                          | 346   | ≈ 21°/s                             |
+| 5A      | STD     | right      | 270, 5 · −35° R160, 3 · 35° R160, 3 · 40, 2                                         | 510   | ≈ 13°/s                             |
+| 5B      | MID     | left       | 60, 4 · −90° R40, 3 · −180° R40, 5 · 10, 0.5                                        | 263   | R 37.6 banked, 39 m/s: ≈ 59°/s      |
+| 5C      | MID     | left       | −180° R38, 5 · 10, 0.5                                                              | 134   | R 35.6 banked, 39 m/s: ≈ 63°/s      |
+| 5D      | MID     | right      | 10, 0.5 · 24, −4 (kicker)                                                           | 39    | —                                   |
+| 6A      | WIDE    | left       | lead 8 · 240, 3 · −120° R130, 5 · 20, 1 (depth 0.5)                                 | 540   | R 124 banked, 37 m/s: ≈ 17°/s       |
+| 6B      | STD     | right      | 30, 1 · −60° R60, 3 (outside) · 20, 1                                               | 118   | ≈ 33°/s                             |
+| 6C      | STD     | left       | 20, 1 · −90° R70, 4 · 150, 3 · −90° R90, 4 · 160, 4                                 | 586   | ≈ 30°/s                             |
+| G2      | WIDE    | right      | lead 12 · 110, 4 (salvage, `alt`)                                                   | 122   | —                                   |
+| G3      | WIDE    | left       | 10, 1 · −90° R80, 4 · 30, 1 (salvage, `alt`)                                        | 171   | —                                   |
 
-| Beat | Time | Geometry                                                         | Player action                     | Required result                         |
-| ---- | ---: | ---------------------------------------------------------------- | --------------------------------- | --------------------------------------- |
-| 1    |  3 s | start deck on the south-west buttress crown, 8 m drop            | sprint, drop onto 1A              | board 1A at depth 0.2–0.5, ≥ 18 m/s     |
-| 2    |  9 s | 1A: long straight, banked left arc R 230 along the buttress line | hold the middle band, build speed | leave 1A at 30–33 m/s, depth ≤ 0.4      |
-| 3    |  4 s | T1 onto the freestanding A-frame 1B (near = right face)          | opposing transfer                 | catch 0.2–0.4                           |
-| 4    |  3 s | 1B crest leg                                                     | climb to ≤ 0.12, cross the crest  | land on the far (left) face at 0.15–0.3 |
-| 5    |  4 s | 1B left face banked −120° round the south buttress tower         | hold 0.25–0.45                    | heading 0 at 31–34 m/s                  |
-| 6    |  3 s | T2 through clerestory W1, 1C, C1                                 | release mid-band, fly W1          | cross C1 at 30–33 m/s                   |
+Every main-line turn stays under the Intermediate 90°/s comfort limit; the tightest are the
+rose loop (5B ≈ 59°/s, 5C ≈ 63°/s) and the A-frame 1B's bend round the tower (≈ 41°/s).
 
-### Act 2 — Bell descent (target 30 s)
+**Turn rates above 35 m/s** (the profile's C(v) stops at 35; measured with the lab's `rideLine`
+on the actual shapes, `tools/race/lab.ts`): the lab's C(v) test (a nearly level 180° curve,
+keep 90 % of the speed) gives no answer at 40 or 45 m/s for any radius up to 240 m — above the
+34 m/s strafe cap a level curve can't hold the speed, so it isn't a curve limit. On the helix
+itself (it descends) steady, 0.75 and 0.6 riders entering at 30, 35, 40 and 45 m/s all hold the
+face all the way round (end speed 34–47 m/s, worst one-tick loss ≤ 0.11 m/s; ≈ 46°/s at the
+R 58 end at 45 m/s). The rose loop (5B) entered at 35, 40, 45 m/s by steady and 0.75 riders:
+held, worst tick loss ≤ 0.09 m/s, 55, 63, 71°/s.
 
-| Beat | Time | Geometry                                                               | Player action                            | Required result                     |
-| ---- | ---: | ---------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------- |
-| 1    |  3 s | T2a, approach heading N, the shaft and bell below-left                 | settle                                   | 31–33 m/s at φ 0, depth 0.2–0.4     |
-| 2    |  6 s | helix half 1: −180° R 70, no red, no overhead                          | set the line (depth 0.25–0.45)           | ≥ 35 m/s at φ 180                   |
-| 3    |  6 s | half 2: spiral R 70→60, red strip ≥ 0.7, red cornice over depth < 0.12 | hold the narrowed band while it tightens | 37–40 m/s at φ 360, depth 0.15–0.65 |
-| 4    |  3 s | 80 m exit straight under the helix start                               | line up the great arch                   | release at depth ≤ 0.6              |
-| 5    |  1 s | T2b through W2 (the nave's north arch, = R2a)                          | flat release                             | catch 2B 0.2–0.6 (short: G2)        |
-| 6    | 12 s | 2B gentle S, T2c, 2C long straight                                     | settle, read the spines ahead            | cross C2 at 31–35 m/s               |
+**Spine crossings** (1B, 3A, 3C): each A-frame is two curves joined exactly at the crossing
+(one ridge line at one grade, 0.05, through a 30 m climb to depth 0.04, the crest, and a settle
+over 36 m to 0.3). The racing line goes over the crest diagonally (the first far-face point is
+3 m past it). No cap, bevel or trim is near the crest; a bronze lantern hangs 5 m over each
+crossing (never solid). Seam test (0.8 / 1.0 / 1.15 V): no tick loses more than 0.5 m/s.
 
-### Act 3 — Transept spines (target 30 s)
+**Windows**: W1 clerestory (hole 18 × 12 in a 34 × 30 wall, 10 m into the T2 flight, its bottom
+5 m under the release), W2 great arch (20 × 14 in 44 × 36, 14 m past the helix's end), W3a /
+W3b tracery (9 × 7 in 30 × 24), W5 rose (22 × 17 in 46 × 41, 28 bronze studs in a Ø 30 ring on
+its near face), W6 choir screen (16 × 9 in 30 × 22). All rectangles (collision); the rose is a
+ring of studs round the rectangle.
 
-| Beat | Time | Geometry                                       | Player action                           | Required result              |
-| ---- | ---: | ---------------------------------------------- | --------------------------------------- | ---------------------------- |
-| 1    |  3 s | T3 onto A-frame 3A right face, bending right   | catch, settle                           | depth 0.2–0.4                |
-| 2    |  3 s | 3A crest leg; beyond it the frame bends left   | climb to ≤ 0.12, cross the crest        | left face at 0.15–0.3        |
-| 3    |  4 s | T3a onto scoop 3B (−7 m, +6 m)                 | ride down and up, release on the climb  | 27–32 m/s, vy ≈ +4           |
-| 4    |  1 s | W3a (tracery window, = R3a)                    | thread the window, air-strafe right     | catch 3C 0.2–0.5             |
-| 5    |  9 s | the mirror: 3C crest (L→R), T3c, 3D scoop, W3b | same sequence, offset to the other side | catch 3E 0.2–0.65 (weak: G3) |
-| 6    | 12 s | 3E banked right +90° R 130                     | rebuild                                 | cross C3 at 31–34 m/s        |
+**Portal P5**: opening 24 × 24 facing west, right behind W5; turn −90° (west → south), speed
+kept, `vertical: 'zero'` (both lines come out level), no offset; exit north-west of the nave at
+(O.x − 125, 330, O.z − 258), computed so Act 6's sweep is centred on the bell's axis. Pale bronze
+(#D8C08E); the only portal (no glyph). The exit is at y 330 (the rose is at y ≈ 125: a ≈ 210 m
+lift), so Act 6 runs ≈ 60 m under the helix and its kill mist is close under the helix too.
 
-### Act 4 — Choir crossing (target 30 s)
+**Red zones**: the helix's red strip (depth ≥ 0.7) on the second half; the red cornice over it
+(24 strips 2.5 × 1 × ≈ 8.5 m, one per 7.5°, 0.3 m over the ridge from 0.5 m behind it to 2 m
+over the face, the first three flared +1.5 / +0.9 / +0.4 m, each under a stone overhang slab):
+a head reaches it only above depth ≈ 0.12; the bell hoist grid under the helix (12 radial
+beams r 20–64 and a ring at r 30, 14 m under the helix's end, just over its kill mist); red strips
+(depth ≥ 0.8) on K1–K8; the red ceiling over the kicker 5D (14 × 22, 6 m over the line); the red
+bell frame (8 beams 3 × 3 × 36, r 20–56, under the sweep) and the red bell wheel (8 segments at
+r 14 round the headstock). The choir's red floor and the crypt grilles of the first build are
+gone: the kill mist under the choir and the tracery windows does their job.
 
-| Beat | Time | Geometry                                                                        | Player action                                | Required result                            |
-| ---- | ---: | ------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| 1    | 10 s | T4, 4A: 150 m descent and an outside +90° R 90 into the choir                   | settle, build speed                          | 32–37 m/s at R4a                           |
-| 2    |  9 s | K1–K8: SHORT faces alternately right/left, 16 m each, gaps between column pairs | leave each from ≤ 0.35, align before contact | stay above the red strips (0.8) through K8 |
-| 3    |  2 s | K8 climbs 3 m, surf-to-bhop onto P1                                             | land facing P2, first-tick hops              | reach P3 at 26–29 m/s                      |
-| 4    |  3 s | P3 turned +15°, hop onto 4E's marked upper band                                 | angled bhop-to-surf                          | catch 4E at 0.15–0.35                      |
-| 5    |  7 s | 4E banked −15°, long straight                                                   | settle                                       | cross C4 at 30–33 m/s                      |
+## 5. Checkpoints, anchors and restore states
 
-### Act 5 — Rose window (target 30 s)
+Every gate and anchor restores the same way: standing in its restart bay, velocity 0, frozen
+0.5 s, then the bay's launch pad throws you onto `to` in `flightSec`. Defaults: 26 m back,
+10 m toward the landing ramp's ridge, 12 m up, 1.2 s.
 
-| Beat | Time | Geometry                                                               | Player action                                       | Required result                       |
-| ---- | ---: | ---------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------- |
-| 1    | 15 s | T5, 5A rose stair: 240 m descent + ±35° S, R5a                         | build speed; fast-line riders hold ≤ 0.2            | ≥ 34 m/s boarding 5B                  |
-| 2    |  4 s | 5B approach + φ 0–90: W5 appears dead ahead at φ 60–90, high and broad | **decide**: early release (fast) or follow the loop | fast: depth ≤ 0.12 by φ 80, 34–42 m/s |
-| 3    |  8 s | main: 5B φ 90–270, T5b, 5C U-turn (contacts 1 and 2 of the loop)       | follow the loop down under P1                       | 37–41 m/s                             |
-| 4    |  2 s | T5c onto kicker 5D under the red tracery ceiling                       | stay below the ceiling, release on the lip          | vy ≈ +6.5, 26–34 m/s                  |
-| 5    |  1 s | flight through W5 (north half) and P5                                  | fly the rose                                        | pass W5 and P5                        |
+|     | name          | where (trigger)                              | bay (feet)                                                  | lands on (`to`) | flight | clean run passes at (speed) | bay → next gate |
+| --- | ------------- | -------------------------------------------- | ----------------------------------------------------------- | --------------- | ------ | --------------------------- | --------------- |
+| R1  | Buttress      | end of 1A, 14 × 12, heading 120              | (−80, 441, 188)                                             | 1B              | 1.2    | 17.6 s (38.1 m/s)           | 11.4 s          |
+| C1  | Nave Arch     | (71, 397, 101) 22 × 16, heading 0            | (90, 412, 113)                                              | 2A approach     | 1.2    | 26.1 s (34.3)               | 36.1 s          |
+| R2  | Great Arch    | in W2 (65, 377, −73) 18 × 12                 | (49, 382, −79) (back 14, past the arch)                     | 2B              | 1.2    | 43.2 s (34.8)               | 21.4 s          |
+| C2  | Transept Door | (−206, 337, −419) 22 × 16, heading 270       | (−194, 352, −400)                                           | 3Z              | 1.2    | 59.4 s (34.0)               | 33.3 s          |
+| R3  | Tracery       | 2 m past W3a, 9 × 7                          | (−343, 304, −26) (back 8, side −13, up 2)                   | 3C              | 0.65   | 73.7 s (33.6)               | 20.1 s          |
+| C3  | Spine Merge   | (−272, 257, 348) 22 × 16, heading 90         | (−284, 272, 329)                                            | 4A              | 1.2    | 87.6 s (39.8)               | 27.5 s          |
+| R4  | Choir Stall   | end of 4A, 14 × 12                           | (−166, 254, 358) (up 5)                                     | K1              | 0.95   | 90.7 s (38.9)               | 28.1 s          |
+| C4  | Choir Bridge  | (456, 169, 162) 22 × 16, heading 0           | (437, 184, 174)                                             | 5A              | 1.2    | 111.5 s (35.7)              | 31.8 s          |
+| R5  | Rose Stair    | end of 5A, 14 × 12                           | (403, 157, −339) (back 24, side 8, up 5, east of the stair) | 5B              | 0.9    | 126.8 s (35.0)              | 18.4 s          |
+| C5  | Rose Gallery  | in the exit flight (−113, 320, −235) 24 × 20 | (−123, 336, −249) (not before the portal: C5 is after it)   | 6A              | 1.2    | 139.8 s (34.9)              | 40.4 s          |
+| R6  | East Arcade   | end of 6B, 14 × 12                           | (184, 308, 12)                                              | 6C              | 1.2    | 159.7 s                     | 20.4 s          |
+| F   | finish        | end of 6C 24 × 20, heading 180               | landing 30 m on                                             |                 |        | 176.8 s                     |                 |
 
-### Act 6 — Bell return (target 25 s)
+"bay → next gate" = `time-tracks --sections`: the steady bot from the bay, frozen time not
+counted, to the next gate — every one finishes its section, and every one is slower than riding
+on from the same point (the surf-map test checks it). Recovery gaps on a clean run: 17.6, 8.5,
+17.1, 16.2, 14.3, 13.9, 3.1, 20.8, 15.3, 13.0, 19.9, 17.1 s — every stretch ≤ 25 s. R anchors
+precede both ridge sequences (C2 for the first, R3 Tracery for the second) and the high-window
+setup (R5 Rose Stair; C4 before it).
 
-| Beat | Time | Geometry                                                               | Player action                          | Required result         |
-| ---- | ---: | ---------------------------------------------------------------------- | -------------------------------------- | ----------------------- |
-| 1    |  1 s | P5 exit (turned +90°), C5 in the exit flight                           | let the portal turn you                | catch 6A                |
-| 2    |  4 s | 6A: 130 m descending straight through the north-west arcade            | settle (fast arrivals absorb the drop) | 0.2–0.45 at 36–40 m/s   |
-| 3    |  5 s | 6A arc −120° R 75 round the bell at crown height, red bell frame below | sweep, stay off the foot               | heading 60 at 38–41 m/s |
-| 4    |  1 s | T6 through the generous low window W6 (choir screen)                   | flat release                           | catch 6B 0.2–0.5        |
-| 5    |  3 s | 6B outside −60° R 60, R6a                                              | hold into the face                     | heading 0               |
-| 6    |  9 s | T6c, 6C banked −90° R 70, 140 m final gallery along the north arcade   | coast, the bell on your left           | finish at speed         |
+Bays with a custom launch: R3 (0.65 s, back 8 / side −13: past the tracery wall, since a bay
+behind it would launch into the wall), R4 (0.95 s, up 5: a launch that drops more than ≈ 10 t² − 1
+lands back on its own bay), R5 (0.9 s, back 24 / side 8 / up 5: east of the stair's end, clear
+of both the stair and the loop, which curls west), R2 (back 14: past the great arch's wall).
 
-## 4. Element geometry
+**Critical test** (the high window reachable from the checkpoint's entry setup without momentum
+from an earlier act): from C4's bay (a 23 m/s launch onto 5A) the bot finishes the C4 → C5
+section on the main line in 31.8 s; from R5's bay (≈ 28 m/s onto 5B) in 18.4 s. The rose chord
+from the same entry: ridden from 5B's quarter turn at 26–28 m/s it passes W5 for releases at
+φ 66–82 (§6), so both lines are reachable from R5's restart. The rose wall is 1 m thick with no
+ledge; a fast attempt that drops toward 5D meets the red ceiling over it; P5 is only reachable
+through W5 (the portal is right behind the wall).
 
-Face shapes (README): **MID** 12 × 60° (slant 13.9 m, run 6.9), **TIGHT** 11 × 63° (slant 12.3 m
-= 15 W, run 5.6), **SHORT** 9 × 65° (slant 9.9 m = 12 W, run 4.2), **STD** 14 × 58°, **WIDE** 18 × 55°.
-"b" = banked, "o" = outside; ω = turn rate at the top of the speed band on the rider radius (all
-≤ 66°/s; bot limits C(v) ≤ 13 m inside / ≤ 24 m outside are never approached). ⇔ = stretch leg.
-Surf `color` = polished basalt; ridge trim = bronze.
+### 5b. Falls: the kill mist
 
-### Act 1
+A fall resets in seconds, not after the long drop to the kill height (y 60): kill mist
+(`floors` — kill volumes 25 m deep, drawn as heaps of grey mist with a warm ember glow in the
+gaps, never a sheet) lies under every stretch of the way (`autoFloors`: 25 m under each stretch,
+reaching 25 m past it sideways), plus hand-placed patches where a fall at speed carries you
+further: a disc under the helix (r ≤ 118, ≤ 96 north of the bell where the lower aisle G2 runs,
+19 m strips), strips along the map's north edge (under 2C), west edge (by the second scoop) and
+east edge (under the rose stair), one south of Act 1, and two either side of the nave under
+Act 6's sweep. Nothing you are meant to land on is in any of it (the galleries G2/G3, the bays,
+the pads), and nothing of the route lies under a hand-placed patch (`validateCourse` checks it).
+Act 6 was lifted (the portal exit at y 330, its sweep at r ≈ 125) so the helix's mist can be close
+under the helix.
 
-Pen start: `new Pen([-228, 472, -94], 170)`, `start([14,16])`, `platform([10,12],'strafe')`.
+Measured (every 6th racing-line point, both sides: the rider set 3 m off the line moving 30 m/s
+along it and 8 m/s outward, no input, time until the reset): 600 falls, **median 1.9 s, 90 %
+2.4 s**, every one ≤ 3.2 s except four off the helix's north side (4.0–4.8 s: the mist there has
+to stop short of G2). Before: up to ≈ 8 s.
 
-| ID      | Pen                                                                                                                                                                 | Face / side                                    | Turn, R, ω                                       | Drop | Heading | Band                                  | Speed |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------ | ---- | ------- | ------------------------------------- | ----- |
-| 1A      | `move(12,-8)` `[straight(110,7)⇔, arc(-50,230,16), straight(30,2)]`                                                                                                 | MID left                                       | −50° R 230 (b, rider 228) ω 8                    | 25   | 170→120 | 0.2–0.5                               | 18→33 |
-| R1a     | `move(4,-2).anchor('Buttress', {}, [14,12])` (heading 120: see §8)                                                                                                  |                                                |                                                  |      |         |                                       |       |
-| T1      | `move(15,-5,-9)`: at 31 t 0.56, 10t² 3.2 → window [−6.2, −2.2] ✓                                                                                                    |                                                |                                                  |      |         |                                       | 31    |
-| 1B      | A-frame: `[straight(20,3,{ride:'right'}), straight(15,1,{depth:0.12}), straight(15,1,{ride:'left',depth:0.25}), arc(-120,50,7,{depth:0.35}), straight(20,1)]`       | MID both                                       | −120° R 50 (b on the left face, rider 47.6) ω 41 | 13   | 120→0   | right 0.2–0.4 → ≤ 0.12 → left 0.2–0.5 | 29–34 |
-| tower   | round buttress tower r 9, y 250→470, at the arc centre ≈ (21, 188), inside the turn                                                                                 | ash stone, solid                               |                                                  |      |         |                                       |       |
-| T2 + W1 | `window(10,[18,10],[34,28],-3,-4)` `move(8,-3,-6)`: T(18, −6, −10) at 32: t 0.64, 10t² 4.1 → [−7.1, −3.1] ✓; feet at W1 ≈ −1.2 (sill 1.8 m below, lintel 7 m above) | clerestory in the outer wall r 170, bronze rim |                                                  |      |         |                                       |       |
-| 1C      | `[straight(60,4)]`                                                                                                                                                  | MID right                                      | —                                                | 4    | 0       | 0.2–0.45                              | 31–33 |
-| C1      | `move(6,-2).gate([22,16],'Nave Arch')` at the nave wall ≈ (59, 407, 84), heading 0                                                                                  |                                                |                                                  |      |         |                                       |       |
+## 6. Forks (RaceDef.forks)
 
-### Act 2 — bell descent
+| name               | kind             | line                                                                                                                                                   | ridden (steady) | racing line | saved     |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- | ----------- | --------- |
+| Rose chord         | faster           | 5B from φ 30, climbing to the top band by φ 70, over the outer ridge at φ ≈ 82, ≈ 60 m straight through W5 and P5, onto 6A                             | 6.0 s           | 12.4 s      | **6.4 s** |
+| Lower aisle (G2)   | salvage (slower) | a weak great-arch release lands on G2 (22 m under 2B, to its right); its launch (2.0 s) throws you up onto 2B's second bend (s 170) from its face side | 6.4 s           | 5.6 s       | −0.8 s    |
+| Lower gallery (G3) | salvage (slower) | a weak W3b flight lands on G3 inside 3E's bend (20 m lower); its launch (1.4 s) throws you onto 3E's last straight (s 195)                             | 8.2 s           | 5.1 s       | −3.1 s    |
 
-| ID         | Pen                                                                                                                                                                                                                                                                                                       | Face / side                                                 | Turn, R, ω                                                                                   | Drop | Heading             | Band                                                  | Speed |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---- | ------------------- | ----------------------------------------------------- | ----- |
-| T2a        | `move(14,-5,9)`                                                                                                                                                                                                                                                                                           |                                                             |                                                                                              |      |                     |                                                       |       |
-| 2A+H2      | ONE curve (no seam at φ 0): `[straight(70,4), arc(-180,70,9), arc(-180,70,9,{toRadius:60, red:0.7, depth:0.4}), straight(80,3,{red:false})⇔]`                                                                                                                                                             | TIGHT left                                                  | half 1 −180° R 70 (b, rider 68) ω 31 at 37; half 2 spiral 70→60 (rider 67.8→57.8) ω 41 at 41 | 25   | 0 → CCW round O → 0 | approach 0.2–0.5; half 1 0.1–0.8; half 2 **0.12–0.7** | 31→41 |
-| cornice    | half 2 overhead limit: 24 `red` strips [9.5, 1, 2.5] (one per 7.5°), underside at that segment's starting ridge height + 0.3 m, from 0.5 m behind the ridge to 2 m over the face, on the underside of a solid ash-stone overhang (scenery, the triforium floor); first two strips flared to +1.5 / +0.9 m | red hatched                                                 |                                                                                              |      |                     |                                                       |       |
-| hoist grid | red grid ring r 20–64 at y 355 (15 m under the helix foot, under the exit straight's line by ≥ 15 m) = bell hoist machinery                                                                                                                                                                               | red                                                         |                                                                                              |      |                     |                                                       |       |
-| T2b + W2   | `window(14,[20,14],[44,36],-5,-4)`, `move(0,7).anchor('Great Arch', {}, [18,12])`, `move(22,-13,-6)` → T(36, −11, −10) at 39: t 0.96, 10t² 9.2 → [−12.2, −8.2] ✓                                                                                                                                          | W2 = R2a: the nave's north arch ≈ (54, 371, −88), heading 0 |                                                                                              |      |                     |                                                       | 34–40 |
-| 2B         | `[straight(60,4), arc(-25,160,5), arc(25,160,5), straight(60,3)⇔]`                                                                                                                                                                                                                                        | MID right                                                   | −25° (o) / +25° (b) R 160, ω 13                                                              | 17   | 0→335→0             | 0.2–0.45                                              | 33–37 |
-| G2         | `branch`: `move(4,-14,8)` then MID right `[straight(60,3), arc(-40,120,5), arc(40,120,5), straight(80,3), straight(40,-6)]`, `alt`; its climbing end throws T(16, −1, +9) onto 2C's lower band (0.45–0.7) at s 60–100 (≈ +2.5 s)                                                                          | salvage                                                     |                                                                                              |      |                     |                                                       | 26–31 |
-| T2c        | `move(14,-5,9)`                                                                                                                                                                                                                                                                                           |                                                             |                                                                                              |      |                     |                                                       |       |
-| 2C         | `[straight(150,8)⇔]`                                                                                                                                                                                                                                                                                      | MID left                                                    | —                                                                                            | 8    | 0                   | 0.2–0.45                                              | 32–35 |
-| C2         | `move(6,-2).gate([22,16],'Transept Door')` ≈ (27, 333, −535), heading 0; covers the main and G2 lines                                                                                                                                                                                                     |                                                             |                                                                                              |      |                     |                                                       |       |
+The rose chord skips 5B's remaining 270°, 5C and the kicker 5D (≈ 330 m of ramp and two
+flights) for one ≈ 60 m flight. Measured release window (the fork's line with its release point
+moved; ✓ = passes W5 and P5 and lands on 6A):
 
-**Height band.** Half 1 has no red and no overhead: the rider chooses a line. In half 2 the red
-strip (TIGHT, depth ≥ 0.7) and the red cornice (a head reaches it at contact depth ≤ 0.12:
-head ≈ contact + 1.6 m, 11 m of height per unit depth) leave **0.12–0.7 = 7.1 m of slant (≈ 9 W)**
-while the radius tightens 70 → 60 and speed rises to ≈ 40. The cornice is red rather than solid so
-there is no hard stop at its leading edge and no head-bump lips between segments; the flare
-previews it from φ 150.
+| entry speed at φ 30 \ release φ | 66  | 70  | 74  | 78  | 82  | 86  | 90  | 94  |
+| ------------------------------- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 26 / 28 m/s                     | ✓   | ✓   | ✓   | ✓   | ✓   | ✗   | ✗   | ✗   |
+| 30.8 m/s                        | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✗   |
+| 34 / 38 / 42 m/s                | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   | ✓   |
+| 46 m/s                          | ✗   | ✓   | ✓   | ✓   | ✓   | ✓   | ✗   | ✓   |
 
-**Stacking (README gap 7).** TIGHT h 11, d 0.35–0.4 → needs max(11, 0.65·11 + 1.8 + 3) = 12 m. The
-helix returns 10 m inside its start, so only the exit straight passes under half 1 (φ 20–45):
-ridge-to-ridge gap **17.5 m** at ≈ (57, −41) ✓; the half-1 wedge bottom stays 6.5 m above the exit
-ridge, 8.7 m above a rider's head. The approach lies behind φ 0 and the half-2 ridge (r 61) stays
-20 m inside it. The cornice tops sit ≥ 3 m under the half-1 wedge bottoms near φ 330–360.
+It crosses W5 at feet y 125–138, 2–3 m north of the rose's middle (the main line crosses at
+y ≈ 129, 1 m south of it). **Not a band-only skill**: the bot also gets through releasing from
+the normal band (depth 0.35) anywhere in φ 66–94 (strafing lifts you over a banked ridge, as I01
+found) — the spec's "only ≤ 0.15 passes W5" is not met; what the line asks for is leaving the
+loop on purpose at its quarter turn and flying the gap. A smaller or higher rose can't make it
+band-gated: releases from the top band and from depth 0.35 cross W5 at the same heights (feet
+y 131–138) and the same place (within 1 m), because the banked face lifts a mid-band rider over
+the ridge as well; a rose tight enough to split them would also cut the main line (it crosses at
+y ≈ 129). Left broad (brief: "high, broad"); the saving stays 6.4 s.
 
-### Act 3 — transept spines
+## 7. Measured timings (`time-tracks.ts`)
 
-| ID        | Pen                                                                                                                                                                                                                                                           | Face / side                           | Turn, R, ω                                 | Drop                | Heading   | Band                                    | Speed    |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------ | ------------------- | --------- | --------------------------------------- | -------- |
-| T3        | `move(14,-5,-9)` (from 2C's left face)                                                                                                                                                                                                                        |                                       |                                            |                     |           |                                         |          |
-| 3A        | A-frame: `[arc(20,120,3,{ride:'right'}), straight(18,1,{depth:0.12}), straight(12,0.5,{ride:'left',depth:0.25}), arc(-30,110,4,{depth:0.35}), straight(20,1)]`                                                                                                | MID both                              | +20° R 120 (b) then −30° R 110 (b), ω ≤ 17 | 9.5                 | 0→20→350  | right 0.2–0.4 → ≤ 0.12 → left 0.15–0.45 | 26–31    |
-| T3a       | `move(15,-5,-9)`: at 30 t 0.58, 10t² 3.4 ✓                                                                                                                                                                                                                    |                                       |                                            |                     |           |                                         |          |
-| 3B        | scoop `[straight(50,7), straight(45,-6)]`, depth 0.3                                                                                                                                                                                                          | MID right                             | —                                          | 7 down, 6 up (13 %) | 350       | 0.2–0.4                                 | 29→33→29 |
-| T3b + W3a | `window(12,[9,7],[30,24],-2.2,4)`, `move(0,3.5).anchor('Tracery', {}, [9,7])`, `move(16,-6.7,6)` → T(28, −5.4, +10): upward release vy0 ≈ 0.13 v ≈ 4, at 31 t 0.97 → u = 3.9 − 9.4 = −5.5 ✓                                                                   | W3a = R3a, tracery window, bronze rim |                                            |                     |           |                                         | 27–32    |
-| 3C        | A-frame: `[arc(-20,120,3,{ride:'left'}), straight(18,1,{depth:0.12}), straight(12,0.5,{ride:'right',depth:0.25}), arc(30,110,4,{depth:0.35}), straight(20,1)]`                                                                                                | MID both                              | mirror of 3A                               | 9.5                 | 350→330→0 | left → ≤ 0.12 → right                   | 26–31    |
-| T3c       | `move(15,-5,9)`                                                                                                                                                                                                                                               |                                       |                                            |                     |           |                                         |          |
-| 3D        | scoop `[straight(50,7), straight(45,-6)]`, depth 0.3                                                                                                                                                                                                          | MID left                              | —                                          | 7 down, 6 up        | 0         | 0.2–0.4                                 | 29→33→29 |
-| T3d + W3b | `window(12,[9,7],[30,24],-2.2,-4)`, `move(16,-3.2,-6)` (the sideways offset is mirrored)                                                                                                                                                                      | tracery window                        |                                            |                     |           |                                         | 27–32    |
-| 3E        | `[straight(50,3), arc(90,130,10), straight(60,3)⇔]`                                                                                                                                                                                                           | STD right                             | +90° R 130 (b, rider 127) ω 15             | 16                  | 0→90      | catch 0.2–0.65; run 0.2–0.45            | 28→34    |
-| G3        | `branch`: `move(0,-14,8)` WIDE right `[straight(90,3), arc(90,150,11), straight(30,2), straight(40,-6)]`, `alt`: catches W3b flights that fall short, swings wider round the bend (≈ +60 m, +2 s) and throws T(16, −1, −9) onto 3E's last straight lower band | salvage                               |                                            |                     |           |                                         | 25–30    |
-| C3        | `move(6,-2).gate([22,16],'Spine Merge')` ≈ (162, 269, −1286), heading 90; after G3 has merged                                                                                                                                                                 |                                       |                                            |                     |           |                                         |          |
+|                           | Act 1 | Act 2 | Act 3 | Act 4 | Act 5 | Act 6 | total       |
+| ------------------------- | ----- | ----- | ----- | ----- | ----- | ----- | ----------- |
+| brief target              | 0:25  | 0:30  | 0:30  | 0:35  | 0:35  | 0:25  | 3:00        |
+| steady bot (clean run)    | 26.1  | 33.3  | 28.2  | 23.9  | 28.3  | 37.0  | **2:56.82** |
+| human 0.75 (design level) | 27.0  | 33.6  | 30.3  | 26.2  | 28.7  | 36.9  | **3:02.53** |
+| human 0.6 (`--human`)     | 27.0  | 33.5  | 29.5  | 31.7  | 30.0  | 36.4  | 3:08.02     |
 
-**Spine crest.** The A-frame crest is the shared top edge of the two 60° faces (curve pieces share
-exact corners: identical along the whole frame). No crest cap, bevel, finial or trim collides
-within 4 m of the ridge (bronze crest lanterns are `noCollide` scenery ≥ 4 m above it). The crossing
-leg is straight (no curvature lift), prepared by an 18 m leg at depth 0.12; crossing takes 3–6 m/s of
-lateral speed and pops ≤ 0.5 m, landing at 0.15–0.3 on the far face. Each frame bends first toward
-its near face, then (after the crest) toward its far face, so the crossing is the steering reversal.
+All three finish with 0 respawns. Steady bot with the rose chord: ≈ 2:50.4 (6.4 s saved).
+Racing line 6074 m, top speed 44.5 m/s; typical speeds 34–40 m/s (the helix ≈ 34–35, the choir
+38–43, the pads 27–31, the loop ≈ 39), par 3:00. Budget (`check.ts`): 8606 boxes, ≈ 179 k
+triangles (the ramps ≈ 94 k, the kill mist's heaps and glow ≈ 50 k; every scenery block
+`lowDetail`), 0 overlaps, 0 validation problems. Network range: racing line x −415…456,
+z −460…349 (< 490), colliding boxes' centres ≤ 476 (< 500), lowest line point y 126 (killY 60).
 
-**Tracery windows W3a/W3b** (hole [9, 7] = 11 W × 3.9 H, bottom 2.2 m below the release point).
-Feet at the window (12.6 m) for a depth-0.3 release: 25 m/s −0.9, 31 m/s 0.0, 37 m/s +0.5; release
-band 0.2–0.45 adds +1.2 / −1.8 → feet −2.7…+1.7, head ≤ +3.5, hole −2.2…+4.8. Only slow _and_ deep
-(< 26 m/s from > 0.42) clips the sill. Below each tracery screen: red crypt grille 20 m down.
+**Stacking** (`surf-basalt-cathedral.test.ts`, its own check — `findOverlaps` only checks that
+wedges don't intersect): the helix's exit straight passes under its first half with the ridges
+**13.6 m** apart at the closest (≥ 12 m, and ≥ the README rule max(h, (1 − d)·h + H + 3) = 11.4 m
+for the TIGHT face at depth 0.4); every racing-line point has ≥ 4.2 m of head room under anything
+solid (the tightest: the tracery window W3a's lintel), red limits apart. Other stacked pairs: the
+loop 5B over 5C 15.1 m and over 5D 15.0 m (rule 12.6), G3 under 3E 18.6 m (rule 18), 6C under the
+helix's exit 79 m and under G2 58 m.
 
-### Act 4 — choir crossing
+Tests (with the engine's corrected red-zone contact and its stricter red test): `surf-maps.test.ts` 12/12, `surf-seams.test.ts` and `surf-basalt-cathedral.test.ts` 3/3
+pass for this map.
 
-| ID          | Pen                                                                                                                                                                                                                                 | Face / side                                                | Turn, R, ω                           | Drop                    | Heading     | Band                                        | Speed |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------ | ----------------------- | ----------- | ------------------------------------------- | ----- |
-| T4          | `move(14,-5,9)` (from 3E's right face)                                                                                                                                                                                              |                                                            |                                      |                         |             |                                             |       |
-| 4A          | `[straight(150,11)⇔, arc(90,90,10), straight(30,2)]`                                                                                                                                                                                | MID left                                                   | +90° R 90 (o, rider 92.4) ω 24 at 38 | 23                      | 90→180      | 0.2–0.45                                    | 30→37 |
-| R4a         | `move(4,-2).anchor('Choir Stall', {flightSec:0.95}, [14,12])` ≈ (418, 239, −1150), heading 180                                                                                                                                      |                                                            |                                      |                         |             |                                             |       |
-| K1–K8       | `move(14,-4,-9)`, then 8 curves alternating right/left (K1 right), each `[straight(16,1)]` (K8 `[straight(8,0.5), straight(16,-3)]`), `depth: 0.25`, `red: 0.8`; between them `move(14,-3.5,±8)` (+ leaving a right face, − a left) | SHORT                                                      | straight                             | 1 per face, 3.5 per gap | 180         | catch 0.15–0.4, release ≤ 0.35              | 29–34 |
-| columns     | 7 column pairs (r 2, ash stone, solid, not red), one each side of every gap, 7 m off the flight's midpoint                                                                                                                          |                                                            |                                      |                         |             |                                             |       |
-| choir floor | red [50, 1, 130] at y 205 under K1–K4; red [50, 1, 150] at y 188 under K5–P3                                                                                                                                                        | red                                                        |                                      |                         |             |                                             |       |
-| P1–P3       | `move(18,-1,-6)` (K8's climbing lip, vy0 ≈ +5: at 29 t 0.66 → u −1.0 ✓), `bhopPads([{d:0},{d:18.6},{d:19.0,turn:15}], [6,9.5])`                                                                                                     | pads 6 across × 9.5 deep (7.5 W × 12 W), flat, bronze tops |                                      | 0                       | 180/180/195 |                                             | 26→28 |
-| hop → 4E    | `move(25,-2,-4)`: t_air(−2) 0.91 × 27.6 = 25 m                                                                                                                                                                                      |                                                            |                                      |                         |             |                                             |       |
-| 4E          | `[straight(40,3), arc(-15,150,2), straight(110,6)⇔]`                                                                                                                                                                                | MID left                                                   | −15° R 150 (b)                       | 11                      | 195→180     | catch 0.15–0.35 (bronze band), run 0.2–0.45 | 27→33 |
-| C4          | `move(6,-2).gate([22,16],'Choir Bridge')` ≈ (402, 190, −629), heading 180                                                                                                                                                           |                                                            |                                      |                         |             |                                             |       |
+## 8. Brief and spec requirements
 
-Short faces: contact 16 m ≈ 0.5 s at 32 m/s (≥ 8 m / 0.25 s ✓). Gap check T(14, −3.5, ±8), 16.1 m:
-at 25 → window [−7.1, −3.1], at 31 → [−5.7, −1.7], at 35 → [−5.1, −1.1] ✓. A late or low departure
-lands ≈ 0.07–0.1 deeper on the next face: four in a row from 0.4 reach the red strip — the phrase
-asks for eight departures from the upper band. Pads: design speed 27 m/s (human, after the surf
-landing), +0.55 per hop, flat t_air 0.69 → 18.6, 19.0 m; depth rule 0.4·19 + 2 = 9.6 → 9.5 m,
-1.5 m over README's Intermediate 7–8 m because this bridge is taken faster than I01's (22 m/s).
-The pads accept 21–33 m/s (±4.75 m); manual hops only (README gap 4).
+Met: a banked curve along the cathedral wall, a crossing to a freestanding double-sided ramp and
+its far face round a support (the buttress tower), a second transfer (the clerestory) into the nave
+above the floor; a 360° descending helix round the bell's support rod whose first half sets the
+line and whose second half narrows the band (red lower edge from depth 0.7, red overhead cornice
+above depth ≈ 0.12), release through a large arched opening (the great arch) toward the transept;
+two ridge crossings on A-frames each followed by an opposing face, a shallow scoop and a climb
+to a tracery window, the second sequence mirrored (offset to the other side); the crest has no
+decorative bevel (two curves joined exactly, one grade through it); a row of eight short faces
+alternating with aerial gaps between column pairs, a short bhop bridge and an angled entrance
+(4E); a substantial setup curve (the rose stair and loop) to a high, broad rose window, the main
+line with two more contacts (5C, the kicker 5D) and the faster one-contact line (6.4 s: target
+6–10 s), a portal that rotates horizontal travel (−90°) into a descending gallery; the sweep round
+the bell on the opposite side from the helix's opening, a generous low window (W6) and a final
+curved gallery. C1–C5 with the brief's names; six anchors (R before both ridge sequences and the
+high-window setup); restore states; lower galleries (G2, G3) catch weak transfers and add a long
+way round; red bell machinery (hoist grid, cornice, frame, wheel) and missed outer windows (the kill
+mist) reset. The critical test is met (§5). Palette, fog, kill mist below the route,
+the landmark bell, polished bands distinct from the darker structure.
 
-### Act 5 — rose window
+Approximated:
 
-| ID          | Pen                                                                                                                                                                                  | Face / side                              | Turn, R, ω                                | Drop              | Heading         | Band                             | Speed                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------- | ----------------- | --------------- | -------------------------------- | ------------------------- |
-| T5          | `move(14,-5,-9)` (from 4E's left face)                                                                                                                                               |                                          |                                           |                   |                 |                                  |                           |
-| 5A          | `[straight(240,16)⇔, arc(35,160,6), arc(-35,160,6), straight(40,2)]`                                                                                                                 | STD right                                | ±35° R 160 (b / o), ω ≤ 14                | 30                | 180→215→180     | 0.2–0.45 (fast: ≤ 0.2)           | 31→38                     |
-| R5a         | `move(4,-2).anchor('Rose Stair', {flightSec:0.9}, [14,12])` ≈ (353, 153, −148), heading 180                                                                                          |                                          |                                           |                   |                 |                                  |                           |
-| T5a         | `move(14,-5,9)`                                                                                                                                                                      |                                          |                                           |                   |                 |                                  |                           |
-| 5B          | `[straight(50,6), arc(-90,40,5), arc(-180,40,8), straight(10,0.5)]` (loop centre ≈ (382, −84); P1 = φ 90)                                                                            | MID left                                 | −270° R 40 (b, rider 37.6) ω 61 at 40     | 19.5              | 180→90 (P1)→270 | 0.2–0.45; fast ≤ 0.12 at φ 60–90 | 34→40                     |
-| T5b         | `move(16,-4,3)` off 5B's end: at 38 t 0.43, 10t² 1.8 → [−4.8, −0.8] ✓                                                                                                                |                                          |                                           |                   |                 |                                  |                           |
-| 5C          | `[arc(-180,38,8), straight(10,0.5)]`                                                                                                                                                 | MID left                                 | −180° R 38 (b, rider 35.6) **ω 66** at 41 | 8.5               | 270→90          | 0.2–0.45                         | 37–41                     |
-| T5c         | `move(16,-4,0)` off the end                                                                                                                                                          |                                          |                                           |                   |                 |                                  |                           |
-| 5D          | kicker `[straight(8,0.5), straight(20,-4.5)]`                                                                                                                                        | MID right                                | —                                         | climbs 4.5 (22 %) | 90              | 0.25–0.45                        | 38→33 (R5a restart 30→26) |
-| red ceiling | `red` [16, 1, 30] over 5D (x 348–378), underside ≈ y 125.5 (≥ 4 m over a rider's head), top ≥ 5 m under 5B's φ 70–110 wedge; stops 2 m before 5D's lip                               | red: the rose's lower tracery            |                                           |                   |                 |                                  |                           |
-| T5d + W5    | `window(22,[18,14],[44,40],-5,4)`: hole y ≈ 111–125, z −58…−40 (visual rose Ø 24 m; the rectangle's diagonal 22.8 m fits inside it; the circle's corners are solid tracery, not red) | high, broad (22 W × 7.8 H)               |                                           |                   |                 |                                  |                           |
-| P5          | `move(0,5).airPortal(4, [-71,175,-148], 90, [20,20])`: faces 90, opening centred on the rose (y 106–126)                                                                             | bronze frame, preview of 6A and the bell | turn **+90°**                             |                   | 90→180          |                                  | kept                      |
+- **Layout** (spec §2): the spec's transept ran to z −1300 and the choir to x 470, far outside
+  the network range. The route is refolded clockwise round the nave: Act 2 turns west along the
+  north aisle, Act 3 runs south down the west aisle (its spines mirrored: 3A left→right, 3C
+  right→left, 3E a banked left turn, a new outside bend 3Z to turn south), Act 4 runs east along
+  the south aisle, Act 5 north up the east aisle; the rose loop is the spec's rotated 180° (so the
+  portal turns −90° instead of +90° and Act 6 keeps the spec's heading south).
+- **Speeds and heights**: the steady bot keeps almost all its speed on descents, so drops are
+  roughly halved (the helix 25 → 19 m, 2B 17 → 8, 5A 30 → 13, Act 6's 6A 25 → 8) and the route
+  lengthened to 5.96 km (spec 5.4): 1A +80 m, 5A +30 m straight, 6A +110, 6C +130 (and a second
+  bend), 4E +100. Result: 34–40 m/s instead of the spec's 30–41, 173 s.
+- **Spine crossings**: the spec's single A-frame with an 18 m crossing leg at depth 0.12 cost the
+  bot 6–17 m/s (the racing line stepped 2.8 m up the face at once, and the crossing node pair made
+  the seam test's rider brake); built as two exactly joined curves with a 30 m climb to depth
+  0.04 and a 36 m settle (§4).
+- **Choir**: the spec's gaps T(14, −3.5, ±8) are for ≈ 30 m/s; the bot arrives at 38–42 and a
+  rider on a 9 m 65° face falls ≈ 7 m per face-and-gap, so the gaps are T(20, −7, ±5) and K2–K8
+  have 9 m lead-ins (a low departure lands on the face, not its end). Pads 6 × 9.5 as specified.
+- **Rose window**: 22 × 17 (spec 18 × 14), a rectangle ringed by 28 bronze studs (Ø 30), not a
+  round collision shape; P5 24 × 24 right behind it. The fast line releases at φ 66–94 (spec
+  85–95) and isn't band-gated (§6).
+- **Portal**: exits level (`vertical: 'zero'`), so the fast line (falling off P1) and the main
+  line (rising off the kicker) come out the same; the spec expected the fast line to exit falling
+  29 m/s (its open question 4). C5 is 6 m after the exit, 6A's ridge starts 10 m after it (the
+  spec's 30 m lead-in under the exit clipped the gate).
+- **Salvage galleries**: G2 is a straight WIDE gallery 22 m under 2B whose launch throws you back
+  onto 2B's second bend (the spec's throw onto 2C would come from behind 2C's ridge in the
+  refolded layout); G3 lies inside 3E's bend (not outside) so its throw arrives from 3E's face
+  side. Both are launch pads (like B01/I01), not climbing ends.
+- **Act 6 is lifted**: the portal exit is at y 330 (spec 175; a ≈ 210 m lift) and the sweep
+  round the bell is at r 130 (spec R 75), so the helix's kill mist can lie close under the helix
+  without Act 6 under it; the bell hangs at the sweep's height (crown ≈ y 320). Act 6 runs 37 s
+  (brief 25).
+- **Red choir floor and crypt grilles** (spec) were built and then replaced by the kill mist: a
+  flat red top could be stood on (an engine bug since fixed), and the mist does the same job
+  more cheaply. The hoist grid and the bell frame stay red.
+- **Architecture** is arcades of piers and cornice rings, not solid walls (the bell stays in
+  view); no transept/choir/apse walls (a pier "forest" along the aisles was built and removed:
+  it hid the ramps). Light "columns" are see-through `glass` blocks. The arcade piers don't
+  collide (a fall passes through them into the mist); the tower and the choir columns do.
+- Acts 2 and 6 run long (33 s vs 30 / 25) and Act 4 short (24 s vs 35): the south aisle is the
+  one stretch the refold leaves for the choir; the total is inside 165–195 s.
 
-Loop stacking: the loop closes under its own start — 5C's end and 5D pass under 5B's φ 70–110
-with ridge gaps of 22.4 m (5B–5C) and 19.2 m (5B–5D); MID d 0.35 needs 12.6 ✓. Portal rule P5:
-`v_out = rotY(+90°)·v_in`, |v| and vertical speed kept; approach headings fast 88–95°, main
-92–100° (±15° ✓). Exit point fixed (gap 1): both lines pass within 6 m of the 20 × 20 opening's
-centre. The exit is ≈ 60 m above the entry (gap 8: portals may lift the route).
+Not built / missing: sound (reverberation, bell overtones, choral textures, wind, chain creak:
+no per-map audio hooks); a bronze trim line along ridges beyond the renderer's ridge glow (the
+palette's `surfEdge` is bronze); light columns "crossing the nave above the route" (they are
+vertical, blocks turn about the vertical only); polished-band gloss and streaks (flat shading).
 
-**Exit-decision geometry.** The loop turns you to face east at φ 60–90, where W5 is dead ahead,
-50 m away and ≈ 22 m below: a pale rose over the dark apse. The fast line climbs to depth ≤ 0.12 by φ
-80 and at φ 85–95 simply goes straight: the banked face curves away left, so the line leaves over
-the outer (south) ridge, air-strafes 4 m left and flies T(50, −21, −4) through W5's south half. The
-main line follows the loop (5B, 5C) down under P1 and kicks up off 5D through W5's north half.
-Feet at W5 — fast (P1 y 140, vy0 ≈ −0.08 v): 34 m/s 114.4, 38 m/s 118.7, 42 m/s 121.8 (head 123.6);
-main (5D lip y 116, vy0 = 0.225 v, 22 m): 26 m/s 113.8, 30 m/s 115.6, 34 m/s 116.8, ±1.2 for the
-contact band. Fit W5 from `trace.ts` samples before fixing it (brief §3.4).
+## 9. Changes from the spec's open questions
 
-### Act 6 — bell return
+1. Rose collision rectangular — kept (§8); studs, not red blocks, round the hole.
+2. Helix stacking verified by the map's own test (13.6 m, §7).
+3. A-frame crests at speed: 1–1.3 m/s crossing losses at first; rebuilt (§4, §8) — the seam
+   test now passes at 0.8–1.15 V.
+4. Portal fixed exit + vertical speed: `vertical: 'zero'`.
+5. Red cornice vs solid overhead: red (as the spec chose), each strip under a non-colliding
+   stone overhang.
+6. Turn rates above 35 m/s: measured on the helix and loop (§4).
+7. Pads 6 × 9.5: kept; hold-to-bhop stays off.
+8. R1 heading 120: kept (its trigger's bounding box is larger; nothing is near).
+9. Custom launches R4 0.95 s, R5 0.9 s: kept (with `up` 5); both slower than carrying on.
+10. Galleries: fitted by riding them (§6), not from projectile guesses.
+11. Footprint: 0.9 × 0.84 km, ≈ 179 k triangles (with the kill mist).
 
-| ID         | Pen                                                                                                                                                                               | Face / side                                                              | Turn, R, ω                                    | Drop | Heading | Band                                                                              | Speed |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------- | ---- | ------- | --------------------------------------------------------------------------------- | ----- |
-| C5         | `move(10,-1).gate([24,20],'Rose Gallery')` ≈ (−71, 174, −138), heading 180: in the exit flight, where both lines are already merged                                               |                                                                          |                                               |      |         |                                                                                   |       |
-| 6A         | `move(8,-3).curve({lead:30, ...})` `[straight(130,10)⇔, arc(-120,75,14), straight(20,1)]` (ridge starts 12 m behind the exit, under it)                                           | WIDE left                                                                | −120° R 75 round O (b, rider 70.6) ω 33 at 41 | 25   | 180→60  | fast catch 0.1–0.35 within 8 m of the exit; main 0.2–0.4 at 15–25 m; run 0.2–0.45 | 36–41 |
-| bell frame | 8 radial `red` beams [3, 3, 36] of the bell cradle, r 20 → 56 at y ≈ 114 (≥ 10 m under 6A's foot, which falls 140 → 126), + the red bell wheel (r 14) on the headstock, y 150–178 | red bell machinery                                                       |                                               |      |         |                                                                                   |       |
-| T6 + W6    | `window(12,[16,9],[30,22],-4,-3)` `move(14,-3,-5)`: T(26, −7, −8) at 38: t 0.72, 10t² 5.1 → [−8.1, −4.1] ✓                                                                        | W6: generous low window in the choir screen ≈ (66, 140, 41) (20 W × 5 H) |                                               |      |         |                                                                                   |       |
-| 6B         | `[straight(30,2), arc(-60,60,6), straight(20,1)]`                                                                                                                                 | STD right                                                                | −60° R 60 (o, rider 63) ω 35                  | 9    | 60→0    | 0.2–0.45                                                                          | 35–38 |
-| R6a        | `move(4,-2).anchor('East Arcade', {}, [14,12])` ≈ (133, 126, −64), heading 0                                                                                                      |                                                                          |                                               |      |         |                                                                                   |       |
-| T6c        | `move(15,-5,9)`                                                                                                                                                                   |                                                                          |                                               |      |         |                                                                                   |       |
-| 6C         | `[straight(20,1), arc(-90,70,9), straight(140,7)⇔]`                                                                                                                               | STD left                                                                 | −90° R 70 (b, rider 67) ω 32                  | 17   | 0→270   | 0.2–0.45                                                                          | 33–37 |
-| F          | `move(8,-2).finishGate([24,20], 30, 10)` ≈ (−73, 104, −162), heading 270, bell visible through the arcade                                                                         |                                                                          |                                               |      |         |                                                                                   |       |
+## 10. Untested assumptions
 
-The fast line leaves P5 falling ≈ 29 m/s, lands on 6A 5–8 m after the exit with ≈ 25 m/s down
-the face (WIDE, slant 22 m = 27 W, absorbs it); the main line exits almost level and lands 15–25 m
-on. First demand after the exit: 6A's arc, ≈ 3.5 s later (≥ 1 s ✓).
-
-## 5. Checkpoints, splits, recovery
-
-| Gate / anchor    | Where (≈)                           | Clean-run time | Restore state (bay → `to`) and re-entry check                                                                                                |
-| ---------------- | ----------------------------------- | -------------: | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| C0 start         | (−228, 472, −94), h 170             |              0 | start deck, standing                                                                                                                         |
-| R1a Buttress     | end of 1A (−66, 437, 209)           |             16 | default bay → 1B's landing, 23 m/s; 1B descends 13 m before T2 ≥ 12.4 (v_d 31) ✓                                                             |
-| C1 Nave Arch     | (59, 407, 84), h 0                  |             26 | default → 2A approach; approach + half 1 = 13 m before the band test ≥ 7.3 (v_d 28) ✓; W2 reached at ≈ 35 (lands ≈ 1 m lower on 2B) ✓        |
-| R2a Great Arch   | ring in W2 (54, 377, −88), h 0      |             43 | default → 2B's landing; 17 m of descent before T2c ✓                                                                                         |
-| C2 Transept Door | (27, 333, −535), h 0                |             57 | default → 3A (R before ridge sequence 1); 3A's 9.5 m ≥ 9.0 (v_d 29) for T3a; 3B releases ≈ 29 → W3a ✓                                        |
-| R3a Tracery      | ring in W3a (6, 314, −813), h 350   |             68 | default → 3C (R before ridge sequence 2); same numbers as C2 ✓                                                                               |
-| C3 Spine Merge   | (162, 269, −1286), h 90             |             89 | default → 4A; 23 m of descent before K1 ✓                                                                                                    |
-| R4a Choir Stall  | 4A end (418, 239, −1150), h 180     |            100 | **`flightSec: 0.95`** → K1's landing at ≈ 28.5 m/s (clean ≈ 32): the short faces need their speed on arrival, there is no ramp to rebuild it |
-| C4 Choir Bridge  | (402, 190, −629), h 180             |            120 | default → 5A; 5A + T5 + 5B to P1 = 46 m of descent ≥ 18 (v_d 34): **both rose lines from C4's restart** ✓                                    |
-| R5a Rose Stair   | 5A end (353, 153, −148), h 180      |            135 | **`flightSec: 0.9`** → 5B's landing at ≈ 30 m/s (clean ≈ 36–38) → P1 at ≈ 36 after 11.6 m (≥ 7.4 m for 30 → 34) ✓ fast and main              |
-| C5 Rose Gallery  | exit flight (−71, 174, −138), h 180 |            150 | default → 6A; 24 m of descent before W6 ≥ 10.7 (v_d 30) ✓                                                                                    |
-| R6a East Arcade  | 6B end (133, 126, −64), h 0         |            164 | default → 6C; 17 m to the finish ✓                                                                                                           |
-| F finish         | (−73, 104, −162), h 270             |          ≈ 173 | —                                                                                                                                            |
-
-Anchor cadence: 16–10–17–14–10–22–11–20–15–15–14–10 s, every stretch ≤ 25 s ✓. R anchors precede
-both ridge sequences (C2 for the first, R3a for the second) and the high-window setup (R5a).
-Custom launches R4a and R5a follow brief §7.3: never faster than a clean arrival at the same point.
-Timing splits = C1..C5, all on merged stretches (G2 before C2, G3 before C3, fast/main merged by
-P5's fixed exit before C5). Gate headings are cardinal (AABB triggers, README gap 3).
-
-## 6. Faster line, failure, critical test
-
-**Faster line — "Rose chord"** (`forks`; brief: one-contact rose-window route, target 6–10 s): the
-only contact between the setup curve and the window is 5B's first quarter; the main line uses two
-more (5B's loop, 5C) plus the kicker 5D. Skipped: 5B φ 90–270 (136 m), T5b, 5C (134 m), T5c, 5D (33
-m) and the 26 m final flight ≈ 361 m at ≈ 35 m/s = 10.3 s, replaced by a 54 m flight (1.4 s):
-**saving ≈ 8.5–9 s** (holding ≤ 0.2 through 5A costs a few tenths). Needs 34–42 m/s at P1, contact
-≤ 0.12 by φ 80, release at φ 85–95.
-
-**Failure treatment**: weak transfers into the transept (W2 → 2B) and into the spine merge (W3b →
-3E) fall onto the lower galleries G2 / G3 (slower, a long extra bend, rejoin before C2 / C3). Red
-bell machinery resets: the hoist grid under the helix, the helix cornice and red strip, the bell
-frame and wheel in Act 6. Missed outer windows reset: under W1, W3a, W3b and W5 there is only the
-mist (killY 60) or a red crypt grille. A fast attempt below 34 m/s hits the rose wall below W5; one
-that tries to drop onto 5D meets the red tracery ceiling (brief §4.5 red ceiling) → R5a. The
-choir's red floor catches missed short faces and pads → R4a.
-
-**Critical test** (brief): _the high window must be reachable from the checkpoint's entry setup
-without requiring momentum carried from an earlier act._ Verify:
-
-1. From C4's restart (23 m/s onto 5A) `time-tracks --sections` finishes the C4 → C5 section on the
-   main line, and a fast-line run from the same restart passes W5 (P1 ≈ 40 m/s after 46 m of drop).
-2. From R5a (`flightSec 0.9`, ≈ 30 m/s): both lines pass W5 (P1 ≈ 36). Minimum-speed check: re-run
-   R5a with the default 1.2 s (23 m/s) — the main line must still pass W5 (5D lip ≈ 30 m/s); the
-   fast line is expected to fall short (P1 ≈ 30.5), which shows the 0.9 s launch, not carried
-   momentum, is what supplies it.
-3. `trace.ts surf-basalt-cathedral a5` (R5a) with P1 releases at depth 0.1 / 0.2 / 0.3 and 34 / 38 /
-   42 m/s: only ≤ 0.15 passes W5; main kicker releases at 26 / 30 / 34 m/s all pass W5's north half.
-   Size W5 as the union of both envelopes + 1 m (brief §3.4).
-4. No path reaches W5 from 5B φ 180–270 or 5C except through 5D; no fast attempt can land on 5D
-   (red ceiling); W5's wall is ≥ 2 m thick with no ledge; P5 is only reachable through W5.
-5. Manual reset at R5a is never faster than continuing (30 m/s at 5B's landing vs 36–38 clean).
-
-Verification commands (README):
-
-- `npx tsx tools/race/check.ts surf-basalt-cathedral` — clipping, validation, render budget
-- `npx tsx tools/race/time-tracks.ts surf-basalt-cathedral --human --sections` — per-act splits,
-  every restart bay finishes its section
-- `npx tsx tools/race/trace.ts surf-basalt-cathedral 4` and `... a5` — Act 5 envelopes; `... 1`
-  (helix band from C1), `... 2` / `... a3` (W3a / W3b windows)
-- `npx tsx tools/race/sketch.ts surf-basalt-cathedral --svg I02.svg` — re-derive §2's coordinates
-
-## 7. Clean-run estimate
-
-| Act               | Length (surf + flight) |          Avg speed |                        Estimate | Brief budget |
-| ----------------- | ---------------------: | -----------------: | ------------------------------: | -----------: |
-| 1 Outer buttress  |                ≈ 670 m | 26 (start from 12) |                          25.7 s |           25 |
-| 2 Bell descent    |               ≈ 1080 m |                 34 |                          31.5 s |           30 |
-| 3 Transept spines |                ≈ 990 m |  31 (29 on scoops) |                          32.0 s |           30 |
-| 4 Choir crossing  |                ≈ 920 m |    30 (26 on pads) |                          30.8 s |           35 |
-| 5 Rose window     |               ≈ 1000 m |                 34 |            29.5 s (fast ≈ 20.5) |           35 |
-| 6 Bell return     |                ≈ 790 m |                 34 |                          23.5 s |           25 |
-| **Total**         |               ≈ 5.4 km |                    | **≈ 173 s** (fast line ≈ 164 s) |      165–195 |
-
-Why: practiced Intermediate humans hold ≈ 29–32 m/s on sustained surf and ≈ 0.8 of that on the
-scoops, short faces and pads; the helix (25 m of drop), the rose stair and loop, and the portal-lifted
-Act 6 descend continuously, so they run 34–41. If the `--human` proxy holds only ≈ 31 there, the
-total rises to ≈ 180 s (still in band). If it lands under 168 s, lengthen the ⇔ legs (1A, the helix
-exit straight, 2B, 2C, 3E, 4A, 4E, 5A, 6A, 6C), never empty flights.
-
-## 8. Open questions / to calibrate
-
-1. **Rose window collision is rectangular** (README gap 5): hole [18, 14] inside a Ø 24 m visual
-   rose; the circle's corners are solid tracery. If players read the circle, approximate it with
-   red-free solid blocks (not red: missing W5 already resets through the wall).
-2. **Helix stacking**: 17.5 m measured vs 12 m required, but `findOverlaps` checks only h (gap 7) —
-   verify the exit straight under half 1 by hand; keep the cornice's solid overhang thin near φ 360.
-3. **A-frame crest behaviour at speed** (1B, 3A, 3C): confirm crossings at 26–34 m/s cost < 5 %
-   speed, pop ≤ 0.5 m and land at 0.15–0.3 in both directions.
-4. **Portal fixed exit + kept vertical speed** (gap 1): the fast line exits falling ≈ 29 m/s. If it
-   slides off 6A's foot, lower the fast flight (P1 lower / flatter release) or raise the exit 4 m
-   and lengthen 6A's lead — do not add a contact to the fast line.
-5. **Red cornice vs solid overhead** in the helix: red was chosen (no hard stop, no lips). Check with
-   humans that a head-height red limit at depth 0.12 reads fairly at 40 m/s; if not, raise it to
-   ridge + 0.6 (band 0.09–0.7).
-6. **Turn-rate comfort**: tightest main-line pieces are 5C (66°/s) and 5B (61°/s) at 40–41 m/s;
-   C(v) is not measured above 35 m/s ("—" in the profile) — measure inside curves at 40 m/s.
-7. **Bhop pads [6, 9.5]** exceed README's Intermediate depth range at this bridge's 27 m/s; no
-   hold-to-bhop (gap 4) — record miss rates per pad.
-8. **R1a heading 120** is 30° off cardinal: its AABB grows to ≈ 17 × 12 × 17 m; nothing else is
-   within 40 m, so acceptable for an anchor (gap 3). If `check.ts` objects, end 1A at 90 and give
-   1B −90°.
-9. **Custom launches** R4a (0.95 s) and R5a (0.9 s): confirm arrival speeds and that each stays
-   below the clean arrival. **Short contacts** K1–K8 (0.5 s): check rollback does not change them.
-10. **Salvage galleries G2 / G3**: branch offsets are projectile guesses; fit from 0.8 V traces.
-11. **Footprint** ≈ 0.7 × 1.5 km with a long transept arm; check the render budget and that fog
-    (far 700 m) hides the far arms without hiding the bell.
+- Nobody has played it. "Human" numbers are a bot with 0.75 / 0.6 strafe efficiency; both finish
+  without a fall, only 5–12 s slower than the steady bot.
+- The spine crossing as a human skill: climbing to the crest over 30 m and crossing at 30–40 m/s
+  is smooth for the bot; whether players read the bronze lantern as "cross here".
+- The helix's narrowing band: the red cornice (a head-height red limit over depth < 0.12) was
+  checked in still screenshots only; whether it reads fairly at 35 m/s.
+- The choir's eight 0.4 s contacts at 38–42 m/s (the spec designed them for 30); online feel of
+  short contacts (prediction / rollback).
+- The rose chord is easy for the bot (a broad release window, not band-gated); how hard it is for
+  people is unknown.
+- Falls reset in ≤ 3.2 s almost everywhere (§5b), measured with one kind of fall (sideways off
+  the line at speed); a rider could still land on the buttress tower's cap, the bell, a choir
+  column or another act's ramp and have to press R.
+- The 90°/s turn-rate comfort limit (the loop ≈ 59–63°/s is the tightest).
+- Readability checked in still screenshots only (start, 1A and the tower, the 1B crossing and
+  W1 framing the nave, the helix with the red cornice, the great arch with R2 and G2 below, the
+  first spine with its lantern, the choir entry, the rose loop with the rose and the red kicker
+  ceiling, the kicker, the bell and its red frame from above; after the kill mist: the helix from above,
+  the choir from 4A, the nave from above, the bell from Act 6's height): ramps (light polished stone with a
+  bronze ridge line) read against the dark fog and the darker arcades, red zones read red, the
+  windows frame what follows. The rose is hidden behind the loop's own face for part of the
+  quarter turn. The kill mist reads as loose grey heaps with a warm glow between them, not a
+  floor; from Act 6 you see the helix's mist heaps overhead.

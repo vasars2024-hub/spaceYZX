@@ -300,9 +300,12 @@ describe.each(MAPS)('%s', (id) => {
             (b.hull[4].z + b.hull[1].z) / 2,
           )
         : v3(b.c.x, b.c.y + b.h.y, b.c.z);
-      p.pos = v3(top.x, top.y + 0.9 + 0.01, top.z);
+      // dropped from half a metre: it lands and settles on the top (resting a few cm above it)
+      p.pos = v3(top.x, top.y + 0.9 + 0.5, top.z);
       p.vel = v3();
-      step(world, {}, ctx);
+      world.events.length = 0;
+      for (let t = 0; t < 45 && !world.events.some((e) => e.type === 'raceRespawn'); t++)
+        step(world, {}, ctx);
       expect(
         world.events.some((e) => e.type === 'raceRespawn' && e.reason === 'red'),
         `red zone at ${JSON.stringify(top)}`,

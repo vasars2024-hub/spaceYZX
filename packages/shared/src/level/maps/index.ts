@@ -14,6 +14,13 @@ import { sunspireCourse } from './race-sunspire';
 import { neonDriftCourse } from './race-neon';
 import { emberSpireCourse } from './race-ember';
 import { copperReefCourse } from './surf-copper-reef';
+import { glassGardenCourse } from './surf-glass-garden';
+import { cloudFoundryCourse } from './surf-cloud-foundry';
+import { lanternCanalCourse } from './surf-lantern-canal';
+import { neonSpillwayCourse } from './surf-neon-spillway';
+import { basaltCathedralCourse } from './surf-basalt-cathedral';
+import { cycloneObservatoryCourse } from './surf-cyclone-observatory';
+import { prismRelayCourse } from './surf-prism-relay';
 import { withSkyArena } from '../sky-arena';
 import { FULL_TEAM_SIZE, sizedLevelDef } from '../size-walls';
 
@@ -103,6 +110,18 @@ export const MAPS: MapInfo[] = [
   // surf maps (docs/movement-map-design): raced like tracks, listed apart by mode (Beginner,
   // Intermediate), never in the ranked Race queue
   courseMap('surf-copper-reef', 'Copper Reef', copperReefCourse, 'beginner'),
+  courseMap('surf-glass-garden', 'Glass Garden', glassGardenCourse, 'beginner'),
+  courseMap('surf-cloud-foundry', 'Cloud Foundry', cloudFoundryCourse, 'beginner'),
+  courseMap('surf-lantern-canal', 'Lantern Canal', lanternCanalCourse, 'beginner'),
+  courseMap('surf-neon-spillway', 'Neon Spillway', neonSpillwayCourse, 'intermediate'),
+  courseMap('surf-basalt-cathedral', 'Basalt Cathedral', basaltCathedralCourse, 'intermediate'),
+  courseMap(
+    'surf-cyclone-observatory',
+    'Cyclone Observatory',
+    cycloneObservatoryCourse,
+    'intermediate',
+  ),
+  courseMap('surf-prism-relay', 'Prism Relay', prismRelayCourse, 'intermediate'),
 ];
 
 /** Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs). */

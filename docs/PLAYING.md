@@ -260,6 +260,64 @@ The maps:
 
 - **Copper Reef** (Beginner): abandoned coastal waterworks round a lighthouse — curved copper
   spillways, a helix, a bhop crossing and a turning portal. About 3 minutes.
+- **Glass Garden** (Beginner): an overgrown glass conservatory round a great tree —
+  green-glazed troughs with **S-curves** (change your steering from one bend to the next),
+  **raised catches** (ride high on the lip), six orchid bhop pads over a shallow basin, a
+  half circle round the trunk, and two **petal windows** (fly through the opening; its red
+  border sends you back, so don't ride too high). The glass flower portal lifts you onto the
+  roof for the finish. **Faster line**: off the lip of the half circle round the tree, strafe
+  left onto the narrow **Root deck** and skip the loop round the root pool (about 4 s). Glass
+  is only decoration: you never land on it or hit it. The drainage water under the first
+  catches and the pads is **shallow**: wade to a pale lamp and its launch pad throws you back
+  up (or press R). About 3 minutes.
+- **Cloud Foundry** (Beginner): a weather factory above the clouds round a huge stopped
+  turbine — steel **scoops** (ride down, let the climb lift you, fly off the lip onto the next
+  wide ramp), seven bhop pads with a white walkway beside them (**crouch** under its low pipe),
+  a scoop up through the bell window, a portal that lifts you into the upper duct. **Faster
+  line**: off the last lip, steer right onto the **upper deck** and skip the loop round the
+  red-topped collar (about 6 s). White ramps are safe catches, red vents send you back. About 3
+  minutes.
+- **Lantern Canal** (Beginner): a lantern-lit canal town at dusk — timber banks from bank to
+  bank, ferry stones, a curve round the court fountain, and two turning doors: the teal **☾**
+  door lifts you to the upper town; the optional white **◆** balcony door (strafe left off the
+  settling ramp's lip into it) cuts a bend. The canals are **shallow**: fall in and you can wade to a teal lamp
+  whose launch pad throws you back onto the bank (or press R). Red sluices send you back. You
+  finish under the great paper lantern. About 3 minutes.
+- **Neon Spillway** (Intermediate): storm channels under a neon city — S-curves over a low red
+  strip, six bhop pads between floodgate teeth, a 300° spiral round the lit pump column, a
+  window with red bars, a turning portal and a rising jump across the pump hall. **Faster
+  line**: about three quarters of the way round the spiral, climb over its top edge and fly
+  straight through the small high opening in the hall wall (not the wide low one at the end) —
+  it lands you on the far ramp and skips the long sweep outside (about 8 s). About 3 minutes.
+- **Basalt Cathedral** (Intermediate): a cathedral of dark stone round a hanging bronze bell —
+  a ramp round a buttress tower, a full-circle spiral down round the bell's rod (the second
+  half narrows: a red strip low down and a red cornice overhead, so hold the middle), three
+  **A-frame** ramps (ride one face, climb to the top edge under the bronze lantern and cross
+  over onto the other face), small tracery windows, eight short ramps between choir columns
+  over the mist, three bhop pads, a loop that faces the round rose window, a turning portal
+  and a sweep round the bell. Pale stone ramps under a window catch a weak jump and throw you
+  back up. **Faster line**: in the loop, as the rose window comes into view dead ahead, leave
+  the ramp over its top edge and fly straight through the rose (about 6 s). About 3 minutes.
+- **Cyclone Observatory** (Intermediate): silver instrument rings round a storm caged in a
+  glass column — a broad calibration ring, then a spiral that narrows round the glass dome
+  (red strip low down; a short straight in the middle to reset your line), a climb onto four
+  bhop pads that each turn a little more (turn with them, or you land on the red sensor glass)
+  and a diagonal hop through a small frame, a 390° helix down round the column, a portal that
+  turns you and makes every bend after it turn the other way, a window with a red top edge and
+  two rising ramps up to the telescope's ring of amber lights (a weak first climb falls onto a
+  pale ramp whose launch pad throws you up through it). **Faster line**: early in the helix,
+  as the amber-framed slot in the dark screen comes into view, climb to the top edge, go over it
+  and fly through the slot onto the high ramp beside the main one, then drop across onto it
+  (about 9 s). About 3 minutes.
+- **Prism Relay** (Intermediate): a dark light-routing facility with pearl ramps and hanging
+  glass prisms. Every portal keeps your speed and most turn you a quarter turn; each has its own
+  colour and mark (the same mark hangs where it puts you out), and **where you cross the
+  opening is where you come out** (cross it off-centre, come out off-centre). Seven bhop pads
+  over a red pool with a low lintel to hop under, diagonal windows, a red core to swerve round
+  (bend right as you leave the ramp), and a broad finish portal into a glass chamber. White
+  ramps under two portal exits catch a bad exit and throw you back up. **Faster line**: at the
+  split, stay high on the long ramp and go straight on through the small blue **◆** portal
+  instead of dropping right into the magenta **◇** one (about 9 s). About 3 minutes.
 
 ## What the markers mean
 

@@ -142,21 +142,42 @@ describe('race air-strafing and bunny hops', () => {
     expect(end).toBeGreaterThan(sim.config.movement.raceSprintSpeed - 0.5);
   });
 
-  it('a first-tick jump keeps all the speed; a late one pays friction', () => {
-    const fast = (late: boolean): number => {
+  it('a jump on landing, a little late or pressed a little early keeps all the speed', () => {
+    /** Hop at 22 m/s, fall back holding nothing; `late` ticks after landing, or `early` ticks
+     * before it (a single tap, buffered), press jump. Returns the speed after that jump. */
+    const fast = (late: number, early = 0): number => {
       const sim = makeSim(raceLevel());
       settle(sim);
       sim.p.vel = v3(0, 0, -22);
       run(sim, 1, Btn.Jump, view(0));
-      // fall back down holding nothing, then jump on landing (or 2 ticks late)
-      let t = 0;
-      while (!sim.p.grounded && t++ < 200) run(sim, 1, 0, view(0));
-      if (late) run(sim, 2, 0, view(0));
+      // how long the fall takes, measured on a twin with the same inputs
+      const twin = makeSim(raceLevel());
+      settle(twin);
+      twin.p.vel = v3(0, 0, -22);
+      run(twin, 1, Btn.Jump, view(0));
+      let fall = 0;
+      while (!twin.p.grounded && fall++ < 200) run(twin, 1, 0, view(0));
+      for (let t = 0; t < fall; t++)
+        run(sim, 1, early && t === fall - early ? Btn.Jump : 0, view(0));
+      if (early) {
+        run(sim, 1, 0, view(0)); // the buffered jump fires on the first ground tick
+        expect(sim.p.grounded, 'the early tap jumped').toBe(false);
+        expect(sim.p.vel.y).toBeGreaterThan(3);
+        return planarSpeed(sim.p);
+      }
+      if (late) run(sim, late, 0, view(0));
       run(sim, 1, Btn.Jump, view(0));
       return planarSpeed(sim.p);
     };
-    expect(fast(false)).toBeGreaterThan(21.9);
-    expect(fast(true)).toBeLessThan(19);
+    const m = makeSim(raceLevel()).config.movement;
+    expect(fast(0)).toBeGreaterThan(21.9);
+    // up to raceLandGraceSec late: no friction yet, nothing lost
+    expect(fast(Math.round(m.raceLandGraceSec * 60) - 2)).toBeGreaterThan(21.9);
+    // tapped 0.13 s before landing: remembered, fires on landing
+    const early = fast(0, 8);
+    expect(early).toBeGreaterThan(21.9);
+    // hesitating a fifth of a second on the ground still costs speed
+    expect(fast(12)).toBeLessThan(19);
   });
 
   it('strafing can not push speed past the race cap', () => {

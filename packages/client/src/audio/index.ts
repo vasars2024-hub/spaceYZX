@@ -6,6 +6,7 @@ export { ANNOUNCER_LINES, roundLine } from './announcer-lines';
 export type {
   AudioEngineOptions,
   LoopHandle,
+  LoopOptions,
   PlayOptions,
   SpatialOptions,
   Vec3,
@@ -13,4 +14,8 @@ export type {
 } from './audio';
 export { LOOP_SOUNDS, SOUND_DEFS, SOUND_NAMES, UI_SOUNDS, isSoundName } from './sounds';
 export type { SoundDef, SoundName } from './sounds';
+export { LofiPlayer } from './music';
+export type { MusicHost } from './music';
+export { songForMap } from './lofi';
+export type { LofiSong } from './lofi';
 export * as dsp from './dsp';

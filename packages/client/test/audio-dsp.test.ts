@@ -85,6 +85,19 @@ const REQUIRED: SoundName[] = [
   'freeze',
   'uiClick',
   'uiHover',
+  // races (calm cues + the soft air loop)
+  'raceGate',
+  'raceAnchor',
+  'racePortal',
+  'raceRespawn',
+  'raceTick',
+  'raceGo',
+  'raceFinish',
+  'raceBest',
+  'raceDnf',
+  'raceSurge',
+  'raceFuel',
+  'surfAir',
 ];
 
 /** Allowed duration in seconds per sound. */

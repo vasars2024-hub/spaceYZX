@@ -6,12 +6,14 @@
 //   not hitch. A sound requested before its turn is rendered on the spot, so playback is never
 //   delayed.
 // - Routing: voice -> [panner] -> sfx|ui bus -> master -> limiter -> speakers. Decoded clips
-//   (the announcer, audio/announcer.ts) go through their own 'announcer' bus.
+//   (the announcer, audio/announcer.ts) go through their own 'announcer' bus; the race music
+//   (audio/music.ts) through the 'music' bus, ducked a little while the announcer speaks.
 // - Proximity: 3D sounds fade linearly to silence at their `maxDistance` (default 40 m); a
 //   one-shot farther away than that is not played at all.
 
 import { SOUND_DEFS, SOUND_NAMES, UI_SOUNDS } from './sounds';
 import type { SoundName } from './sounds';
+import { MUSIC_DEFAULT_VOLUME, MUSIC_DUCK, MUSIC_DUCK_RELEASE_SEC } from './race-mix';
 
 export interface Vec3 {
   x: number;
@@ -19,7 +21,7 @@ export interface Vec3 {
   z: number;
 }
 
-export type VolumeKind = 'master' | 'sfx' | 'ui' | 'announcer';
+export type VolumeKind = 'master' | 'sfx' | 'ui' | 'announcer' | 'music';
 
 export interface PlayOptions {
   /** Linear gain, default 1. */
@@ -39,12 +41,19 @@ export interface SpatialOptions extends PlayOptions {
   rolloff?: number;
 }
 
+export interface LoopOptions extends PlayOptions {
+  /** Low-pass the loop at this cut-off (Hz); change it later with `setLowpass`. */
+  lowpass?: number;
+}
+
 /** Control handle for a looping sound. All methods are safe to call after `stop()`. */
 export interface LoopHandle {
   /** Moves the source (3D loops only; ignored for 2D loops). */
   setPosition(v: Vec3): void;
   setRate(rate: number): void;
   setVolume(volume: number): void;
+  /** Moves the low-pass cut-off (Hz; only loops started with `lowpass`). */
+  setLowpass(hz: number): void;
   /** Fades out over `fade` seconds (default 0.05) and releases the voice. */
   stop(fade?: number): void;
 }
@@ -63,6 +72,7 @@ const NOOP_LOOP: LoopHandle = {
   setPosition: () => {},
   setRate: () => {},
   setVolume: () => {},
+  setLowpass: () => {},
   stop: () => {},
 };
 
@@ -89,12 +99,15 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private failed = false;
   private master: GainNode | null = null;
-  private buses: Partial<Record<'sfx' | 'ui' | 'announcer', GainNode>> = {};
+  private buses: Partial<Record<'sfx' | 'ui' | 'announcer' | 'music', GainNode>> = {};
+  /** between the music bus and the master: dips the music under the announcer */
+  private musicDuck: GainNode | null = null;
   private readonly volumes: Record<VolumeKind, number> = {
     master: 1,
     sfx: 1,
     ui: 1,
     announcer: 1,
+    music: MUSIC_DEFAULT_VOLUME,
   };
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly voices = new Map<SoundName, Voice[]>();
@@ -214,11 +227,20 @@ export class AudioEngine {
     }
   }
 
-  /** Starts a looping non-positional sound (e.g. wind while moving fast). */
-  loop2d(name: SoundName, opts: PlayOptions = {}): LoopHandle {
+  /** Starts a looping non-positional sound (e.g. wind while moving fast), optionally low-passed. */
+  loop2d(name: SoundName, opts: LoopOptions = {}): LoopHandle {
     try {
-      const voice = this.startVoice(name, opts, true, null);
-      return voice ? this.loopHandle(voice, null) : NOOP_LOOP;
+      const ctx = this.ctx;
+      let filter: BiquadFilterNode | null = null;
+      if (ctx && opts.lowpass !== undefined) {
+        filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = Math.max(20, finite(opts.lowpass, 1000));
+        filter.Q.value = 0.5;
+      }
+      const voice = this.startVoice(name, opts, true, null, filter);
+      if (!voice) filter?.disconnect();
+      return voice ? this.loopHandle(voice, null, filter) : NOOP_LOOP;
     } catch (_err) {
       return NOOP_LOOP;
     }
@@ -286,6 +308,7 @@ export class AudioEngine {
       const ctx = this.ctx;
       const bus = this.buses.announcer;
       if (!ctx || !bus) return null;
+      this.duckMusic(ctx, buffer.duration);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       const gain = ctx.createGain();
@@ -311,7 +334,29 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Where the music plays: the running context and the music bus (null until audio is
+   * unlocked). The music player builds its own voices on it (audio/music.ts).
+   */
+  musicOut(): { ctx: AudioContext; out: AudioNode } | null {
+    const ctx = this.ctx;
+    const bus = this.buses.music;
+    return ctx && bus ? { ctx, out: bus } : null;
+  }
+
   // -------------------------------------------------------------------------------- internals
+
+  /** Dips the music to MUSIC_DUCK for `sec` seconds (an announcer line), then eases back. */
+  private duckMusic(ctx: AudioContext, sec: number): void {
+    const duck = this.musicDuck;
+    if (!duck) return;
+    const t = ctx.currentTime;
+    const g = duck.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.setTargetAtTime(MUSIC_DUCK, t, 0.06);
+    g.setTargetAtTime(1, t + Math.max(0.1, finite(sec, 1)), MUSIC_DUCK_RELEASE_SEC / 3);
+  }
 
   /** Is `position` close enough to the listener to be heard at all? */
   private inHearingRange(position: Vec3, opts: SpatialOptions): boolean {
@@ -341,10 +386,13 @@ export class AudioEngine {
     const master = ctx.createGain();
     master.gain.value = this.volumes.master;
     master.connect(limiter);
-    for (const kind of ['sfx', 'ui', 'announcer'] as const) {
+    const duck = ctx.createGain();
+    duck.connect(master);
+    this.musicDuck = duck;
+    for (const kind of ['sfx', 'ui', 'announcer', 'music'] as const) {
       const bus = ctx.createGain();
       bus.gain.value = kind === 'sfx' && this.sfxPaused ? 0 : this.volumes[kind];
-      bus.connect(master);
+      bus.connect(kind === 'music' ? duck : master);
       this.buses[kind] = bus;
     }
     this.ctx = ctx;
@@ -411,6 +459,7 @@ export class AudioEngine {
     opts: PlayOptions,
     loop: boolean,
     panner: PannerNode | null,
+    filter: BiquadFilterNode | null = null,
   ): Voice | null {
     const ctx = this.ctx;
     if (!ctx) return null;
@@ -423,7 +472,8 @@ export class AudioEngine {
     if (source.detune) source.detune.value = finite(opts.detune ?? 0, 0);
     const gain = ctx.createGain();
     gain.gain.value = Math.max(0, finite(opts.volume ?? 1, 1));
-    source.connect(gain);
+    if (filter) source.connect(filter).connect(gain);
+    else source.connect(gain);
     const bus = this.buses[UI_SOUNDS.has(name) ? 'ui' : 'sfx'];
     if (!bus) return null;
     if (panner) {
@@ -436,6 +486,7 @@ export class AudioEngine {
       source.disconnect();
       gain.disconnect();
       panner?.disconnect();
+      filter?.disconnect();
     };
     source.start();
     return { source, gain };
@@ -461,7 +512,11 @@ export class AudioEngine {
     }
   }
 
-  private loopHandle(voice: Voice, panner: PannerNode | null): LoopHandle {
+  private loopHandle(
+    voice: Voice,
+    panner: PannerNode | null,
+    filter: BiquadFilterNode | null = null,
+  ): LoopHandle {
     let stopped = false;
     return {
       setPosition: (v) => {
@@ -475,6 +530,11 @@ export class AudioEngine {
       setVolume: (v) => {
         if (stopped || !this.ctx) return;
         voice.gain.gain.setTargetAtTime(Math.max(0, finite(v, 0)), this.ctx.currentTime, SMOOTH);
+      },
+      setLowpass: (hz) => {
+        if (stopped || !filter || !this.ctx) return;
+        const f = Math.min(20000, Math.max(20, finite(hz, 1000)));
+        filter.frequency.setTargetAtTime(f, this.ctx.currentTime, SMOOTH * 4);
       },
       stop: (fade = 0.05) => {
         if (stopped) return;

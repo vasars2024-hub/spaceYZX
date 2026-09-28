@@ -133,15 +133,16 @@ export const MOVEMENT_DEFAULTS = {
   // Source-style air control. In the air the wish direction only adds speed while your
   // velocity along it is under raceAirWishCap, so strafing (A/D) while turning the mouse the
   // same way adds a little speed every tick: bunny-hop chains and surfing build speed. Jumping
-  // on the first ground tick of a landing skips friction (a fresh press, or pressed up to
-  // raceJumpBufferSec before landing); a late jump pays a tick of friction (~10 %).
+  // within raceLandGraceSec of a landing gets back the speed friction took since touchdown, and a
+  // jump pressed up to raceJumpBufferSec before landing fires on the landing: people can't hit
+  // the one landing tick every time the way bots do. Hesitate longer and friction slows you.
   raceSprintSpeed: 12, // m/s: races run a third faster than combat (sprintSpeed)
   raceAirAccel: 100, // like surf servers' sv_airaccelerate: the wish cap is reached at once
   raceAirWishCap: 1, // m/s (Source's 30 u ≈ 0.76 m): the speed gained per perfectly strafed tick
   raceAirSoftCap: 34, // m/s: strafing can't push your horizontal speed past this (~2.8 × race sprint)
   raceMaxSpeed: 50, // m/s total: surfing down ramps and long falls top out here
-  raceJumpBufferSec: 0.05, // a jump pressed this early still fires on the landing tick
-  raceLandGraceSec: 0, // no friction-free ticks after landing: jump on the first one or slow down
+  raceJumpBufferSec: 0.15, // a jump pressed this early still fires on the landing tick
+  raceLandGraceSec: 0.1, // a jump this late after landing gets back the speed friction took
   raceSurfPenaltySec: 0.5, // surf maps: frozen this long at the stage start after a fall
 } as const;
 

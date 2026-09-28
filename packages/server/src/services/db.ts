@@ -279,6 +279,12 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX map_overrides_map ON map_overrides(map, id DESC);
   `,
+  // 7: the three parkour race tracks were rebuilt (shared TRACK_REVISIONS = 2), so their old
+  // personal bests were set on other tracks: the new leaderboards start empty. Race history
+  // and ladder ratings are kept (the rating never looks at the track or the time).
+  `
+  DELETE FROM race_bests WHERE track IN ('race-sunspire', 'race-neon', 'race-ember');
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

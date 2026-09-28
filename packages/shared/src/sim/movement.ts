@@ -263,6 +263,7 @@ const doJump = (
   g: number,
   m: MovementConfig,
   dt: number,
+  landingLoss = m.bhopLandingLoss,
 ): void => {
   // + g*dt/2 compensates the discrete integration so the apex matches jumpHeight
   const jumpSpeed = Math.sqrt(2 * g * m.jumpHeight) + (g * dt) / 2;
@@ -270,7 +271,7 @@ const doJump = (
     // bhop: a well-timed jump keeps almost all speed
     const planar = planarOf(p.vel, p.up);
     const vUp = dot(p.vel, p.up);
-    p.vel = madd(scale(planar, 1 - m.bhopLandingLoss), p.up, vUp);
+    p.vel = madd(scale(planar, 1 - landingLoss), p.up, vUp);
   }
   const vUp = dot(p.vel, p.up);
   p.vel = madd(p.vel, p.up, Math.max(jumpSpeed, vUp) - vUp);
@@ -652,7 +653,13 @@ export const updateMovement = (
     if (p.jumpBuffer > 0 && (!p.crouched || p.move === Move.Slide || setCrouch(ctx, p, false))) {
       if (p.move === Move.Slide) setCrouch(ctx, p, false);
       if (p.mag) releaseMag(); // jumping off a gravity-shift surface lets go of it
-      doJump(world, p, gMag, m, dt);
+      // races: a jump a few ticks late gets back the speed friction took since touching down
+      if (race && p.landGrace > 0) {
+        const planar = planarOf(p.vel, p.up);
+        const s = len(planar);
+        if (s > 1e-4 && s < p.landSpeed) p.vel = add(p.vel, scale(planar, p.landSpeed / s - 1));
+      }
+      doJump(world, p, gMag, m, dt, race ? 0 : m.bhopLandingLoss);
       jumped = true;
     }
   }
@@ -698,8 +705,9 @@ export const updateMovement = (
       p.move = Move.Ground;
       if (crouchHeld) setCrouch(ctx, p, true);
       else if (p.crouched) setCrouch(ctx, p, false);
-      // no friction during landing grace (bhop), the dash burst or a race surge
-      if (p.landGrace === 0 && p.dashTicks === 0 && p.surgeTicks === 0)
+      // no friction during landing grace (bhop; races refund it on the jump instead), the dash
+      // burst or a race surge
+      if ((race || p.landGrace === 0) && p.dashTicks === 0 && p.surgeTicks === 0)
         p.vel = applyFriction(p.vel, m, dt);
       // (races: everyone runs faster)
       const sprint = race ? m.raceSprintSpeed : m.sprintSpeed;
@@ -866,6 +874,7 @@ export const updateMovement = (
       const impact = -dot(preVel, p.up);
       world.events.push({ type: 'land', player: p.id, speed: impact });
       p.landGrace = Math.max(1, Math.round((race ? m.raceLandGraceSec : m.landGraceSec) / dt));
+      p.landSpeed = len(planarOf(p.vel, p.up));
       resetAirCounters(p, m, dt);
       p.move =
         crouchHeld && len(planarOf(p.vel, p.up)) >= m.slideStartSpeed ? Move.Ground : Move.Ground;

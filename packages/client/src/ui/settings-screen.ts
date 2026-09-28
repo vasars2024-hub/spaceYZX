@@ -227,6 +227,10 @@ export const settingsScreen = (
       s.uiVolume = v;
       apply();
     }),
+    slider('Music (races and surf maps)', 0, 1, 0.05, s.musicVolume, pct, (v) => {
+      s.musicVolume = v;
+      apply();
+    }),
     toggle('Announcer (round calls, match start, victory)', s.announcer, (v) => {
       s.announcer = v;
       apply();

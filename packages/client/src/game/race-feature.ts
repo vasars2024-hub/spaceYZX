@@ -23,18 +23,21 @@ import type {
   Vec3,
 } from '@space-yz/shared';
 import {
+  currentBests,
   formatRaceTime,
   formatSplitDelta,
   gateCenter,
   qFromYawPitch,
   splitDelta,
   TICK_DT,
+  trackRevision,
   updatePersonalBest,
   v3,
   type RacePersonalBest,
   type RacePersonalBests,
 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
+import { gateSemis, raceCue } from './race-audio';
 import type { RenderPlayer } from './session';
 import { PlayerModels } from '../render/players';
 import { h } from '../ui/menus';
@@ -104,6 +107,8 @@ export interface GhostRun {
   every: number;
   /** x, y, z (body centre), yaw (radians) per sample, rounded */
   samples: number[];
+  /** the track's layout revision it was raced on (missing = 1; see TRACK_REVISIONS) */
+  rev?: number;
 }
 
 export interface RaceStore {
@@ -115,7 +120,8 @@ export const loadPersonalBests = (store: RaceStore = storage): RacePersonalBests
   try {
     const raw = store.get(PB_KEY);
     const v = raw ? (JSON.parse(raw) as RacePersonalBests) : {};
-    return v && typeof v === 'object' ? v : {};
+    // bests from a track's older layout are dropped (a rebuilt track starts fresh)
+    return v && typeof v === 'object' ? currentBests(v) : {};
   } catch {
     return {};
   }
@@ -128,7 +134,8 @@ export const loadGhost = (track: string, store: RaceStore = storage): GhostRun |
   try {
     const raw = store.get(GHOST_KEY(track));
     const g = raw ? (JSON.parse(raw) as GhostRun) : null;
-    return g && Array.isArray(g.samples) && g.samples.length >= 8 ? g : null;
+    if (!g || !Array.isArray(g.samples) || g.samples.length < 8) return null;
+    return (g.rev ?? 1) === trackRevision(track) ? g : null;
   } catch {
     return null;
   }
@@ -384,25 +391,24 @@ export class RaceFeature implements ClientFeature {
 
   events(c: GameClient, events: SimEvent[]): void {
     const me = c.session.localId;
-    const a = c.deps.audio;
     const v = this.opts.view();
     for (const e of events) {
       if (!('player' in e) || e.player !== me) continue;
       switch (e.type) {
         case 'surge':
-          a.play('dash', { volume: 0.9, rate: 0.85 });
+          raceCue(c, 'surge');
           break;
         case 'raceFuel':
-          a.play('powerupPickup', { volume: 0.7 });
+          raceCue(c, 'fuel');
           break;
         case 'raceRespawn':
-          a.play('revealPulse', { volume: 0.6, rate: 0.8 });
+          raceCue(c, 'respawn');
           c.syncCameraToPlayer();
           this.lastBack = { anchor: e.anchor, red: e.reason === 'red' };
           break;
         case 'raceAnchor': {
           // a recovery anchor: only where a fall brings you back now (quietly noted)
-          a.play('controllerPickup', { volume: 0.25, rate: 1.5 });
+          raceCue(c, 'anchor');
           const name = c.session.level.def.race?.anchors?.[e.anchor]?.name;
           this.splitEl.textContent = `RECOVERY ${name ? `· ${name.toUpperCase()}` : 'ANCHOR'}`;
           this.splitEl.style.color = '#c8ffe6';
@@ -426,9 +432,8 @@ export class RaceFeature implements ClientFeature {
       d === null ? formatRaceTime(ms) : `${formatRaceTime(ms)}  ${formatSplitDelta(d)}`;
     this.splitEl.style.color = d === null ? '#fff' : d <= 0 ? GREEN : RED;
     this.splitUntil = this.time + 2.8;
-    const a = c.deps.audio;
     if (!finish) {
-      a.play('controllerPickup', { volume: 0.7 });
+      raceCue(c, 'gate', gateSemis(cp));
       // the stretch this checkpoint starts
       const race = c.session.level.def.race;
       const name = race?.checkpoints[cp - 1]?.name;
@@ -447,10 +452,11 @@ export class RaceFeature implements ClientFeature {
           timeMs: ms,
           every: GHOST_EVERY,
           samples: this.recording,
+          rev: trackRevision(this.opts.track),
         };
         saveGhost(this.ghost, this.store);
       }
-      a.play('roundWin');
+      raceCue(c, 'best');
       this.big(
         'NEW PERSONAL BEST',
         `${formatRaceTime(ms)}${up.previous ? `  (${formatSplitDelta(ms - up.previous.timeMs)})` : ''}`,
@@ -458,7 +464,7 @@ export class RaceFeature implements ClientFeature {
         GREEN,
       );
     } else {
-      a.play('roundStart', { volume: 0.7 });
+      raceCue(c, 'finish');
       this.big(
         'FINISHED',
         `${formatRaceTime(ms)}${pb ? `  · best ${formatRaceTime(pb.timeMs)}` : ''}`,
@@ -505,19 +511,19 @@ export class RaceFeature implements ClientFeature {
     if (v && phase === 'countdown') {
       const left = Math.max(0, Math.ceil((v.phaseEnds - serverTick) * TICK_DT - 1e-6));
       if (left !== this.lastCount && left > 0) {
-        c.deps.audio.play('countdownTick');
+        raceCue(c, 'tick');
         this.big(String(left), this.opts.trackName, 1.1, '#ffe9a8');
       }
       this.lastCount = left;
     } else if (phase === 'racing' && this.lastPhase === 'countdown') {
-      c.deps.audio.play('roundStart');
+      raceCue(c, 'go');
       this.big('GO!', '', 0.9, GREEN);
       this.lastCount = -1;
     }
     if (v && phase === 'results' && this.lastPhase === 'racing') {
       const mine = v.result?.standings.find((x) => x.id === s.localId);
       if (mine?.dnf) {
-        c.deps.audio.play('roundLose');
+        raceCue(c, 'dnf');
         this.big('DNF', 'out of time', 3, RED);
       }
     }

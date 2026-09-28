@@ -88,6 +88,20 @@ export const raceRatingPlayers = (
 // ------------------------------------------------------------------------------------------
 // Personal bests
 
+/**
+ * Layout revision of each track whose course was rebuilt (a track not listed is revision 1).
+ * Bests and ghosts set on an older revision are dropped: they were raced on another track.
+ * Raise a track's number whenever its course changes enough that old times mean nothing.
+ */
+export const TRACK_REVISIONS: Readonly<Record<string, number>> = {
+  // the 2026-09 revamp (docs/movement-map-design/race/REVAMP.md)
+  'race-sunspire': 2,
+  'race-neon': 2,
+  'race-ember': 2,
+};
+
+export const trackRevision = (track: string): number => TRACK_REVISIONS[track] ?? 1;
+
 export interface RacePersonalBest {
   /** map id of the track */
   track: string;
@@ -96,9 +110,19 @@ export interface RacePersonalBest {
   splitsMs: number[];
   /** when it was set (ms since 1970; 0 = unknown) */
   at: number;
+  /** the track's layout revision it was set on (missing = 1; see TRACK_REVISIONS) */
+  rev?: number;
 }
 
 export type RacePersonalBests = Record<string, RacePersonalBest>;
+
+/** The bests without those set on an older layout of their track. */
+export const currentBests = (pbs: Readonly<RacePersonalBests>): RacePersonalBests => {
+  const out: RacePersonalBests = {};
+  for (const [track, pb] of Object.entries(pbs))
+    if ((pb.rev ?? 1) === trackRevision(track)) out[track] = pb;
+  return out;
+};
 
 /**
  * Record a finished run: returns the updated bests (a new object) and whether it was a new
@@ -111,11 +135,13 @@ export const updatePersonalBest = (
   splitsMs: readonly number[],
   at = 0,
 ): { pbs: RacePersonalBests; improved: boolean; previous: RacePersonalBest | null } => {
-  const previous = pbs[track] ?? null;
+  const rev = trackRevision(track);
+  const old = pbs[track];
+  const previous = old && (old.rev ?? 1) === rev ? old : null;
   if (!(timeMs > 0) || (previous && previous.timeMs <= timeMs))
     return { pbs: { ...pbs }, improved: false, previous };
   return {
-    pbs: { ...pbs, [track]: { track, timeMs, splitsMs: splitsMs.slice(), at } },
+    pbs: { ...pbs, [track]: { track, timeMs, splitsMs: splitsMs.slice(), at, rev } },
     improved: true,
     previous,
   };

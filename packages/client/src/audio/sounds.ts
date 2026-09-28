@@ -13,6 +13,7 @@ import {
   fade,
   fm,
   highpass,
+  linSweep,
   loopFreq,
   lowpass,
   makeLoop,
@@ -154,6 +155,45 @@ function multiKill(sr: number, level: number): Signal {
   if (level >= 2) s = echo(s, sr, 0.09, 0.3, 0.3);
   return finish(softClip(s, 1.2 + level * 0.3), sr, 0.95);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Race helpers: soft, warm and in C major pentatonic (C D E G A). The race plays them with a
+// `detune` that moves them into the lofi music's key (game/race-audio.ts).
+
+/** Final pass for the race cues: a gentle 2 ms attack and a long 250 ms fade-out of the tail. */
+const soft = (s: Signal, sr: number, level: number): Signal =>
+  normalize(fade(s, sr, 0.002, 0.25), level);
+
+/** A soft, warm bell: a sine with a touch of harmonic FM that mellows at once, no clang. */
+function chime(sr: number, dur: number, freq: number, decay: number, attack = 0.004): Signal {
+  return mix(sr, dur, [
+    {
+      sig: applyEnv(
+        fm(sr, dur, freq, 2, (t) => 0.8 * Math.exp(-t / 0.07)),
+        sr,
+        percFn(decay, attack),
+      ),
+      gain: 1,
+    },
+    { sig: applyEnv(osc(sr, dur, 'sine', freq * 3), sr, percFn(decay * 0.25, attack)), gain: 0.06 },
+  ]);
+}
+
+/** Low-passed pink noise shaped by an envelope: soft moving air, no hiss. */
+function air(sr: number, dur: number, seed: number, cutoff: Freq, env: Envelope): Signal {
+  return applyEnv(lowpass(pinkNoise(sr, dur, seed), sr, cutoff, 0.6), sr, env);
+}
+
+const C4 = 261.63;
+const E4 = 329.63;
+const G4 = 392;
+const C5 = 523.25;
+const D5 = 587.33;
+const E5 = 659.25;
+const G5 = 783.99;
+const A5 = 880;
+const C6 = 1046.5;
+const E6 = 1318.51;
 
 // ---------------------------------------------------------------------------------------------
 // The recipes
@@ -1120,6 +1160,175 @@ const defs = {
     );
   },
   uiHover: (sr) => finish(tone(sr, 0.04, 'sine', 2400, 0.006), sr, 0.3),
+
+  // ---------------------------------------------------------------------------------- race
+  // (calm cues for race tracks and surf maps: soft bells, airy whooshes, no noise bursts)
+  // checkpoint / gate: a soft rising fifth
+  raceGate: (sr) => {
+    const d = 1.1;
+    return soft(
+      echo(
+        mix(sr, d, [
+          { sig: chime(sr, d, C5, 0.3), gain: 0.7 },
+          { sig: chime(sr, d, G5, 0.4), gain: 0.55, at: 0.08 },
+        ]),
+        sr,
+        0.17,
+        0.25,
+        0.22,
+      ),
+      sr,
+      0.55,
+    );
+  },
+  // recovery anchor: one quiet high "tink"
+  raceAnchor: (sr) => {
+    const d = 0.7;
+    return soft(
+      mix(sr, d, [
+        { sig: chime(sr, d, E6, 0.16), gain: 0.55 },
+        { sig: chime(sr, d, A5, 0.2), gain: 0.35, at: 0.05 },
+      ]),
+      sr,
+      0.45,
+    );
+  },
+  // portal: a gentle airy whoosh with a faint rising tone
+  racePortal: (sr) => {
+    const d = 0.9;
+    return soft(
+      mix(sr, d, [
+        {
+          sig: air(
+            sr,
+            d,
+            310,
+            (t) => 350 + 1100 * Math.sin(Math.PI * Math.min(1, t / 0.85)),
+            swell(0.2, 0.2),
+          ),
+          gain: 1,
+        },
+        {
+          sig: applyEnv(osc(sr, d, 'sine', expSweep(G4, C5, 0.5)), sr, swell(0.15, 0.2)),
+          gain: 0.1,
+        },
+      ]),
+      sr,
+      0.5,
+    );
+  },
+  // back to the checkpoint / anchor: a soft breath and a low settling chime
+  raceRespawn: (sr) => {
+    const d = 1;
+    return soft(
+      mix(sr, d, [
+        { sig: air(sr, d, 311, linSweep(900, 450, 0.5), swell(0.12, 0.2)), gain: 0.8 },
+        { sig: chime(sr, d, G4, 0.35), gain: 0.5, at: 0.12 },
+        { sig: chime(sr, d, C5, 0.4), gain: 0.4, at: 0.2 },
+      ]),
+      sr,
+      0.5,
+    );
+  },
+  // countdown 3-2-1: a soft wooden-ish mallet
+  raceTick: (sr) => {
+    const d = 0.4;
+    return soft(
+      mix(sr, d, [
+        { sig: chime(sr, d, E5, 0.09), gain: 1 },
+        { sig: applyEnv(osc(sr, d, 'sine', E5 / 2), sr, percFn(0.05, 0.003)), gain: 0.3 },
+      ]),
+      sr,
+      0.5,
+    );
+  },
+  // GO: a warm strummed chord that blooms
+  raceGo: (sr) => {
+    const d = 1.2;
+    const layers: Layer[] = [C5, E5, G5, C6].map((f, k) => ({
+      sig: chime(sr, d, f, 0.45),
+      gain: 0.35,
+      at: k * 0.025,
+    }));
+    layers.push({ sig: air(sr, d, 312, 800, swell(0.06, 0.25)), gain: 0.25 });
+    layers.push({ sig: applyEnv(osc(sr, d, 'sine', C4), sr, percFn(0.4, 0.01)), gain: 0.25 });
+    return soft(echo(mix(sr, d, layers), sr, 0.15, 0.25, 0.2), sr, 0.6);
+  },
+  // finished (no new best): a warm little arpeggio up to the octave
+  raceFinish: (sr) => {
+    const d = 1.2;
+    const notes = [C5, E5, G5, C6];
+    const layers: Layer[] = notes.map((f, k) => ({
+      sig: chime(sr, d, f, k === notes.length - 1 ? 0.45 : 0.25),
+      gain: 0.45,
+      at: k * 0.09,
+    }));
+    layers.push({ sig: applyEnv(osc(sr, d, 'sine', C4), sr, percFn(0.5, 0.02)), gain: 0.3 });
+    return soft(echo(mix(sr, d, layers), sr, 0.18, 0.3, 0.3), sr, 0.6);
+  },
+  // new personal best: a longer, brighter pentatonic run with a sparkle on top
+  raceBest: (sr) => {
+    const d = 1.25;
+    const notes = [C5, D5, E5, G5, A5, C6];
+    const layers: Layer[] = notes.map((f, k) => ({
+      sig: chime(sr, d, f, k === notes.length - 1 ? 0.5 : 0.2),
+      gain: 0.4,
+      at: k * 0.07,
+    }));
+    layers.push({ sig: chime(sr, d, E6, 0.4), gain: 0.25, at: notes.length * 0.07 });
+    layers.push({ sig: applyEnv(osc(sr, d, 'sine', C4), sr, percFn(0.5, 0.02)), gain: 0.3 });
+    return soft(echo(mix(sr, d, layers), sr, 0.16, 0.3, 0.3), sr, 0.65);
+  },
+  // DNF: three soft notes drifting down, no buzz
+  raceDnf: (sr) => {
+    const d = 1.2;
+    const layers: Layer[] = [G4, E4, C4].map((f, k) => ({
+      sig: chime(sr, d, f, k === 2 ? 0.5 : 0.3),
+      gain: 0.5,
+      at: k * 0.17,
+    }));
+    return soft(mix(sr, d, layers), sr, 0.5);
+  },
+  // SURGE / launch pad: a smooth upward rush of air
+  raceSurge: (sr) => {
+    const d = 0.7;
+    return soft(
+      mix(sr, d, [
+        { sig: air(sr, d, 313, expSweep(400, 1800, 0.35), swell(0.1, 0.18)), gain: 1 },
+        {
+          sig: applyEnv(osc(sr, d, 'sine', expSweep(C4, G4, 0.3)), sr, swell(0.08, 0.15)),
+          gain: 0.1,
+        },
+      ]),
+      sr,
+      0.5,
+    );
+  },
+  // fuel cell: two little bells
+  raceFuel: (sr) => {
+    const d = 0.7;
+    return soft(
+      mix(sr, d, [
+        { sig: chime(sr, d, C6, 0.14), gain: 0.5 },
+        { sig: chime(sr, d, E6, 0.22), gain: 0.45, at: 0.06 },
+      ]),
+      sr,
+      0.45,
+    );
+  },
+  // the air while racing (3 s loop): dark, soft pink noise with a slow swell; the race
+  // low-passes it further and turns it up with speed (see RACE_AIR in race-mix.ts)
+  surfAir: (sr) => {
+    const d = 3;
+    const x = 0.3;
+    const breath = lowpass(pinkNoise(sr, d + x, 314), sr, 1400, 0.5);
+    const body = lowpass(brownNoise(sr, d + x, 315), sr, 260);
+    const s = mix(sr, d + x, [
+      { sig: applyEnv(breath, sr, trem(1 / d, 0.3)), gain: 1 },
+      { sig: body, gain: 0.35 },
+    ]);
+    return finishLoop(makeLoop(s, sr, x), 0.6);
+  },
 } satisfies Record<string, SoundDef>;
 
 export type SoundName = keyof typeof defs;
@@ -1134,6 +1343,7 @@ export const SOUND_NAMES = Object.keys(defs) as SoundName[];
 export const LOOP_SOUNDS: ReadonlySet<SoundName> = new Set<SoundName>([
   'slide',
   'wind',
+  'surfAir',
   'boomerangWhistle',
   'grenadePull',
 ]);

@@ -379,3 +379,22 @@ describe('migration 4 (races)', () => {
     db.close();
   });
 });
+
+describe('migration 7 (rebuilt race tracks)', () => {
+  it('clears the old bests of the three rebuilt tracks and keeps every other best', () => {
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof SqliteModule;
+    const db: DatabaseSync = new DatabaseSync(':memory:');
+    migrate(db, 6);
+    db.prepare(
+      "INSERT INTO players (id, name, token_hash, created_at, last_seen) VALUES (1, 'Old', 'h', 0, 0)",
+    ).run();
+    const best = db.prepare(
+      "INSERT INTO race_bests (player_id, track, time_ms, splits, at) VALUES (1, ?, 1000, '[]', 0)",
+    );
+    for (const t of ['race-sunspire', 'race-neon', 'race-ember', 'surf-copper-reef']) best.run(t);
+    migrate(db);
+    const left = db.prepare('SELECT track FROM race_bests').all() as { track: string }[];
+    expect(left.map((r) => r.track)).toEqual(['surf-copper-reef']);
+    db.close();
+  });
+});

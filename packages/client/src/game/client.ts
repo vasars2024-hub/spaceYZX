@@ -14,6 +14,7 @@ import { Hud } from '../ui/hud';
 import type { Settings } from '../settings';
 import { cameraRotationRate } from '../settings';
 import type { AudioEngine, LoopHandle } from '../audio';
+import { RaceAudio } from './race-audio';
 
 export interface GameClientDeps {
   renderer: THREE.WebGLRenderer;
@@ -45,6 +46,8 @@ export class GameClient {
   private moverMeshes: MoverMeshes | null;
   private wind: LoopHandle | null = null;
   private slide: LoopHandle | null = null;
+  /** race tracks and surf maps: lofi music, soft air instead of wind / scrape, calm cues */
+  raceAudio: RaceAudio | null;
   private features: ClientFeature[] = [];
   private currentFov = 100;
   shake = 0;
@@ -84,6 +87,7 @@ export class GameClient {
       atmosphere: q.atmosphere && effects.decoration,
     });
     this.scene.add(this.levelMeshes.group);
+    this.raceAudio = def.race ? new RaceAudio(deps.audio, def.name) : null;
     this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
     this.moverMeshes = buildMoverMeshes(def, {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
@@ -250,7 +254,8 @@ export class GameClient {
     });
 
     const events = this.session.drainEvents();
-    this.audioFrame(events, local ? len(projectOnPlane(local.vel, local.up)) : 0, local?.move ?? 0);
+    const speed = local ? len(projectOnPlane(local.vel, local.up)) : 0;
+    this.audioFrame(events, speed, local?.move ?? 0, dt);
     for (const f of this.features) {
       if (events.length) f.events?.(this, events);
       f.frame?.(this, dt);
@@ -268,8 +273,9 @@ export class GameClient {
     }
   }
 
-  private audioFrame(events: SimEvent[], speed: number, move: number): void {
+  private audioFrame(events: SimEvent[], speed: number, move: number, dt: number): void {
     const a = this.deps.audio;
+    const race = this.raceAudio;
     // hear from the camera: your own head, or the player you watch while dead
     const cp = this.camera.position;
     const cq = this.camera.quaternion;
@@ -290,7 +296,8 @@ export class GameClient {
           a.play('jump', { volume: 0.7, rate: 1.2 });
           break;
         case 'slide':
-          if (e.boosted) a.play('dash', { volume: 0.4, rate: 0.8 });
+          if (e.boosted && race) race.cue('slideBoost');
+          else if (e.boosted) a.play('dash', { volume: 0.4, rate: 0.8 });
           break;
         case 'mantle':
           a.play('mantle');
@@ -315,15 +322,18 @@ export class GameClient {
           a.play('revealPulse');
           break;
         case 'launch':
-          a.play('thruster', { volume: 0.9, rate: 0.6 });
+          if (race) race.cue('launch');
+          else a.play('thruster', { volume: 0.9, rate: 0.6 });
           break;
         case 'portal':
-          a.play('revealPulse', { volume: 0.8, rate: 1.4 });
+          if (race) race.cue('portal');
+          else a.play('revealPulse', { volume: 0.8, rate: 1.4 });
           break;
       }
     }
-    // speed wind + slide loops
-    if (a.unlocked) {
+    // race maps: music + soft air (audio/race-mix.ts); elsewhere speed wind + slide loops
+    if (race) race.frame(dt, speed, move === Move.Slide);
+    else if (a.unlocked) {
       this.wind ??= a.loop2d('wind', { volume: 0 });
       this.wind?.setVolume(Math.max(0, Math.min(0.6, (speed - 7) / 15)));
       this.wind?.setRate(0.8 + Math.min(1, speed / 25) * 0.6);
@@ -352,6 +362,7 @@ export class GameClient {
     for (const f of this.features) f.dispose?.(this);
     this.wind?.stop(0.05);
     this.slide?.stop(0.05);
+    this.raceAudio?.dispose();
     this.portalPreviews.dispose();
     this.levelMeshes.dispose();
     this.moverMeshes?.dispose();

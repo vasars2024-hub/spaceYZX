@@ -1,4 +1,6 @@
 // Player settings, persisted in localStorage.
+import { MUSIC_DEFAULT_VOLUME } from './audio/race-mix';
+
 export type CameraRotation = 'body' | 'fast' | 'medium' | 'slow';
 
 export interface Settings {
@@ -9,6 +11,8 @@ export interface Settings {
   masterVolume: number;
   sfxVolume: number;
   uiVolume: number;
+  /** the lofi music on race tracks and surf maps (0 = off) */
+  musicVolume: number;
   /** the 90s announcer ("LETHAL RECOIL!", "Round three", "Match point"…) */
   announcer: boolean;
   announcerVolume: number;
@@ -95,6 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.8,
   sfxVolume: 1,
   uiVolume: 0.8,
+  musicVolume: MUSIC_DEFAULT_VOLUME,
   announcer: true,
   announcerVolume: 0.9,
   showFps: true,
@@ -163,6 +168,7 @@ export const loadSettings = (): Settings => {
     s.voiceVolume = Math.min(1, Math.max(0, Number(s.voiceVolume) || 0));
     s.announcer = s.announcer !== false;
     s.announcerVolume = Math.min(1, Math.max(0, Number(s.announcerVolume ?? 0.9) || 0));
+    s.musicVolume = Math.min(1, Math.max(0, Number(s.musicVolume ?? MUSIC_DEFAULT_VOLUME) || 0));
     if (s.brawlMode !== 'ffa') s.brawlMode = 'tdm';
     if (!['auto', 'on', 'off'].includes(s.touchControls)) s.touchControls = 'auto';
     if (!['aim', 'curve', 'off'].includes(s.touchFireDrag)) s.touchFireDrag = 'aim';

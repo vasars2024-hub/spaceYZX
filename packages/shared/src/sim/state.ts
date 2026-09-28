@@ -57,6 +57,8 @@ export interface PlayerState extends CombatPlayerState {
   coyote: number;
   jumpBuffer: number;
   landGrace: number;
+  /** races: planar speed on touching down; a jump within landGrace gets it back (late bhop) */
+  landSpeed: number;
   slideBoostCd: number;
   airTicks: number;
   tapWindow: number;

@@ -96,6 +96,19 @@ describe('race HUD helpers', () => {
     expect(ghostAt(g, -1)).toBeNull();
     store.set('lethalrecoil.race.pb.v1', '{broken');
     expect(loadPersonalBests(store)).toEqual({});
+    // a rebuilt track (TRACK_REVISIONS): its old best and ghost are dropped, others kept
+    savePersonalBests(
+      {
+        'race-sunspire': { track: 'race-sunspire', timeMs: 5, splitsMs: [5], at: 0 },
+        t: { track: 't', timeMs: 5, splitsMs: [5], at: 0 },
+      },
+      store,
+    );
+    expect(Object.keys(loadPersonalBests(store))).toEqual(['t']);
+    saveGhost({ track: 'race-sunspire', timeMs: 5, every: 6, samples }, store);
+    expect(loadGhost('race-sunspire', store)).toBeNull();
+    saveGhost({ track: 'race-sunspire', timeMs: 5, every: 6, samples, rev: 2 }, store);
+    expect(loadGhost('race-sunspire', store)).not.toBeNull();
   });
 
   it('draws racers see-through (blended, no depth write) when asked', () => {

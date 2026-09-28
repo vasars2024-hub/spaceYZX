@@ -10,6 +10,8 @@ import {
   raceRatingPlayers,
   splitDelta,
   updatePersonalBest,
+  currentBests,
+  trackRevision,
   updateRaceRatings,
   type RaceRatingPlayer,
 } from '../src/index';
@@ -104,10 +106,32 @@ describe('personal bests', () => {
       timeMs: 175_500,
       splitsMs: [18_000, 44_000, 175_500],
       at: 3,
+      rev: 1,
     });
     // other tracks are separate
     r = updatePersonalBest(r.pbs, 'race-canopy', 200_000, [200_000]);
     expect(Object.keys(r.pbs).sort()).toEqual(['race-canopy', 'race-cliffline']);
+  });
+
+  it('a rebuilt track starts fresh: bests from its older layout are dropped', () => {
+    expect(trackRevision('race-sunspire')).toBe(2);
+    expect(trackRevision('surf-copper-reef')).toBe(1);
+    const old = {
+      'race-sunspire': { track: 'race-sunspire', timeMs: 150_000, splitsMs: [150_000], at: 1 },
+      'surf-copper-reef': {
+        track: 'surf-copper-reef',
+        timeMs: 170_000,
+        splitsMs: [170_000],
+        at: 1,
+      },
+    };
+    expect(Object.keys(currentBests(old))).toEqual(['surf-copper-reef']);
+    // a slower time on the new layout is still a new best (the old one was another track)
+    const r = updatePersonalBest(old, 'race-sunspire', 180_000, [180_000], 2);
+    expect(r.improved).toBe(true);
+    expect(r.previous).toBeNull();
+    expect(r.pbs['race-sunspire'].rev).toBe(2);
+    expect(updatePersonalBest(r.pbs, 'race-sunspire', 181_000, [181_000]).improved).toBe(false);
   });
 
   it('compares a split with the best (negative = faster)', () => {

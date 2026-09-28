@@ -78,6 +78,7 @@ export const placeRacer = (p: PlayerState, m: MovementConfig, feet: Vec3, yawDeg
   p.coyote = 0;
   p.jumpBuffer = 0;
   p.landGrace = 0;
+  p.landSpeed = 0;
   p.airTicks = 0;
   p.tapWindow = 0;
   p.railCd = 0;

@@ -92,6 +92,7 @@ export const createPlayer = (
     coyote: 0,
     jumpBuffer: 0,
     landGrace: 0,
+    landSpeed: 0,
     slideBoostCd: 0,
     airTicks: 0,
     tapWindow: 0,

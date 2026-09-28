@@ -237,6 +237,7 @@ export class App {
     this.audio.setVolume('sfx', this.settings.sfxVolume);
     this.audio.setVolume('ui', this.settings.uiVolume);
     this.audio.setVolume('announcer', this.settings.announcerVolume);
+    this.audio.setVolume('music', this.settings.musicVolume);
     this.announcer.enabled = this.settings.announcer;
   }
 

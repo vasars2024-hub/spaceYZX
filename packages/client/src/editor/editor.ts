@@ -69,6 +69,8 @@ import { blockBoxes, piece, sceneData, volumeBox, SPAWN_BOX, type PickPiece } fr
 import { EditorViewport, type EditorLook } from './viewport';
 import { saveDraft, type CameraState, type EditorSession } from './session';
 import { EditorUI } from './ui';
+import { quickTestKey } from './quick-test';
+import { QuickTester } from './test-mode';
 
 export type Tool =
   | { k: 'select' }
@@ -180,6 +182,10 @@ export class MapEditor {
   notes: string[] = [];
   private disposed = false;
   private listeners: [EventTarget, string, EventListener, AddEventListenerOptions?][] = [];
+  /** the instant Build ⇄ Test toggle (T; editor/test-mode.ts) */
+  readonly quick: QuickTester;
+  /** testing: the editor waits hidden, everything kept (suspend / resume) */
+  suspended = false;
 
   /** the phone / tablet editor (editor/touch-ui.ts): taps, holds, a stick; no mouse or keys */
   readonly touch: boolean;
@@ -239,6 +245,7 @@ export class MapEditor {
     if (this.touch) this.view.camera.far = 1200;
     this.view.setLook(this.look());
     this.cam = session.camera ?? this.startCamera();
+    this.quick = new QuickTester(this);
     this.ui = new EditorUI(this);
     this.attach();
     this.sync();
@@ -339,6 +346,7 @@ export class MapEditor {
 
   dispose(): void {
     if (this.disposed) return;
+    this.quick.dispose();
     this.disposed = true;
     this.session.camera = { ...this.cam };
     saveDraft(this.session);
@@ -353,6 +361,41 @@ export class MapEditor {
     this.view.dispose();
     this.ui.dispose();
     setLeaveGuard(false);
+  }
+
+  /**
+   * A test run starts (editor/test-mode.ts): the editor stops listening and hides, keeping the
+   * doc, undo history, selection, tool and its 3D view. The draft is saved, just in case.
+   */
+  suspend(): void {
+    this.suspended = true;
+    this.held.clear();
+    this.endDrag();
+    this.rightDown = null;
+    this.fdrag = null;
+    this.touchMove = { x: 0, y: 0 };
+    this.touchFly = 0;
+    this.ui.setHoverText('');
+    if (this.lockMode) {
+      this.lockMode = false;
+      this.ui.refreshMode();
+    }
+    window.clearTimeout(this.autosaveTimer);
+    this.session.camera = { ...this.cam };
+    saveDraft(this.session);
+  }
+
+  /** Back from a test run: the camera at `cam` (where your eyes were), the editor as it was. */
+  resume(cam: CameraState | null): void {
+    if (this.disposed) return;
+    this.suspended = false;
+    if (cam) this.cam = { pos: [...cam.pos] as V3, heading: cam.heading, pitch: cam.pitch };
+    this.hoverKey = '';
+    this.ghostKey = '';
+    this.app.editorView = this;
+    this.app.setScreen(this.ui.root, 'none');
+    this.view.resize(window.innerWidth, window.innerHeight);
+    setLeaveGuard(true);
   }
 
   // -------------------------------------------------------------------------------------------
@@ -712,6 +755,12 @@ export class MapEditor {
 
   frame(dt: number): void {
     if (this.disposed) return;
+    // a test run ended without telling us (the game was stopped): back to building
+    if (this.suspended) {
+      this.quick.back();
+      if (this.suspended) this.resume(null);
+      return;
+    }
     // another screen took over (an invite into a game, the title...): close, keeping the draft
     if (!this.ui.root.isConnected) return this.dispose();
     this.moveCamera(dt);
@@ -1377,7 +1426,7 @@ export class MapEditor {
   // input
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (this.disposed || this.app.client) return;
+    if (this.disposed || this.suspended || this.app.client) return;
     const target = e.target as HTMLElement | null;
     if (target?.matches?.('input, select, textarea')) return;
     if (this.ui.modalOpen()) {
@@ -1421,6 +1470,10 @@ export class MapEditor {
       !code.startsWith('Bracket')
     )
       return;
+    // T: play it now from the camera · Shift+T: from the start (T again: back here)
+    const test = quickTestKey(e);
+    // (a T the game already took — back from a test — must not start another one)
+    if (test && !e.defaultPrevented) return this.quick.toggle(test);
     const digit = /^Digit(\d)$/.exec(code);
     if (digit) return this.ui.pickHotbar(digit[1]);
     switch (code) {
@@ -1568,7 +1621,7 @@ export class MapEditor {
   private rightDown: { x: number; y: number; moved: number } | null = null;
 
   private onMouseUp(e: MouseEvent): void {
-    if (this.disposed || this.touch) return;
+    if (this.disposed || this.touch || this.suspended) return;
     if (e.button === 2) {
       this.looking = false;
       if (!this.lockMode && document.pointerLockElement) document.exitPointerLock();
@@ -1618,7 +1671,7 @@ export class MapEditor {
   }
 
   private onMouseMove(e: MouseEvent): void {
-    if (this.disposed || this.touch) return;
+    if (this.disposed || this.touch || this.suspended) return;
     const locked = document.pointerLockElement === this.app.canvas;
     if (locked && (this.looking || this.lockMode)) {
       const sens = this.app.settings.sensitivity ?? 0.1;

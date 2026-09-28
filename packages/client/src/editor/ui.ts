@@ -69,6 +69,7 @@ import {
 import { GRID_SIZES } from './snap';
 import { TOUCH_HELP_ROWS, TouchLayer } from './touch-ui';
 import { saveDraft } from './session';
+import { QUICK_TEST_LABEL } from './quick-test';
 import {
   confirmBox,
   edButton,
@@ -132,6 +133,10 @@ export const HELP_ROWS: [string, string][] = [
   ['Mouse wheel', 'Fly speed'],
   ['Right mouse (hold)', 'Look around'],
   ['Tab', 'Mouse look on / off (aim with the centre dot)'],
+  [
+    `${QUICK_TEST_LABEL} / Shift + ${QUICK_TEST_LABEL}`,
+    `Play it now from the camera / from the start (${QUICK_TEST_LABEL} again: back to building, nothing lost)`,
+  ],
   [
     '1 – 0',
     'Tools: 1 Select, 2 Platform, 3 Block, 4 Ramp, 5 Surf, 6 Curved ramp, 7 Kill paint, 8 Checkpoint, 9 Portal, 0 Launch pad',
@@ -355,7 +360,20 @@ export class EditorUI {
               'Put the original map back, or undo the last publish',
             )
           : null,
-        edButton('test', 'Test', () => this.testMenu(), 'btn small primary', 'Play your map'),
+        edButton(
+          'test',
+          `Play · ${QUICK_TEST_LABEL}`,
+          () => ed.quick.toggle('camera'),
+          'btn small primary',
+          `Play it now from the camera (${QUICK_TEST_LABEL}) · Shift+${QUICK_TEST_LABEL}: from the start · ${QUICK_TEST_LABEL} again: back to building`,
+        ),
+        edButton(
+          null,
+          'Test…',
+          () => this.testMenu(),
+          'btn small secondary',
+          'Race it, walk around it with target dummies, or play it online with friends',
+        ),
         edButton('help', '', () => this.toggleHelp(), 'btn small secondary ed-sq', 'How to (H)'),
       ]),
     );
@@ -583,7 +601,7 @@ export class EditorUI {
             : '';
       return;
     }
-    const look = ed.lockMode ? 'Tab: free the mouse' : 'Hold right mouse to look · Tab: mouse look';
+    const look = `${ed.lockMode ? 'Tab: free the mouse' : 'Hold right mouse to look · Tab: mouse look'} · ${QUICK_TEST_LABEL}: play`;
     let text = '';
     if (t.k === 'select')
       text = `Click to select · drag to move · Del delete · R turn · G move to aim · ${look}`;
@@ -1748,7 +1766,8 @@ export class EditorUI {
       h('span', { class: 'ed-spacer' }),
       btn('↶', () => ed.undo(), '', 'Undo'),
       btn('↷', () => ed.redo(), '', 'Redo'),
-      btn('▶ Test', () => this.testMenu(), 'primary', 'Test'),
+      btn('▶ Play', () => ed.quick.toggle('camera'), 'primary', 'Play it now from here'),
+      btn('Test…', () => this.testMenu(), '', 'Test'),
     );
     this.refreshStatus();
   }
@@ -1891,7 +1910,11 @@ export class EditorUI {
           {},
           'Press 1 (Select) and click a piece to change it on the right; drag it to move it.',
         ),
-        h('li', {}, 'Press Test to play your map. Save keeps it in My Maps.'),
+        h(
+          'li',
+          {},
+          `Press ${QUICK_TEST_LABEL} to play it right where you are, ${QUICK_TEST_LABEL} again to keep building. Save keeps it in My Maps.`,
+        ),
       ),
       h(
         'table',

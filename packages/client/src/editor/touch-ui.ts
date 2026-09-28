@@ -70,6 +70,7 @@ export const TOUCH_HELP_ROWS: [string, string][] = [
   ['✋ + drag a piece', 'Move it, with everything built onto it (Just this: only it)'],
   ['Bag (end of the hotbar)', 'All pieces, game items, materials and colours'],
   ['Swipe the sheet down', 'Close it'],
+  ['▶ Play', 'Play it now from here · ◀ Build: back to building, nothing lost'],
 ];
 
 export class TouchLayer {
@@ -250,7 +251,8 @@ export class TouchLayer {
   // the view
 
   private blocked(): boolean {
-    return this.ui.modalOpen() || !!this.inv || !!this.tutorial;
+    // (testing: the game has the screen, taps are the game's)
+    return this.ed.suspended || this.ui.modalOpen() || !!this.inv || !!this.tutorial;
   }
 
   private viewDown(e: PointerEvent): void {

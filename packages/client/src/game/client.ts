@@ -5,7 +5,7 @@ import { len, projectOnPlane, v3, qForward, qUp, Move, eyePos, Btn } from '@spac
 import type { RenderPlayer, Session } from './session';
 import { FpsCamera } from './camera';
 import type { InputManager } from './input';
-import { buildLevelMeshes, type LevelMeshes } from '../render/level-mesh';
+import { buildLevelMeshes, type LevelMeshes, type LevelMeshOptions } from '../render/level-mesh';
 import { buildMoverMeshes, type MoverMeshes } from '../render/mover-mesh';
 import { PortalPreviews } from '../render/portal-preview';
 import { QUALITY } from '../render/perf';
@@ -22,6 +22,11 @@ export interface GameClientDeps {
   input: InputManager;
   settings: Settings;
   audio: AudioEngine;
+  /**
+   * The level's view built (and kept) by the caller: the Map Maker's test runs reuse it while
+   * the map is unchanged. Never disposed here. Default: built for this game.
+   */
+  levelMeshes?: (opts: LevelMeshOptions) => LevelMeshes;
 }
 
 /** Plug-ins add rendering/UI features (combat view, objective HUD…) without touching the core. */
@@ -81,11 +86,12 @@ export class GameClient {
     this.scene.background = new THREE.Color(fog.color);
     this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
     const q = QUALITY[deps.settings.quality] ?? QUALITY.medium;
-    this.levelMeshes = buildLevelMeshes(def, {
+    const meshOpts: LevelMeshOptions = {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
       dust: q.dust && effects.decoration,
       atmosphere: q.atmosphere && effects.decoration,
-    });
+    };
+    this.levelMeshes = deps.levelMeshes?.(meshOpts) ?? buildLevelMeshes(def, meshOpts);
     this.scene.add(this.levelMeshes.group);
     this.raceAudio = def.race ? new RaceAudio(deps.audio, def.name) : null;
     this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
@@ -364,7 +370,9 @@ export class GameClient {
     this.slide?.stop(0.05);
     this.raceAudio?.dispose();
     this.portalPreviews.dispose();
-    this.levelMeshes.dispose();
+    // (a view the caller built is the caller's to keep)
+    if (this.deps.levelMeshes) this.scene.remove(this.levelMeshes.group);
+    else this.levelMeshes.dispose();
     this.moverMeshes?.dispose();
     this.hud.root.remove();
     this.session.dispose();

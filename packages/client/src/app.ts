@@ -21,7 +21,7 @@ import {
 } from './mobile';
 import { TouchControls, TOUCH_CONTROLS_HELP } from './game/touch-controls';
 import { InputManager, setLeaveGuard } from './game/input';
-import { GameClient, type ClientFeature } from './game/client';
+import { GameClient, type ClientFeature, type GameClientDeps } from './game/client';
 import type { Session } from './game/session';
 import { LocalSession } from './game/local-session';
 import { AudioEngine, Announcer } from './audio';
@@ -523,6 +523,8 @@ export class App {
       tuning?: boolean;
       /** keep the pointer locked (a Brawl moving on to its next map) */
       keepLock?: boolean;
+      /** the level's view, built and kept by the caller (GameClientDeps.levelMeshes) */
+      levelMeshes?: GameClientDeps['levelMeshes'];
     } = {},
   ): GameClient {
     this.stopGame(opts.keepLock);
@@ -533,6 +535,7 @@ export class App {
         input: this.input,
         settings: this.settings,
         audio: this.audio,
+        ...(opts.levelMeshes ? { levelMeshes: opts.levelMeshes } : {}),
       },
       session,
     );

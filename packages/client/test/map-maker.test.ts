@@ -2,6 +2,8 @@
 // the moving-block preview timing, building the doc from edits, picking, curve handles.
 import { describe, expect, it } from 'vitest';
 import {
+  MAPS,
+  baseBoxesForEditor,
   compileCustomMap,
   countPieces,
   customMoverOffset,
@@ -46,6 +48,7 @@ import {
 import { placeInAir, placeOnSurface, snap } from '../src/editor/snap';
 import { moverCycle, moverPosAt } from '../src/editor/mover-time';
 import { pickNearest, rayPiece, boxBounds } from '../src/editor/pick';
+import { rampGroups } from '../src/editor/ramps';
 import {
   curveEndLocal,
   localToWorld,
@@ -334,6 +337,53 @@ describe('picking', () => {
     const pieces = [floor, top].map((box) => ({ box, ...boxBounds(box) }));
     expect(pickNearest(v3(0, 10, 0), v3(0, -1, 0), pieces)?.i).toBe(1);
     expect(pickNearest(v3(5, 10, 5), v3(0, -1, 0), pieces)?.i).toBe(0);
+  });
+
+  /** A free-form prism along x: base 4 m wide at y 0, ridge at y 2 over z 0 (a curve's piece). */
+  const hullPiece = (x0: number, x1: number): BoxDef => ({
+    c: v3((x0 + x1) / 2, 1, 0),
+    h: v3((x1 - x0) / 2, 1, 2),
+    hull: [v3(x0, 0, -2), v3(x0, 0, 2), v3(x1, 0, -2), v3(x1, 0, 2), v3(x0, 2, 0), v3(x1, 2, 0)],
+  });
+
+  it("hits a curved ramp's piece on its slope, and misses beside it", () => {
+    const hit = rayPiece(v3(1, 10, 1), v3(0, -1, 0), hullPiece(0, 2));
+    expect(hit?.t).toBeCloseTo(9); // the slope is at y = 1 half way out (z = 1 of 2)
+    expect(hit!.n.z).toBeGreaterThan(0.3);
+    expect(rayPiece(v3(3, 10, 0), v3(0, -1, 0), hullPiece(0, 2))).toBeNull();
+    expect(rayPiece(v3(1, 10, 2.5), v3(0, -1, 0), hullPiece(0, 2))).toBeNull();
+  });
+
+  it('groups curved ramp pieces into whole ramps by their joints', () => {
+    const fp = (i: number) => `p${i}`;
+    const base = [hullPiece(0, 2), hullPiece(2, 4), hullPiece(4, 6), hullPiece(20, 22), floor].map(
+      (box, i) => ({ fingerprint: fp(i), box }),
+    );
+    const groups = rampGroups(base).map((g) => g.sort());
+    expect(groups.sort((a, b) => b.length - a.length)).toEqual([['p0', 'p1', 'p2'], ['p3']]);
+  });
+
+  it("every built-in map's curved ramp pieces can be picked and belong to one ramp", () => {
+    let hulls = 0;
+    for (const m of MAPS) {
+      const base = baseBoxesForEditor(m.id);
+      const groups = rampGroups(base);
+      const inGroups = groups.flat();
+      const hullFps = base.filter((b) => b.box.hull).map((b) => b.fingerprint);
+      hulls += hullFps.length;
+      expect(new Set(inGroups)).toEqual(new Set(hullFps));
+      // a ray straight down onto a piece's ridge midpoint hits it
+      for (const b of base.filter((x) => x.box.hull).slice(0, 20)) {
+        const r = b.box.hull!;
+        const top = v3((r[4].x + r[5].x) / 2, (r[4].y + r[5].y) / 2, (r[4].z + r[5].z) / 2);
+        const low = v3((r[0].x + r[3].x) / 2, (r[0].y + r[3].y) / 2, (r[0].z + r[3].z) / 2);
+        // aim from outside, through the middle of the solid
+        const mid = v3((top.x + low.x) / 2, (top.y + low.y) / 2, (top.z + low.z) / 2);
+        const from = v3(mid.x, mid.y + 200, mid.z);
+        expect(rayPiece(from, v3(0, -1, 0), b.box)).not.toBeNull();
+      }
+    }
+    expect(hulls).toBeGreaterThan(0);
   });
 });
 

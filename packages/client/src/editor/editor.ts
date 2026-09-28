@@ -52,6 +52,7 @@ import {
   type V3,
 } from './model';
 import { boxBounds, pickNearest } from './pick';
+import { rampGroups } from './ramps';
 import { CONNECT_DIST, connectSnap } from './connect-snap';
 import { structureKeys, type StructItem } from './structure';
 import { placeInAir, placeOnSurface } from './snap';
@@ -138,11 +139,12 @@ export class MapEditor {
   baseName = '';
   private base: { fingerprint: string; box: BoxDef }[] = [];
   /**
-   * the built-in map's free-form prisms (curved surf ramps, BoxDef.hull): drawn, but they can't
-   * be picked, changed or deleted (they stay part of the map when played: an edit only lists
-   * the boxes it removes)
+   * the built-in map's curved ramps (free-form prisms, BoxDef.hull): each ramp's pieces (they
+   * share the exact corners of their joints) — a click takes the whole ramp. They can be
+   * deleted, not changed (no block shape holds them).
    */
-  private baseHulls: BoxDef[] = [];
+  private rampOfFp = new Map<string, number>();
+  private rampFps: string[][] = [];
   private baseByFp = new Map<string, BoxDef[]>();
   private basePieces: PickPiece[] = [];
   private baseKey = '';
@@ -225,20 +227,19 @@ export class MapEditor {
     // it, and here it just has no base map)
     if (doc.patch && doc.base && mapExists(doc.base)) {
       try {
-        const all = baseBoxesForEditor(doc.base);
-        this.base = all.filter((b) => !b.box.hull);
-        this.baseHulls = all.filter((b) => b.box.hull).map((b) => b.box);
+        this.base = baseBoxesForEditor(doc.base);
         this.baseDef = mapDef(doc.base);
         this.baseName = getMap(doc.base).name;
       } catch {
         this.base = [];
-        this.baseHulls = [];
       }
       for (const b of this.base) {
         const list = this.baseByFp.get(b.fingerprint) ?? [];
         list.push(b.box);
         this.baseByFp.set(b.fingerprint, list);
       }
+      this.rampFps = rampGroups(this.base);
+      this.rampFps.forEach((fps, i) => fps.forEach((fp) => this.rampOfFp.set(fp, i)));
     } else if (doc.patch && doc.base) this.baseName = 'a removed map';
     this.view = new EditorViewport(app.renderer);
     // phones: a shorter view distance keeps big maps smooth
@@ -434,7 +435,7 @@ export class MapEditor {
       const live = this.base.filter((b) => !gone.has(b.fingerprint));
       const visible = live.filter((b) => this.view.showHidden || !b.box.noRender);
       this.basePieces = visible.map((b) => piece({ k: 'base', fp: b.fingerprint }, b.box));
-      this.view.setBase([...visible.map((b) => b.box), ...this.baseHulls]);
+      this.view.setBase(visible.map((b) => b.box));
     }
     const sd = sceneData(doc, (r) => this.isSelected(r), this.baseDef);
     this.view.setDoc(sd.docBoxes);
@@ -522,23 +523,92 @@ export class MapEditor {
         else skipped.push(r);
       }
     }
+    if (!items.length) {
+      this.ui.toast("Curved ramps can't be moved or changed, only deleted");
+      return refs;
+    }
     const res = adoptBaseBoxes(this.doc, items);
     const others = refs.filter((r) => r.k !== 'base');
     const out = [...others, ...res.refs, ...skipped];
     this.commit(res.doc, mergeKey, out);
-    if (skipped.length) this.ui.toast("Some of these can't be changed, only deleted");
+    if (skipped.length) this.ui.toast("Curved ramps can't be moved or changed, only deleted");
     return out;
   }
 
   deleteSelection(): void {
     if (!this.selection.length) return this.ui.toast('Nothing selected');
     const n = this.selection.length;
+    const ramps = this.rampSelection();
     this.commit(deleteRefs(this.doc, this.selection), null, []);
-    this.ui.toast(n === 1 ? 'Deleted' : `Deleted ${n} things`);
+    this.ui.toast(
+      ramps?.whole
+        ? `Deleted ${ramps.ramps === 1 ? 'the curved ramp' : `${ramps.ramps} curved ramps`} · Ctrl+Z undoes it`
+        : n === 1
+          ? 'Deleted'
+          : `Deleted ${n} things`,
+    );
+  }
+
+  // curved ramps of the built-in map
+
+  /** Is this a piece of one of the built-in map's curved ramps? */
+  isRampPiece(r: Ref): boolean {
+    return r.k === 'base' && this.rampOfFp.has(r.fp);
+  }
+
+  /** The pieces (still there) of the curved ramp `r` belongs to (just `r` for anything else). */
+  rampOf(r: Ref): Ref[] {
+    const i = r.k === 'base' ? this.rampOfFp.get(r.fp) : undefined;
+    if (i === undefined) return [r];
+    const gone = new Set(this.doc.patch?.removed ?? []);
+    return this.rampFps[i].filter((fp) => !gone.has(fp)).map((fp) => ({ k: 'base', fp }));
+  }
+
+  /** What a click on `r` selects: a curved ramp whole (not with Alt or "Just this piece"). */
+  clickGroup(r: Ref, single = false): Ref[] {
+    return single || this.justThis ? [r] : this.rampOf(r);
+  }
+
+  /**
+   * The selection when it is only curved-ramp pieces: how many ramps they belong to, how many
+   * pieces, and whether each of those ramps is selected whole (null: something else too).
+   */
+  rampSelection(): { ramps: number; pieces: number; whole: boolean } | null {
+    const s = this.selection;
+    if (!s.length || !s.every((r) => this.isRampPiece(r))) return null;
+    const ids = new Set(s.map((r) => this.rampOfFp.get((r as { fp: string }).fp)!));
+    const all = [...ids].reduce(
+      (n, i) => n + this.rampOf({ k: 'base', fp: this.rampFps[i][0] }).length,
+      0,
+    );
+    return { ramps: ids.size, pieces: s.length, whole: all === s.length };
+  }
+
+  /** Only curved-ramp pieces selected: say they can only be deleted (true: stop there). */
+  private rampOnly(): boolean {
+    if (!this.rampSelection()) return false;
+    this.ui.toast("Curved ramps can't be moved or changed, only deleted (Delete / X)", 'ramp');
+    return true;
+  }
+
+  /** Select the whole curved ramps of the selected pieces. */
+  selectWholeRamps(): void {
+    const seen = new Set<string>();
+    const out: Ref[] = [];
+    for (const r of this.selection)
+      for (const p of this.rampOf(r)) {
+        const k = refKey(p);
+        if (!seen.has(k)) {
+          seen.add(k);
+          out.push(p);
+        }
+      }
+    this.select(out);
   }
 
   duplicateSelection(): void {
     if (!this.selection.length) return this.ui.toast('Nothing selected');
+    if (this.rampOnly()) return;
     const refs = this.adoptSelection();
     const off: V3 = [this.grid * Math.max(1, Math.round(2 / this.grid)), 0, 0];
     const res = duplicateRefs(this.doc, refs, off);
@@ -552,7 +622,7 @@ export class MapEditor {
       this.ghostKey = '';
       return;
     }
-    if (!this.selection.length) return;
+    if (!this.selection.length || this.rampOnly()) return;
     this.expandToStructure();
     const refs = this.adoptSelection();
     this.commit(rotateRefs(this.doc, refs, deg), `rotate:${refs.map(refKey).join()}`);
@@ -582,13 +652,14 @@ export class MapEditor {
       return;
     }
     if (!this.selection.length) return;
+    if (this.rampOnly()) return;
     const refs = this.adoptSelection();
     this.commit(scaleRefs(this.doc, refs, k), `scale:${refs.map(refKey).join()}`);
   }
 
   /** Move the selection by `d` (arrow keys). */
   nudge(d: V3): void {
-    if (!this.selection.length) return;
+    if (!this.selection.length || this.rampOnly()) return;
     this.expandToStructure();
     const refs = this.adoptSelection();
     this.commit(moveRefs(this.doc, refs, d), `nudge:${refs.map(refKey).join()}`);
@@ -718,6 +789,7 @@ export class MapEditor {
   /** G: the selection follows your aim until you click. */
   startGrab(): void {
     if (!this.selection.length) return this.ui.toast('Select something first');
+    if (this.rampOnly()) return;
     const refs = this.adoptSelection();
     this.session.history.seal();
     this.setTool({ k: 'grab', start: this.doc, refs });
@@ -1150,10 +1222,16 @@ export class MapEditor {
   /** The layered structure of a piece (the map's own blocks and the built-in boxes). */
   structureOf(ref: Ref): { refs: Ref[]; pieces: number; capped: boolean } {
     if (ref.k !== 'block' && ref.k !== 'base') return { refs: [ref], pieces: 1, capped: false };
+    // a curved ramp: its own pieces (and it never comes along with what it touches)
+    if (this.isRampPiece(ref)) {
+      const refs = this.rampOf(ref);
+      return { refs, pieces: refs.length, capped: false };
+    }
     const items: StructItem[] = [];
     const byKey = new Map<string, Ref>();
     for (const p of this.pieces) {
       if (p.ref.k !== 'block' && p.ref.k !== 'base') continue;
+      if (this.isRampPiece(p.ref)) continue;
       const k = refKey(p.ref);
       byKey.set(k, p.ref);
       items.push({ key: k, min: p.min, max: p.max });
@@ -1262,6 +1340,10 @@ export class MapEditor {
     const ref = this.refAt(x, y);
     const point = this.aim?.hit?.point;
     if (!ref || !point) return false;
+    if (this.isRampPiece(ref)) {
+      this.ui.toast("Curved ramps can't be moved, only deleted", 'drag');
+      return false;
+    }
     let refs = this.dragGroup(ref);
     this.session.history.seal();
     const key = `tdrag${++this.dragN}`;
@@ -1362,7 +1444,7 @@ export class MapEditor {
     const ref = this.refAt(x, y);
     const aim = this.aim;
     if (this.tool.k === 'select') {
-      this.select(ref ? [ref] : []);
+      this.select(ref ? this.clickGroup(ref) : []);
       if (ref) this.ui.openSheet();
       else this.ui.closeSheet();
       return;
@@ -1386,13 +1468,14 @@ export class MapEditor {
     const ref = this.refAt(x, y);
     if (!ref) return false;
     const name = this.describe(ref);
+    const group = this.clickGroup(ref);
     const next =
-      ref.k === 'point' ? removeMoverPoint(this.doc, ref.id, ref.i) : deleteRefs(this.doc, [ref]);
-    const k = refKey(ref);
+      ref.k === 'point' ? removeMoverPoint(this.doc, ref.id, ref.i) : deleteRefs(this.doc, group);
+    const gone = new Set(group.map(refKey));
     this.commit(
       next,
       null,
-      this.selection.filter((r) => refKey(r) !== k),
+      this.selection.filter((r) => !gone.has(refKey(r))),
     );
     try {
       navigator.vibrate?.(35);
@@ -1613,9 +1696,10 @@ export class MapEditor {
       shift: e.shiftKey,
       dragging: null,
     };
-    // grabbing an unselected thing selects it right away (so it can be dragged at once)
+    // grabbing an unselected thing selects it right away (so it can be dragged at once); a
+    // curved ramp whole (Alt: just the piece)
     if (this.tool.k === 'select' && hit && !e.shiftKey && !this.isSelected(hit.piece.ref))
-      this.select([hit.piece.ref]);
+      this.select(this.clickGroup(hit.piece.ref, e.altKey));
   }
 
   private rightDown: { x: number; y: number; moved: number } | null = null;
@@ -1654,14 +1738,23 @@ export class MapEditor {
       if (!d.shift) this.select([]);
       return;
     }
+    // (a curved ramp comes whole: Alt-click for one piece of it)
+    const group = this.clickGroup(d.ref, e.altKey);
     if (d.shift) {
-      const k = refKey(d.ref);
+      const keys = new Set(group.map(refKey));
       this.select(
         this.isSelected(d.ref)
-          ? this.selection.filter((r) => refKey(r) !== k)
-          : [...this.selection, d.ref],
+          ? this.selection.filter((r) => !keys.has(refKey(r)))
+          : [...this.selection.filter((r) => !keys.has(refKey(r))), ...group],
       );
-    } else this.select([d.ref]);
+    } else this.select(group);
+    if (!d.shift && this.isRampPiece(d.ref))
+      this.ui.toast(
+        group.length > 1
+          ? `Curved ramp · ${group.length} pieces · Delete / X removes it · Alt-click for one piece`
+          : 'One piece of a curved ramp · Delete / X removes it',
+        'ramp',
+      );
   }
 
   private endDrag(): void {
@@ -1691,7 +1784,8 @@ export class MapEditor {
     if (d.handle) return this.dragHandle(d.handle);
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
     if (!d.dragging && !locked && moved > 5) {
-      if (d.ref && !d.shift && this.isSelected(d.ref) && d.point) {
+      // (curved ramps can't move: a drag across one selects an area, e.g. a section of it)
+      if (d.ref && !d.shift && this.isSelected(d.ref) && d.point && !this.isRampPiece(d.ref)) {
         d.dragging = 'move';
         // the piece brings its whole layered structure (unless "Just this piece")
         const refs = this.dragGroup(d.ref);
@@ -1865,7 +1959,9 @@ export class MapEditor {
   describe(r: Ref): string {
     switch (r.k) {
       case 'base':
-        return `Part of ${this.baseName || 'the map'}`;
+        return this.isRampPiece(r)
+          ? `Curved ramp of ${this.baseName || 'the map'}`
+          : `Part of ${this.baseName || 'the map'}`;
       case 'block': {
         const b = blockById(this.doc, r.id);
         return b ? blockName(b) : 'Block';

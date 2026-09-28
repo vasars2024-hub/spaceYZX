@@ -143,6 +143,10 @@ export const HELP_ROWS: [string, string][] = [
   ],
   ['Left click', 'Select · place (with a building tool)'],
   ['Shift + click', 'Select more than one'],
+  [
+    'Alt + click',
+    'One piece of a built-in curved ramp (a click picks the whole ramp; they can only be deleted, drag across one to pick a section)',
+  ],
   ['Drag', 'Move what is selected (hold Alt: up / down) · on empty space: select an area'],
   ['Arrows · PgUp / PgDn', 'Move the selection one grid step'],
   ['G', 'Move the selection to where you aim (click to drop)'],
@@ -658,6 +662,7 @@ export class EditorUI {
     )
       content = this.brushPanel(ed.tool.brush);
     else if (!sel.length) content = this.mapPanel();
+    else if (ed.rampSelection()) content = this.rampPanel();
     else if (sel.length > 1) content = this.multiPanel();
     else content = this.onePanel(sel[0]);
     this.right.replaceChildren(...nn(content));
@@ -729,7 +734,7 @@ export class EditorUI {
         h(
           'p',
           { class: 'ed-tip' },
-          `This is ${ed.session.kind === 'official' ? 'the real' : 'your version of'} ${ed.baseName}. Click any part of it to change or delete it.`,
+          `This is ${ed.session.kind === 'official' ? 'the real' : 'your version of'} ${ed.baseName}. Click any part of it to change or delete it (a curved ramp is picked whole: Alt-click for one piece).`,
         ),
       );
     // race
@@ -821,6 +826,50 @@ export class EditorUI {
       h('p', { class: 'ed-tip' }, 'Click something to change it. Press H for all the keys.'),
     );
     return out;
+  }
+
+  /** Curved ramps of the built-in map (whole or some of their pieces): they can only go. */
+  private rampPanel(): (Node | null)[] {
+    const ed = this.ed;
+    const rs = ed.rampSelection()!;
+    const what = rs.whole
+      ? rs.ramps === 1
+        ? `Curved ramp · ${rs.pieces} piece${rs.pieces === 1 ? '' : 's'}`
+        : `${rs.ramps} curved ramps · ${rs.pieces} pieces`
+      : `${rs.pieces} piece${rs.pieces === 1 ? '' : 's'} of a curved ramp`;
+    return [
+      this.title(what, 'block'),
+      h(
+        'p',
+        { class: 'ed-tip' },
+        ed.session.kind === 'official'
+          ? 'Part of the real map. Delete it and players lose it when you publish.'
+          : 'Part of the built-in map. Deleting it only changes your version.',
+      ),
+      this.actions(
+        edButton(
+          'trash',
+          rs.whole ? (rs.ramps === 1 ? 'Delete ramp' : 'Delete ramps') : 'Delete pieces',
+          () => ed.deleteSelection(),
+          'btn small orange',
+          'Delete / X',
+        ),
+        rs.whole
+          ? null
+          : edButton('select', 'Select whole ramp', () => ed.selectWholeRamps(), 'btn small'),
+      ),
+      h(
+        'p',
+        { class: 'ed-tip' },
+        this.touchLayer
+          ? 'Tap selects a whole ramp; turn on "Just this piece" to pick single pieces. Hold to break it.'
+          : 'Click selects a whole ramp. Alt-click picks one piece, Shift+Alt-click adds pieces, and dragging a box around pieces picks a section. Ctrl+Z undoes a delete.',
+      ),
+      this.touchLayer
+        ? toggleRow('Just this piece (pick single pieces)', ed.justThis, (v) => ed.setJustThis(v))
+        : null,
+      h('p', { class: 'ed-tip' }, "Curved ramps can't be moved or reshaped, only deleted."),
+    ];
   }
 
   private multiPanel(): (Node | null)[] {

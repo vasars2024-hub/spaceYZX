@@ -1,7 +1,8 @@
-// MAP MAKER — what the mouse points at: a ray against the pieces of the map (boxes, turned boxes
-// and surf-ramp prisms, exactly as level/collision.ts shapes them). Plain maths, no Three.js.
+// MAP MAKER — what the mouse points at: a ray against the pieces of the map (boxes, turned boxes,
+// surf-ramp prisms and curved ramps' free-form prisms, exactly as level/collision.ts shapes
+// them). Plain maths, no Three.js.
 import type { BoxDef, Vec3 } from '@space-yz/shared';
-import { qConj, qRotate } from '@space-yz/shared';
+import { hullShape, qConj, qRotate } from '@space-yz/shared';
 
 export interface RayHit {
   t: number;
@@ -78,16 +79,32 @@ const localPlanes = (b: BoxDef): { n: Vec3; w: number }[] => {
   return planes;
 };
 
-/** Ray against one piece (a box, a turned box or a prism). Starting inside does not count. */
+const hullCache = new WeakMap<BoxDef, { n: Vec3; w: number }[]>();
+
+/** A free-form prism's face planes relative to its centre (world axes; cached per box). */
+const hullPlanes = (b: BoxDef): { n: Vec3; w: number }[] => {
+  let out = hullCache.get(b);
+  if (!out) {
+    const s = hullShape(b.hull!.map((p) => sub(p, b.c)));
+    out = s.n.map((n, i) => ({ n, w: s.d[i] }));
+    hullCache.set(b, out);
+  }
+  return out;
+};
+
+/**
+ * Ray against one piece (a box, a turned box, a prism or a free-form prism). Starting inside
+ * does not count.
+ */
 export const rayPiece = (o: Vec3, d: Vec3, b: BoxDef, maxT = Infinity): RayHit | null => {
-  const inv = b.q ? qConj(b.q) : null;
+  const inv = b.q && !b.hull ? qConj(b.q) : null;
   const lo = sub(o, b.c);
   const po = inv ? qRotate(inv, lo) : lo;
   const pd = inv ? qRotate(inv, d) : d;
   let tIn = -Infinity;
   let tOut = Infinity;
   let nIn: Vec3 | null = null;
-  for (const p of localPlanes(b)) {
+  for (const p of b.hull ? hullPlanes(b) : localPlanes(b)) {
     const denom = p.n.x * pd.x + p.n.y * pd.y + p.n.z * pd.z;
     const distv = p.w - (p.n.x * po.x + p.n.y * po.y + p.n.z * po.z);
     if (Math.abs(denom) < 1e-12) {
@@ -104,7 +121,7 @@ export const rayPiece = (o: Vec3, d: Vec3, b: BoxDef, maxT = Infinity): RayHit |
     if (tIn > tOut) return null;
   }
   if (!nIn || tIn < 0 || tIn > maxT) return null;
-  return { t: tIn, n: b.q ? qRotate(b.q, nIn) : nIn };
+  return { t: tIn, n: inv ? qRotate(b.q!, nIn) : nIn };
 };
 
 /**

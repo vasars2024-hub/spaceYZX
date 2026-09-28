@@ -276,8 +276,9 @@ describe('red zones', () => {
   it('a red block sends you back exactly at its surface, not a hand before it', () => {
     const red: BoxDef = { c: v3(0, 100, 0), h: v3(5, 1, 5), kill: true, mat: 'hazard' };
     const s = sim(level([red]), v3(0, 101.2, 0));
-    // just above it (body 3 cm clear): nothing
-    s.p.pos = v3(0, 101 + 0.9 + 0.05, 0);
+    // a hand above it (12 cm clear): nothing. Closer than the ground check's reach (6 cm)
+    // counts as touching, so a racer resting on a flat red top is sent back too
+    s.p.pos = v3(0, 101 + 0.9 + 0.12, 0);
     s.p.vel = v3();
     step(s.world, {}, s.ctx);
     expect(s.world.events.some((ev) => ev.type === 'raceRespawn')).toBe(false);

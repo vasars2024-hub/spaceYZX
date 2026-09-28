@@ -313,3 +313,7 @@ Source-style).
 - **Deadly ceilings:** yes. Red ceilings (laser or ash) where they fit the theme, clearly marked, as the "sky means death" rule.
 - **Personal bests:** reset for the three rebuilt tracks. That means new server records (a database migration) and new browser keys for bests and ghosts. Ladder ratings are unaffected.
 - **Defaults kept:** the 1.5 s respawn freeze, and manual bhop (no hold-to-jump).
+
+## Release note for the personal-best reset
+
+The reset mechanism shipped early (protocol 21) with `TRACK_REVISIONS` = 2 and migration 7, while the old layouts were still live. When the three rebuilt tracks ship, raise their `TRACK_REVISIONS` to 3 and add a migration that repeats the `DELETE FROM race_bests` for the three tracks. Otherwise bests set on the old layouts in between carry over.

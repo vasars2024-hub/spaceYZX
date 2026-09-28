@@ -287,11 +287,11 @@ export const MAP_BLURBS: Record<string, string> = {
   'proving-grounds': 'The movement test ship: zero-G bay, wall corridor, flip room.',
   arena: 'Sealed duel pits: crates in the middle, upper ground along the sides.',
   'race-sunspire':
-    'Sky temple at sunrise (medium): hop chains round the walls, first surf ramps, a window jump.',
+    'The Sun Clock at sunrise (medium): five portal rooms round a gold gnomon, bhop wraps, lapis surf, no jetpack.',
   'race-neon':
-    'Neon city fragments at night (hard): steep surf flicks, pillar weaves, a jetpack gap, speed gates.',
+    'The night interchange (hard): five metro-portal stations, billboard bhop, red lasers, a helix round the Drift Tower, no jetpack.',
   'race-ember':
-    'Basalt islands at dusk (very hard): small pads, the steepest ramps, two jetpack gaps on one fuel cell.',
+    'The forge needle (very hard): five portal rooms, a jetpack under red ash ceilings — save fuel for the crucible lift — buttress wraps and a helix down the needle.',
   'surf-copper-reef':
     'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
   'surf-glass-garden':

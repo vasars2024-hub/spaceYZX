@@ -114,7 +114,7 @@ describe('personal bests', () => {
   });
 
   it('a rebuilt track starts fresh: bests from its older layout are dropped', () => {
-    expect(trackRevision('race-sunspire')).toBe(2);
+    expect(trackRevision('race-sunspire')).toBe(3);
     expect(trackRevision('surf-copper-reef')).toBe(1);
     const old = {
       'race-sunspire': { track: 'race-sunspire', timeMs: 150_000, splitsMs: [150_000], at: 1 },
@@ -130,7 +130,7 @@ describe('personal bests', () => {
     const r = updatePersonalBest(old, 'race-sunspire', 180_000, [180_000], 2);
     expect(r.improved).toBe(true);
     expect(r.previous).toBeNull();
-    expect(r.pbs['race-sunspire'].rev).toBe(2);
+    expect(r.pbs['race-sunspire'].rev).toBe(3);
     expect(updatePersonalBest(r.pbs, 'race-sunspire', 181_000, [181_000]).improved).toBe(false);
   });
 

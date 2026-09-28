@@ -70,6 +70,12 @@ return p.course({ name, kind: 'surf', mode: 'beginner', profile: 'MOVEMENT_PROFI
   second-chance channel; its floor must stay 2 m above `killY`.
 - `holdToBhop: true` on the course: holding Space re-jumps on every landing (off by default;
   see `movement-profile.md`).
+- Race tracks keep the jetpack unless `jetpack: false` (only Ember Spire has it): a 1.6 s race
+  tank that never refills by itself, a `fuel` cell refills it once, every ignition costs
+  `raceJetIgniteSec` (0.15 s) on top of the burn (tapping it to hover burns as fast as holding
+  it), and a respawn gives back the fuel you had when you passed that room or anchor, never a
+  full tank. The bot's `jet` burns are one hold (`p.jet(ticks)`); check a burn's fuel need by
+  driving the jump with `p.jetFuel` set (see `race-ember.ts` and its doc).
 
 ## 3. The loop
 

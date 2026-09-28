@@ -163,9 +163,10 @@ it (or fall off anywhere) and you are back at your last checkpoint. Pick a **rac
   place ("Nova · 2nd") and you run straight through each other — nobody can block you.
 - **Checkpoints** are **walled rooms** with big windows, glowing doorways, their number over the
   exit (1, 2, 3 … FINISH) and the name of the stretch ahead. Pass them **in order**; the next
-  one is marked on your screen. There is one every **15–25 seconds**, so a fall only costs a
-  short stretch: **fall** or **hold R** and you're back in your last checkpoint room, frozen for
-  **1.5 s** (**0.5 s** on surf maps).
+  one is marked on your screen. Race tracks have **five rooms, about 30 seconds apart**, with
+  glowing **restart points** between them, so a fall only costs a short stretch: **fall** or
+  **hold R** and you're back at the last room or restart point you passed, frozen for **1.5 s**
+  (**0.5 s** on surf maps).
 - **Big portals** (glowing rings in a stone arch) take you to the next part of the course; you
   come out in a checkpoint room.
 - **Race movement is fast** (race courses only — the combat modes are unchanged): you
@@ -175,8 +176,9 @@ it (or fall off anywhere) and you are back at your last checkpoint. Pick a **rac
     smoothly — every moment you do it adds a little speed and bends your path. Holding **W**
     in the air adds nothing; pressing **S** brakes hard.
   - **Bunny hop**: jump again **the instant you land** (tap Space just before touching down,
-    or spin the **mouse wheel** bound to jump) — a jump on the first ground moment keeps all
-    your speed; land and stand for even a moment and the ground eats it. Air-strafe between
+    or spin the **mouse wheel** bound to jump) — a tap up to 0.15 s before touching down is
+    remembered, and a jump up to 0.1 s after landing still keeps all your speed; stand around
+    longer and the ground eats it. Air-strafe between
     hops and each hop is faster: chains of small pads get **wider and wider** and only a
     good hop line clears them. Speed tops out at 34 m/s from strafing.
   - **Surfing** (the tilted blue/magenta/red ramps with a glowing top edge): you can't stand
@@ -205,38 +207,98 @@ it (or fall off anywhere) and you are back at your last checkpoint. Pick a **rac
 
 ### Sunspire (track 1 — medium)
 
-A sky temple over pink sunrise clouds: cream stone, gold edge lines, blue surf ramps, gardens
-with waterfalls. 15 checkpoints, about 2:50 for a clean fast run.
+The Sun Clock: a sky observatory temple at sunrise — limestone terraces and colonnades round a
+colossal gold-capped **gnomon** (you see it from everywhere), lapis-blue surf ramps with gold
+ridges, teal bunny-hop pads, pink clouds below. About 2:55 for a clean fast run. It works
+differently from the other two tracks (they are being rebuilt the same way):
 
-- A hop chain curving right and a first A-frame surf → two surf ramps, a **launch pad**, a
-  **window** jump, stepping stones → portal to the high terraces → **behind the wall**: a hop
-  chain curving round two tall blocks, then a **side-switch flick** → a **pillar weave**, a
-  launch pad, a narrow **beam**, drop jumps → a surf run curving left → portal to the west
-  gardens → an **accelerating hop chain** into a 15 m **speed gap**, a **booster** onto a ramp →
-  **booster rings** through the air → a 90° surf turn → portal to the spire, a hop chain
-  curving left behind the wall → the grand surf (five ramps, two flicks) → zigzag beams and a
-  window → the last hop chain and a 15 m jump to the finish.
+- **Five checkpoint rooms** (about every 30 s), each with its own **big portal filling the exit
+  doorway** (✦ pink, ◎ violet, ☀ the gold Sun Gate, ◆ green, ◐ the blue Dial Gate): run out of
+  the room and the portal throws you into the next part.
+- **Recovery rings** (thin sky-blue rings) in between: once you fly through one, a fall brings you
+  back to its open restart platform, whose launch pad throws you back onto the course (you still
+  wait the 1.5 s freeze). Rooms and rings are never more than ~14 s apart on a clean run.
+- **No jetpack** on Sunspire. **Red** (hatched) is deadly: a red lintel over a ramp's end, a
+  red strip low on the big helix, red floors under a hop chain and a red "sun shade" in the sky.
+- **Shallow pools** (the tholos pool and the dial pool) catch a missed hop: wade to the lamp and
+  its launch pad throws you back onto the pads (or press R).
+- The route: hop pads round the first shrine and a broad lapis bend with two flicks → a launch
+  through two **gold hour rings** past the gnomon, a descending chain, a channel whose **scoop**
+  throws you up under the red lintel → nine pads wrapping round the **tholos** (its columns hide
+  the way ahead), a **speed gap** onto a ramp, two flicks → the Sun Gate up to the **upper
+  gallery**: an S-curve with two flicks, the **sun window**, six pads along the ledge → a 240°
+  **helix** down round the buttress, a hop chain behind its walls, a **launch ring** under the red
+  sun shade → the Dial Gate: two sweeping curves round the gnomon, seven **hour-mark pads** round
+  its foot and a speed gap into the finish room.
+- **Faster lines**: the **Sun Door** (from the third tholos pad, hop hard left into the gold ring
+  between the columns: it throws you through the tholos door straight to the ninth pad, ≈3 s)
+  and the **hour skip** (leave the last channel at full speed and fly straight past the first
+  hour mark, ≈1 s).
 
 ### Neon Drift (track 2 — hard)
 
-Floating fragments of a neon city at night under stars and a big moon: dark slate, cyan edges,
-magenta ramps, glowing towers. 16 checkpoints, about 2:50.
+The night interchange: a maglev junction floating over violet storm clouds, stars and a big
+moon. Violet surf guideways with cyan top edges, lime bunny-hop pads, lit glass billboards,
+parked maglev cars, and the **Drift Tower** in the middle — six lit legs crowned by three
+magenta halos, seen from every part of the course. About 2:55 for a clean fast run. It works
+like Sunspire:
 
-- Tighter hop chains on smaller pads, **steep** surf ramps (60–64°) with flicks both ways, a
-  pillar weave on small pads, narrow windows, a **jetpack gap** with a fuel cell and a broken
-  beam, a **speed gate** (a hop chain to 14 m steps and a 17 m gap), a 90° surf spin, a
-  **royal spin** (left, then right, then right), and a last steep surf run before the final
-  chain.
+- **Five station rooms** (about every 30 s), each with a **metro-line portal filling the exit
+  doorway**: **A** pink, **B** mint, **C** sky blue, **D** lavender, **E** white (the letter
+  floats over the portal and over where it puts you). Run out of the room and the portal throws
+  you into the next part.
+- **Recovery rings** (thin pale rings) in between: fly through one and a fall brings you back to
+  its open restart platform, whose launch pad throws you back on (after the 1.5 s freeze). Rooms
+  and rings are never more than ~13 s apart on a clean run.
+- **No jetpack.** **Red** (hatched) is deadly, and there is a lot of it: **laser gantries**
+  across a flick and over the two long gaps (fly low), red bars round the billboard window, a
+  red strip low on the tower helix and the **live rails** under the rail-yard hops.
+- The route: six pads wrapping round a **billboard drum**, a banked guideway, a flick → an
+  S-curve and two **flicks between the flyovers** (the second under a laser) → **Billboard
+  Alley**: a drop-hop zigzag between billboards (each hides the next pad until you turn), the
+  **framed window**, a flick and a 16 m **speed gap** onto the station roof → line C drops you
+  onto the **tower helix**: 280° down round the Drift Tower, then a long catch round it → the
+  **rail yard**: eight hops weaving between parked maglev cars over the live rails, a short
+  kick-ramp that turns you into a flick → line E: a fast bend, an **A-frame spin** (left, right,
+  left over the crest), five widening pads curving round and a 17 m gap into the finish.
+- **Faster lines**: the **billboard skip** (from the fifth zigzag pad hop sideways up through
+  the amber booster ring over the low billboard: it throws you three pads on, ≈1 s) and the
+  **core-deck express** (climb to the helix's top edge halfway round, drop over it onto the
+  tower's core deck, three hops and the **X** portal put you far along the catch, ≈4 s).
 
 ### Ember Spire (track 3 — very hard)
 
-Basalt islands over ash clouds at dusk, lava falls pouring off their edges, a red sun going
-down. 15 checkpoints, about 2:50.
+The forge needle: an obsidian needle rising out of a lava lake at dusk, a glowing crucible on
+its crown, a red sun going down. Bronze-green surf ramps, pale bone bunny-hop pads, ice-blue
+launch pads and fuel. **Hot colours kill**: the lava, the ash-cloud floor and anything **red**
+(hatched). About 3 minutes for a clean fast run. Like Sunspire and Neon Drift:
 
-- The smallest pads, the steepest and narrowest ramps (up to 66°), **two jetpack gaps on one
-  fuel cell** (manage your burn), drop jumps with 80° turns, booster rings, a royal spin on the
-  steepest ramps, a pillar gauntlet into another jetpack gap, and a long surf descent with
-  two flicks before the last chain.
+- **Five walled rooms** (about every 30 s), each with its **portal filling the exit doorway**
+  (◆ teal, ✦ violet, ▲ white, ◐ green, ▼ blue), and **recovery rings** in between: a fall
+  brings you back to the last ring's open restart platform (after the 1.5 s freeze). Rooms and
+  rings are never more than ~11 s apart on a clean run.
+- **The jetpack is on here, and fuel is the tactic.** Press and hold Space in the air to burn.
+  The race tank holds 1.6 s and never refills by itself. The one **fuel cell** (on the
+  chain-bridge plate) refills it once. **Every burn you light costs an extra 0.15 s**, so
+  tapping it to hover burns as fast as holding it. A fall or the respawn key gives back the fuel
+  you had when you passed that room or ring, **never a full tank**.
+- **Red ash ceilings** (the sky kills): over the first chain-bridge burn (burn a little, don't
+  climb) and 5 m over the drop steps near the finish (no flying over them).
+- The route: seven pads curving round two basalt teeth, a tight 120° bend and a flick → the
+  **chain bridge**: a burn under the ash ceiling, the fuel cell, a burn past a red side wall,
+  surf and a descending chain, two flicks between the chain posts → three **buttress wraps**
+  (four pads 120° round an obsidian buttress over a red strip, then a short flick to the next) →
+  a spine crossing onto the **pour ledge** → the forge bars, pads, two bends and the rim
+  steps → **the Pour**: a helix of about 410° down round the needle (its second turn spirals
+  in under the first; a red-hot rail and red roofs keep you from dropping in), two flicks and
+  seven pour steps → the drop steps under the ash ceiling, an S of bends, widening pads and a
+  17 m gap into the finish.
+- **The fuel line** (the fastest way): on the pour ledge, burn **up across the crucible** to the
+  pipe lip. It needs about 1 s of fuel, so don't waste more than about 0.6 s on the second
+  bridge burn. With too little, take the **dry way**: off the ledge's side onto the curve round
+  the crucible (red low on its face) and its launch back up, about 2.5 s slower.
+- **Pour skip** (a faster line): from the second pour step, hop hard left into the ice ring. It
+  throws you across the curve onto the last step (about 1.5 s).
 
 ### Surf maps
 

@@ -10,7 +10,9 @@
 //              of bounds: back to your latest anchor or checkpoint, frozen there for
 //              racePenaltySec (surf maps: raceSurfPenaltySec; no penalty outside a race)
 //   respawn    hold the respawn key (R) for raceRespawnHoldSec: the same as a fall
-//   fuel       each fuel cell refills your jetpack once per race (only when it isn't full)
+//   fuel       each fuel cell refills your jetpack once per race (only when it isn't full); a
+//              respawn gives back the fuel you had when you passed that checkpoint or anchor
+//              (a full tank at the start), never more
 // SURGE (the dash key) and the race jetpack tank live in sim/movement.ts.
 import type { Vec3 } from '../math/vec3';
 import { v3, madd, distSq, UP } from '../math/vec3';
@@ -62,10 +64,17 @@ export const gateCenter = (g: Pick<RaceGateDef, 'min' | 'max'>): Vec3 =>
   v3((g.min.x + g.max.x) / 2, (g.min.y + g.max.y) / 2, (g.min.z + g.max.z) / 2);
 
 /**
- * Put a racer at `feet`, standing still and facing `yawDeg`, with a full race tank (a fresh
- * start or a checkpoint respawn). Race progress, surges and fuel cells are left alone.
+ * Put a racer at `feet`, standing still and facing `yawDeg`, with `fuel` in the race tank (a
+ * fresh start: full; a respawn: what was kept). Race progress, surges and fuel cells are left
+ * alone.
  */
-export const placeRacer = (p: PlayerState, m: MovementConfig, feet: Vec3, yawDeg: number): void => {
+export const placeRacer = (
+  p: PlayerState,
+  m: MovementConfig,
+  feet: Vec3,
+  yawDeg: number,
+  fuel = m.raceJetpackFuelSec,
+): void => {
   p.pos = madd(feet, UP, m.standHeight / 2 + 0.01);
   p.vel = v3();
   p.up = v3(0, 1, 0);
@@ -90,7 +99,7 @@ export const placeRacer = (p: PlayerState, m: MovementConfig, feet: Vec3, yawDeg
   p.lastWallNormal = null;
   p.wallJumpsLeft = m.wallJumpsPerAir;
   p.tapStrafesLeft = m.tapStrafesPerAir;
-  p.jetFuel = m.raceJetpackFuelSec;
+  p.jetFuel = fuel;
   p.jetCd = 0;
   p.jetOn = false;
   p.jetHold = -1;
@@ -114,7 +123,8 @@ export const sendRacerBack = (
   const racing = isRacing(race, p);
   const anchor = racing ? p.raceAnchor : -1;
   const at = raceRespawnPoint(race, p.raceCp, anchor);
-  placeRacer(p, m, at.respawn, at.yawDeg);
+  // (racing: the fuel you had when you passed this checkpoint or anchor; else a full tank)
+  placeRacer(p, m, at.respawn, at.yawDeg, racing ? p.raceFuelKept : m.raceJetpackFuelSec);
   const penaltySec = race.surf ? m.raceSurfPenaltySec : m.racePenaltySec;
   p.racePenalty = racing ? Math.max(1, Math.round(penaltySec / ctx.dt)) : 0;
   if (racing) p.frozen = true;
@@ -196,6 +206,7 @@ export const updateRaceBody = (world: WorldState, ctx: SimContext, p: PlayerStat
     if (pointInAabb(pos, g.min, g.max)) {
       p.raceCp++;
       p.raceAnchor = -1;
+      p.raceFuelKept = p.jetFuel;
       world.events.push({ type: 'raceCp', player: p.id, cp: p.raceCp, finish: p.raceCp > n });
     }
   }
@@ -207,6 +218,7 @@ export const updateRaceBody = (world: WorldState, ctx: SimContext, p: PlayerStat
       const a = anchors[i];
       if (a.cp !== p.raceCp || !pointInAabb(pos, a.min, a.max)) continue;
       p.raceAnchor = i;
+      p.raceFuelKept = p.jetFuel;
       world.events.push({ type: 'raceAnchor', player: p.id, anchor: i });
       break;
     }
@@ -238,6 +250,7 @@ export const resetRacer = (
   p.raceAnchor = -1;
   p.racePenalty = 0;
   p.raceFuel = 0;
+  p.raceFuelKept = m.raceJetpackFuelSec;
   p.raceHold = 0;
   p.surgeLeft = m.raceSurgeCharges;
   p.frozen = false;

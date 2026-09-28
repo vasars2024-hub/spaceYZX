@@ -159,6 +159,7 @@ export const createPlayer = (
     raceCp: -1,
     racePenalty: 0,
     raceFuel: 0,
+    raceFuelKept: m.raceJetpackFuelSec,
     raceHold: 0,
     raceAnchor: -1,
     portalYaw: 0,

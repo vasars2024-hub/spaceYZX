@@ -359,7 +359,7 @@ describe('migration 5', () => {
       title: string;
     };
     expect(p).toEqual({ token_hash: 'moved:7', avatar: 0, title: '' });
-    expect(SCHEMA_VERSION).toBe(7);
+    expect(SCHEMA_VERSION).toBe(8);
     raw.close();
   });
 });

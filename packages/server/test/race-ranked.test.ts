@@ -380,11 +380,11 @@ describe('migration 4 (races)', () => {
   });
 });
 
-describe('migration 7 (rebuilt race tracks)', () => {
+describe('migrations 7 and 8 (rebuilt race tracks)', () => {
   it('clears the old bests of the three rebuilt tracks and keeps every other best', () => {
     const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof SqliteModule;
     const db: DatabaseSync = new DatabaseSync(':memory:');
-    migrate(db, 6);
+    migrate(db, 7);
     db.prepare(
       "INSERT INTO players (id, name, token_hash, created_at, last_seen) VALUES (1, 'Old', 'h', 0, 0)",
     ).run();

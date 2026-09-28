@@ -285,6 +285,11 @@ const MIGRATIONS: string[] = [
   `
   DELETE FROM race_bests WHERE track IN ('race-sunspire', 'race-neon', 'race-ember');
   `,
+  // 8: the rebuilt layouts of those three tracks ship now (TRACK_REVISIONS = 3); clear the bests
+  // set on the old layouts since migration 7 ran.
+  `
+  DELETE FROM race_bests WHERE track IN ('race-sunspire', 'race-neon', 'race-ember');
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

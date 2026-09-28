@@ -764,6 +764,9 @@ export const updateMovement = (
         p.jetOn = true;
         const vUp = dot(p.vel, p.up);
         if (vUp < 0) p.vel = madd(p.vel, p.up, -vUp); // catch the fall
+        // race tracks: every ignition costs a slice of the tank, so tapping it to hover (each
+        // ignition catches the fall) burns fuel as fast as holding it
+        if (race && !race.surf) p.jetFuel = Math.max(0, p.jetFuel - m.raceJetIgniteSec);
         p.jumpBuffer = 0; // the press was used up here, not as a jump on landing
         world.events.push({ type: 'jetpack', player: p.id });
       }

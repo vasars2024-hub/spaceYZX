@@ -301,6 +301,41 @@ describe('race rules: surge and fuel', () => {
     expect(p.jetFuel).toBeCloseTo(m.raceJetpackFuelSec, 5);
     expect(p.raceFuel).toBe(1);
   });
+
+  it('every ignition costs fuel: tapping the jetpack to hover lasts no longer than holding it', () => {
+    const r = makeRace(1);
+    toGo(r);
+    const p = r.players[0];
+    const m = r.ctx.config.movement;
+    // high over the track, still: pulse Space (held 7 ticks, let go 1) until the tank is dry;
+    // each ignition catches the fall, but costs raceJetIgniteSec on top of the burn
+    p.pos = v3(0, 90, -10);
+    p.vel = v3();
+    let t = 0;
+    for (; t < 60 * 10 && p.jetFuel > 0; t++) tick(r, { 1: { buttons: t % 8 < 7 ? Btn.Jump : 0 } });
+    expect(t * TICK_DT).toBeLessThan(1.5);
+    expect(t * TICK_DT).toBeLessThan(m.raceJetpackFuelSec);
+  });
+
+  it('a respawn gives back the fuel you had when you passed the checkpoint, never a full tank', () => {
+    const r = makeRace(1);
+    toGo(r);
+    const p = r.players[0];
+    const m = r.ctx.config.movement;
+    // through gate 1 with half a tank, then burn it nearly dry and walk off the side
+    p.jetFuel = 0.5;
+    for (let i = 0; i < 60 * 6 && p.raceCp < 1; i++) tick(r, { 1: { buttons: Btn.Forward } });
+    expect(p.raceCp).toBe(1);
+    p.jetFuel = 0.1;
+    let back = false;
+    for (let i = 0; i < 60 * 5 && !back; i++) {
+      tick(r, { 1: { buttons: Btn.Forward, view: yawToView(-90) } });
+      back = r.world.events.some((e) => e.type === 'raceRespawn');
+    }
+    expect(back).toBe(true);
+    expect(p.jetFuel).toBeCloseTo(0.5, 5);
+    expect(p.jetFuel).toBeLessThan(m.raceJetpackFuelSec);
+  });
 });
 
 describe('race rules: finish', () => {

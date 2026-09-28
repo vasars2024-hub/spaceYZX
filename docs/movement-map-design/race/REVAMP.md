@@ -316,4 +316,4 @@ Source-style).
 
 ## Release note for the personal-best reset
 
-The reset mechanism shipped early (protocol 21) with `TRACK_REVISIONS` = 2 and migration 7, while the old layouts were still live. When the three rebuilt tracks ship, raise their `TRACK_REVISIONS` to 3 and add a migration that repeats the `DELETE FROM race_bests` for the three tracks. Otherwise bests set on the old layouts in between carry over.
+Done: revision 3 and migration 8 ship with the rebuilt tracks. The reset mechanism shipped early (protocol 21) with `TRACK_REVISIONS` = 2 and migration 7, while the old layouts were still live. When the three rebuilt tracks ship, raise their `TRACK_REVISIONS` to 3 and add a migration that repeats the `DELETE FROM race_bests` for the three tracks. Otherwise bests set on the old layouts in between carry over.

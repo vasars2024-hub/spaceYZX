@@ -17,6 +17,7 @@ import type {
   LevelDef,
   NetCore,
   PlayerInput,
+  RaceDef,
   RaceState,
   RacerMemory,
 } from '@space-yz/shared';
@@ -128,8 +129,18 @@ export const createRacePractice = (
   return { session, race };
 };
 
-export const RACE_HINT =
-  'Race · W run · Space jump (hold in the air: jetpack) · Ctrl slide · Shift SURGE (3 per race) · F gravity boots · hold R back to checkpoint · Esc menu';
+/** The race controls line: the jetpack and SURGE only on tracks that have them. */
+export const raceHint = (race: RaceDef | undefined): string => {
+  const parts = [
+    'Race · W run',
+    'Space jump (tap it as you land: bunny hop)',
+    'A/D + turn the mouse the same way: air-strafe',
+  ];
+  if (race && !race.surf && !race.noJetpack) parts.push('hold Space in the air: jetpack');
+  if (race && !race.surf && !race.noSurge) parts.push('Shift SURGE');
+  parts.push('Ctrl slide', 'hold R: back to checkpoint', 'Esc menu');
+  return parts.join(' · ');
+};
 
 /** Start an offline race (call from a click: it locks the pointer). */
 export const startRacePractice = (app: App, opts: RacePracticeOptions): void => {
@@ -141,7 +152,7 @@ export const startRacePractice = (app: App, opts: RacePracticeOptions): void => 
     trackName: opts.trackName ?? getMap(track).name,
   });
   const client = app.startGame(session, [feature], { tuning: false });
-  client.hud.setHint(RACE_HINT, 16);
+  client.hud.setHint(raceHint(session.level.def.race), 16);
 };
 
 /** Create a private race room ('bots' bot racers fill it up to 1 + bots, max 8). */

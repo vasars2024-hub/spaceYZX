@@ -3,11 +3,15 @@
 // fast valid speeds (0.8 V, V, 1.15 V of MOVEMENT_PROFILE's reference surf speed) — the rider
 // follows it to its end, never loses more than a sliver of speed in one tick and is never
 // kicked off the face. Collision continuity is a release requirement (the design brief §4.4).
+// Race tracks rebuilt on curved ramps (docs/movement-map-design/race/REVAMP.md) are ridden too,
+// once they are listed here (as in race-tracks.test.ts REVAMPED).
 import { describe, expect, it } from 'vitest';
 import { expandCourse, getMap, mapDef, SURF_PROFILE, surfMaps } from '@space-yz/shared';
 import { rideLine } from '../lab';
 
-describe.each(surfMaps().map((m) => m.id))('%s', (id) => {
+const REVAMPED_TRACKS = ['race-sunspire', 'race-neon', 'race-ember'];
+
+describe.each([...surfMaps().map((m) => m.id), ...REVAMPED_TRACKS])('%s', (id) => {
   it('rides every curved ramp without a catch, slow to fast', () => {
     const data = getMap(id).course!();
     const { elementNodes } = expandCourse(data);

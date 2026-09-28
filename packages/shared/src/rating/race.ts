@@ -94,10 +94,11 @@ export const raceRatingPlayers = (
  * Raise a track's number whenever its course changes enough that old times mean nothing.
  */
 export const TRACK_REVISIONS: Readonly<Record<string, number>> = {
-  // the 2026-09 revamp (docs/movement-map-design/race/REVAMP.md)
-  'race-sunspire': 2,
-  'race-neon': 2,
-  'race-ember': 2,
+  // the 2026-09 revamp (docs/movement-map-design/race/REVAMP.md). 2 shipped a day before the
+  // new layouts did, so 3 is the one that marks them
+  'race-sunspire': 3,
+  'race-neon': 3,
+  'race-ember': 3,
 };
 
 export const trackRevision = (track: string): number => TRACK_REVISIONS[track] ?? 1;

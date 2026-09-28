@@ -77,7 +77,7 @@ import { setTextureDetail } from './render/textures';
 import { createPracticeSession, isCsKind, type PracticeKind } from './game/practice';
 import { startArenaPractice, arenaOnlineFeatures } from './game/arena-entry';
 import {
-  RACE_HINT,
+  raceHint,
   RaceNetSession,
   isRaceLobby,
   raceOnlineFeatures,
@@ -1228,7 +1228,10 @@ export class App {
         this.roomPanel = null;
       },
     });
-    client.hud.setHint(`Room ${core.code} — share the code · ${RACE_HINT}`, 16);
+    client.hud.setHint(
+      `Room ${core.code} — share the code · ${raceHint(session.level.def.race)}`,
+      16,
+    );
   }
 
   /**

@@ -91,6 +91,8 @@ export interface PlayerState extends CombatPlayerState {
   raceCp: number;
   racePenalty: number; // ticks frozen at the checkpoint after a fall / respawn
   raceFuel: number; // bitmask of the fuel cells used this race
+  /** jetpack fuel when the latest checkpoint or anchor was passed: a respawn there gives it back */
+  raceFuelKept: number;
   raceHold: number; // ticks the respawn key has been held
   /** surf maps: the recovery anchor (RaceDef.anchors) a fall brings you back to; -1 = none */
   raceAnchor: number;

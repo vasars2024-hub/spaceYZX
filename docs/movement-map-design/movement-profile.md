@@ -1,7 +1,7 @@
 # Movement profile — MOVEMENT_PROFILE v1
 
 Measured by `npm run race:lab` (tools/race/movement-lab.ts, measurements in tools/race/lab.ts) in the real
-simulation with the surf-map movement rules (race movement: `LevelDef.race`, surf maps: no jetpack, no SURGE).
+simulation with the surf-map movement rules (race movement: `LevelDef.race`, surf maps: no jetpack, no SURGE; the one race track with a jetpack, Ember Spire, has a 1.6 s tank that never refills by itself, every ignition costs `raceJetIgniteSec` 0.15 s on top of the burn, so tapping it to hover lasts no longer than holding it, and a respawn gives back the fuel you had when you passed that checkpoint or anchor).
 Every surf map is fitted to these numbers. The key ones are also in `packages/shared/src/level/course/profile.ts`
 (`SURF_PROFILE`), checked against the simulation by `tools/race/test/movement-profile.test.ts`: if movement
 physics change, that test fails until the profile version is bumped and the maps re-checked.

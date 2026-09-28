@@ -107,7 +107,7 @@ describe('race HUD helpers', () => {
     expect(Object.keys(loadPersonalBests(store))).toEqual(['t']);
     saveGhost({ track: 'race-sunspire', timeMs: 5, every: 6, samples }, store);
     expect(loadGhost('race-sunspire', store)).toBeNull();
-    saveGhost({ track: 'race-sunspire', timeMs: 5, every: 6, samples, rev: 2 }, store);
+    saveGhost({ track: 'race-sunspire', timeMs: 5, every: 6, samples, rev: 3 }, store);
     expect(loadGhost('race-sunspire', store)).not.toBeNull();
   });
 

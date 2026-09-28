@@ -126,6 +126,8 @@ const TEAM = ['#19e3ff', '#ff8a1f'];
  * upper decks lighter), bomb sites, Towers and spawns. Returns SVG markup.
  */
 export const mapThumbnail = (def: LevelDef, w = 220, h = 140): string => {
+  // race and surf courses float high in the sky, with nothing at ship-deck height: draw the route
+  if (def.race?.line.length) return courseThumbnail(def, w, h);
   // walkable slabs: thin boxes, inside the ship (the sky arena etc. far above is left out)
   const floors = def.boxes.filter(
     (b) => !b.noRender && b.h.y <= 1.2 && Math.max(b.h.x, b.h.z) >= 1 && b.c.y < 40,
@@ -172,4 +174,97 @@ export const mapThumbnail = (def: LevelDef, w = 220, h = 140): string => {
     g += `<rect x="${cx - 3.5}" y="${cz - 3.5}" width="7" height="7" transform="rotate(45 ${cx} ${cz})" fill="#07101e" stroke="${TEAM[t.team] ?? '#fff'}" stroke-width="1.6"/>`;
   }
   return `<svg class="map-thumb" viewBox="0 0 ${w} ${h}" role="img" aria-label="Top-down view of ${def.name}">${g}</svg>`;
+};
+
+const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
+
+/** Low parts of a route in cool cyan, high parts in warm gold (t = 0…1 up the route's height). */
+const heightColor = (t: number): string =>
+  `hsl(${Math.round(190 - t * 150)} 90% ${Math.round(58 + t * 8)}%)`;
+
+let thumbIds = 0;
+
+/**
+ * A top-down picture of a race or surf course: the racing line coloured by height over the map's
+ * own sky, its checkpoint gates, the start (green) and the finish (white), and portal jumps
+ * (dashed). Returns SVG markup.
+ */
+const courseThumbnail = (def: LevelDef, w: number, h: number): string => {
+  const race = def.race!;
+  const line = race.line;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const n of line) {
+    minX = Math.min(minX, n.pos.x);
+    maxX = Math.max(maxX, n.pos.x);
+    minZ = Math.min(minZ, n.pos.z);
+    maxZ = Math.max(maxZ, n.pos.z);
+    minY = Math.min(minY, n.pos.y);
+    maxY = Math.max(maxY, n.pos.y);
+  }
+  const pad = Math.max(8, Math.min(w, h) * 0.09);
+  const s = Math.min((w - pad * 2) / (maxX - minX || 1), (h - pad * 2) / (maxZ - minZ || 1));
+  const ox = (w - (maxX - minX) * s) / 2;
+  const oz = (h - (maxZ - minZ) * s) / 2;
+  const X = (x: number) => +(ox + (x - minX) * s).toFixed(1);
+  const Z = (z: number) => +(oz + (z - minZ) * s).toFixed(1);
+  const T = (y: number) => (maxY > minY ? (y - minY) / (maxY - minY) : 0.5);
+  const big = w >= 160;
+  const width = big ? 2.4 : 1.6;
+  // the map's own sky behind it
+  const id = `course-sky-${++thumbIds}`;
+  const sky = def.outdoor;
+  const top = sky ? hex(sky.top) : hex(def.fog?.color ?? 0x0a1224);
+  const low = sky ? hex(sky.horizon) : top;
+  let g =
+    `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${low}"/></linearGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#${id})"/>` +
+    `<rect width="${w}" height="${h}" fill="#050a14" opacity="0.45"/>`;
+  // runs of the route in one colour step (portal jumps break a run and show as faint dashes)
+  const STEPS = 10;
+  const runs: { band: number; pts: string[] }[] = [];
+  let jumps = '';
+  let run: { band: number; pts: string[] } | null = null;
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1];
+    const b = line[i];
+    if (a.portal) {
+      jumps += `<line x1="${X(a.pos.x)}" y1="${Z(a.pos.z)}" x2="${X(b.pos.x)}" y2="${Z(b.pos.z)}" stroke="#e58cff" stroke-width="0.8" stroke-dasharray="2 3" opacity="0.4"/>`;
+      run = null;
+      continue;
+    }
+    const band = Math.round(T((a.pos.y + b.pos.y) / 2) * STEPS);
+    if (!run || run.band !== band) {
+      run = { band, pts: [`${X(a.pos.x)},${Z(a.pos.z)}`] };
+      runs.push(run);
+    }
+    run.pts.push(`${X(b.pos.x)},${Z(b.pos.z)}`);
+  }
+  const poly = (pts: string[], extra: string) =>
+    `<polyline points="${pts.join(' ')}" fill="none" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`;
+  // a dark casing under the whole route so it reads on bright skies, then the coloured line
+  for (const r of runs)
+    g += poly(r.pts, `stroke="#02050c" stroke-width="${width + 2.2}" opacity="0.7"`);
+  g += jumps;
+  for (const r of runs)
+    g += poly(r.pts, `stroke="${heightColor(r.band / STEPS)}" stroke-width="${width}"`);
+  // checkpoint gates, then the start and the finish on top
+  if (big)
+    for (const gate of race.checkpoints) {
+      const cx = X((gate.min.x + gate.max.x) / 2);
+      const cz = Z((gate.min.z + gate.max.z) / 2);
+      g += `<circle cx="${cx}" cy="${cz}" r="3.2" fill="#07101e" stroke="#ffe9a8" stroke-width="1.3"/>`;
+    }
+  const st = race.start.respawn;
+  g += `<circle cx="${X(st.x)}" cy="${Z(st.z)}" r="${big ? 4.2 : 3}" fill="#35e08a" stroke="#07101e" stroke-width="1.2"/>`;
+  const fx = X((race.finish.min.x + race.finish.max.x) / 2);
+  const fz = Z((race.finish.min.z + race.finish.max.z) / 2);
+  const r = big ? 4.6 : 3.2;
+  g += `<rect x="${fx - r}" y="${fz - r}" width="${r * 2}" height="${r * 2}" transform="rotate(45 ${fx} ${fz})" fill="#ffffff" stroke="#07101e" stroke-width="1.2"/>`;
+  return `<svg class="map-thumb" viewBox="0 0 ${w} ${h}" role="img" aria-label="Route map of ${def.name}">${g}</svg>`;
 };

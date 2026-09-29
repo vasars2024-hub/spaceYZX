@@ -39,6 +39,12 @@
   its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`). Modes never
   mix: Tower mode has no plants, Bomb mode no Tower touches, Elimination neither. Bots must be
   able to walk every route.
+- **Openness** (owner's rule): competitive maps play like CS maps — rooms, corridors, floors and
+  partitions that isolate duels, never a flat hall with crates. `tools/map/openness.ts` measures
+  it (watched floor area, directions a spot is seen from; report section 12 of `npm run map`)
+  and `tools/map/test/openness.test.ts` holds every competitive map to `OPENNESS_TARGET`.
+  Design notes per redesigned map: `docs/maps/`. Detached spawns: `SpawnDef.group` (a round
+  spreads a team over its groups, `spawnOrder` in `rules/match.ts`).
 - Anti-cheat: server-side work is planned but comes only after the gameplay features; a
   Chrome extension will be required for ranked later (casual play stays install-free).
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms

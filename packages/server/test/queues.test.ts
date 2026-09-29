@@ -71,6 +71,8 @@ describe('queues', () => {
     } as unknown as GameHub;
     s.queue.rand = () => 0;
     s.queue.mapPool = () => ['split-deck', 'kestrel', 'orbital-ring'];
+    // (the real race tracks are retired, which closes the Race queue: race-ranked.test.ts)
+    s.queue.trackPool = () => ['track-a'];
     s.queue.onlineCount = () => 100;
   });
   afterEach(() => s.close());

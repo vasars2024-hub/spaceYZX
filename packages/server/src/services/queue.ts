@@ -66,6 +66,7 @@ import {
   raceFirstChances,
   raceTracks,
   rankedQueue,
+  NO_RACE_TRACKS_TEXT,
   stackMultiplier,
   teamWinChance,
   vetoBan,
@@ -74,7 +75,7 @@ import {
 import type { Conn } from '../game/conn';
 import type { GameHub } from '../game/hub';
 import type { Room } from '../game/room';
-import type { RankedStore } from './ranked';
+import type { QueueOpenStatus, RankedStore } from './ranked';
 import type { Parties, Party } from './party';
 
 export const RANKED_MAP = DEFAULT_MATCH_MAP();
@@ -89,17 +90,24 @@ export const COUNTS_EVERY_MS = 3000;
 export const premierMapPool = (): string[] =>
   MAPS.filter(
     (m) =>
-      m.competitive && !m.arena && m.premier !== false && (mapDef(m.id).bombSites?.length ?? 0) > 0,
+      m.competitive &&
+      !m.arena &&
+      !m.retired &&
+      m.premier !== false &&
+      (mapDef(m.id).bombSites?.length ?? 0) > 0,
   ).map((m) => m.id);
 
-/** Race tracks the Race queue picks from (race tracks, not surf maps). */
-/** (the race tracks only: surf maps are raced and timed too, but never in the ranked queue) */
+/**
+ * Race tracks the Race queue picks from: the race tracks in rotation (surf maps are raced and
+ * timed too, but never in the ranked queue). Empty while the parkour tracks are retired
+ * (MapInfo.retired): the Race queue is closed then.
+ */
 export const raceTrackPool = (): string[] => raceTracks().map((m) => m.id);
 
 /** Maps a casual match of this objective may use (Towers / bomb sites where it needs them). */
 export const casualMapPool = (objective: MatchObjective): string[] =>
   MAPS.filter((m) => {
-    if (!m.competitive || m.arena || m.race) return false;
+    if (!m.competitive || m.arena || m.race || m.retired) return false;
     const d = mapDef(m.id);
     return objective === 'tower'
       ? d.towers.length >= 2
@@ -179,6 +187,17 @@ export class RankedQueue {
     /** the host log: who joins / leaves / is refused, and the matches made */
     private log: (msg: string) => void = () => {},
   ) {}
+
+  /**
+   * Is this ranked queue open now: the store's rules (players online, opening hours), and a
+   * queue with no maps to play is closed (the Race queue while every race track is retired).
+   */
+  queueStatus(id: RankedQueueId, online: number): QueueOpenStatus {
+    const st = this.ranked.queueOpen(id, online);
+    if (rankedQueue(id)?.kind === 'race' && !this.trackPool().length)
+      return { ...st, open: false, noMaps: true };
+    return st;
+  }
 
   start(hub: GameHub): void {
     this.hub = hub;
@@ -345,7 +364,7 @@ export class RankedQueue {
     const ratings: Unit['ratings'] = {};
     const skipped: string[] = [];
     for (const q of defs as RankedQueueDef[]) {
-      const st = this.ranked.queueOpen(q.id, online);
+      const st = this.queueStatus(q.id, online);
       const r = who.conns.map((c) => this.ranked.rating(c.accountId!, q.ladder).rating.rating);
       const problem = !st.open ? closedText(q, st) : partyQueueProblem(q, r);
       if (problem) {
@@ -496,7 +515,7 @@ export class RankedQueue {
     const ranked = {} as QueueCounts['ranked'];
     for (const id of RANKED_QUEUE_IDS) {
       const q = rankedQueue(id)!;
-      const st = this.ranked.queueOpen(id, online);
+      const st = this.queueStatus(id, online);
       const searching = this.size(id);
       ranked[id] = {
         searching,
@@ -541,12 +560,14 @@ export class RankedQueue {
       if (!u.ranked.length) continue;
       const closed: string[] = [];
       u.ranked = u.ranked.filter((q) => {
-        const st = this.ranked.queueOpen(q.id, Math.ceil(online * 1.25));
+        const st = this.queueStatus(q.id, Math.ceil(online * 1.25));
         if (st.open && this.enabled) return true;
         closed.push(
-          st.byHours === false && !st.threshold
-            ? `${LADDERS[q.ladder].name} just closed for today — see its opening hours.`
-            : `${LADDERS[q.ladder].name} closed: fewer than ${st.threshold} players online.`,
+          st.noMaps
+            ? closedText(q, st)
+            : st.byHours === false && !st.threshold
+              ? `${LADDERS[q.ladder].name} just closed for today — see its opening hours.`
+              : `${LADDERS[q.ladder].name} closed: fewer than ${st.threshold} players online.`,
         );
         return false;
       });
@@ -646,6 +667,8 @@ export class RankedQueue {
 
   /** Race: start every group the queue can fill (solo racers only). */
   private startRaces(q: GroupQueueDef, now: number): void {
+    // no tracks (all retired): the queue is closed and drops its searchers; never race on nothing
+    if (!this.trackPool().length) return;
     for (;;) {
       const left = [...this.waiting.values()].filter(
         (u) => u.ranked.includes(q) && u.conns.length === 1,
@@ -930,11 +953,9 @@ export class RankedQueue {
 }
 
 /** Why a ranked queue is closed, for the player. */
-const closedText = (
-  q: RankedQueueDef,
-  st: { threshold: number; online: number; byHours: boolean | null },
-): string => {
+const closedText = (q: RankedQueueDef, st: QueueOpenStatus): string => {
   const name = LADDERS[q.ladder].name;
+  if (st.noMaps) return `${name} is closed: ${NO_RACE_TRACKS_TEXT}.`;
   if (st.threshold > 0 && st.byHours === false)
     return `${name} is closed: it opens at ${st.threshold} players online (now ${st.online}) or in its opening hours.`;
   if (st.threshold > 0)

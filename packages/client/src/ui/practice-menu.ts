@@ -115,13 +115,16 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
         (m, selected, pick) => mapCard(m.id, selected, pick),
         (m) => go(pickPracticeMap(s, m.id), 'forward'),
       );
-    // races: the race tracks, then the surf maps by mode (Beginner, then Intermediate)
-    if (s.mode === 'race')
+    // races: the race tracks, then the surf maps by mode (Beginner, then Intermediate); no
+    // track grid while the parkour tracks are retired
+    if (s.mode === 'race') {
+      const tracks = raceMapGroups().best;
       return stepPanel(
-        'Pick a track',
-        grid(raceMapGroups().best),
+        tracks.length ? 'Pick a track' : 'Pick a map',
+        tracks.length ? grid(tracks) : null,
         ...surfModeGroups().flatMap((g) => [surfGroupTitle(g), grid(g.maps)]),
       );
+    }
     return stepPanel('Pick a map', grid(mapsForMode(s.mode)));
   };
 

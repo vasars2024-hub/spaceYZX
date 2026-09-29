@@ -33,6 +33,11 @@ import {
   expandCourse,
   findOverlaps,
   getMap,
+  brawlMaps,
+  DEFAULT_RACE_MAP,
+  inRotation,
+  mapExists,
+  mapInRotation,
   headingYaw,
   HUMAN_RACER,
   mapDef,
@@ -58,7 +63,8 @@ import {
   type SimContext,
 } from '../src/index';
 
-const TRACKS = raceTracks().map((m) => m.id);
+// (the parkour tracks are retired until parkour is redone; their data is still checked here)
+const TRACKS = raceTracks(true).map((m) => m.id);
 
 /** How well a human must strafe to get round (the maps' difficulty curve). */
 const DESIGN_EFF: Record<string, number> = {
@@ -192,10 +198,10 @@ const recover = (def: LevelDef, cp: number, anchor: number, maxSec = 60) => {
   return { passed, sec: t * TICK_DT, raceCp: cpThen };
 };
 
-it('three race tracks and the surf maps, only for races; the ranked pool is the tracks', () => {
-  expect(raceTracks().map((m) => m.id)).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
+it('three race tracks (retired) and the surf maps, only for races', () => {
+  expect(raceTracks(true).map((m) => m.id)).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
   expect(surfMaps().map((m) => m.id)).toContain('surf-copper-reef');
-  for (const id of raceMaps().map((m) => m.id)) {
+  for (const id of raceMaps(true).map((m) => m.id)) {
     const m = MAPS.find((x) => x.id === id)!;
     expect(m.competitive).toBe(false);
     expect(m.arena).toBeFalsy();
@@ -208,6 +214,28 @@ it('three race tracks and the surf maps, only for races; the ranked pool is the 
     const r = mapDef(m.id).race!;
     expect(r.surf && r.noJetpack && r.noSurge).toBe(true);
   }
+});
+
+it('the parkour tracks are retired: out of rotation, still maps the game has', () => {
+  for (const id of TRACKS) {
+    const m = MAPS.find((x) => x.id === id)!;
+    expect(m.retired, id).toBe(true);
+    expect(inRotation(m)).toBe(false);
+    expect(mapInRotation(id)).toBe(false);
+    // retired is not removed: old personal bests, boards and edits keep their map
+    expect(mapExists(id)).toBe(true);
+    expect(getMap(id).id).toBe(id);
+  }
+  expect(raceTracks()).toEqual([]);
+  expect(raceMaps().some((m) => m.retired)).toBe(false);
+  expect(raceMaps(true).length).toBe(raceMaps().length + TRACKS.length);
+  expect(surfMaps().every((m) => !m.retired)).toBe(true);
+  // races default to the easiest Beginner surf map while the tracks are retired
+  expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
+  expect(mapInRotation(DEFAULT_RACE_MAP)).toBe(true);
+  expect(getMap(DEFAULT_RACE_MAP).mode).toBe('beginner');
+  // no Brawl rotation carries a retired map
+  expect(brawlMaps().some((m) => m.retired)).toBe(false);
 });
 
 describe.each(TRACKS)('%s', (id) => {

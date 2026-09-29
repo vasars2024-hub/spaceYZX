@@ -263,9 +263,10 @@ export const createServices = (opts: {
         });
       }
       case '/api/race-times': {
-        // ?track=ID: fastest times on a race track, one per player
+        // ?track=ID: fastest times on a race track, one per player (retired tracks too: their
+        // old boards are kept, only out of rotation)
         const track = url.searchParams.get('track') ?? '';
-        if (!raceMaps().some((m) => m.id === track))
+        if (!raceMaps(true).some((m) => m.id === track))
           return json(res, 400, { error: 'unknown track' });
         const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit')) || 50));
         return json(res, 200, { track, rows: ranked.trackLeaderboard(track, limit) });

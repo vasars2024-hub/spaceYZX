@@ -15,7 +15,7 @@ import { mapBudget } from './budget';
 const args = process.argv.slice(2);
 const list = args.includes('--list');
 const ids = args.filter((a) => !a.startsWith('--'));
-for (const m of args.includes('--all') || ids.length ? MAPS : raceMaps()) {
+for (const m of args.includes('--all') || ids.length ? MAPS : raceMaps(true)) {
   if (ids.length && !ids.includes(m.id)) continue;
   const def = mapDef(m.id);
   const hits = findOverlaps(def);

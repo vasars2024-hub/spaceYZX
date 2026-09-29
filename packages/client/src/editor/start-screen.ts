@@ -243,7 +243,9 @@ export const startScreen = (app: App, dir: Dir, open: (s: EditorSession) => void
       h('h3', { class: 'step-title' }, 'Change a built-in map'),
       cardGrid(
         'maps',
-        MAPS.filter((m) => !m.arena).map((m) => mapCard(m.id, false, () => pickBuiltIn(m.id))),
+        MAPS.filter((m) => !m.arena && !m.retired).map((m) =>
+          mapCard(m.id, false, () => pickBuiltIn(m.id)),
+        ),
       ),
       h('h3', { class: 'step-title' }, 'My Maps'),
       myMaps,

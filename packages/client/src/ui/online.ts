@@ -190,7 +190,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
     if (isRaceObjective(s.objective))
       return stepPanel(
         'Map',
-        grid(best),
+        best.length ? grid(best) : null,
         ...surfModeGroups().flatMap((g) => [surfGroupTitle(g), grid(g.maps, 'maps small-maps')]),
       );
     return stepPanel(

@@ -81,6 +81,11 @@
   (`npm run race:lab` → `docs/movement-map-design/movement-profile.md`, `course/profile.ts`)
   from curved ramps (`course/curve.ts`, exactly-joined `BoxDef.hull` prisms), gates, recovery
   anchors, red zones and turning portals: how-to in `docs/movement-map-design/BUILDING.md`.
+  **The parkour tracks (`race-*.ts`) are retired** (owner: parkour is badly made; no parkour
+  until it is redone): `MapInfo.retired` keeps them out of every menu, room, practice and the
+  ranked Race queue (`raceTracks()` / `raceMaps()` skip retired maps unless asked with `true`),
+  while `mapExists` stays true so old PBs/boards keep working. With no tracks the Race queue is
+  closed (`RankedQueue.queueStatus`, `noMaps`); `DEFAULT_RACE_MAP` is `surf-copper-reef`.
 - Transition cards + announcer: plans `packages/client/src/game/transitions.ts`, overlay
   `ui/transitions.ts` (`showTransition(kind, info)` for other HUDs), clips
   `packages/client/public/audio/announcer/*.ogg` played by `audio/announcer.ts` (own volume bus).

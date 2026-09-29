@@ -60,9 +60,9 @@ export interface RacePracticeOptions {
   trackName?: string;
 }
 
-/** The track to race: a race track's id, else the default one. */
+/** The track to race: a race map's id (not a retired one), else the default one. */
 export const raceTrackId = (id: string | undefined): string =>
-  id && getMap(id).id === id && getMap(id).race ? id : DEFAULT_RACE_MAP;
+  id && getMap(id).id === id && getMap(id).race && !getMap(id).retired ? id : DEFAULT_RACE_MAP;
 
 /** Offline race session: the local sim with the race rules; name tags show positions. */
 export class RaceLocalSession extends LocalSession {

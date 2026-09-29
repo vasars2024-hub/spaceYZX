@@ -6,7 +6,7 @@ import { rngShuffle, rngFloat } from '../math/rng';
 import { applyDamage } from '../sim/combat';
 import type { SimContext } from '../sim/context';
 import type { WorldState, PlayerState } from '../sim/state';
-import type { TowerDef } from '../level/types';
+import type { SpawnDef, TowerDef } from '../level/types';
 import { respawnPlayer, newBoomerang, yawToView } from '../sim/world';
 import { jetpackTuning } from '../sim/movement';
 import { Move } from '../sim/state';
@@ -185,15 +185,38 @@ export const startMatch = (ms: MatchState, world: WorldState, ctx: SimContext): 
   beginRound(ms, world, ctx);
 };
 
+/**
+ * The order a team's players take their (already shuffled) spawns in: with detached spawn
+ * groups (SpawnDef.group) one from each group in turn — the groups in the order the shuffle
+ * met them — so a team spreads over every group before doubling up. Without groups: as given.
+ */
+export const spawnOrder = (shuffled: readonly SpawnDef[]): SpawnDef[] => {
+  if (!shuffled.some((s) => s.group !== undefined)) return [...shuffled];
+  const groups = new Map<string, SpawnDef[]>();
+  for (const s of shuffled) {
+    const g = s.group ?? '';
+    let list = groups.get(g);
+    if (!list) groups.set(g, (list = []));
+    list.push(s);
+  }
+  const lists = [...groups.values()];
+  const out: SpawnDef[] = [];
+  for (let k = 0; out.length < shuffled.length; k++)
+    for (const l of lists) if (k < l.length) out.push(l[k]);
+  return out;
+};
+
 export const beginRound = (ms: MatchState, world: WorldState, ctx: SimContext): void => {
   ms.round++;
   const r = ctx.config.rules;
   // random spawn per player on their side, no two players on the same spot
   for (const team of [0, 1] as const) {
     const side = sideOf(ms, team);
-    const spawns = rngShuffle(
-      world.rng,
-      ctx.level.def.spawns.filter((s) => s.team === side || s.team === undefined),
+    const spawns = spawnOrder(
+      rngShuffle(
+        world.rng,
+        ctx.level.def.spawns.filter((s) => s.team === side || s.team === undefined),
+      ),
     );
     teamPlayers(world, team).forEach((p, i) => {
       const s = spawns[i % Math.max(1, spawns.length)] ?? ctx.level.def.spawns[0];

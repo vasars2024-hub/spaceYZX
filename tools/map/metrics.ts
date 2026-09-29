@@ -50,6 +50,7 @@ import {
 import { RayIndex, rayBoxExit } from './rays';
 import type { ChokepointDef, MapAnalysisConfig, Team } from './maps';
 import { measureRoutes, type TimingReport } from './timing';
+import { measureOpenness, type OpennessReport } from './openness';
 
 // ------------------------------------------------------------------------------------------
 // options
@@ -2429,6 +2430,8 @@ export interface MapReport {
   peeks: PeekReport;
   height: HeightReport;
   features: FeatureReport;
+  /** one duel at a time, or shot at from everywhere? (openness.ts) */
+  openness: OpennessReport;
   seconds: Record<string, number>;
 }
 
@@ -2488,6 +2491,7 @@ export const analyzeMap = (
   const peeks = time('peeks', () => peekBalance(an));
   const height = time('height', () => heightAdvantage(an));
   const features = time('features', () => featureReach(an));
+  const openness = time('openness', () => measureOpenness(an));
   const { log: _log, ...optsOut } = opts;
   return {
     analyzer: an,
@@ -2520,6 +2524,7 @@ export const analyzeMap = (
       peeks,
       height,
       features,
+      openness,
       seconds,
     },
   };

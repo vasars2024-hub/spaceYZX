@@ -80,11 +80,11 @@ describe('menu flow: practice wizard', () => {
     expect(practiceBack(s)).toBeNull(); // back from the first step leaves the menu
   });
 
-  it('free fight skips the map step and always plays the Training Bay', () => {
+  it('free fight skips the map step and always plays the big Brawl map (Colossus Yard)', () => {
     const s = pickPracticeMode({ ...initialPractice(), map: 'kestrel' }, 'deathmatch');
     expect(practiceSteps('deathmatch')).toEqual(['mode', 'setup']);
     expect(s.step).toBe('setup');
-    expect(practiceMapId(s)).toBe('training-bay');
+    expect(practiceMapId(s)).toBe('colossus-yard');
     expect(practiceBack(s)?.step).toBe('mode');
   });
 
@@ -98,7 +98,7 @@ describe('menu flow: practice wizard', () => {
       expect(maps.length).toBeGreaterThan(0);
       for (const m of maps) expect(mapDef(m.id).bombSites?.length ?? 0).toBeGreaterThan(0);
     }
-    expect(mapsForMode('deathmatch').map((m) => m.id)).toEqual(['training-bay']);
+    expect(mapsForMode('deathmatch').map((m) => m.id)).toEqual(['colossus-yard']);
     expect(mapsForMode('match').some((m) => m.id === 'training-bay')).toBe(false);
     // Elimination needs nothing from a map: every competitive map
     expect(mapsForMode('elim').map((m) => m.id)).toEqual(
@@ -351,8 +351,9 @@ describe('menu flow: Brawl and one-click Play', () => {
     expect(sizesFor('brawl-ffa')).toEqual([4, 6, 8, 10]);
     for (const mode of ['brawl', 'brawl-ffa'] as const) {
       const maps = mapsForMode(mode).map((m) => m.id);
-      expect(maps).toContain('training-bay');
+      expect(maps[0]).toBe('colossus-yard'); // the big Brawl map comes first
       expect(maps).toContain('split-deck');
+      expect(maps).not.toContain('training-bay'); // (too cramped for ten)
       expect(mapsForMode(mode).some((m) => m.arena || m.race)).toBe(false);
       expect(practiceSteps(mode)).toEqual(['mode', 'map', 'setup']);
       expect(ICONS[modeChoice(mode).icon]).toBeTruthy();

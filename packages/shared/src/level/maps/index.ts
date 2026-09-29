@@ -8,6 +8,12 @@ import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
 import { buildSakuraHold } from './sakura-hold';
+import { buildAntipode } from './antipode';
+import { buildStormglass } from './stormglass';
+import { buildAfterglow } from './afterglow';
+import { buildOrrery } from './orrery';
+import { buildLeviathan } from './leviathan';
+import { buildColossusYard } from './colossus-yard';
 import type { CourseData, CourseMode } from '../course/types';
 import { expandCourse } from '../course/expand';
 import { sunspireCourse } from './race-sunspire';
@@ -21,6 +27,7 @@ import { neonSpillwayCourse } from './surf-neon-spillway';
 import { basaltCathedralCourse } from './surf-basalt-cathedral';
 import { cycloneObservatoryCourse } from './surf-cyclone-observatory';
 import { prismRelayCourse } from './surf-prism-relay';
+import { thirtyDoorsCourse } from './surf-thirty-doors';
 import { withSkyArena } from '../sky-arena';
 import { FULL_TEAM_SIZE, sizedLevelDef } from '../size-walls';
 
@@ -38,6 +45,11 @@ export interface MapInfo {
    * built for 1v1–3v3 (the pool: server services/queue.ts premierMapPool)
    */
   premier?: boolean;
+  /**
+   * a Brawl map (TDM / FFA with respawns, rules/brawl.ts): big and open for 10 players; never
+   * in the team-objective modes (Tower, Bomb, Elimination)
+   */
+  brawl?: boolean;
   /** a parkour race track (LevelDef.race, rules/race.ts): only for races, never other modes */
   race?: boolean;
   /**
@@ -74,6 +86,7 @@ const courseMap = (
 export const SURF_MODES: { mode: CourseMode; label: string; color: string }[] = [
   { mode: 'beginner', label: 'Beginner', color: '#5dd39e' },
   { mode: 'intermediate', label: 'Intermediate', color: '#f2a93b' },
+  { mode: 'expert', label: 'Expert', color: '#e0525f' },
 ];
 
 export const MAPS: MapInfo[] = [
@@ -92,6 +105,46 @@ export const MAPS: MapInfo[] = [
     build: buildSakuraHold,
     competitive: true,
     premier: false,
+  },
+  // docs/NEW-MAPS.md: Antipode is fair by a half-turn (floor deck ↔ ceiling deck; antipode.test.ts
+  // checks it), the others are mirrored across x = 0
+  { id: 'antipode', name: 'Antipode', build: buildAntipode, competitive: true },
+  {
+    id: 'stormglass',
+    name: 'Stormglass',
+    build: buildStormglass,
+    competitive: true,
+    symmetric: true,
+  },
+  {
+    id: 'afterglow',
+    name: 'Afterglow',
+    build: buildAfterglow,
+    competitive: true,
+    symmetric: true,
+  },
+  {
+    id: 'orrery',
+    name: 'The Orrery',
+    build: buildOrrery,
+    competitive: true,
+    symmetric: true,
+  },
+  {
+    id: 'leviathan',
+    name: 'Leviathan',
+    build: buildLeviathan,
+    competitive: true,
+    symmetric: true,
+  },
+  // the big Brawl map (TDM / FFA / Deathmatch practice)
+  {
+    id: 'colossus-yard',
+    name: 'Colossus Yard',
+    build: buildColossusYard,
+    competitive: false,
+    symmetric: true,
+    brawl: true,
   },
   { id: 'proving-grounds', name: 'Proving Grounds', build: buildTestShip, competitive: false },
   {
@@ -122,6 +175,8 @@ export const MAPS: MapInfo[] = [
     'intermediate',
   ),
   courseMap('surf-prism-relay', 'Prism Relay', prismRelayCourse, 'intermediate'),
+  // 30 sealed rooms, easy to extreme (docs/movement-map-design/maps/X01-thirty-doors.md)
+  courseMap('surf-thirty-doors', 'Thirty Doors', thirtyDoorsCourse, 'expert'),
 ];
 
 /** Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs). */

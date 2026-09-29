@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPlayer,
+  Btn,
   buildLevel,
   compileCustomMap,
   createPlayer,
   createWorld,
   defaultConfig,
   lineOfSight,
+  madd,
   raycast,
   step,
   stepPredict,
@@ -304,5 +306,66 @@ describe('moving blocks', () => {
     const s = sim(compileCustomMap(doc()), v3(0, 0, 0));
     expect(s.ctx.level.movers).toHaveLength(0);
     expect(s.ctx.level.moverBoxes).toHaveLength(0);
+  });
+});
+
+describe('launch pads (Map Maker)', () => {
+  /** A pad as the Map Maker places it: a thin 2.5 × 0.4 × 2.5 plate on the surface at `at`. */
+  const pad = (at: Vec3, vel: [number, number, number] = [0, 14, -12]) => ({
+    pos: [at.x, at.y + 0.2, at.z] as [number, number, number],
+    size: [2.5, 0.4, 2.5] as [number, number, number],
+    vel,
+  });
+  const launched = (s: Sim, ticks: number): boolean => {
+    for (let i = 0; i < ticks; i++) {
+      run(s, 1);
+      if (s.world.events.some((e) => e.type === 'launch')) return true;
+    }
+    return false;
+  };
+
+  it('standing on a pad launches you', () => {
+    const def = compileCustomMap(doc({ launchPads: [pad(v3(0, 0, 0))] }));
+    const s = sim(def, v3(0, 0, 0));
+    expect(launched(s, 10)).toBe(true);
+    expect(s.p.vel.y).toBeGreaterThan(5);
+  });
+
+  it('running over a pad launches you; running past it does not', () => {
+    const def = compileCustomMap(doc({ launchPads: [pad(v3(0, 0, 0))] }));
+    const runTo = (x: number): boolean => {
+      const s = sim(def, v3(x, 0, 8)); // facing -z, toward the pad's row
+      for (let i = 0; i < 90; i++) {
+        step(
+          s.world,
+          { 1: { tick: s.world.tick + 1, buttons: Btn.Forward, view: s.p.view } },
+          s.ctx,
+        );
+        if (s.world.events.some((e) => e.type === 'launch')) return true;
+      }
+      return false;
+    };
+    expect(runTo(0)).toBe(true);
+    expect(runTo(3)).toBe(false);
+  });
+
+  it('surfing across a pad on a surf ramp launches you (a bounce pad)', () => {
+    const ramp: CustomBlock = {
+      id: 3,
+      shape: 'surf',
+      pos: [0, 0, 0],
+      size: [10, 6, 24],
+      mat: 'concrete',
+    };
+    const base = compileCustomMap(doc({ blocks: [floor, ramp] }));
+    const down = v3(0, -1, 0);
+    // the pad's plate sits on the slope where the Map Maker's aim would put it
+    const at = raycast(buildLevel(base), v3(1.2, 20, 0), down, 40)!.point;
+    const def = compileCustomMap(doc({ blocks: [floor, ramp], launchPads: [pad(at, [8, 16, 0])] }));
+    // a surfer on the same slope a few metres back, riding along it through the pad
+    const from = raycast(buildLevel(def), v3(1.2, 20, -7), down, 40)!;
+    const s = sim(def, madd(from.point, from.normal, 0.45));
+    s.p.vel = v3(0, 0, 12);
+    expect(launched(s, 90)).toBe(true);
   });
 });

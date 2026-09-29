@@ -25,6 +25,7 @@ import type { RngState } from '../math/rng';
 import { rngFromSeed, rngFloat, rngInt } from '../math/rng';
 import { lineOfSight, raycast } from '../level/collision';
 import { inSkyZone } from '../level/sky-arena';
+import { pointInAabb } from '../level/level';
 import type { SimContext } from '../sim/context';
 import { isEnemy, isTeammate } from '../sim/context';
 import type { WaypointDef } from '../level/types';
@@ -402,6 +403,23 @@ const navigate = (
   return mem.path[0] ?? goal;
 };
 
+/** How far below a step a bot still expects floor (deeper than any drop its routes take). */
+const LEDGE_DEPTH = 30;
+
+/**
+ * Would a grounded bot stepping this way head for its death: no floor within LEDGE_DEPTH under
+ * the step, floor inside a kill volume, or a launch pad (bots can't fly one)?
+ */
+const deadlyAhead = (ctx: SimContext, pos: Vec3, up: Vec3, dir: Vec3): boolean => {
+  const def = ctx.level.def;
+  const ahead = madd(pos, normalize(dir), 1.6);
+  for (const pad of def.launchPads ?? []) if (pointInAabb(ahead, pad.min, pad.max)) return true;
+  const hit = raycast(ctx.level, ahead, scale(up, -1), LEDGE_DEPTH);
+  if (!hit) return true;
+  for (const k of def.killVolumes ?? []) if (pointInAabb(hit.point, k.min, k.max)) return true;
+  return false;
+};
+
 export const botThink = (
   world: WorldState,
   ctx: SimContext,
@@ -648,6 +666,12 @@ export const botThink = (
       if (self.jetOn || self.jetHold >= 0 || !(self.prevButtons & Btn.Jump)) buttons |= Btn.Jump;
       else buttons &= ~Btn.Jump;
     }
+  } else if (self.grounded && lenSq(moveDir) > 0.01 && deadlyAhead(ctx, self.pos, up, moveDir)) {
+    // the ship's own voids (Stormglass's Eye, drydock edges, gorges): a grounded bot never
+    // walks, strafes or dashes toward a fall to its death, nor onto a launch pad (it can't fly
+    // one): it stops there and lets its route or goal move on
+    moveDir = v3();
+    buttons &= ~Btn.Dash;
   }
 
   if (floatNav) buttons |= Btn.Forward;

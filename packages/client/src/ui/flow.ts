@@ -8,6 +8,7 @@ import {
   BOT_SKILL_LABELS,
   DEFAULT_BOT_SKILL,
   DEFAULT_MATCH_MAP,
+  DEFAULT_BRAWL_MAP,
   SURF_MODES,
   brawlMaps,
   getMap,
@@ -100,7 +101,7 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
   {
     id: 'deathmatch',
     name: 'Free fight',
-    desc: 'Respawning brawl in the Training Bay. No rounds, just fight.',
+    desc: 'Respawning brawl in the Colossus Yard. No rounds, just fight.',
     icon: 'freefight',
   },
   {
@@ -203,14 +204,14 @@ const supports = (def: LevelDef, need: 'tower' | 'bomb' | 'none'): boolean =>
 
 /**
  * Maps a mode can be played on: competitive maps that have what the mode needs (Towers or bomb
- * sites). Free fight is always the Training Bay; the Arena plays on the Arena maps.
+ * sites). Free fight is always the big Brawl map; the Arena plays on the Arena maps.
  */
 export const mapsForMode = (
   mode: PracticeMode,
   maps: readonly MapInfo[] = MAPS,
   defOf: (id: string) => LevelDef = mapDef,
 ): MapInfo[] => {
-  if (mode === 'deathmatch') return maps.filter((m) => m.id === 'training-bay');
+  if (mode === 'deathmatch') return maps.filter((m) => m.id === DEFAULT_BRAWL_MAP(maps));
   if (mode === 'arena') return maps.filter(isArenaMap);
   if (mode === 'race') return maps.filter(isRaceMap);
   if (isBrawlPractice(mode)) return brawlMaps(maps);
@@ -235,7 +236,7 @@ export interface SurfGroup {
 }
 
 /**
- * The surf maps grouped by mode: Beginner, then Intermediate (SURF_MODES order; modes without
+ * The surf maps grouped by mode: Beginner, Intermediate, then Expert (SURF_MODES order; modes without
  * maps are left out). A surf map without a standard mode comes last, in a group of its own.
  */
 export const surfModeGroups = (maps: readonly MapInfo[] = MAPS): SurfGroup[] => {
@@ -283,6 +284,18 @@ export const MAP_BLURBS: Record<string, string> = {
     'Desert mesas at sunset over a deadly gorge: launch pads, rock bridges, slot canyons.',
   'sakura-hold':
     'Small blossom castle for 1v1–3v3: slow moat, a keep to climb, paper walls the Boomerang flies through.',
+  antipode:
+    'One hollow hull, two floors: Orange stands on the ceiling. Drift through the zero-G Seam and fall up onto the enemy deck.',
+  stormglass:
+    'Two fortresses over a 70 m void at violet dusk: a glass bridge, a broken span to jump, a floating anemometer. Fall and you are gone.',
+  afterglow:
+    'A neon night market under a glass dome: dark alleys, a sunken koi plaza, rooftops and a monorail across the sky.',
+  orrery:
+    'A brass clockwork solar system in the dark: ride the moving planets to the Sun, or take the long way round the ring.',
+  leviathan:
+    'Inside a fossil giant in a teal nebula: rib-arch cover, a walkway along its spine, a glowing heart in the middle.',
+  'colossus-yard':
+    'A drydock at sunrise round a half-built titan warship: container canyons, crane booms, a spine deck 15 m up. Built for ten.',
   'training-bay': 'Compact combat bay for quick fights.',
   'proving-grounds': 'The movement test ship: zero-G bay, wall corridor, flip room.',
   arena: 'Sealed duel pits: crates in the middle, upper ground along the sides.',
@@ -292,6 +305,8 @@ export const MAP_BLURBS: Record<string, string> = {
     'The night interchange (hard): five metro-portal stations, billboard bhop, red lasers, a helix round the Drift Tower, no jetpack.',
   'race-ember':
     'The forge needle (very hard): five portal rooms, a jetpack under red ash ceilings — save fuel for the crucible lift — buttress wraps and a helix down the needle.',
+  'surf-thirty-doors':
+    'Surf, Expert: thirty sealed rooms, each its own trick — wide first ramps, then portals, boosters, needles and red helixes. Clear a room, take its door.',
   'surf-copper-reef':
     'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
   'surf-glass-garden':
@@ -413,9 +428,9 @@ export const practiceBack = (
   return prev ? { ...s, step: prev } : null;
 };
 
-/** The map a practice game will actually load (free fight is always the Training Bay). */
+/** The map a practice game will actually load (free fight is always the big Brawl map). */
 export const practiceMapId = (s: PracticeState): string =>
-  s.mode === 'deathmatch' ? 'training-bay' : s.map;
+  s.mode === 'deathmatch' ? DEFAULT_BRAWL_MAP() : s.map;
 
 // ---------------------------------------------------------------- online room wizard
 

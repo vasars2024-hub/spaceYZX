@@ -372,6 +372,36 @@ describe('built-in maps', () => {
     }
   });
 
+  it('an edit of a map with moving blocks keeps each mover on its own boxes', () => {
+    const base = mapDefForSize('orrery');
+    const movers = base.movers!;
+    const moving = new Set(movers.flatMap((m) => m.boxes));
+    const all = baseBoxesForEditor('orrery');
+    const unique = (fp: string) => all.filter((o) => o.fingerprint === fp).length === 1;
+    // a still box before the first mover's boxes: every mover's indices shift down by one
+    const still = all.find(
+      (b, i) => !moving.has(i) && i < movers[0].boxes[0] && unique(b.fingerprint),
+    )!;
+    const edited = applyCustomPatch(
+      base,
+      doc({ base: 'orrery', patch: { removed: [still.fingerprint] } }),
+    );
+    expect(edited.movers).toHaveLength(movers.length);
+    edited.movers!.forEach((m, k) =>
+      expect(m.boxes.map((i) => edited.boxes[i])).toEqual(
+        movers[k].boxes.map((i) => base.boxes[i]),
+      ),
+    );
+    // removing one of a mover's own boxes: that box leaves the mover, the rest ride on
+    const own = movers[0].boxes.find((i) => unique(all[i].fingerprint))!;
+    const cut = applyCustomPatch(
+      base,
+      doc({ base: 'orrery', patch: { removed: [all[own].fingerprint] } }),
+    );
+    expect(cut.movers![0].boxes).toHaveLength(movers[0].boxes.length - 1);
+    expect(cut.movers![0].boxes.every((i) => i < cut.boxes.length)).toBe(true);
+  });
+
   it('an empty edit is the map itself; removing a box removes exactly it', () => {
     for (const info of MAPS) {
       const base = mapDefForSize(info.id);

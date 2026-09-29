@@ -38,7 +38,11 @@ describe('free roam: dummy placement', () => {
       const level = buildLevel(def);
       const m = config.movement;
       const start = freeRoamStart(def).pos;
-      const eyes = def.spawns.map((s) => v3(s.pos.x, s.pos.y + 1.6, s.pos.z));
+      // (where you can stand: the spawns and the bots' waypoints)
+      const eyes = [
+        ...def.spawns.map((s) => s.pos),
+        ...(def.waypoints ?? []).map((w) => w.pos),
+      ].map((p) => v3(p.x, p.y + 1.6, p.z));
       for (const s of spots) {
         // on a floor
         const hit = raycast(level, v3(s.pos.x, s.pos.y + 0.3, s.pos.z), v3(0, -1, 0), 0.6);
@@ -56,7 +60,7 @@ describe('free roam: dummy placement', () => {
         // in bounds, not out in a gorge
         expect(pointInAabb(s.pos, def.boundsMin, def.boundsMax)).toBe(true);
         for (const k of def.killVolumes ?? []) expect(pointInAabb(s.pos, k.min, k.max)).toBe(false);
-        // someone standing on a spawn can see it
+        // someone standing on a spawn or a waypoint can see it
         const chest = v3(s.pos.x, s.pos.y + 1.2, s.pos.z);
         expect(eyes.some((e) => lineOfSight(level, e, chest))).toBe(true);
         // not on top of you, not on top of each other

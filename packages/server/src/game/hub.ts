@@ -24,6 +24,7 @@ import {
   ARENA_MAP_ID,
   DEFAULT_RACE_MAP,
   DEFAULT_MATCH_MAP,
+  DEFAULT_BRAWL_MAP,
   PUBLIC_BRAWL,
   brawlMaps,
   nextBrawlMap,
@@ -415,7 +416,7 @@ export class GameHub {
             ? opts.map
             : DEFAULT_RACE_MAP
           : brawl && !brawlMaps().some((m) => m.id === opts.map)
-            ? DEFAULT_MATCH_MAP()
+            ? DEFAULT_BRAWL_MAP()
             : opts.map;
     const room = new Room({
       code,

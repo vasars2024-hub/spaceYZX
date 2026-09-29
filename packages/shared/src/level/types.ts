@@ -114,6 +114,12 @@ export interface TowerDef {
   pos: Vec3; // base center
   radius: number;
   height: number;
+  /**
+   * hangs from a ceiling deck (gravity up, Antipode): drawn and marked upside down, its base on
+   * the ceiling at pos.y + height + 1 and its tip at pos.y + 1 (`pos` stays where the rules'
+   * upright touch volume, pos.y - 1 .. pos.y + height + 2, then covers the hanging Tower)
+   */
+  hanging?: boolean;
 }
 
 export interface WaypointDef {
@@ -131,6 +137,12 @@ export interface LaunchPadDef {
   min: Vec3;
   max: Vec3;
   vel: Vec3;
+  /**
+   * fires when the player's body touches the volume, not only when its centre is inside (the
+   * Map Maker's thin pad plates: standing on one, running over it or surfing across one on a
+   * slope all launch)
+   */
+  touch?: boolean;
 }
 
 /**

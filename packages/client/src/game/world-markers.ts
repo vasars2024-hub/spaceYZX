@@ -252,7 +252,8 @@ export class WorldMarkers implements ClientFeature {
         text: attack ? 'ATTACK' : 'DEFEND',
         pin: ' ▼',
         color: TEAM_COLOR[owner],
-        at: add(t.pos, v3(0, t.height + 1.5, 0)),
+        // past the tip (a hanging Tower's tip is at pos.y + 1: the marker goes under it)
+        at: add(t.pos, v3(0, t.hanging ? -0.5 : t.height + 1.5, 0)),
         priority: 80,
         // the carrier always sees where to go
         clamp: attack && carrying,

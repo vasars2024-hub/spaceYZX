@@ -49,6 +49,9 @@ export const RULES_DEFAULTS = {
   bombDefuseSec: 7,
   bombUseRadius: 2, // how close a defender must be to defuse
   bombPickupRadius: 1.6,
+  // a dropped bomb nobody can walk up to (floating in zero-G, or nothing under it) goes to a
+  // living attacker after this long
+  bombStrandedSec: 3,
   bombKillRadius: 10,
   bombDamageRadius: 20,
   controllerPickupSec: 0.5,

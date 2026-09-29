@@ -18,6 +18,7 @@ import {
   brawlSafeSpawn,
   brawlView,
   brawlMaps,
+  DEFAULT_BRAWL_MAP,
   nextBrawlMap,
   brawlStandings,
   applyBrawlBotObjectives,
@@ -82,9 +83,9 @@ const kill = (w: { ctx: SimContext; world: WorldState }, killer: number, victim:
 };
 
 describe('brawl: respawns and spawn protection', () => {
-  it('a dead player is back after ~2 s, protected by the shield for 1.5 s', () => {
+  it('a dead player is back after ~2 s, protected by the shield for 3 s', () => {
     const w = setup('tdm');
-    run(w, sec(2)); // (the start protection runs out)
+    run(w, sec(BRAWL_DEFAULTS.protectSec) + 5); // (the start protection runs out)
     kill(w, 1, 3);
     expect(player(w.world, 3).alive).toBe(false);
     run(w, sec(BRAWL_DEFAULTS.respawnSec) - 5);
@@ -138,6 +139,33 @@ describe('brawl: respawns and spawn protection', () => {
         expect(s.team).toBe(1);
       }
     }
+  });
+
+  it('spawn-camp protection: never next to an enemy, and not the same point twice in a row', () => {
+    const w = setup('ffa', 3);
+    const def = w.ctx.level.def;
+    const me = player(w.world, 1);
+    const foes = w.world.players.filter((p) => p.id !== 1);
+    // campers stand a few metres from most of the spawn points
+    foes.forEach((f, i) => {
+      const s = def.spawns[i * 2];
+      f.pos = v3(s.pos.x + 3, s.pos.y + 0.9, s.pos.z);
+    });
+    for (let k = 0; k < 30; k++) {
+      const s = brawlSafeSpawn(w.bs, w.world, w.ctx, me);
+      expect(Math.min(...foes.map((f) => len(sub(f.pos, s.pos))))).toBeGreaterThan(
+        BRAWL_DEFAULTS.denyM,
+      );
+    }
+    // respawn twice in quick succession: the second one comes out somewhere else
+    const at: number[] = [];
+    for (let k = 0; k < 2; k++) {
+      kill(w, 2, 1);
+      run(w, sec(BRAWL_DEFAULTS.respawnSec) + 2);
+      at.push(def.spawns.findIndex((s) => len(sub(s.pos, v3(me.pos.x, s.pos.y, me.pos.z))) < 0.5));
+    }
+    expect(at[0]).toBeGreaterThanOrEqual(0);
+    expect(at[1]).not.toBe(at[0]);
   });
 
   it('never picks a spawn point someone stands on', () => {
@@ -291,13 +319,15 @@ describe('brawl: joining and leaving mid-match', () => {
 });
 
 describe('brawl: maps and determinism', () => {
-  it('rotates through the competitive maps and the Training Bay (no Arena, no race tracks)', () => {
+  it('rotates through the Brawl maps (first) and the competitive maps (no Arena, no race tracks)', () => {
     const ids = brawlMaps().map((m) => m.id);
-    expect(ids).toContain('training-bay');
+    expect(ids[0]).toBe('colossus-yard');
+    expect(DEFAULT_BRAWL_MAP()).toBe('colossus-yard');
+    expect(ids).not.toContain('training-bay'); // (too cramped for ten)
     expect(ids).toContain('split-deck');
     for (const m of MAPS) {
       if (m.arena || m.race) expect(ids).not.toContain(m.id);
-      if (m.competitive && !m.arena && !m.race) expect(ids).toContain(m.id);
+      if ((m.competitive || m.brawl) && !m.arena && !m.race) expect(ids).toContain(m.id);
     }
     // the rotation visits every map once, then starts over
     let at = ids[0];

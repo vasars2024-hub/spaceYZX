@@ -21,7 +21,7 @@ import type {
 } from '@space-yz/shared';
 import {
   BOT_SKILLS,
-  DEFAULT_MATCH_MAP,
+  DEFAULT_BRAWL_MAP,
   addPlayer,
   applyBrawlBotObjectives,
   botSkillName,
@@ -78,7 +78,7 @@ export class BrawlLocalSession extends LocalSession {
 /** An offline Brawl vs bots (no rendering): used by startBrawlPractice and tests. */
 export const createBrawlPractice = (opts: BrawlPracticeOptions): BrawlLocalSession => {
   const variant = opts.variant;
-  const mapId = brawlMaps().some((m) => m.id === opts.map) ? opts.map! : DEFAULT_MATCH_MAP();
+  const mapId = brawlMaps().some((m) => m.id === opts.map) ? opts.map! : DEFAULT_BRAWL_MAP();
   const config = opts.config ?? loadTuning();
   const brawl = createBrawl(variant);
   const size = Math.max(variant === 'ffa' ? 2 : 1, Math.min(10, Math.floor(opts.size)));

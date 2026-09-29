@@ -166,7 +166,10 @@ export class MatchFeature implements ClientFeature {
           side: THREE.DoubleSide,
         }),
       );
-      beam.position.set(t.pos.x, t.pos.y + 20, t.pos.z);
+      // (a Tower hanging from a ceiling deck shines down from the ceiling)
+      const base = t.hanging ? t.pos.y + t.height + 1 : t.pos.y;
+      const up = t.hanging ? -1 : 1;
+      beam.position.set(t.pos.x, base + up * 20, t.pos.z);
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(t.radius + 1.6, t.radius + 2.2, 40),
         new THREE.MeshBasicMaterial({
@@ -178,7 +181,7 @@ export class MatchFeature implements ClientFeature {
         }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.set(t.pos.x, t.pos.y + 0.03, t.pos.z);
+      ring.position.set(t.pos.x, base + up * 0.03, t.pos.z);
       this.group.add(beam, ring);
       this.towers.push({ team: t.team, owner: t.team, beam, ring, flash: 0 });
     }

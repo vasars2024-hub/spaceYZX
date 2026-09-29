@@ -50,7 +50,10 @@ import {
   type SimContext,
 } from '../src/index';
 
-const MAPS = surfMaps().map((m) => m.id);
+// (the standard Beginner / Intermediate maps; Expert gauntlets have their own tests)
+const MAPS = surfMaps()
+  .filter((m) => m.mode !== 'expert')
+  .map((m) => m.id);
 
 /** How well a human must strafe to get round (Beginner 0.6, Intermediate 0.75). */
 const DESIGN_EFF = (id: string): number => (getMap(id).mode === 'intermediate' ? 0.75 : 0.6);

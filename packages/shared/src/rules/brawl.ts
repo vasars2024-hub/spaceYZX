@@ -47,6 +47,8 @@ export interface BrawlState {
   deadSince: Record<number, number>;
   /** player id -> tick their spawn protection ends */
   protectUntil: Record<number, number>;
+  /** spawn point index -> the tick someone last (re)spawned there (spawn-camp protection) */
+  spawnUsed: Record<number, number>;
   /** Brawls started so far (1 = the first) */
   matchNo: number;
   /** power-ups: the running cycle's first tick and how many it spawned */
@@ -71,6 +73,7 @@ export const createBrawl = (
   endReason: '',
   deadSince: {},
   protectUntil: {},
+  spawnUsed: {},
   matchNo: 0,
   powerupsSince: 0,
   powerupsSpawned: 0,
@@ -82,9 +85,18 @@ export const brawlTarget = (bs: Pick<BrawlState, 'variant' | 'settings'>): numbe
 
 // ---------------------------------------------------------------- maps
 
-/** The Brawl map rotation: the competitive maps and the Training Bay (never Arena / race tracks). */
-export const brawlMaps = (maps: readonly MapInfo[] = MAPS): MapInfo[] =>
-  maps.filter((m) => !m.arena && !m.race && (m.competitive || m.id === 'training-bay'));
+/**
+ * The Brawl map rotation: the big Brawl maps first (Colossus Yard), then the competitive maps
+ * (never Arena / race tracks).
+ */
+export const brawlMaps = (maps: readonly MapInfo[] = MAPS): MapInfo[] => {
+  const ok = maps.filter((m) => !m.arena && !m.race);
+  return [...ok.filter((m) => m.brawl), ...ok.filter((m) => !m.brawl && m.competitive)];
+};
+
+/** The map a Brawl (and the offline Free fight) plays unless another one is picked. */
+export const DEFAULT_BRAWL_MAP = (maps: readonly MapInfo[] = MAPS): string =>
+  brawlMaps(maps)[0]?.id ?? maps[0].id;
 
 /** The map after `current` in the rotation (the first one if `current` isn't in it). */
 export const nextBrawlMap = (current: string, maps: readonly MapInfo[] = MAPS): string => {
@@ -98,9 +110,12 @@ export const nextBrawlMap = (current: string, maps: readonly MapInfo[] = MAPS): 
 
 /**
  * The safest spawn point for `p` right now: as far from the living enemies as possible
- * (distances past `safeFarM` all count the same), a point any enemy can see counts
- * `seenPenaltyM` nearer, and points someone stands on are avoided. Among the points within
- * `spawnSlackM` of the best one a seeded pick decides, so spawns don't become predictable.
+ * (distances past `safeFarM` all count the same), a point any enemy (within `sightM`) can see
+ * counts `seenPenaltyM` nearer, and points someone stands on are avoided. Spawn-camp
+ * protection: a point with an enemy within `denyM` is out (unless every point has one), and a
+ * point used in the last `reuseSec` counts `reusePenaltyM` nearer, so a camper can't farm one
+ * spot. Among the points within `spawnSlackM` of the best one a seeded pick decides, so spawns
+ * don't become predictable.
  */
 export const brawlSafeSpawn = (
   bs: BrawlState,
@@ -115,18 +130,23 @@ export const brawlSafeSpawn = (
   const foes = world.players.filter((q) => q.alive && isEnemy(ctx, q, p));
   const others = world.players.filter((q) => q.alive && q.id !== p.id);
   const eyes = foes.map((f) => eyePos(f, m));
-  const scored = spawns.map((sp) => {
+  const recent = secTicks(s.reuseSec, ctx.dt);
+  const scored = spawns.map((sp, i) => {
     const eye = v3(sp.pos.x, sp.pos.y + m.standHeight - 0.1, sp.pos.z);
-    let near = s.safeFarM;
-    for (const f of foes) near = Math.min(near, len(sub(f.pos, sp.pos)));
-    let score = near;
+    let closest = Infinity;
+    for (const f of foes) closest = Math.min(closest, len(sub(f.pos, sp.pos)));
+    let score = Math.min(closest, s.safeFarM);
+    // an enemy right at the point: never there (a camper standing in the spawn)
+    if (closest < s.denyM) score -= 500;
     // (only enemies near enough to matter are ray-tested)
     if (
       foes.some(
-        (f, i) => len(sub(f.pos, sp.pos)) < s.safeFarM * 2 && lineOfSight(ctx.level, eyes[i], eye),
+        (f, k) => len(sub(f.pos, sp.pos)) < s.sightM && lineOfSight(ctx.level, eyes[k], eye),
       )
     )
       score -= s.seenPenaltyM;
+    const used = bs.spawnUsed[i];
+    if (used !== undefined && world.tick - used < recent) score -= s.reusePenaltyM;
     if (others.some((q) => len(sub(q.pos, sp.pos)) < s.occupiedM + m.standHeight / 2))
       score -= 1000;
     return { sp, score };
@@ -151,6 +171,8 @@ const spawnAt = (
   at: SpawnDef,
 ): void => {
   respawnPlayer(world, p, at.pos, at.yawDeg, ctx.config);
+  const i = ctx.level.def.spawns.indexOf(at);
+  if (i >= 0) bs.spawnUsed[i] = world.tick;
   delete bs.deadSince[p.id];
   protect(bs, world, ctx, p);
 };
@@ -182,6 +204,7 @@ export const startBrawl = (bs: BrawlState, world: WorldState, ctx: SimContext): 
   bs.endReason = '';
   bs.deadSince = {};
   bs.protectUntil = {};
+  bs.spawnUsed = {};
   bs.powerupsSince = t;
   bs.powerupsSpawned = 0;
   world.grenades = [];

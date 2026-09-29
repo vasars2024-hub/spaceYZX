@@ -13,6 +13,8 @@ import type { WorldState, PlayerState } from '../sim/state';
 import type { BombSiteDef } from '../level/types';
 import { Btn } from '../sim/input';
 import { applyDamage } from '../sim/combat';
+import { gravityDirAt, isZeroG } from '../sim/gravity';
+import { raycast } from '../level/collision';
 
 export interface BombState {
   /** who carries it (null = lying at `pos`, or planted) */
@@ -25,7 +27,19 @@ export interface BombState {
   defuse: { player: number; ticks: number } | null;
   exploded: boolean;
   defused: boolean;
+  /** lying dropped: the tick it fell (a stranded bomb goes back to an attacker, see below) */
+  droppedTick?: number;
 }
+
+/**
+ * Can nobody walk up to a bomb lying at `pos`? Floating in zero-G (Antipode's Seam), or no
+ * floor under it along the gravity there (dropped over a void).
+ */
+const stranded = (ctx: SimContext, world: WorldState, pos: Vec3): boolean => {
+  const g = gravityDirAt(ctx, world, pos);
+  if (isZeroG(g)) return true;
+  return !raycast(ctx.level, pos, g, 40);
+};
 
 const secTicks = (s: number, dt: number) => Math.round(s / dt);
 
@@ -99,13 +113,23 @@ export const updateBomb = (
         if (p) root(p, false);
       }
       bomb.plant = null;
+      bomb.droppedTick = world.tick;
       world.events.push({ type: 'bombDrop', pos: clone(bomb.pos) });
     }
     if (bomb.carrier === null) {
       // any living attacker walking over it picks it up
-      const taker = world.players.find(
+      let taker = world.players.find(
         (p) => p.alive && p.team === attackers && len(sub(p.pos, bomb.pos)) <= r.bombPickupRadius,
       );
+      // stranded where nobody can reach it: after a moment it goes to a living attacker
+      if (
+        !taker &&
+        world.tick - (bomb.droppedTick ?? world.tick) >= secTicks(r.bombStrandedSec, dt) &&
+        stranded(ctx, world, bomb.pos)
+      ) {
+        const ps = world.players.filter((p) => p.alive && p.team === attackers);
+        if (ps.length) taker = ps[rngInt(world.rng, ps.length)];
+      }
       if (taker) {
         bomb.carrier = taker.id;
         world.events.push({ type: 'bombPickup', player: taker.id });

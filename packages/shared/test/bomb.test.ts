@@ -214,3 +214,41 @@ describe('bomb mode', () => {
     expect(far.hp).toBe(100);
   });
 });
+
+describe('a stranded bomb', () => {
+  /** Two attackers (1 carries, 3 stands by) and a zero-G pocket high over the floor. */
+  const strandedSetup = () => {
+    const def = flatLevel();
+    def.bombSites = [{ name: 'A', min: v3(-5, 0, -5), max: v3(5, 3, 5) }];
+    def.zones = [{ name: 'pocket', min: v3(-6, 15, -6), max: v3(6, 25, 6), gravity: v3(0, 0, 0) }];
+    const sim = makeSim(def);
+    sim.p.team = 1;
+    addPlayer(sim.world, createPlayer(3, 1, v3(20, 0, 0), 0, sim.config));
+    settle(sim);
+    const bomb = newBomb(sim.world, 1);
+    bomb.carrier = 1;
+    return { sim, bomb };
+  };
+
+  it('dropped floating in zero-G, it goes to a living attacker after a moment', () => {
+    const { sim, bomb } = strandedSetup();
+    sim.p.pos = v3(0, 20, 0);
+    sim.p.vel = v3(0, 0, 0);
+    tick(sim, bomb);
+    sim.p.alive = false;
+    tick(sim, bomb);
+    expect(bomb.carrier).toBeNull();
+    run(sim, bomb, secs(2.5));
+    expect(bomb.carrier).toBeNull();
+    run(sim, bomb, secs(1));
+    expect(bomb.carrier).toBe(3);
+  });
+
+  it('dropped on the floor, it stays there for the attackers to fetch', () => {
+    const { sim, bomb } = strandedSetup();
+    sim.p.alive = false;
+    tick(sim, bomb);
+    run(sim, bomb, secs(6));
+    expect(bomb.carrier).toBeNull();
+  });
+});

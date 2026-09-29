@@ -656,7 +656,13 @@ const compileParts = (doc: CustomMapDoc, boxBase: number): Parts => {
   for (const lp of doc.launchPads) {
     const pos = p3(lp.pos);
     const half = scale(p3(lp.size), 0.5);
-    parts.launchPads.push({ min: sub(pos, half), max: add(pos, half), vel: p3(lp.vel) });
+    // (a thin plate: it fires on touch, so standing on it or surfing across it launches)
+    parts.launchPads.push({
+      min: sub(pos, half),
+      max: add(pos, half),
+      vel: p3(lp.vel),
+      touch: true,
+    });
   }
   return parts;
 };
@@ -809,16 +815,27 @@ export const applyCustomPatch = (def: LevelDef, doc: CustomMapDoc): LevelDef => 
   const removed = new Set(patch.removed);
   const noPortals = new Set(patch.removedPortals ?? []);
   const noPads = new Set(patch.removedLaunchPads ?? []);
-  const boxes = removed.size
-    ? def.boxes.filter((b) => !removed.has(boxFingerprint(b)))
-    : def.boxes.slice();
+  // the map's boxes that stay, and where each old index went (-1: removed)
+  const newIndex: number[] = [];
+  const boxes: BoxDef[] = [];
+  for (const b of def.boxes) {
+    if (removed.has(boxFingerprint(b))) newIndex.push(-1);
+    else newIndex.push(boxes.push(b) - 1);
+  }
   const parts = compileParts(doc, boxes.length);
   const out: LevelDef = { ...def, boxes: [...boxes, ...parts.boxes] };
+  // the map's own moving blocks keep their boxes (renumbered; removed ones leave the mover, and
+  // a mover with nothing left goes)
+  const baseMovers = (def.movers ?? []).flatMap((m) => {
+    const kept = m.boxes.map((i) => newIndex[i]).filter((i) => i >= 0);
+    return kept.length ? [{ ...m, boxes: kept }] : [];
+  });
+  if (def.movers) out.movers = baseMovers;
   const portals = (def.portals ?? []).filter((_, i) => !noPortals.has(i)).concat(parts.portals);
   if (def.portals || portals.length) out.portals = portals;
   const pads = (def.launchPads ?? []).filter((_, i) => !noPads.has(i)).concat(parts.launchPads);
   if (def.launchPads || pads.length) out.launchPads = pads;
-  if (parts.movers.length) out.movers = [...(def.movers ?? []), ...parts.movers];
+  if (parts.movers.length) out.movers = [...baseMovers, ...parts.movers];
   if (doc.spawns.length) out.spawns = doc.spawns.map(toSpawn);
   // grow the map's box around the new blocks (leaving it kills)
   if (parts.min && parts.max) {

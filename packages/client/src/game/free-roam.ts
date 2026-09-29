@@ -148,7 +148,8 @@ const validSpot = (ctx: SimContext, world: WorldState, feet: Vec3, eyes: Vec3[])
   for (const k of def.killVolumes ?? []) if (near(k.min, k.max, 2)) return false;
   for (const l of def.launchPads ?? []) if (near(l.min, l.max, 1.5)) return false;
   for (const p of def.portals ?? []) if (near(p.min, p.max, 1.5)) return false;
-  // seen from somewhere you can stand (a spawn): not on a roof outside the play space
+  // seen from somewhere you can stand (a spawn or a bot waypoint): not on a roof outside the
+  // play space
   const chest = v3(feet.x, feet.y + 1.2, feet.z);
   return eyes.some((e) => lineOfSight(ctx.level, e, chest));
 };
@@ -178,7 +179,8 @@ const canJump = (level: Level, feet: Vec3): boolean =>
  * Dummy spots for a map: candidate points (spawns, bot waypoints, power-up points, bomb sites,
  * or a grid on maps without waypoints) snapped to the floor under them and kept only if valid:
  * in bounds, normal gravity, the body fits (no wall), clear of kill volumes / launch pads /
- * portals, and in sight of some spawn. Then spread out by farthest-point picking from where you
+ * portals, and in sight of some spawn or bot waypoint (maps whose spawn rooms are sealed from
+ * the lanes still get dummies out in the open). Then spread out by farthest-point picking from where you
  * start (so distances and heights vary). Kinds cycle static → strafe → jumper where there is
  * room to strafe / jump. Race tracks get none. Deterministic.
  */
@@ -192,7 +194,9 @@ export const placeDummies = (
   const ctx: SimContext = { level, config, dt: TICK_DT };
   const world = createWorld(level, 1);
   const start = freeRoamStart(def).pos;
-  const eyes = def.spawns.map((s) => v3(s.pos.x, s.pos.y + 1.6, s.pos.z));
+  const eyes = [...def.spawns.map((s) => s.pos), ...(def.waypoints ?? []).map((w) => w.pos)].map(
+    (p) => v3(p.x, p.y + 1.6, p.z),
+  );
   const ok: Vec3[] = [];
   for (const c of candidates(def)) {
     const f = floorAt(level, c);

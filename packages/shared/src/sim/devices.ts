@@ -5,12 +5,32 @@
 // vertical, speed kept; one that keeps your offset (PortalDef.offset) puts you as far off its exit
 // as you went in off its opening's middle, turned the same way, and one may level you out
 // (PortalDef.vertical 'zero': vertical speed dropped). Runs after movement, on the server and in the client's prediction alike.
+import type { Vec3 } from '../math/vec3';
 import { v3, add, clone, dot, len, madd, rotateAxis, scale, sub, UP } from '../math/vec3';
 import { qFromAxisAngle, qMul, qNormalize } from '../math/quat';
 import { pointInAabb } from '../level/level';
 import type { SimContext } from './context';
 import type { PlayerState, WorldState } from './state';
 import { Move } from './state';
+
+/**
+ * Does the player's body (its capsule, plus the ground check's few cm) touch the box `min..max`?
+ * Points along the capsule's axis, each within its radius of the box.
+ */
+const bodyTouches = (p: PlayerState, ctx: SimContext, min: Vec3, max: Vec3): boolean => {
+  const m = ctx.config.movement;
+  const h = p.crouched ? m.crouchHeight : m.standHeight;
+  const half = Math.max(0, h / 2 - m.radius);
+  const reach = m.radius + 0.06;
+  for (let k = 0; k <= 8; k++) {
+    const c = madd(p.pos, p.up, half * (k / 4 - 1));
+    const dx = Math.max(min.x - c.x, 0, c.x - max.x);
+    const dy = Math.max(min.y - c.y, 0, c.y - max.y);
+    const dz = Math.max(min.z - c.z, 0, c.z - max.z);
+    if (dx * dx + dy * dy + dz * dz <= reach * reach) return true;
+  }
+  return false;
+};
 
 export const updateDevices = (world: WorldState, ctx: SimContext, p: PlayerState): void => {
   if (!p.alive || p.frozen || p.rail || p.mantle) return;
@@ -19,7 +39,10 @@ export const updateDevices = (world: WorldState, ctx: SimContext, p: PlayerState
   if (pads)
     for (let i = 0; i < pads.length; i++) {
       const pad = pads[i];
-      if (!pointInAabb(p.pos, pad.min, pad.max)) continue;
+      const inside = pad.touch
+        ? bodyTouches(p, ctx, pad.min, pad.max)
+        : pointInAabb(p.pos, pad.min, pad.max);
+      if (!inside) continue;
       const speed = len(pad.vel);
       // a fresh launch (not the ticks after it while still inside the volume)
       if (dot(p.vel, pad.vel) < 0.9 * speed * speed)

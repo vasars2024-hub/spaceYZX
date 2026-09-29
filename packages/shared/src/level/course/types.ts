@@ -106,7 +106,8 @@ export interface CoursePalette {
 }
 
 /** A standard-mode difficulty (the map lists and leaderboards group by it). */
-export type CourseMode = 'beginner' | 'intermediate';
+/** a surf map's difficulty group; 'expert': long, extreme gauntlets (Thirty Doors) */
+export type CourseMode = 'beginner' | 'intermediate' | 'expert';
 
 export interface CourseSky {
   top: number;

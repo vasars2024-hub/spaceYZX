@@ -5,8 +5,11 @@
 export const BRAWL_DEFAULTS = {
   /** a dead player is back this long after dying */
   respawnSec: 2,
-  /** spawn protection after every (re)spawn: shown as the shield, ends early when you attack */
-  protectSec: 1.5,
+  /**
+   * spawn protection after every (re)spawn: shown as the shield, ends early when you attack
+   * (long enough to see where you are and get out of a camped spot)
+   */
+  protectSec: 3,
   /** FFA: the first player to this many kills wins */
   ffaKills: 20,
   /** TDM: the first team to this many kills wins */
@@ -26,6 +29,19 @@ export const BRAWL_DEFAULTS = {
   occupiedM: 1.6,
   /** spawn choice: any point within this many metres of the best score may be picked */
   spawnSlackM: 6,
+  /**
+   * Spawn-camp protection: a spawn point with a living enemy this close is never used (unless
+   * every point has one)
+   */
+  denyM: 14,
+  /** enemies this close to a spawn point are checked for line of sight to it */
+  sightM: 120,
+  /**
+   * a spawn point used this recently counts `reusePenaltyM` metres nearer to the enemies (a
+   * camper can't farm the same point: the next respawn comes out somewhere else)
+   */
+  reuseSec: 4,
+  reusePenaltyM: 25,
   /** power-ups: a new cycle every this many seconds (one appears `powerupFirstSec` into it) */
   powerupCycleSec: 30,
 } as const;

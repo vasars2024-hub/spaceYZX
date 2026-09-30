@@ -449,7 +449,7 @@ export const buildAfterglow = (): LevelDef => {
     put('north', 52, 0, -27, 180);
     put('north', 48.5, 0, -23.5, 180);
     put('metro', 50, S.metro, 10.5, -90);
-    put('metro', 47, S.metro, 12, -90);
+    put('metro', 50.5, S.metro, 13, -90);
     put('south', 48.5, 0, 30, 0);
     put('south', 52, 0, 27, 0);
     put('south', 48.5, 0, 23.5, 0);
@@ -569,8 +569,9 @@ const vending = (
 const buildArcade = ({ box, pair, deco, decoMid, light }: Kit): void => {
   const CAB = { color: CABINET };
   decoMid(-12, 0, -40, 12, 0.01, -24, 'floor', CARPET);
-  // a kiosk just inside the front door: no line from the plaza straight across the hall
-  box(-1.5, 0, -27.6, 1.5, 2.4, -26.4, 'panel', { color: 0x3b2450 });
+  // a kiosk just inside the front door, up to the ceiling: no line from the plaza (or the
+  // station stair behind it) straight across the hall
+  box(-1.5, 0, -27.6, 1.5, 4, -26.4, 'panel', { color: 0x3b2450 });
   decoMid(-1.4, 1.2, -27.65, 1.4, 2.2, -27.6, 'glow', TEAL);
   // cabinet banks (back to back) either side of the site
   pair(8, 0, -37, 9.2, 2.2, -32.5, 'hull', CAB);
@@ -595,7 +596,7 @@ const buildArcade = ({ box, pair, deco, decoMid, light }: Kit): void => {
   deco(A.max.x - w, 0.01, A.min.z + w, A.max.x, 0.03, A.max.z - w, 'trim', SITE);
   // neon under the ceiling, signs over the doors
   deco(6.9, 3.85, -39.5, 7.1, 4, -24.5, 'trim', VIOLET);
-  decoMid(-0.1, 3.85, -39.5, 0.1, 4, -24.5, 'trim', PINK);
+  decoMid(-0.1, 3.85, -39.5, 0.1, 4, -27.8, 'trim', PINK);
   sign(deco, 'x+', 14, -30, -28, 4.2, 4.6, PINK);
   sign(deco, 'x-', 2, -22, -18, 1, 3.6, PINK);
   light(0, 3.2, -32, VIOLET, 13, 1);
@@ -1038,8 +1039,163 @@ const waypoints = (): WaypointDef[] => {
   const chain = (...names: string[]) => {
     for (let i = 1; i < names.length; i++) link(names[i - 1], names[i]);
   };
+  const UP = AFTERGLOW.up;
+  const M = AFTERGLOW.metro;
+  const P = AFTERGLOW.plaza.y;
+  // ---- the base: Tower hall, the two yards, the corridors, the metro platform ----
   add('tower', 48.8, 0, -3);
   add('hallN', 51, 0, -6);
-  chain('tower', 'hallN');
+  add('hallW', 45.5, 0, -6);
+  add('hallSW', 49.3, 0, 2.5);
+  add('hallS', 51, 0, 5);
+  add('nLink', 51, 0, -15);
+  add('nYardS', 51, 0, -21);
+  add('nYard', 50, 0, -27);
+  add('nYardN', 53, 0, -33);
+  add('nCorrE', 53, 0, -38);
+  add('nCorrW', 45, 0, -38);
+  add('sLink', 51, 0, 14);
+  add('sYardN', 51, 0, 21);
+  add('sYard', 50, 0, 27);
+  add('sYardS', 53, 0, 33);
+  add('sCorrE', 53, 0, 38);
+  add('sCorrW', 45, 0, 38);
+  add('rampTop', 46, 0, -3);
+  add('rampMid', 46, M / 2, 3);
+  add('rampBot', 46, M, 9.5);
+  add('plat', 49, M, 11);
+  add('platE', 53, M, 12);
+  add('platOut', 53, M, 17);
+  chain('tower', 'hallN', 'nLink', 'nYardS', 'nYard', 'nYardN', 'nCorrE', 'nCorrW');
+  chain('hallN', 'hallW', 'rampTop', 'tower', 'hallSW', 'hallS', 'sLink', 'sYardN', 'sYard');
+  chain('sYard', 'sYardS', 'sCorrE', 'sCorrW');
+  chain('rampTop', 'rampMid', 'rampBot', 'plat', 'platE', 'platOut');
+  // ---- north: Lantern Alley, the Noodle Bar, the alley's corner, Arcade Lane, Noodle Row ----
+  add('al1', 41, 0, -38);
+  add('al2', 38, 0, -39.2);
+  add('al3', 37, 0, -37.2);
+  add('al4', 32, 0, -36.8);
+  add('cornerN', 26, 0, -36.5);
+  add('cornerM', 25.5, 0, -32.5);
+  add('cornerS', 25.5, 0, -26.8);
+  add('nbN', 37, 0, -33);
+  add('nbSide', 29, 0, -31.5);
+  add('nbW', 31.5, 0, -30.5);
+  add('nbS', 32.5, 0, -26);
+  add('row1', 33, 0, -21);
+  add('row2', 32, 0, -15);
+  add('row3', 31, 0, -9.5);
+  add('lane1', 18, 0, -27.5);
+  add('tsNBot', 20, 0, -26.8);
+  add('tsNMid', 20, UP / 2, -21);
+  add('tsNTop', 20, UP, -15);
+  chain('nCorrW', 'al1', 'al2', 'al3', 'al4', 'cornerN', 'cornerM', 'cornerS', 'tsNBot', 'lane1');
+  chain('al3', 'nbN', 'nbW', 'nbS', 'row1', 'row2', 'row3');
+  chain('cornerM', 'nbSide', 'nbW');
+  chain('tsNBot', 'tsNMid', 'tsNTop');
+  // ---- A: the arcade hall and Arcade Row ----
+  add('aSide', 13, 0, -29);
+  add('aE', 10, 0, -30);
+  add('aK', 3, 0, -26.5);
+  add('siteA', 0, 0, -32.5);
+  add('aFront', 0, 0, -23);
+  add('row', 0, 0, -19);
+  chain('lane1', 'aSide', 'aE', 'siteA');
+  chain('aE', 'aK', 'siteA');
+  chain('aK', 'aFront', 'row');
+  // ---- mid: Market Street, the jog, Lantern Passage, the teahouse, the pachinko parlour ----
+  add('mE', 42.5, 0, -5.5);
+  add('m3', 37, 0, -5);
+  add('mC', 32, 0, -5.5);
+  add('m2', 26, 0, -6);
+  add('jog', 26.5, 0, -9.5);
+  add('pas', 19, 0, -9.5);
+  add('mouth', 13, 0, -10);
+  add('tsMid', 19, UP / 2, -6);
+  add('balc', 13, UP, -6);
+  add('balcN', 13, UP, -14.5);
+  add('th', 18.5, UP, -10);
+  chain('hallW', 'mE', 'm3', 'mC', 'm2', 'jog', 'pas', 'mouth');
+  chain('row3', 'mC');
+  chain('m2', 'tsMid', 'balc', 'th', 'tsNTop');
+  chain('balcN', 'th');
+  add('pachF', 37, 0, -3);
+  add('pk0', 37.5, 0, -1);
+  add('pk1', 41, 0, 0.5);
+  add('pkE', 41, 0, 4);
+  add('pk2', 41, 0, 7);
+  add('pk2b', 37.5, 0, 7.5);
+  add('pk3', 37.5, 0, 11.2);
+  add('pkB', 31, 0, 11.3);
+  add('pkStair', 35, M / 2, 4);
+  chain('m3', 'pachF', 'pk0', 'pk1', 'pkE', 'pk2', 'pk2b', 'pk3', 'pkB');
+  chain('pkE', 'pkStair');
+  // ---- the Koi Plaza ----
+  add('pN', 0, 0, -15);
+  add('pNE', 5, 0, -15);
+  add('pNEr', 10, 0, -13.5);
+  add('pE', 10, 0, -7);
+  add('pSEr', 10, 0, -0.5);
+  add('pSE', 5, 0, 1.2);
+  add('pS', 0, 0, 1);
+  add('bN', 4.5, P, -11);
+  add('basinN', 0, P, -11);
+  add('bE', 5, P, -7);
+  add('bS', 4.5, P, -2.5);
+  add('basin', 0, P, -1.5);
+  chain('row', 'pN', 'pNE', 'pNEr', 'pE', 'pSEr', 'pSE', 'pS');
+  chain('mouth', 'pE', 'bE');
+  chain('pNE', 'bN', 'bE', 'bS', 'pSE');
+  chain('bN', 'basinN');
+  chain('bS', 'basin');
+  // ---- south: the Foyer, South Alley, Tram Street, Stair Alley, Rail Street ----
+  add('sMouth', 0, 0, 3);
+  add('foyerC', 0, 0, 6);
+  add('foyerE', 8, 0, 6);
+  add('foyerDoor', 13, 0, 6);
+  add('sa1', 16, 0, 6);
+  add('sa2', 16.5, 0, 12);
+  add('tr1', 16, 0, 17);
+  add('tr2', 24, 0, 17);
+  add('tr3', 31, 0, 17);
+  add('stA1', 30, 0, 21.5);
+  add('stA2', 31, 0, 28);
+  add('stA3', 29, 0, 34.5);
+  add('rsC', 29, 0, 38.5);
+  add('rsW', 17, 0, 37);
+  add('monoBot', 36, 0, 37);
+  add('rsFar', 42, 0, 38);
+  chain('pS', 'sMouth', 'foyerC', 'foyerE', 'foyerDoor', 'sa1', 'sa2', 'tr1', 'tr2', 'tr3');
+  chain('pkB', 'tr3', 'stA1', 'stA2', 'stA3', 'rsC', 'monoBot', 'rsFar', 'sCorrW');
+  chain('rsC', 'rsW');
+  // ---- B: the station, the monorail track and its stair ----
+  add('stMid', 0, UP / 2, 13);
+  add('stTop', 0, UP, 19);
+  add('stNE', 8, UP, 21);
+  add('siteB', 0, UP, 24);
+  add('stSE', 8, UP, 27);
+  add('trk4', 11, UP, 24);
+  add('trk3', 20, UP, 24);
+  add('trk2', 26, UP, 25);
+  add('trk1', 31, UP, 25);
+  add('monoTop', 36, UP, 25);
+  add('monoMid', 36, UP / 2, 31);
+  chain('foyerC', 'stMid', 'stTop', 'stNE', 'siteB', 'stSE', 'trk4', 'stNE');
+  chain('trk4', 'trk3', 'trk2', 'trk1', 'monoTop', 'monoMid', 'monoBot');
+  // ---- the metro: the Foyer's stairs, the hall under the station, the tunnel, the kink ----
+  add('mhMid', 8, M / 2, 13);
+  add('mhBot', 8, M, 19.5);
+  add('mhC', 0, M, 20.5);
+  add('mhS', 0, M, 25);
+  add('tW2', 14, M, 22);
+  add('tW1', 24, M, 22);
+  add('kinkS', 29, M, 20.5);
+  add('kinkN', 29, M, 4);
+  add('tE1', 34, M, 19.5);
+  add('tE2', 44, M, 19.5);
+  add('tE3', 51, M, 19.5);
+  chain('foyerE', 'mhMid', 'mhBot', 'mhC', 'mhS');
+  chain('mhBot', 'tW2', 'tW1', 'kinkS', 'tE1', 'tE2', 'tE3', 'platOut');
+  chain('kinkS', 'kinkN', 'pkStair');
   return wps;
 };

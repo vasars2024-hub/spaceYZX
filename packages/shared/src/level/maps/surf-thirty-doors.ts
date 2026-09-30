@@ -213,15 +213,25 @@ const ceilingOver = (p: Pen, a: { x: number; y: number; z: number }, b: { x: num
  * `around` metres past the hole every way (never nearer than 4 m to the release). sized:
  * falling through a 0.6 m deck with a 1.8 m body at a descent slope k = |vy(t)| / v takes
  * (1.8 + 0.6) / k metres along, so the hole's `along` is that plus a window of ±w for the line
- * (w says how hard it is).
+ * (w says how hard it is). A turning flight (a flick) does not go straight at its landing:
+ * there `at` gives the hole's middle [ahead, right] as measured on the traced line.
  */
 const trapdoor = (
   p: Pen,
-  o: { f: number; side: number; v: number; vy: number; h: number; hole: P2; around?: number },
+  o: {
+    f: number;
+    side: number;
+    v: number;
+    vy: number;
+    h: number;
+    hole: P2;
+    around?: number;
+    at?: P2;
+  },
 ): void => {
   const k = reach(o.v, o.vy, o.h + 1.2) / Math.hypot(o.f, o.side);
-  const hf = r1(o.f * k);
-  const hs = r1(o.side * k);
+  const hf = o.at?.[0] ?? r1(o.f * k);
+  const hs = o.at?.[1] ?? r1(o.side * k);
   const [W, D] = o.hole;
   const A = o.around ?? 10;
   const u = -o.h - 0.6;
@@ -239,9 +249,18 @@ const trapdoor = (
   slab(hf - D / 2, hf + D / 2, hs + W / 2, hs + sw / 2);
 };
 
-/** A red floor slab `size` [across, along] its top `down` metres under the pen, centred on it. */
+/**
+ * A red floor `size` [across, along] square round the pen, its top `down` metres under it, with
+ * a 3 m square cut in its middle for the stem of the block standing there.
+ */
 const redFloor = (p: Pen, size: P2, down: number): void => {
-  p.red(0, 0, r1(-down - 0.6), [size[0], 0.6, size[1]]);
+  const [W, D] = size;
+  const u = r1(-down - 0.6);
+  const e = 1.5;
+  p.red(r1(-(D / 2 + e) / 2), 0, u, [W, 0.6, r1(D / 2 - e)]);
+  p.red(r1((D / 2 + e) / 2), 0, u, [W, 0.6, r1(D / 2 - e)]);
+  p.red(0, r1(-(W / 2 + e) / 2), u, [r1(W / 2 - e), 0.6, 2 * e]);
+  p.red(0, r1((W / 2 + e) / 2), u, [r1(W / 2 - e), 0.6, 2 * e]);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -585,7 +604,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(20, -7, 5);
       for (let k = 0; k < 3; k++) {
         const right = k % 2 === 1;
-        p.curve({ lead: 9, legs: [straight(24, 1.5)], ...NEEDLE, side: right ? 'right' : 'left', depth: 0.3, color: c });
+        p.curve({ lead: 9, legs: [straight(24, 1.5)], ...NEEDLE, side: right ? 'right' : 'left', depth: 0.3, red: 0.75, color: c });
         p.move(22, -7, right ? 5 : -5);
       }
       p.curve({ lead: 9, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
@@ -671,6 +690,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
       p.move(reach(34, -3, 6), -6, 3);
       block(p, [5, 5]);
+      redFloor(p, [16, 16], 4);
       p.move(22, -6, 26).turn(90).curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'right', color: c });
     },
   },
@@ -771,8 +791,10 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
       p.move(reach(34, -3, 6) - 3, -6, 3);
       block(p, [4, 4]);
+      redFloor(p, [14, 14], 4);
       p.move(20, -3, -20).turn(-90);
       block(p, [4, 4]);
+      redFloor(p, [14, 14], 4);
       p.move(22, -8, 22).turn(90).curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
     },
   },
@@ -789,7 +811,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(28, -8);
       pillar(p, [4, 4]);
       p.launch(30, -6, 1.3, 0, 0);
-      p.curve({ lead: 12, legs: [straight(40, 4)], ...NEEDLE, side: 'right', color: c });
+      p.curve({ lead: 12, legs: [straight(40, 4)], ...NEEDLE, side: 'right', red: 0.75, color: c });
       p.move(18, -6, 6).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
     },
   },
@@ -803,6 +825,11 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(12, -6).curve({ lead: 10, legs: [straight(35, 3), straight(30, -8)], ...TIGHT, side: 'right', color: c });
       p.move(16, -1, 3);
       block(p, [4, 4]);
+      // the flick drops through a trapdoor: sized from the trace, the jump off the block (23.6
+      // m/s, 6.9 up) has turned 50° by the deck 9 m down and is half way through it 22.3 m on
+      // and 24.9 m left, falling at a slope of 0.83 — 2.9 m along to pass: a 6 m hole leaves the
+      // line ±1.5 m, and a flick made late (or early) meets the deck
+      trapdoor(p, { f: 26, side: -30, v: 23.6, vy: JUMP_VY, h: 9, hole: [6, 6], around: 9, at: [22.3, -24.9] });
       p.move(26, -22, -30).turn(-90).curve({ lead: 12, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
       p.move(20, -6, -5).curve({ lead: 9, legs: [straight(30, 3)], ...NEEDLE, side: 'right', depth: 0.3, color: c });
       p.move(20, -6, 5).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });

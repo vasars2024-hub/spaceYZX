@@ -294,8 +294,7 @@ describe('Stormglass map', () => {
   it('the bomb sites each have entrances from both teams, over and under the Eye', () => {
     const d = def();
     const wps = d.waypoints!;
-    const into = (site: string) =>
-      wps[wpIndex(d, site)].links.map((j) => wps[j].name!).sort();
+    const into = (site: string) => wps[wpIndex(d, site)].links.map((j) => wps[j].name!).sort();
     // A: the two bridge doors and the stair pit up from the crypt
     expect(into('siteA')).toEqual(['lensE', 'lensW', 'pitTop'].sort());
     // B: the two span ramps and the two Pipe Gallery mouths
@@ -343,7 +342,18 @@ describe('Stormglass map', () => {
           `${from} → ${wps[i].name}`,
         ).toBeGreaterThan(0);
     // the graph covers the lanes, the high ground, the sites and the power-up
-    for (const n of ['gb1', 'lens', 'sp1', 'sagRampMid', 'cw2', 'd', 'd2a', 'pg2a', 'galN', 'hatch'])
+    for (const n of [
+      'gb1',
+      'lens',
+      'sp1',
+      'sagRampMid',
+      'cw2',
+      'd',
+      'd2a',
+      'pg2a',
+      'galN',
+      'hatch',
+    ])
       for (const s of ['E', 'W']) expect(wpIndex(lv.def, n + s)).toBeGreaterThanOrEqual(0);
     for (const n of ['siteA', 'siteB', 'perchS', 'discN', 'rampFoot', 'cryptMid', 'upDeckE'])
       expect(wpIndex(lv.def, n)).toBeGreaterThanOrEqual(0);

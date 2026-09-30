@@ -14,16 +14,20 @@
 //       the vault) · NORTH HALL (x 47..60, z -40..-26; the stair up to the dome gallery) ·
 //       NORTH CORRIDOR (x 51..54) down to the FRONT HALL (x 46..56, z -8..8) · the PAD BAY
 //       (x 37..45, z -20..-8, open to the sky: the launch tower and the lookout the hop shards
-//       start from) · the GATE BAY (x 37..45, z -6..6: the catwalk and the zip-rails) · the KEEP
-//       COURTYARD (x 58..70, z -9..9, open to the sky, 8 m walls: the Tower) with three doors.
-//       The south half mirrors the north (spanhead, south hall...).
+//       start from) · the GATE BAY (x 37..45, z -6..6: the catwalk and the zip-rails; two doors
+//       in its back corners) · the KEEP COURTYARD (x 58..70, z -9..9, open to the sky, walled up
+//       to the roof: the Tower; spawn group "keep") with three doors: the front door (off to the
+//       south, so nothing seen through the gate bay's corner doors lines up with it and the
+//       spawns) and the two side passages. The south half mirrors the north (spanhead, halls).
+//     THE ROOF (y 9.5) is one flat height over the whole bastion; the open bays and the
+//       courtyard are walled up to it, so no ledge is within a climb of anything you stand on.
 //     INSTRUMENT FLOOR (y 5): the DOME GALLERY (over the north hall, a glass dome over it: spawn
 //       group "gallery"), a corridor over the north corridor, the INSTRUMENT DECK over the front
 //       hall, and the same to the RADIO ROOM over the south hall: the upstairs rotation.
 //     UNDERCROFT (y -4): the NORTH / SOUTH VAULTS under the bridgehead / spanhead (the Cable
 //       Duct / Pipe Gallery leave from them), the CISTERN under the front, the KEEP CELLAR under
-//       the courtyard and the HATCH (spawn group "hatch") south-east, joined by narrow
-//       maintenance tunnels: the maze.
+//       the courtyard and the HATCH room (spawn group "hatch", behind a dog-leg) south-east,
+//       joined by narrow maintenance tunnels: the maze.
 //   THE EYE (|x| < 36): no floor. Fall and you're gone (a kill volume below y -9).
 //     THE GLASS BRIDGE (north, z -35..-29, y 0): straight and fast, a glass deck with handrails
 //       and no cover, into THE LENS DOME (bomb site A): a shattered observatory dome on the
@@ -106,6 +110,11 @@ export const STORMGLASS = {
   cloudY: -42,
   /** floor heights: the undercroft, the deck, the instrument floor */
   floors: { under: -4, deck: 0, upper: 5 },
+  /**
+   * the bastions' flat roof (the instrument floor's roof): one height everywhere, the open bays
+   * and the courtyard walled up to it — no ledge or roof within a climb of anything you stand on
+   */
+  roofY: 9.5,
   /** the east bastion (the west one mirrored): solid stone with rooms cut out */
   bastion: { x0: 36, x1: 71, z0: -41, z1: 41 },
   courtyard: { x0: 58, x1: 70, z0: -9, z1: 9 },
@@ -153,8 +162,8 @@ export const STORMGLASS = {
   pad: { x0: 38.5, x1: 41.5, z0: 15, z1: 18, y: 2.6 },
   /** the south-east pad's throw (west: x negated, north: z negated) — onto the Anemometer */
   padVel: v3(-17.9, 20.8, -5.5),
-  /** zip-rails gate bay → Anemometer (east, z = +4; mirrored to z = -4 and west) */
-  rail: [v3(37.5, 3.7, 4), v3(13, 10, 4), v3(8, 9.6, 4)] as Vec3[],
+  /** zip-rails gate bay → Anemometer (east, z = +3; mirrored to z = -3 and west) */
+  rail: [v3(37.5, 3.5, 3), v3(13, 10, 3), v3(8, 9.6, 3)] as Vec3[],
   /** the hop chain (east, north; mirrored south and west): [x0, z0, x1, z1, top] */
   shards: [
     [28, -12.5, 32, -9, 2],
@@ -444,8 +453,8 @@ const plan = (): { vols: Vol[]; carves: Vol[] } => {
   ns((a, c) => cut(51, 54, G0, G0 + 3, a, c), -26, -25);
   ns((a, c) => cut(51, 54, G0, G0 + 3, a, c), -9, -8);
   // the pad bay: open to the sky and to the Eye; a passage to the corridor
-  ns((a, c) => vol(37, 45, G0, G0 + 7, a, c, { ...deck, lid: false }), -20, -8);
-  ns((a, c) => cut(36, 37, G0, G0 + 7, a, c), -20, -8);
+  ns((a, c) => vol(37, 45, G0, S.roofY, a, c, { ...deck, lid: false }), -20, -8);
+  ns((a, c) => cut(36, 37, G0, S.roofY, a, c), -20, -8);
   ns((a, c) => vol(45, 51, G0, G1, a, c, deck), -16, -12);
   // the keep's side passages: corridor → courtyard
   ns((a, c) => vol(54, 58, G0, G1, a, c, deck), -21, -18);
@@ -454,12 +463,11 @@ const plan = (): { vols: Vol[]; carves: Vol[] } => {
   // the gate bay (catwalk, zip-rails) and the front hall behind it
   vol(37, 45, G0, G1, -6, 6, deck);
   cut(36, 37, G0, G1, -6, 6);
-  ns((a, c) => cut(36, 37, G1, G1 + 0.6, a, c), -4.4, -3.6); // slots for the zip-rail cables
   // two doors to the front hall, in the corners: none lines up with the courtyard door
   ns((a, c) => cut(45, 46, G0, G0 + 3, a, c), -6, -3);
   vol(46, 56, G0, G1, -8, 8, deck);
   // the keep courtyard (the Tower), open to the sky
-  vol(S.courtyard.x0, S.courtyard.x1, G0, G0 + 8, S.courtyard.z0, S.courtyard.z1, {
+  vol(S.courtyard.x0, S.courtyard.x1, G0, S.roofY, S.courtyard.z0, S.courtyard.z1, {
     ...deck,
     lid: false,
   });
@@ -631,7 +639,7 @@ export const buildStormglass = (): LevelDef => {
   }
   solidify(
     [...vols, ...carves],
-    [{ min: v3(B.x0, F.under - T, B.z0), max: v3(B.x1, F.deck + 5, B.z1), style: S_WALL }],
+    [{ min: v3(B.x0, F.under - T, B.z0), max: v3(B.x1, S.roofY, B.z1), style: S_WALL }],
     both,
   );
   for (const [x0, x1, y0, y1, z0, z1] of glassPanels)
@@ -691,8 +699,9 @@ export const buildStormglass = (): LevelDef => {
 
   // merlons on the courtyard walls, glass dome over the north gallery
   const wallLook = { color: SLATE };
-  for (const z of [-7, -3, 3, 7]) both(70, 8, z - 0.8, 71, 9, z + 0.8, 'panel', wallLook);
-  for (const x of [60, 64, 68]) quad(x - 0.8, 8, -10, x + 0.8, 9, -9, 'panel', wallLook);
+  const RY = S.roofY;
+  for (const z of [-7, -3, 3, 7]) both(70, RY, z - 0.8, 71, RY + 1, z + 0.8, 'panel', wallLook);
+  for (const x of [60, 64, 68]) quad(x - 0.8, RY, -10, x + 0.8, RY + 1, -9, 'panel', wallLook);
   const dome = { color: DOME_GLASS, trim: BRASS };
   both(49.5, F.upper + 4.5, -38, 57.5, F.upper + 6, -28, 'skyglass', dome);
   both(51.5, F.upper + 6, -36, 55.5, F.upper + 7, -30, 'skyglass', dome);
@@ -775,11 +784,12 @@ export const buildStormglass = (): LevelDef => {
     [42, -4],
     [47, 4],
   ] as [number, number][])
-    for (const n of SIGNS) both(x - 0.6, F.under, n * z - 0.6, x + 0.6, -1, n * z + 0.6, 'hull', pipeBank);
+    for (const n of SIGNS)
+      both(x - 0.6, F.under, n * z - 0.6, x + 0.6, -1, n * z + 0.6, 'hull', pipeBank);
 
   // ---- zip-rail gantries in the gate bay (the rail hangs between the posts) ----
-  quad(37.8, 0, -3, 38.2, 3.9, -2.6, 'pillar', { color: BRASS_DARK });
-  quad(37.8, 0, -5.4, 38.2, 3.9, -5, 'pillar', { color: BRASS_DARK });
+  quad(37.8, 0, -2.4, 38.2, 3.9, -2, 'pillar', { color: BRASS_DARK });
+  quad(37.8, 0, -4, 38.2, 3.9, -3.6, 'pillar', { color: BRASS_DARK });
 
   // =============================== the Glass Bridge ===============================
   const G = S.glassBridge;
@@ -799,7 +809,6 @@ export const buildStormglass = (): LevelDef => {
   handrail(G.x0, G.x1, G.z1 - 0.1, G.z1);
 
   // =============================== the Lens Dome (A) ===============================
-  const D = S.dome;
   // the stair pit's railing (east, west, south), the telescope housing and its crates
   for (const [y0, y1] of BAR_ROWS) {
     both(P.x1, y0, P.zHigh + 0.5, P.x1 + 0.1, y1, P.zLow, 'plate', rail);
@@ -818,10 +827,16 @@ export const buildStormglass = (): LevelDef => {
   for (let k = 0; k < 8; k++) {
     const a = (k * Math.PI) / 4;
     const r = 3.4;
-    turned(v3(r * Math.cos(a), 0.01, -36.5 + r * Math.sin(a)), v3(0.08, 0.01, r * TAN), -k * 45, 'trim', {
-      color: GLASS_EDGE,
-      noCollide: true,
-    });
+    turned(
+      v3(r * Math.cos(a), 0.01, -36.5 + r * Math.sin(a)),
+      v3(0.08, 0.01, r * TAN),
+      -k * 45,
+      'trim',
+      {
+        color: GLASS_EDGE,
+        noCollide: true,
+      },
+    );
   }
 
   // =============================== the Broken Span ===============================
@@ -932,10 +947,16 @@ export const buildStormglass = (): LevelDef => {
   for (let k = 0; k < 8; k++) {
     const a = (k * Math.PI) / 4;
     const r = 8.5;
-    turned(v3(r * Math.cos(a), Dc.y + 0.01, r * Math.sin(a)), v3(0.08, 0.01, r * TAN), -k * 45, 'trim', {
-      color: BRASS_GLOW,
-      noCollide: true,
-    });
+    turned(
+      v3(r * Math.cos(a), Dc.y + 0.01, r * Math.sin(a)),
+      v3(0.08, 0.01, r * TAN),
+      -k * 45,
+      'trim',
+      {
+        color: BRASS_GLOW,
+        noCollide: true,
+      },
+    );
   }
   // the mast housing: a solid brass block (cuts the ring in two); its roof is the perch
   const PE = S.perch;
@@ -965,14 +986,25 @@ export const buildStormglass = (): LevelDef => {
     for (const h of [0.55, 1.45, 2.35, 3])
       beams(v3(CW.x0, cwY(CW.x0) + h, z), v3(CW.x1, h, z), 0.1, 0.1, 'plate', rail);
     for (const x of [18, 24, 30])
-      both(x - 0.05, cwY(x - 0.05) + 0.02, z - 0.05, x + 0.05, cwY(x) + 3.05, z + 0.05, 'plate', rail);
+      both(
+        x - 0.05,
+        cwY(x - 0.05) + 0.02,
+        z - 0.05,
+        x + 0.05,
+        cwY(x) + 3.05,
+        z + 0.05,
+        'plate',
+        rail,
+      );
   }
 
   // =============================== shards ===============================
   /** a floating rock; `crystal`: a glowing crystal on its west (-1) or east (+1) face */
   const shard = (x0: number, z0: number, x1: number, z1: number, top: number, crystal = 0) => {
     box(x0, top - 0.6, z0, x1, top, z1, 'rock', { color: SHARD_TOP });
-    box(x0 + 0.4, top - 2.6, z0 + 0.4, x1 - 0.4, top - 0.6, z1 - 0.4, 'rock', { color: SHARD_ROCK });
+    box(x0 + 0.4, top - 2.6, z0 + 0.4, x1 - 0.4, top - 0.6, z1 - 0.4, 'rock', {
+      color: SHARD_ROCK,
+    });
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     box(cx - 0.6, top - 5.5, cz - 0.6, cx + 0.6, top - 2.6, cz + 0.6, 'rock', { color: ROCK_DEEP });
@@ -1160,7 +1192,9 @@ const decorate = (
   lights2(44.5, F.under + 2.4, 0, BRASS_GLOW, 10, 0.7); // cistern
   lights2(63, F.under + 2.4, 0, BRASS_GLOW, 10, 0.6); // keep cellar
   lights2(54.5, F.under + 2.2, -28.5, BRASS_GLOW, 7, 0.6);
-  lights2(51, F.under + 2.2, 20.5, BRASS_GLOW, 7, 0.6);
+  lights2(49, F.under + 2.2, 20.5, BRASS_GLOW, 7, 0.6);
+  lights2(53.5, F.under + 2.2, 22.5, BRASS_GLOW, 5, 0.5); // the dog-leg to the hatch
+  lights2(60.5, F.under + 2.2, -19, BRASS_GLOW, 7, 0.6); // the tunnel to the keep cellar
   lights2(4, F.under + 2.2, -32, STORM, 9, 0.7); // the crypt
   light(0, 4.5, -36, LAMP, 13, 0.9); // the Lens
   light(0, S.sag.y + 3, 39, LAMP, 13, 0.9); // the Sag
@@ -1183,7 +1217,7 @@ const decorate = (
   for (const n of [1, -1] as const) {
     const z = n * 21;
     const mast = { color: BRASS_DARK, ...deco };
-    beams(v3(68, 5, z), v3(68, 14, z + n * 0.6), 0.35, 0.35, 'pillar', mast);
+    beams(v3(68, S.roofY + 0.2, z), v3(68, 14, z + n * 0.6), 0.35, 0.35, 'pillar', mast);
     beams(v3(68, 14, z + n * 0.6), v3(68, 19, z + n * 2), 0.28, 0.28, 'pillar', mast);
     beams(v3(68, 19, z + n * 2), v3(68, 22.5, z + n * 3.8), 0.2, 0.2, 'pillar', mast);
     const tip = z + n * 4;

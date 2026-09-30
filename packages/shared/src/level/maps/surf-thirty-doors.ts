@@ -688,7 +688,10 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
-      p.move(reach(34, -3, 6), -6, 3);
+      // sized: the release (traced) is 37 m/s falling 2.7 m/s; the block's middle is where that
+      // line has come down 6 m (reach), and its top 0.6 m lower still: the line comes down at a
+      // slope of 0.34, so it clears the front edge by 0.9 m and lands on the middle
+      p.move(reach(34, -3, 6), -6.6, 3);
       block(p, [5, 5]);
       redFloor(p, [16, 16], 4);
       p.move(22, -6, 26).turn(90).curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'right', color: c });
@@ -733,8 +736,8 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...MID, side: 'right', color: c });
       for (let k = 0; k < 2; k++)
-        p.move(26, -8, 30).turn(90).curve({ lead: 10, legs: [straight(24, 2.5), lip(12, 3)], ...MID, side: 'right', color: c });
-      p.move(26, -8, 30).turn(90).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+        p.move(30, -8, 26).turn(90).curve({ lead: 10, legs: [straight(24, 2.5), lip(12, 3)], ...MID, side: 'right', color: c });
+      p.move(30, -8, 26).turn(90).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
     },
   },
   {

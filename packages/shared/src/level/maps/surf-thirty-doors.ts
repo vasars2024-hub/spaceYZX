@@ -697,7 +697,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   {
     n: 15,
     name: 'Needlework',
-    idea: 'three needle ramps, 2.7 m wide, over a red floor: land on each and ride it',
+    idea: 'three needle ramps, 2.7 m wide, red below their middle: land on each and ride it high',
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {

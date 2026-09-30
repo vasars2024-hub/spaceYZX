@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOT_SKILL_NAMES,
+  DEFAULT_RACE_MAP,
   MAPS,
+  raceTracks,
   SURF_MODES,
   mapDef,
   raceMaps,
@@ -170,7 +172,7 @@ describe('menu flow: online room wizard', () => {
 
   it('still offers every non-Arena map online (objective maps first)', () => {
     const { best, other } = roomMaps('tower');
-    const all = MAPS.filter((m) => !m.arena && !m.race).map((m) => m.id);
+    const all = MAPS.filter((m) => !m.arena && !m.race && !m.retired).map((m) => m.id);
     expect([...best, ...other].map((m) => m.id).sort()).toEqual(all.sort());
     expect(best.every((m) => m.competitive)).toBe(true);
   });
@@ -193,7 +195,8 @@ describe('menu flow: online room wizard', () => {
       expect([...best, ...other].some((m) => m.race)).toBe(false);
     }
     const tracks = mapsForMode('race').map((m) => m.id);
-    expect(tracks.slice(0, 3)).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
+    // (the parkour race tracks are retired until parkour is redone: surf maps only)
+    expect(tracks[0]).toBe(DEFAULT_RACE_MAP);
     expect(tracks.sort()).toEqual(
       raceMaps()
         .map((m) => m.id)
@@ -211,15 +214,19 @@ describe('menu flow: online room wizard', () => {
     expect(hasKitChoice('race')).toBe(false);
     expect(practiceSteps('race')).toEqual(['mode', 'map', 'setup']);
     const p = pickPracticeMode(initialPractice(), 'race');
-    expect(p.map).toBe('race-sunspire');
+    expect(p.map).toBe(DEFAULT_RACE_MAP);
     expect(p.step).toBe('map');
-    expect(practiceMapId(pickPracticeMap(p, 'race-neon'))).toBe('race-neon');
+    expect(practiceMapId(pickPracticeMap(p, 'surf-glass-garden'))).toBe('surf-glass-garden');
     expect(ICONS[modeChoice('race').icon]).toBeTruthy();
     const r = pickRoomObjective(initialRoom(), 'race');
-    expect(r.map).toBe('race-sunspire');
+    expect(r.map).toBe(DEFAULT_RACE_MAP);
+    // a surf map picked for a race room is kept when the objective is picked again
+    expect(pickRoomObjective({ ...r, map: 'surf-glass-garden' }, 'race').map).toBe(
+      'surf-glass-garden',
+    );
     expect(
-      roomCreateArgs({ ...pickRoomMap(r, 'race-neon'), size: '5v5', bots: true }),
-    ).toMatchObject({ mode: 'race', map: 'race-neon', bots: 7 });
+      roomCreateArgs({ ...pickRoomMap(r, 'surf-glass-garden'), size: '5v5', bots: true }),
+    ).toMatchObject({ mode: 'race', map: 'surf-glass-garden', bots: 7 });
     expect(roomCreateArgs({ ...r, size: '1v1', bots: false })).toMatchObject({
       mode: 'race',
       bots: 0,
@@ -318,6 +325,16 @@ describe('menu flow: online room wizard', () => {
         },
       }).text,
     ).toBe('2 searching · 6 needed for 3v3');
+    // the Race queue is closed (by the server) while every race track is retired: it says why
+    expect(
+      queueCountText('race', {
+        ...counts,
+        ranked: {
+          ...counts.ranked,
+          race: { searching: 0, open: false, threshold: 0, forms: null },
+        },
+      }),
+    ).toEqual({ text: 'No race tracks right now — parkour is being rebuilt', open: false });
   });
 
   it('ranked texts: countdown and placement', () => {
@@ -400,14 +417,16 @@ describe('menu flow: Brawl and one-click Play', () => {
 });
 
 describe('menu flow: free roam', () => {
-  it('any map, a kit choice, no opponents to set up', () => {
-    expect(mapsForMode('freeroam').map((m) => m.id)).toEqual(MAPS.map((m) => m.id));
+  it('any map (not a retired one), a kit choice, no opponents to set up', () => {
+    expect(mapsForMode('freeroam').map((m) => m.id)).toEqual(
+      MAPS.filter((m) => !m.retired).map((m) => m.id),
+    );
     expect(hasKitChoice('freeroam')).toBe(true);
     expect(isFreeRoam('freeroam')).toBe(true);
     expect(isFreeRoam('deathmatch')).toBe(false);
     expect(sizesFor('freeroam')).toEqual([1]);
     expect(practiceSteps('freeroam')).toEqual(['mode', 'map', 'setup']);
-    const track = MAPS.find((m) => m.race)?.id ?? 'kestrel';
+    const track = MAPS.find((m) => m.race && !m.retired)?.id ?? 'kestrel';
     const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'freeroam'), track);
     expect(practiceMapId(s)).toBe(track);
     expect(ICONS[modeChoice('freeroam').icon]).toBeTruthy();
@@ -500,6 +519,7 @@ describe('menu flow: surf maps by mode', () => {
   it('removed maps are named as removed, never as Training Bay; no blurbs for them', () => {
     expect(mapName('surf-aurora')).toBe('Removed map');
     expect(mapName('surf-cinder')).toBe('Removed map');
+    // (a retired map is still a map the game has: its old times keep their name)
     expect(mapName('race-sunspire')).toBe('Sunspire');
     for (const id of ['surf-aurora', 'surf-cinder']) expect(MAP_BLURBS[id]).toBeUndefined();
     expect(MAP_BLURBS['surf-copper-reef']).toMatch(/^Surf, Beginner/);
@@ -525,3 +545,54 @@ const fakeMaps = () => {
   ];
   return { maps, defs };
 };
+
+describe('menu flow: retired maps (the parkour race tracks until parkour is redone)', () => {
+  const retired = MAPS.filter((m) => m.retired);
+
+  it('the three parkour tracks are retired, the surf maps are not', () => {
+    expect(retired.map((m) => m.id).sort()).toEqual(['race-ember', 'race-neon', 'race-sunspire']);
+    expect(raceTracks()).toEqual([]);
+    expect(surfMaps().some((m) => m.retired)).toBe(false);
+    expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
+  });
+
+  it('no menu list offers a retired map', () => {
+    const modes = [
+      'match',
+      'bomb',
+      'elim',
+      'cs',
+      'deathmatch',
+      'freeroam',
+      'arena',
+      'race',
+      'brawl',
+      'brawl-ffa',
+    ] as const;
+    const offered = new Set<string>();
+    for (const mode of modes) for (const m of mapsForMode(mode)) offered.add(m.id);
+    for (const o of ROOM_OBJECTIVES) {
+      const { best, other } = roomMaps(o.id);
+      for (const m of [...best, ...other]) offered.add(m.id);
+    }
+    for (const g of raceMapSections()) for (const m of g.maps) offered.add(m.id);
+    for (const g of surfModeGroups()) for (const m of g.maps) offered.add(m.id);
+    for (const m of retired) expect(offered.has(m.id), m.id).toBe(false);
+    // (no empty "race tracks" section left behind)
+    expect(raceMapSections().every((g) => g.maps.length > 0)).toBe(true);
+    expect(raceMapGroups().best).toEqual([]);
+  });
+
+  it('a retired map passed in is filtered out too (menus given their own list)', () => {
+    const maps: MapInfo[] = [
+      { ...getInfo('race-sunspire') },
+      { ...getInfo('surf-copper-reef') },
+      { ...getInfo('split-deck'), retired: true },
+      { ...getInfo('kestrel') },
+    ];
+    expect(mapsForMode('race', maps).map((m) => m.id)).toEqual(['surf-copper-reef']);
+    expect(mapsForMode('freeroam', maps).map((m) => m.id)).toEqual(['surf-copper-reef', 'kestrel']);
+    const { best, other } = roomMaps('tower', maps, () => mapDef('kestrel'));
+    expect([...best, ...other].map((m) => m.id)).toEqual(['kestrel']);
+  });
+});

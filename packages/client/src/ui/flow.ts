@@ -33,8 +33,13 @@ export const ARENA_ENABLED = true;
 
 /** Arena maps are only for the Arena (never offered for other modes). */
 const isArenaMap = (m: MapInfo): boolean => !!m.arena;
-/** Race tracks are only for races (game/race-entry.ts), and races only run on them. */
-const isRaceMap = (m: MapInfo): boolean => !!m.race;
+/**
+ * Race tracks are only for races (game/race-entry.ts), and races only run on them. Retired
+ * maps (MapInfo.retired: the parkour tracks until parkour is redone) are never offered.
+ */
+const isRaceMap = (m: MapInfo): boolean => !!m.race && !m.retired;
+/** The maps a menu may offer at all (retired maps are kept for old times, never offered). */
+const offered = (maps: readonly MapInfo[]): MapInfo[] => maps.filter((m) => !m.retired);
 
 // ---------------------------------------------------------------- modes
 
@@ -119,7 +124,7 @@ const PRACTICE_MODES: Choice<PracticeMode>[] = [
   {
     id: 'race',
     name: 'Race',
-    desc: 'Parkour race, no weapons: a time trial vs your best ghost, or vs bot racers.',
+    desc: 'Surf race, no weapons: a time trial vs your best ghost, or vs bot racers.',
     icon: 'race',
   },
 ];
@@ -208,9 +213,10 @@ const supports = (def: LevelDef, need: 'tower' | 'bomb' | 'none'): boolean =>
  */
 export const mapsForMode = (
   mode: PracticeMode,
-  maps: readonly MapInfo[] = MAPS,
+  all: readonly MapInfo[] = MAPS,
   defOf: (id: string) => LevelDef = mapDef,
 ): MapInfo[] => {
+  const maps = offered(all);
   if (mode === 'deathmatch') return maps.filter((m) => m.id === DEFAULT_BRAWL_MAP(maps));
   if (mode === 'arena') return maps.filter(isArenaMap);
   if (mode === 'race') return maps.filter(isRaceMap);
@@ -240,7 +246,7 @@ export interface SurfGroup {
  * maps are left out). A surf map without a standard mode comes last, in a group of its own.
  */
 export const surfModeGroups = (maps: readonly MapInfo[] = MAPS): SurfGroup[] => {
-  const surf = maps.filter((m) => isRaceMap(m) && !!m.surf);
+  const surf = offered(maps).filter((m) => isRaceMap(m) && !!m.surf);
   const rest = surf.filter((m) => !SURF_MODES.some((x) => x.mode === m.mode));
   return [
     ...SURF_MODES.map((x) => ({
@@ -266,10 +272,10 @@ export const raceMapGroups = (
  */
 export const raceMapSections = (
   maps: readonly MapInfo[] = MAPS,
-): { label: string | null; color: string | null; maps: MapInfo[] }[] => [
-  { label: null, color: null, maps: raceMapGroups(maps).best },
-  ...surfModeGroups(maps),
-];
+): { label: string | null; color: string | null; maps: MapInfo[] }[] =>
+  [{ label: null, color: null, maps: raceMapGroups(maps).best }, ...surfModeGroups(maps)].filter(
+    (g) => g.maps.length,
+  );
 
 /** A map's name; a map the game no longer has (old history, drafts) is not Training Bay. */
 export const mapName = (id: string): string => (mapExists(id) ? getMap(id).name : 'Removed map');
@@ -281,19 +287,19 @@ export const MAP_BLURBS: Record<string, string> = {
   'orbital-ring':
     'Station around a reactor core: ring + basement ring, zip-rails, launch pads, rift portals.',
   'canyon-relay':
-    'Desert mesas at sunset over a deadly gorge: launch pads, rock bridges, slot canyons.',
+    'Adobe cliff villages at sunset over a deadly gorge: narrow streets, a mine and rail tunnel underneath, walled canyon sites.',
   'sakura-hold':
-    'Small blossom castle for 1v1–3v3: slow moat, a keep to climb, paper walls the Boomerang flies through.',
+    'Small blossom castle for 1v1–3v3: courts, tatami halls and a cellar loop, a slow moat, paper walls the Boomerang flies through.',
   antipode:
-    'One hollow hull, two floors: Orange stands on the ceiling. Drift through the zero-G Seam and fall up onto the enemy deck.',
+    'One hollow hull, two decks: Orange stands on the ceiling. Bomb sites on the side wall, flank tunnels in the hull, the zero-G Seam between.',
   stormglass:
-    'Two fortresses over a 70 m void at violet dusk: a glass bridge, a broken span to jump, a floating anemometer. Fall and you are gone.',
+    'Two fortresses over a 70 m void at violet dusk: bridges and a floating anemometer above, a maze of ducts and tunnels below. Fall and you are gone.',
   afterglow:
-    'A neon night market under a glass dome: dark alleys, a sunken koi plaza, rooftops and a monorail across the sky.',
+    'A neon night-market district: dark alleys, walk-through shops, a teahouse and monorail station above, a metro tunnel below.',
   orrery:
-    'A brass clockwork solar system in the dark: ride the moving planets to the Sun, or take the long way round the ring.',
+    'A brass clockwork observatory: libraries and galleries round a sealed orbit hall where the planets ride, a gear crypt below.',
   leviathan:
-    'Inside a fossil giant in a teal nebula: rib-arch cover, a walkway along its spine, a glowing heart in the middle.',
+    'Inside a fossil giant in a teal nebula: bone halls between the ribs, a heart chamber, the spine walkway above, marrow tunnels below.',
   'colossus-yard':
     'A drydock at sunrise round a half-built titan warship: container canyons, crane booms, a spine deck 15 m up. Built for ten.',
   'training-bay': 'Compact combat bay for quick fights.',
@@ -306,7 +312,7 @@ export const MAP_BLURBS: Record<string, string> = {
   'race-ember':
     'The forge needle (very hard): five portal rooms, a jetpack under red ash ceilings — save fuel for the crucible lift — buttress wraps and a helix down the needle.',
   'surf-thirty-doors':
-    'Surf, Expert: thirty sealed rooms, each its own trick — wide first ramps, then portals, boosters, needles and red helixes. Clear a room, take its door.',
+    'Surf, Expert: thirty sealed rooms, each its own skill — surf onto small blocks, mid-air turns, flicks, pad flights, needle ramps, blind boards. Clear a room, take its door.',
   'surf-copper-reef':
     'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
   'surf-glass-garden':
@@ -512,7 +518,7 @@ export const ROOM_OBJECTIVES: Choice<RoomObjective>[] = [
   {
     id: 'race',
     name: 'Race',
-    desc: 'Parkour race on a race track, up to 8 racers. No weapons.',
+    desc: 'Surf race on a surf map, up to 8 racers. No weapons.',
     icon: 'race',
   },
 ];
@@ -596,7 +602,7 @@ export const roomMaps = (
   if (isArenaObjective(o) || isBrawlObjective(o)) return { best, other: [] };
   return {
     best,
-    other: maps.filter((m) => !best.includes(m) && !isArenaMap(m) && !isRaceMap(m)),
+    other: maps.filter((m) => !best.includes(m) && !isArenaMap(m) && !m.race && !m.retired),
   };
 };
 
@@ -606,9 +612,11 @@ export const pickRoomObjective = (
   maps: readonly MapInfo[] = MAPS,
   defOf: (id: string) => LevelDef = mapDef,
 ): RoomState => {
-  const { best } = roomMaps(objective, maps, defOf);
-  // keep a hand-picked map only if it suits the new objective
-  const map = best.some((m) => m.id === s.map) ? s.map : (best[0]?.id ?? s.map);
+  const { best, other } = roomMaps(objective, maps, defOf);
+  // keep a hand-picked map only if it suits the new objective (races: any race map in
+  // rotation — only surf maps while the parkour tracks are retired)
+  const ok = isRaceObjective(objective) ? [...best, ...other] : best;
+  const map = ok.some((m) => m.id === s.map) ? s.map : (ok[0]?.id ?? s.map);
   return { ...s, objective, map, step: 'map' };
 };
 

@@ -99,6 +99,8 @@ export const TRACK_REVISIONS: Readonly<Record<string, number>> = {
   'race-sunspire': 3,
   'race-neon': 3,
   'race-ember': 3,
+  // Thirty Doors rebuilt: every room a new skill test (docs/movement-map-design/maps/X01-...)
+  'surf-thirty-doors': 2,
 };
 
 export const trackRevision = (track: string): number => TRACK_REVISIONS[track] ?? 1;

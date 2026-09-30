@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultConfig, yawToView, type RaceView } from '@space-yz/shared';
+import { DEFAULT_RACE_MAP, defaultConfig, yawToView, type RaceView } from '@space-yz/shared';
 import { createRacePractice, raceTrackId } from '../src/game/race-entry';
 import {
   ghostAt,
@@ -25,13 +25,13 @@ const memoryStore = (): RaceStore & { data: Map<string, string> } => {
 describe('offline race practice', () => {
   it('counts down, then bot racers run the track; tags show their places', () => {
     const { session, race } = createRacePractice({
-      track: 'race-neon',
+      track: DEFAULT_RACE_MAP,
       bots: 3,
       skill: 'hard',
       config: defaultConfig(),
     });
     expect(session.world().players.length).toBe(4);
-    expect(race.track).toBe('race-neon');
+    expect(race.track).toBe(DEFAULT_RACE_MAP);
     const idle = () => ({ buttons: 0, view: yawToView(0) });
     for (let i = 0; i < 60 * 8 && race.phase !== 'racing'; i++) session.update(1 / 60, idle);
     expect(race.phase).toBe('racing');
@@ -47,10 +47,13 @@ describe('offline race practice', () => {
     for (const p of session.world().players) expect(p.hp).toBe(session.config.combat.maxHp);
   });
 
-  it('picks a race track (the default one for anything else)', () => {
-    expect(raceTrackId('race-neon')).toBe('race-neon');
-    expect(raceTrackId('split-deck')).toBe('race-sunspire');
-    expect(raceTrackId(undefined)).toBe('race-sunspire');
+  it('picks a race map (the default one for anything else, a retired track too)', () => {
+    expect(raceTrackId('surf-glass-garden')).toBe('surf-glass-garden');
+    expect(raceTrackId('split-deck')).toBe(DEFAULT_RACE_MAP);
+    expect(raceTrackId(undefined)).toBe(DEFAULT_RACE_MAP);
+    // the parkour tracks are retired until parkour is redone: never raced
+    expect(raceTrackId('race-neon')).toBe(DEFAULT_RACE_MAP);
+    expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
   });
 });
 

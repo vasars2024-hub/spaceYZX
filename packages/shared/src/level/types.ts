@@ -107,6 +107,14 @@ export interface SpawnDef {
   pos: Vec3; // feet position
   yawDeg: number; // facing, measured around +Y from -Z toward +X... see yawToForward
   team?: 0 | 1;
+  /**
+   * Detached spawns (round modes): a team's spawns may sit in several separate places, each
+   * named by a group ("lobby", "tunnel"...). At the start of a round the team is spread over
+   * its groups — one player per group before any group gets a second (rules/match.ts
+   * spawnOrder) — so in 3v3 on a map with three groups everyone starts somewhere else, and
+   * where you spawn hints at your job (like a CS spawn nearer to B). Absent: one shared base.
+   */
+  group?: string;
 }
 
 export interface TowerDef {

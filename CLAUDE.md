@@ -36,9 +36,19 @@
   mirror-symmetric (`map.test.ts` checks maps flagged `symmetric`). `orbital-ring.ts` is
   built from the owner's approved plan (map drafts, Layout 3), mirrored north ↔ south around
   z = 60 (its own test checks it), with launch pads, portals (`sim/devices.ts`) and zip-rails;
-  its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`). Modes never
+  its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`).
+  `canyon-relay.ts` (outdoor desert, mirrored north ↔ south around z = 50 and east ↔ west): adobe
+  pueblos with a mine under them and a rail tunnel under the deadly gorge, bomb basins under rock
+  arches; spawn groups station / east camp / west camp; timing targets in
+  `tools/map/test/canyon-relay-timing.test.ts`, design note `docs/maps/canyon-relay.md`. Modes never
   mix: Tower mode has no plants, Bomb mode no Tower touches, Elimination neither. Bots must be
   able to walk every route.
+- **Openness** (owner's rule): competitive maps play like CS maps — rooms, corridors, floors and
+  partitions that isolate duels, never a flat hall with crates. `tools/map/openness.ts` measures
+  it (watched floor area, directions a spot is seen from; report section 12 of `npm run map`)
+  and `tools/map/test/openness.test.ts` holds every competitive map to `OPENNESS_TARGET`.
+  Design notes per redesigned map: `docs/maps/`. Detached spawns: `SpawnDef.group` (a round
+  spreads a team over its groups, `spawnOrder` in `rules/match.ts`).
 - Anti-cheat: server-side work is planned but comes only after the gameplay features; a
   Chrome extension will be required for ranked later (casual play stays install-free).
 - Netcode: protocol/codec `packages/shared/src/net/`, prediction `client-core.ts`, server rooms
@@ -75,6 +85,11 @@
   (`npm run race:lab` → `docs/movement-map-design/movement-profile.md`, `course/profile.ts`)
   from curved ramps (`course/curve.ts`, exactly-joined `BoxDef.hull` prisms), gates, recovery
   anchors, red zones and turning portals: how-to in `docs/movement-map-design/BUILDING.md`.
+  **The parkour tracks (`race-*.ts`) are retired** (owner: parkour is badly made; no parkour
+  until it is redone): `MapInfo.retired` keeps them out of every menu, room, practice and the
+  ranked Race queue (`raceTracks()` / `raceMaps()` skip retired maps unless asked with `true`),
+  while `mapExists` stays true so old PBs/boards keep working. With no tracks the Race queue is
+  closed (`RankedQueue.queueStatus`, `noMaps`); `DEFAULT_RACE_MAP` is `surf-copper-reef`.
 - Transition cards + announcer: plans `packages/client/src/game/transitions.ts`, overlay
   `ui/transitions.ts` (`showTransition(kind, info)` for other HUDs), clips
   `packages/client/public/audio/announcer/*.ogg` played by `audio/announcer.ts` (own volume bus).

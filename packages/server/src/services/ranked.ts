@@ -176,6 +176,8 @@ export interface QueueOpenStatus {
   online: number;
   /** Premier's opening hours: open now by the hours (null: no hours for this queue / set) */
   byHours: boolean | null;
+  /** closed because it has no maps to play (the Race queue while every track is retired) */
+  noMaps?: boolean;
 }
 
 /** Extra weight on placement games (on top of Glicko's own uncertainty). */

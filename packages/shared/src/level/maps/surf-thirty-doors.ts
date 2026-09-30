@@ -1,5 +1,5 @@
 // "Thirty Doors" — a stage surf map (docs/movement-map-design/maps/X01-thirty-doors.md): thirty
-// sealed rooms, each its own challenge, from gentle to extreme. Built as course data
+// sealed rooms, each its own skill test, from gentle to extreme. Built as course data
 // (level/course) on MOVEMENT_PROFILE v1.
 //
 // How a room works: you come out of the last room's door (a portal, marked with this room's
@@ -12,61 +12,34 @@
 // start: floor 1 y 460, floor 2 y 320, floor 3 y 180), each walled in its wing's colour, its
 // number in giant glowing digits on its far wall; six wings of five rooms share a look.
 //
-//   #  room               gimmick                                                  level
-//   1  First Light        one long wide straight: hold into the ramp               teach
-//   2  The Long Bend      one broad banked quarter turn                            teach
-//   3  Crossing           the first transfer between two opposing wide faces       teach
-//   4  Stepping Stones    a climbing lip, three big bhop pads, back onto a ramp    teach
-//   5  The Grand Surf     two long S-curves joined by a transfer                   teach
-//   6  Turnaround         a portal turns you right round onto a parallel ramp      medium
-//   7  Keyhole            two transfers, each through a window in a wall           medium
-//   8  Scoop Valley       dips and climbs; release off a climb onto a raised catch medium
-//   9  Quarter Turns      two turning portals (+90°, −90°), a catch after each     medium
-//  10  The Spine          an A-frame: ride one face, cross the ridge, the other    medium
-//  11  Slingshot          a booster ring flings you over a long gap                hard
-//  12  Red Band           red strips down the lower faces of two bends             hard
-//  13  The Coil           a full turn of descending helix, out under its start     hard
-//  14  Zigzag             six short faces left and right in turn, red below        hard
-//  15  Hall of Windows    three transfers through ever smaller windows             hard
-//  16  The Drop           two sixteen-metre high-to-low transfers                  hard
-//  17  Bhop Gauntlet      five small swinging bhop pads over a red pool, a lintel  hard
-//  18  Tight S            a tight S on one face (45 m bends)                       hard
-//  19  Portal Maze        three turning portals that keep where you cross them     hard
-//  20  Low Vault          a red cornice over the ridge, a red strip below          hard
-//  21  Long Jump          two 30 m transfers off climbing lips onto red-footed faces extreme
-//  22  Needle             two transfers through 9 × 7 m windows                    extreme
-//  23  The Drain          a half-turn spiral tightening to 30 m round a red core   extreme
-//  24  Pillar Garden      four transfers, each between two red posts               extreme
-//  25  Switchback         two banked hairpins (34 m), red below, across the back   extreme
-//  26  Cannon             two 40 m/s booster rings onto short red-footed bends     extreme
-//  27  Chain Reaction     four offset portals, a short catch between each          extreme
-//  28  Twin Spines        two tight A-frames back to back                          extreme
-//  29  The Gauntlet       needle window, red strip, red posts, red cornice, portal extreme
-//  30  The Last Door      a tightening red-strip helix, a needle window, home      extreme
-import type {
-  CourseData,
-  CourseFork,
-  CurveEl,
-  CurveLeg,
-  P2,
-  P3,
-  SceneryElement,
-} from '../course/types';
+// Every room is a different skill test (the table: THIRTY_DOORS_ROOMS, and the doc). Gaps,
+// flights and landings are sized from the measured movement (course/profile.ts, and where the
+// profile has no number the real simulation: tools/race's bot flights, noted room by room as
+// "sized:"): a flight's length is its speed × its air time, the air time is the fall
+// (t = (vy + √(vy² + 2 g h)) / g, g = 20 m/s²), a landing block sits where the steady line
+// comes down, and is only as big as the spread between a clean and a sloppy line allows.
+// Hard rules kept: no bunny-hop pads (a block is one block: land, jump, go on), no windows to
+// fly through and only two trapdoors to drop through (rooms 14 and 30), portals in two rooms
+// (the doors between rooms apart).
+import type { CourseData, CourseFork, CurveLeg, P2, P3, SceneryElement } from '../course/types';
 import { Pen } from '../course/pen';
-import { curvePath, curveRidePoint } from '../course/curve';
 import { expandCourse } from '../course/expand';
 import type { BoxDef } from '../types';
 
 // ---------------------------------------------------------------------------------------------
 // Shapes and helpers
 
-/** Face shapes (docs/movement-map-design/maps/README.md): wide and forgiving → short and tight. */
+/** Face shapes: wide and forgiving → short, steep and narrow (height m, angle °). */
 const WIDE = { height: 18, angle: 55 };
 const BROAD = { height: 16, angle: 56 };
 const STD = { height: 14, angle: 58 };
 const MID = { height: 12, angle: 60 };
-const TIGHT = { height: 11, angle: 63 };
+const TIGHT = { height: 10, angle: 63 };
+/** a tech-surf wedge: 6 m tall at 66°, a 2.7 m wide face */
 const SHORT = { height: 9, angle: 65 };
+const WEDGE = { height: 6, angle: 66 };
+/** a needle: 5 m tall at 62°, a 2.7 m wide face — land on it or miss it */
+const NEEDLE = { height: 5, angle: 62 };
 
 const arc = (
   turn: number,
@@ -80,24 +53,33 @@ const straight = (len: number, drop: number, more: Partial<CurveLeg> = {}): Curv
   ...more,
 });
 
+/**
+ * A lip: the ridge climbs `rise` over `len` at the ramp's end and throws you up (vy ≈ speed ×
+ * rise / len). The line keeps its depth on the face through it (a line stepping down the face
+ * at the lip would catch: tools/race/test/surf-seams.test.ts).
+ */
+const lip = (len: number, rise: number): CurveLeg => ({ len, drop: -rise });
+
 const DEG = Math.PI / 180;
 // (+ 0: never a negative zero, which JSON would not keep)
 const r1 = (x: number): number => Math.round(x * 10) / 10 + 0;
-const r3 = (x: number): number => Math.round(x * 1000) / 1000 + 0;
-const headingTo = (dx: number, dz: number): number =>
-  (((Math.atan2(dx, -dz) / DEG) % 360) + 360) % 360;
 
-/** The last element written (a curve, as its data). */
-const lastCurve = (p: Pen): CurveEl => {
-  const e = p.route[p.route.length - 1];
-  if (e.t !== 'curve') throw new Error('not a curve');
-  return e;
-};
+/** gravity (MOVEMENT_PROFILE v1: g = 20 m/s²) */
+const G = 20;
+/** a standing jump's take-off speed: √(2 g Z), Z = 1.2 m (profile) */
+const JUMP_VY = Math.sqrt(2 * G * 1.2);
+/**
+ * How far (flat metres) a flight at `v` m/s, starting with vertical speed `vy` (+ up), goes
+ * before it has come down `drop` metres (negative: up): v × t, t = (vy + √(vy² + 2 g drop)) / g.
+ * Every gap below is sized with it from the release the bots measure (tools/race/trace.ts).
+ */
+const reach = (v: number, vy: number, drop: number): number =>
+  r1((v * (vy + Math.sqrt(Math.max(0, vy * vy + 2 * G * drop)))) / G);
 
 /**
  * A portal `f` metres on from the release (the pen), its opening's middle 0.8 m over where your
  * body passes flying at `v` m/s with vertical speed `vy` (a ballistic flight): nobody has to
- * brake or dive to meet it. The pen goes on from its exit. Returns the opening's middle.
+ * brake or dive to meet it. The pen goes on from its exit.
  */
 const portal = (
   p: Pen,
@@ -108,178 +90,203 @@ const portal = (
   turn: number,
   size: P2,
   look: { color?: number; glyph?: string; offset?: boolean; vertical?: 'keep' | 'zero' },
-): P3 => {
+): void => {
   const t = f / v;
   p.move(0, r1(vy * t - 10 * t * t + 0.9 + 0.8));
-  const at = p.relP(f);
   p.airPortal(f, exit, turn, size, look);
-  return at;
 };
 
-/** A leg run climbing the face gradually from depth `from` to `to` over `len` metres (spines). */
-const climb = (from: number, to: number, len: number, drop: number, n = 4): CurveLeg[] =>
-  Array.from({ length: n }, (_, k) => ({
-    len: r3(len / n),
-    drop: r3(drop / n),
-    depth: r3(from + ((to - from) * (k + 1)) / n),
-  }));
+/**
+ * A landing block at the pen (its top's middle): land on it and jump on the landing tick (a
+ * jump pressed up to 0.15 s early fires on it, one up to 0.1 s late gets the speed back) —
+ * miss the tick and the floor's friction (6/s) eats your speed. Not a bhop pad: one block, one
+ * jump, a surf ramp after it.
+ */
+const block = (p: Pen, size: P2): Pen => p.pads([{ d: 0, size }], 'hop', size);
 
 /**
- * An A-frame with a spine crossing (as in Basalt Cathedral): the `first` leg ridden on the
- * `near` face and a gradual climb to the crest, then from the crest on the `far` face — a short
- * stretch just under the crest, a gradual settle down it — and the `rest`. Returns the far half.
+ * A pillar's top at the pen (its middle): a plain square landing where you stop (friction) —
+ * for a launch pad set on it (`p.launch(..., back 0)`). The pen stays at its middle.
  */
-const spine = (
-  p: Pen,
-  o: {
-    near: 'left' | 'right';
-    far: 'left' | 'right';
-    first: CurveLeg;
-    rest: CurveLeg[];
-    color: number;
-    shape?: { height: number; angle: number };
-  },
-): CurveEl => {
-  const g = 0.05;
-  const shape = o.shape ?? MID;
-  p.curve({
-    lead: 12,
-    ride: o.near,
-    legs: [{ ...o.first, ride: o.near }, ...climb(0.35, 0.04, 30, 30 * g, 10)],
-    ...shape,
-    side: 'both',
-    color: o.color,
-  });
-  const a = curvePath(lastCurve(p));
-  const end = a.at(a.length);
-  const legs: CurveLeg[] = [
-    straight(8, 8 * g, { depth: 0.04 }),
-    ...climb(0.04, 0.12, 12, 12 * g, 3),
-    ...climb(0.12, 0.3, 16, 16 * g, 4),
-    ...o.rest.map((l, i) => (i ? l : { depth: 0.35, ...l })),
-  ];
-  const b: CurveEl = {
-    t: 'curve',
-    at: [r3(end.pos.x), r3(end.pos.y), r3(end.pos.z)],
-    heading: r3(headingTo(end.dir.x, end.dir.z)),
-    legs,
-    ...shape,
-    side: 'both',
-    ride: o.far,
-    lead: 3,
-    color: o.color,
-    go: 'strafe',
+const pillar = (p: Pen, size: P2): Pen => {
+  const at = p.pos;
+  p.platform(size, undefined, { centred: true, style: 'plain' });
+  p.pos = at;
+  return p;
+};
+
+/**
+ * A V-channel (a halfpipe) from the pen, heading its way, the pen on the west wall's face: a
+ * west wall (a `left` face, looking east) and an east wall (a `right` face) whose feet meet
+ * 0.3 m apart, dropping at 6 %, with a red ceiling hung inside the V wherever both walls
+ * stand. The line rides deep (`depth` 0.55: 6.6 m under the ridges) and crosses the channel
+ * twice — west, east, west; the ceiling hangs 3.4 m over the line (1.6 m over your head), so
+ * ride higher than 0.45 of the face and it takes you. sized: a crossing is 2 r (1 − depth) + gap
+ * = 6.5 m across in 26 m on (14°: a transfer that shallow keeps its speed).
+ */
+const halfpipe = (p: Pen, color: number): void => {
+  const shape = MID;
+  const H = shape.height;
+  const r = H / Math.tan(shape.angle * DEG);
+  const d = 0.55;
+  const gap = 0.3;
+  const g = 0.06;
+  const lat = r1(2 * r * (1 - d) + gap);
+  // (the pen at P0, the landing on the west wall; distances below from P0 on)
+  const P0 = p.pos;
+  const hd = p.heading;
+  const ceiling = (from: number, to: number): void => {
+    // the channel's middle, and how wide it is at the ceiling's underside (3.4 m over the line)
+    const q = new Pen([P0.x, P0.y, P0.z], hd);
+    const mid = r * (1 - d) + gap / 2;
+    const dc = d - 3.4 / H;
+    const w = r1(2 * r + gap - 2 * dc * r - 0.5);
+    for (let s = from; s + 5 <= to + 0.01; s += 5.1)
+      q.red(s + 2.5, -mid, r1(3.4 - g * s), [w, 0.6, 5], 0);
+    p.route.push(...q.route);
   };
-  p.route.push(b);
-  const pb = curvePath(b);
-  const bEnd = pb.at(pb.length);
-  let depth = 0.35;
-  for (const l of legs) depth = l.depth ?? depth;
-  p.pos = curveRidePoint(b, bEnd, o.far, depth);
-  p.heading = r3(headingTo(bEnd.dir.x, bEnd.dir.z));
-  return b;
+  // west wall B: 8 m before P0 to P0 + 60, ridden to P0 + 40
+  p.curve({
+    lead: 8,
+    legs: [straight(60, 60 * g)],
+    ...shape,
+    side: 'left',
+    depth: d,
+    early: 20,
+    color,
+  });
+  // across to the east wall C (P0 + 10 .. P0 + 112), ridden P0 + 58 .. P0 + 88
+  p.move(26, -26 * g, -lat).curve({
+    lead: 56,
+    legs: [straight(46, 46 * g)],
+    ...shape,
+    side: 'right',
+    depth: d,
+    early: 24,
+    color,
+  });
+  // back across to the west wall D (P0 + 62 .. P0 + 140), ridden from P0 + 106
+  p.move(26, -26 * g, lat).curve({
+    lead: 52,
+    legs: [straight(26, 26 * g)],
+    ...shape,
+    side: 'left',
+    depth: d,
+    color,
+  });
+  ceiling(10, 60);
+  ceiling(62, 112);
 };
 
 /**
- * Under the bhop pads just written: a red pool 14 m below them (a missed hop sends you back),
- * and a low lintel (a solid beam `lintel` m over the pads on two posts) across the last hop.
+ * A pillar `size` metres square centred on the pen, a booster pad on its middle that throws
+ * you straight on (its way, `speed` m/s, `up` m/s up). The pen stays at its middle.
  */
-const redPool = (p: Pen, lintel: number): void => {
-  const pads = p.route[p.route.length - 1];
-  if (pads.t !== 'jumps') throw new Error('pads');
-  const [a, b] = pads.pads.slice(-2).map((q) => q.at);
-  const hd = r1(headingTo(b[0] - a[0], b[2] - a[2]));
-  const m: P3 = [r1((a[0] + b[0]) / 2), a[1], r1((a[2] + b[2]) / 2)];
-  const cs = Math.cos(hd * DEG);
-  const sn = Math.sin(hd * DEG);
-  const side = (k: number, u: number): P3 => [r1(m[0] + cs * k), r1(m[1] + u), r1(m[2] + sn * k)];
-  p.route.push({ t: 'wall', at: side(0, lintel), size: [14, 2.4, 1.2], heading: hd });
-  for (const k of [-6, 6])
-    p.route.push({ t: 'wall', at: side(k, -8), size: [2, r1(lintel + 8 - 0.6), 1.2], heading: hd });
-  const xs = pads.pads.map((q) => q.at[0]);
-  const zs = pads.pads.map((q) => q.at[2]);
+const boostPillar = (p: Pen, size: number, speed = 25, up = 15): Pen => {
+  const at = p.pos;
+  p.move(-size / 2).booster(speed, up, false, [size - 2, size - 2]);
+  p.pos = at;
+  return p;
+};
+
+/**
+ * From a booster pillar (the pen at its middle: 25 m/s on, 15 m/s up, its apex 5.6 m up 19 m
+ * on), the next one `side` metres off to the side of where the throw comes down, `drop` metres
+ * lower: steer onto it in the air. sized: it stands where the throw comes down to its top,
+ * reach(25, 15, drop) on (38 m for a 0 m drop, 44 m for 5 m down).
+ */
+const padHop = (p: Pen, side: number, drop: number, size: number): Pen =>
+  boostPillar(p.move(reach(25, 15, drop), -drop, side), size);
+
+/** A glowing beacon pole (scenery: it never collides) standing on `at`, `h` metres tall. */
+const beacon = (deco: SceneryElement[], at: P3, h: number, color: number): void => {
+  deco.push({ t: 'block', at, size: [0.8, h, 0.8], color, mat: 'glow' });
+};
+
+/**
+ * A red ceiling over the line from `a` to `b` (feet points), `clear` metres over the higher
+ * one: a flat red slab 12 m wide along the way — ride higher and it takes you.
+ */
+const ceilingOver = (
+  p: Pen,
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+  clear: number,
+): void => {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len = Math.hypot(dx, dz);
+  const hd = (((Math.atan2(dx, -dz) / DEG) % 360) + 360) % 360;
   p.route.push({
     t: 'red',
-    at: [
-      r1((Math.min(...xs) + Math.max(...xs)) / 2),
-      r1(a[1] - 14),
-      r1((Math.min(...zs) + Math.max(...zs)) / 2),
-    ],
-    size: [
-      r1(Math.max(...xs) - Math.min(...xs) + 30),
-      1,
-      r1(Math.max(...zs) - Math.min(...zs) + 30),
-    ],
-    heading: 0,
+    at: [r1((a.x + b.x) / 2), r1(Math.max(a.y, b.y) + clear), r1((a.z + b.z) / 2)],
+    size: [12, 0.6, r1(len)],
+    heading: r1(hd),
   });
 };
 
 /**
- * A red cornice over curve `e`'s ridge from `s0` to `s1` (flat metres along it): red strips
- * 0.3 m over the ridge reaching 2 m out over the riding face (a head-height limit: climb to the
- * ridge and you're back), under a stone overhang in `color`.
+ * A red deck with one hole in it, hung across a drop (a trapdoor): the pen at the release, the
+ * flight going `f` ahead, `side` right and `drop` down onto the next ramp at `v` m/s leaving
+ * with `vy`. The deck hangs `h` metres under the release (its top); the hole is centred where
+ * the steady line is half way through it (feet 1.2 m under the top: reach(v, vy, h + 1.2) on
+ * from the release, toward the landing), `hole` [across, along] metres. The deck reaches
+ * `around` metres past the hole every way (never nearer than 4 m to the release). sized:
+ * falling through a 0.6 m deck with a 1.8 m body at a descent slope k = |vy(t)| / v takes
+ * (1.8 + 0.6) / k metres along, so the hole's `along` is that plus a window of ±w for the line
+ * (w says how hard it is). A turning flight (a flick) does not go straight at its landing:
+ * there `at` gives the hole's middle [ahead, right] as measured on the traced line.
  */
-const cornice = (
+const trapdoor = (
   p: Pen,
-  deco: SceneryElement[],
-  e: CurveEl,
-  s0: number,
-  s1: number,
-  color: number,
+  o: {
+    f: number;
+    side: number;
+    v: number;
+    vy: number;
+    h: number;
+    hole: P2;
+    around?: number;
+    at?: P2;
+  },
 ): void => {
-  const path = curvePath(e);
-  const face = e.side === 'right' ? 1 : -1;
-  const n = Math.max(2, Math.round((s1 - s0) / 5));
-  let prevTop = -Infinity;
-  for (let k = 0; k < n; k++) {
-    const a = path.at(s0 + ((s1 - s0) * k) / n);
-    const b = path.at(s0 + ((s1 - s0) * (k + 1)) / n);
-    const hd = headingTo(b.pos.x - a.pos.x, b.pos.z - a.pos.z);
-    const dx = Math.sin(hd * DEG);
-    const dz = -Math.cos(hd * DEG);
-    // (the face's side: right of the way is (-dz, dx))
-    const ox = -dz * face;
-    const oz = dx * face;
-    const mx = (a.pos.x + b.pos.x) / 2 + ox * 0.75;
-    const mz = (a.pos.z + b.pos.z) / 2 + oz * 0.75;
-    const chord = Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z) + 0.1;
-    const y = Math.max(a.pos.y, b.pos.y) + 0.3;
-    p.route.push({
-      t: 'red',
-      at: [r1(mx), r3(y), r1(mz)],
-      size: [2.5, 1, r3(chord)],
-      heading: r3(hd),
-    });
-    deco.push({
-      t: 'block',
-      at: [r1(mx - ox * 0.6), r3(Math.max(y, prevTop) + 1.4), r1(mz - oz * 0.6)],
-      size: [4.2, 1.6, r3(chord - 0.4)],
-      heading: r3(hd),
-      color,
-      lowDetail: true,
-    });
-    prevTop = y;
-  }
+  const k = reach(o.v, o.vy, o.h + 1.2) / Math.hypot(o.f, o.side);
+  const hf = o.at?.[0] ?? r1(o.f * k);
+  const hs = o.at?.[1] ?? r1(o.side * k);
+  const [W, D] = o.hole;
+  const A = o.around ?? 10;
+  const u = -o.h - 0.6;
+  const f0 = Math.max(4, hf - D / 2 - A);
+  const f1 = hf + D / 2 + A;
+  const sw = W + 2 * A;
+  // (before the hole, after it, and either side of it)
+  const slab = (fa: number, fb: number, sa: number, sb: number): void => {
+    if (fb - fa > 0.5 && sb - sa > 0.5)
+      p.red(r1((fa + fb) / 2), r1((sa + sb) / 2), r1(u), [r1(sb - sa), 0.6, r1(fb - fa)]);
+  };
+  slab(f0, hf - D / 2, hs - sw / 2, hs + sw / 2);
+  slab(hf + D / 2, f1, hs - sw / 2, hs + sw / 2);
+  slab(hf - D / 2, hf + D / 2, hs - sw / 2, hs - W / 2);
+  slab(hf - D / 2, hf + D / 2, hs + W / 2, hs + sw / 2);
 };
 
 /**
- * Two red posts either side of the transfer about to be flown (`f` ahead, `u` up, `s` right of
- * the pen): at its middle, `gap` metres apart across it — thread between them.
+ * A red floor `size` [across, along] square round the pen, its top `down` metres under it, with
+ * a 3 m square cut in its middle for the stem of the block standing there.
  */
-const posts = (p: Pen, f: number, u: number, s: number, gap: number): void => {
-  const l = Math.hypot(f, s);
-  // (across the flight: its right-hand perpendicular, in the pen's frame)
-  const [af, as] = [-s / l, f / l];
-  for (const k of [-1, 1]) {
-    const at = p.relP(f / 2 + (af * k * gap) / 2, s / 2 + (as * k * gap) / 2, u / 2 - 10);
-    p.route.push({ t: 'red', at, size: [1.6, 18, 1.6], heading: r1(p.heading) });
-  }
+const redFloor = (p: Pen, size: P2, down: number): void => {
+  const [W, D] = size;
+  const u = r1(-down - 0.6);
+  const e = 1.5;
+  p.red(r1(-(D / 2 + e) / 2), 0, u, [W, 0.6, r1(D / 2 - e)]);
+  p.red(r1((D / 2 + e) / 2), 0, u, [W, 0.6, r1(D / 2 - e)]);
+  p.red(0, r1(-(W / 2 + e) / 2), u, [r1(W / 2 - e), 0.6, 2 * e]);
+  p.red(0, r1((W / 2 + e) / 2), u, [r1(W / 2 - e), 0.6, 2 * e]);
 };
 
 // ---------------------------------------------------------------------------------------------
 // The rooms
 
-/** How hard a room is (the difficulty ramp: every room is harder than the one before). */
 export type DoorLevel = 'teach' | 'medium' | 'hard' | 'extreme';
 
 /** A wing: five rooms sharing a look (surf faces, walls, glow, islands). */
@@ -369,33 +376,39 @@ export interface DoorRoom {
   build: (k: Kit) => void;
 }
 
-/** Transfers between opposing faces: from a right face across to the right, and back. */
-const toLeft = (p: Pen, f = 14, u = -5, s = 9): Pen => p.move(f, u, s);
-const toRight = (p: Pen, f = 14, u = -5, s = 9): Pen => p.move(f, u, -s);
-
 export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   // ---------------------------------------------------------------- teach (1–5)
   {
     n: 1,
     name: 'First Light',
-    idea: 'one long wide straight: hold into the ramp and feel it carry you',
-    level: 'teach',
-    door: [18, 18],
-    build: ({ p, c }) => {
-      p.move(9, -7).curve({ legs: [straight(140, 10)], ...WIDE, side: 'right', color: c });
-    },
-  },
-  {
-    n: 2,
-    name: 'The Long Bend',
-    idea: 'one broad banked quarter turn: follow the curve round',
+    idea: 'one long wide ramp that banks into a broad turn: hold into it and feel it carry you',
     level: 'teach',
     door: [18, 18],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(40, 3), arc(-90, 80, 8), straight(50, 3)],
-        ...BROAD,
+        legs: [straight(60, 5), arc(-60, 90, 7), straight(45, 4)],
+        ...WIDE,
+        side: 'left',
+        color: c,
+      });
+    },
+  },
+  {
+    n: 2,
+    name: 'Stepping Block',
+    idea: 'leave the ramp onto a big block, jump the moment you land, catch the next ramp',
+    level: 'teach',
+    door: [18, 18],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(70, 6)], ...WIDE, side: 'right', color: c });
+      // sized: the release is ~31 m/s falling 3 m/s; 6 m down → reach 20 m, the block's middle
+      p.move(reach(31, -3, 6), -6, 4);
+      block(p, [10, 10]);
+      // sized: a jump off the block (6.9 m/s up) at 31 m/s, 8 m down → 40 m
+      p.move(reach(31, JUMP_VY, 8) - 2, -8, 6).curve({
+        legs: [straight(80, 6)],
+        ...WIDE,
         side: 'left',
         color: c,
       });
@@ -403,252 +416,128 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   },
   {
     n: 3,
-    name: 'Crossing',
-    idea: 'the first transfer: leave one wide face and catch the one across',
+    name: 'The Lip',
+    idea: 'a ramp that climbs into a lip: ride it up and it throws you over a wall',
     level: 'teach',
     door: [18, 18],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(80, 6)],
+        legs: [straight(60, 6), straight(16, -5)],
         ...WIDE,
         side: 'right',
         color: c,
       });
-      toLeft(p, 15).curve({ legs: [straight(90, 6)], ...WIDE, side: 'left', color: c });
+      // sized (traced): the lip releases at 27 m/s, 10 m/s up — 1.5 s in the air, 42 m on, 7 m
+      // down; the wall's top, 22 m on, is 4 m under the release: the flight clears it by 5 m (a
+      // rider who let go of the ramp before the lip comes down flat and meets the wall)
+      p.wall(22, 0, [30, 10, 2], -14);
+      p.move(45, -8).curve({ lead: 8, legs: [straight(80, 6)], ...WIDE, side: 'left', color: c });
     },
   },
   {
     n: 4,
-    name: 'Stepping Stones',
-    idea: 'a climbing lip, three big bhop pads, back onto a ramp',
+    name: 'Big Air',
+    idea: 'a booster ring throws you high: steer in the air onto a ramp off to the side',
     level: 'teach',
     door: [18, 18],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({
+      p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...WIDE, side: 'right', color: c });
+      // sized (traced): the ring throws you at 26 m/s, 12 up (apex 3.6 m): 1.85 s in the air, 50 m
+      // on and 13 m down; the ramp is 18 m across, so steer 20° off the way it throws you
+      p.move(12, -3).booster(26, 12, true, [12, 12]);
+      p.move(50, -6, 18).curve({
         lead: 10,
-        legs: [straight(65, 5), straight(50, -8)],
-        ...BROAD,
-        side: 'right',
-        color: c,
-      });
-      p.move(15, -2).bhopPads([{ d: 0, size: [10, 14] }, { d: 17 }, { d: 17.5 }], [9, 12]);
-      p.move(22, -2).curve({
-        legs: [straight(55, 4)],
-        ...BROAD,
-        side: 'right',
+        legs: [straight(80, 6)],
+        ...WIDE,
+        side: 'left',
         color: c,
       });
     },
   },
   {
     n: 5,
-    name: 'The Grand Surf',
-    idea: 'two long S-curves and a transfer between them: everything so far, at speed',
+    name: 'Quarter Turn',
+    idea: 'a lip throws you up heading south: turn a quarter circle in the air, board a ramp heading east',
     level: 'teach',
     door: [18, 18],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(20, 2), arc(35, 120, 5), arc(-35, 120, 5), straight(10, 1)],
-        ...BROAD,
-        side: 'right',
-        color: c,
-      });
-      toLeft(p).curve({
-        legs: [arc(-35, 120, 5), arc(35, 120, 5), straight(20, 2)],
+        legs: [straight(50, 5), straight(14, -3)],
         ...BROAD,
         side: 'left',
         color: c,
       });
+      // (turning west, into the building: sized as the lip's 9 m/s up over 22 m, 8 m down)
+      // sized (traced): the lip releases at 28 m/s, 8 up — 1.3 s in the air, 36 m flat: time to
+      // turn 90° (the landing ramp runs across the way you left, 22 m on and 22 across)
+      p.move(22, -8, 22)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(80, 6)], ...BROAD, side: 'right', color: c });
     },
   },
   // ---------------------------------------------------------------- medium (6–10)
   {
     n: 6,
-    name: 'Turnaround',
-    idea: 'the first portal inside a room turns you right round onto a ramp beside the first',
+    name: 'Crossways',
+    idea: 'ramps set across your path, 25° one way then the other: flick onto each new line',
     level: 'medium',
     door: [16, 16],
-    build: ({ p, c, L, wing }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(90, 6)],
-        ...STD,
-        side: 'right',
-        color: c,
-      });
-      portal(p, 14, 30, -1.5, L(130, 60, -22), 180, [16, 16], { color: wing.glow, glyph: '↺' });
-      p.move(14, -7).curve({
-        lead: 12,
-        legs: [straight(90, 6)],
-        ...STD,
-        side: 'left',
-        color: c,
-      });
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      // sized (traced): each transfer is 14 m on, 9 across at 32–36 m/s: 0.5–0.6 s in the air,
+      // 4–5 m down — and every ramp turned 25–50° from the last: flick that much as you land
+      p.move(14, -5, 9)
+        .turn(25)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
+      p.move(14, -5, -9)
+        .turn(-50)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      p.move(14, -5, 9)
+        .turn(50)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
+      p.move(14, -5, -9)
+        .turn(-25)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
     },
   },
   {
     n: 7,
-    name: 'Keyhole',
-    idea: 'two transfers, each threaded through a window in a wall',
+    name: 'Upsurf',
+    idea: 'surf up a climbing ramp, keep your speed to its top and fly onto a raised block',
     level: 'medium',
     door: [16, 16],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(70, 5)],
+        legs: [straight(40, 4), straight(40, -12)],
         ...STD,
         side: 'right',
         color: c,
       });
-      p.window(10, [16, 11], [28, 22], -5, 4);
-      p.move(8, -1, 6).curve({ legs: [straight(60, 4)], ...STD, side: 'left', color: c });
-      p.window(10, [14, 10], [26, 20], -5, -4);
-      p.move(8, -1, -6).curve({ legs: [straight(60, 4)], ...STD, side: 'right', color: c });
+      p.move(16, -1, 3);
+      block(p, [7, 7]);
+      p.move(reach(24, JUMP_VY, 10) - 2, -10, 6).curve({
+        legs: [straight(70, 6)],
+        ...STD,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
     n: 8,
-    name: 'Scoop Valley',
-    idea: 'a ramp that dips and climbs twice: release off the last climb up onto a raised catch',
+    name: 'Pinball',
+    idea: 'five short steep faces left, right, left: one touch on each, straight across to the next',
     level: 'medium',
     door: [16, 16],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(40, 4), straight(35, -3), straight(40, 4), straight(35, -4)],
-        ...STD,
-        side: 'right',
-        color: c,
-      });
-      p.move(20, -4, 10).curve({
-        legs: [straight(40, 3), straight(30, -3), straight(30, 3)],
-        ...STD,
-        side: 'left',
-        color: c,
-      });
-    },
-  },
-  {
-    n: 9,
-    name: 'Quarter Turns',
-    idea: 'two turning portals: out heading west, then south again, catching a ramp each time',
-    level: 'medium',
-    door: [16, 16],
-    build: ({ p, c, L, wing }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(70, 5)],
-        ...STD,
-        side: 'right',
-        color: c,
-      });
-      portal(p, 14, 30, -1.5, L(130, -60, -16), 90, [14, 14], { color: wing.glow, glyph: '↱' });
-      p.move(14, -7).curve({
-        lead: 12,
-        legs: [straight(80, 5)],
-        ...STD,
-        side: 'left',
-        color: c,
-      });
-      portal(p, 14, 30, -1.5, L(190, 20, -30), -90, [14, 14], { color: wing.glow, glyph: '↲' });
-      p.move(14, -7).curve({
-        lead: 12,
-        legs: [straight(60, 4)],
-        ...STD,
-        side: 'right',
-        color: c,
-      });
-    },
-  },
-  {
-    n: 10,
-    name: 'The Spine',
-    idea: 'an A-frame: ride one face, cross the ridge, settle down the other',
-    level: 'medium',
-    door: [16, 16],
-    build: ({ p, c }) => {
-      p.move(18, -7);
-      spine(p, {
-        near: 'right',
-        far: 'left',
-        first: straight(40, 2),
-        rest: [arc(-40, 110, 4), arc(40, 110, 4), straight(30, 2)],
-        color: c,
-        shape: STD,
-      });
-    },
-  },
-  // ---------------------------------------------------------------- hard (11–20)
-  {
-    n: 11,
-    name: 'Slingshot',
-    idea: 'fly through a booster ring that flings you over a long gap onto a ramp far ahead',
-    level: 'hard',
-    door: [14, 14],
-    build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(60, 4)], ...MID, side: 'right', color: c });
-      p.move(12, -5).booster(36, 8, true, [10, 10]);
-      p.move(47, -4).curve({ lead: 14, legs: [straight(60, 3)], ...BROAD, side: 'left', color: c });
-      toRight(p).curve({
-        legs: [arc(35, 90, 4), arc(-35, 90, 4), straight(20, 1)],
-        ...MID,
-        side: 'right',
-        color: c,
-      });
-    },
-  },
-  {
-    n: 12,
-    name: 'Red Band',
-    idea: 'red strips down the lower faces of two bends: hold your height through them',
-    level: 'hard',
-    door: [14, 14],
-    build: ({ p, c }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(30, 2), arc(40, 100, 5), straight(30, 2)],
-        ...MID,
-        side: 'right',
-        red: 0.62,
-        color: c,
-      });
-      toLeft(p).curve({
-        legs: [arc(-40, 100, 5), straight(40, 3)],
-        ...MID,
-        side: 'left',
-        red: 0.62,
-        color: c,
-      });
-    },
-  },
-  {
-    n: 13,
-    name: 'The Coil',
-    idea: 'a full turn of a descending helix on tight faces, out under its own start',
-    level: 'hard',
-    door: [14, 14],
-    build: ({ p, c }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(25, 2), arc(-180, 55, 7), arc(-180, 55, 7), straight(40, 2)],
-        ...TIGHT,
-        side: 'left',
-        color: c,
-      });
-    },
-  },
-  {
-    n: 14,
-    name: 'Zigzag',
-    idea: 'six short faces, left and right in turn, over the mist: one touch each',
-    level: 'hard',
-    door: [14, 14],
-    build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
-      p.move(18, -6, 9);
-      for (let k = 0; k < 6; k++) {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      // sized (traced): 20 m on and 5–7 across at 32–40 m/s: 0.55–0.6 s flights, 5 m down each,
+      // onto faces 9 m tall at 65° (4.2 m across): a flight a metre wide misses the next one
+      p.move(18, -6, 7);
+      for (let k = 0; k < 5; k++) {
         const right = k % 2 === 1;
         p.curve({
           lead: k ? 9 : 5,
@@ -656,231 +545,448 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
           ...SHORT,
           side: right ? 'right' : 'left',
           depth: 0.25,
-          red: 0.8,
           color: c,
         });
         p.move(20, -7, right ? 5 : -5);
       }
-      p.curve({ lead: 9, legs: [straight(50, 3)], ...MID, side: 'left', color: c });
+      p.curve({ lead: 9, legs: [straight(50, 4)], ...STD, side: 'right', color: c });
+    },
+  },
+  {
+    n: 9,
+    name: 'Waterfall',
+    idea: 'three long drops: leave each ramp and fall twenty metres onto the next',
+    level: 'medium',
+    door: [16, 16],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...STD, side: 'right', color: c });
+      // sized: reach(30, −2, 18) = 42 m on, 18 down (traced: 38–46 m in 1.2–1.3 s at 31–40
+      // m/s: every drop adds 2–3 m/s, so the next one is set further on)
+      p.move(reach(30, -2, 18), -18, 10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'left',
+        color: c,
+      });
+      p.move(reach(30, -2, 18), -18, -10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'right',
+        color: c,
+      });
+      p.move(reach(30, -2, 18), -18, 10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'left',
+        color: c,
+      });
+    },
+  },
+  {
+    n: 10,
+    name: 'Over the Top',
+    idea: "a lip throws you over an A-frame's ridge: land on its far face, the one facing away",
+    level: 'medium',
+    door: [16, 16],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4), lip(12, 3)],
+        ...STD,
+        side: 'right',
+        color: c,
+      });
+      // the A-frame's ridge stands 1 m under the release, 10 m to the right: clear it, come down
+      // on its right face
+      // sized (traced): the lip releases at 30 m/s, 9 up, 25 m on and 11 across it lands at the
+      // release's own height: the ridge, 1 m under it, is cleared by about 2 m
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
+        ...STD,
+        side: 'both',
+        ride: 'right',
+        color: c,
+      });
+      p.move(16, -5, 9).curve({ legs: [straight(50, 4)], ...STD, side: 'left', color: c });
+    },
+  },
+  // ---------------------------------------------------------------- hard (11–20)
+  {
+    n: 11,
+    name: 'Pad Pillars',
+    idea: 'land on a pillar: its pad throws you straight on, the next pillar stands off to the side — steer onto it, then stop on the last',
+    level: 'hard',
+    door: [14, 14],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
+      p.move(reach(32, -2, 5), -5, 3);
+      // sized: a pad throws 25 m/s, 15 up; the next pillar stands where that comes down to its
+      // top, reach(25, 15, 2) = 40 m on (traced 40.5–41 m), 7 m to one side, then the other
+      boostPillar(p, 6);
+      padHop(p, 7, 2, 5);
+      pillar(p.move(reach(25, 15, 2), -2, -7), [5, 5]);
+      p.launch(36, -10, 1.6, 0, 0);
+      p.curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'left', color: c });
+    },
+  },
+  {
+    n: 12,
+    name: 'Halfpipe',
+    idea: 'a V-channel under a red ceiling: ride low on one wall, cross to the other and back',
+    level: 'hard',
+    door: [14, 14],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...MID, side: 'right', color: c });
+      p.move(16, -5, 8);
+      halfpipe(p, c);
+    },
+  },
+  {
+    n: 13,
+    name: 'Round the Post',
+    idea: 'a lip throws you up past a red post: curve half a circle round it in the air onto a ramp heading back',
+    level: 'hard',
+    door: [14, 14],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(50, 4), lip(12, 3)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the lip releases at 31 m/s, 9.5 up — 2.0 s in the air, 21 m down; the
+      // half circle to the ramp 32 m across is 50 m of flight (1.6 s): time to turn it, not to
+      // dawdle. The post stands inside that circle, 7 m from its middle: cut it short, hit it
+      p.red(10, 16, -34, [3, 44, 3]);
+      p.move(6, -20, 32)
+        .turn(180)
+        .curve({
+          lead: 12,
+          legs: [straight(20, 2), arc(-90, 45, 5), straight(30, 3)],
+          ...MID,
+          side: 'left',
+          color: c,
+        });
+    },
+  },
+  {
+    n: 14,
+    name: 'Trapdoor',
+    idea: 'fly over a red deck and drop through the one gap in it onto the ramp underneath',
+    level: 'hard',
+    door: [14, 14],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+      // sized: the release (traced) is 34.4 m/s falling 3.3 m/s; the deck hangs 8 m down, where
+      // the line has come 25.6 m (reach) falling 18 m/s: a descent slope of 0.53, so passing the
+      // deck takes 4.5 m along — the hole is 9 m along (±2.2 m of window) and 7 m across
+      trapdoor(p, { f: 38, side: 8, v: 34.4, vy: -3.3, h: 8, hole: [7, 9] });
+      p.move(38, -18, 8).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
+        ...MID,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
     n: 15,
-    name: 'Hall of Windows',
-    idea: 'three transfers through three windows, each smaller than the last',
+    name: 'Needlework',
+    idea: 'three needle ramps, 2.7 m wide, red below their middle: land on each and ride it high',
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(55, 4)], ...MID, side: 'right', color: c });
-      p.window(10, [13, 10], [25, 20], -5, 4);
-      p.move(8, -1, 6).curve({ legs: [straight(45, 3)], ...MID, side: 'left', color: c });
-      p.window(10, [11, 9], [23, 19], -5, -4);
-      p.move(8, -1, -6).curve({ legs: [straight(45, 3)], ...MID, side: 'right', color: c });
-      p.window(10, [10, 8], [22, 18], -5, 4);
-      p.move(8, -1, 6).curve({ legs: [straight(45, 3)], ...MID, side: 'left', color: c });
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...MID, side: 'right', color: c });
+      // sized (traced): 21–25 m on at 34–40 m/s, 0.62 s in the air, 6 m down onto a face 5 m
+      // tall at 62°: 2.7 m across — the window across is the face; the red below 0.75 of it
+      p.move(20, -7, 5);
+      for (let k = 0; k < 3; k++) {
+        const right = k % 2 === 1;
+        p.curve({
+          lead: 9,
+          legs: [straight(24, 1.5)],
+          ...NEEDLE,
+          side: right ? 'right' : 'left',
+          depth: 0.3,
+          red: 0.75,
+          color: c,
+        });
+        p.move(22, -7, right ? 5 : -5);
+      }
+      p.curve({ lead: 9, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
     },
   },
   {
     n: 16,
-    name: 'The Drop',
-    idea: 'two high-to-low transfers: fall sixteen metres onto a wide face and ride it out',
+    name: 'Staircase',
+    idea: 'up-transfers: each lip throws you onto a ramp higher than you left — only with your speed kept',
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(50, 3)], ...MID, side: 'right', color: c });
-      p.move(18, -16, 9).curve({
-        lead: 14,
-        legs: [straight(60, 3)],
-        ...WIDE,
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(55, 6), lip(14, 4.5)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the lips release at 29–31 m/s, 11.5 up — 1.0 s in the air, 29–32 m on,
+      // landing 1–1.6 m higher than they left: an up-transfer; a release a tenth slower throws a
+      // tenth lower and shorter, and comes down under the next face
+      p.move(33, 1, 6).curve({
+        lead: 10,
+        legs: [straight(35, 4), lip(14, 4.5)],
+        ...MID,
         side: 'left',
         color: c,
       });
-      toRight(p).curve({ legs: [straight(40, 2)], ...MID, side: 'right', color: c });
-      p.move(18, -16, 9).curve({
-        lead: 14,
-        legs: [straight(55, 3)],
-        ...WIDE,
-        side: 'left',
+      p.move(33, 1, -6).curve({
+        lead: 10,
+        legs: [straight(20, 2), arc(-70, 40, 5), straight(20, 2)],
+        ...MID,
+        side: 'right',
         color: c,
       });
     },
   },
   {
     n: 17,
-    name: 'Bhop Gauntlet',
-    idea: 'five small bhop pads swinging left and right over a red pool, under a low lintel',
+    name: 'Blind Crest',
+    idea: 'a crest throws you over a wall; the ramp is hidden far below it — steer by the beacon',
     level: 'hard',
     door: [14, 14],
-    build: ({ p, c }) => {
+    build: ({ p, c, wing, deco }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(50, 4), straight(45, -6)],
+        legs: [straight(45, 4), lip(12, 3)],
         ...MID,
         side: 'right',
         color: c,
       });
-      p.move(15, -2).bhopPads(
-        [
-          { d: 0, size: [8, 12] },
-          { d: 16.5, turn: -15 },
-          { d: 16.5, turn: 22 },
-          { d: 16.5, turn: -22 },
-          { d: 16.5, turn: 15 },
-        ],
-        [6, 8],
-      );
-      redPool(p, 4.2);
-      p.move(22, -2).curve({ legs: [straight(60, 4)], ...MID, side: 'right', color: c });
+      // sized (traced): the lip releases at 31 m/s, 9.5 up — 2.0 s in the air, 65 m on, 22 m
+      // down: the landing is out of sight under the wall's top the whole climb; the beacon stands
+      // over it
+      p.wall(16, 0, [36, 12, 2], -14);
+      p.move(55, -24, 22).turn(40);
+      beacon(deco, p.relP(0, -9, -6), 36, wing.glow);
+      p.curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'right', color: c });
     },
   },
   {
     n: 18,
-    name: 'Tight S',
-    idea: 'a tight S on one face: into the bend, out against it, and back',
+    name: 'Drop-In',
+    idea: 'stop on a small ledge (brake in the air), run off its end and drop onto a steep ramp far below',
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(20, 2), arc(-50, 45, 3), arc(100, 45, 7), arc(-50, 45, 3), straight(30, 2)],
+      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
+      p.move(reach(32, -2, 6), -6, 3);
+      // sized (traced): you land at 34 m/s 21 m on; the 7 m ledge and its friction (6/s) bleed
+      // the steady line to 11 m/s by its end (land faster or later and you overshoot the drop),
+      // and it falls 19 m in 1.1 s, 13.5 m on, onto the steep ramp
+      p.platform([6, 7], 'strafe', { style: 'plain', centred: true });
+      p.move(10, -18, 3).curve({
+        lead: 8,
+        legs: [straight(70, 16)],
         ...MID,
-        side: 'left',
+        side: 'right',
         color: c,
       });
     },
   },
   {
     n: 19,
-    name: 'Portal Maze',
-    idea: 'three turning portals that keep where you cross them: west, south, east',
+    name: 'Mirror',
+    idea: 'a portal turns you right round: come out where you went in, so hit its middle or miss the needle behind it',
     level: 'hard',
     door: [14, 14],
-    build: ({ p, c, L, wing }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
-      const look = (glyph: string) => ({ color: wing.glow, glyph, offset: true });
-      portal(p, 14, 30, -1.5, L(100, -60, -14), 90, [12, 12], look('◇'));
-      p.move(14, -7).curve({ lead: 12, legs: [straight(40, 2)], ...MID, side: 'left', color: c });
-      portal(p, 14, 30, -1.5, L(150, 40, -28), -90, [12, 12], look('◈'));
-      p.move(14, -7).curve({ lead: 12, legs: [straight(40, 2)], ...MID, side: 'right', color: c });
-      portal(p, 14, 30, -1.5, L(240, 60, -42), -90, [12, 12], look('◆'));
-      p.move(14, -7).curve({ lead: 12, legs: [straight(40, 2)], ...MID, side: 'left', color: c });
+    build: ({ p, c, wing }) => {
+      p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+      // sized: the portal is 14 m on (0.4 s at 33 m/s), its exit 10 m behind, 40 m to the left
+      // and 8 down: a 10 m opening, but where you enter it is where you come out, over a needle
+      // (2.7 m across) — enter off-centre and you miss it
+      const exit = p.relP(-10, -40, -8);
+      portal(p, 14, 33, -3, exit, 180, [10, 10], { color: wing.glow, glyph: '↺', offset: true });
+      p.move(14, -5).curve({
+        lead: 10,
+        legs: [straight(30, 3), arc(-90, 35, 4), straight(20, 2)],
+        ...NEEDLE,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
     n: 20,
-    name: 'Low Vault',
-    idea: 'a red cornice over the ridge and a red strip below: ride the band between them',
+    name: 'Speed Trap',
+    idea: 'pump the scoops to keep your speed: the gap after the lip only carries a rider who kept it',
     level: 'hard',
     door: [14, 14],
-    build: ({ p, c, deco, wing }) => {
+    build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(35, 2), arc(50, 90, 5), straight(25, 2)],
+        legs: [straight(35, 3), straight(30, -1.2), straight(30, 3.5), lip(12, 3)],
         ...MID,
         side: 'right',
-        red: 0.72,
         color: c,
       });
-      cornice(p, deco, lastCurve(p), 10 + 35, 10 + 35 + (50 * Math.PI * 90) / 180, wing.wall);
-      toLeft(p).curve({
-        legs: [arc(-50, 90, 5), straight(30, 2)],
+      // sized (traced): the lip releases at 31 m/s, 9.9 up — 1.4 s in the air, 45.6 m on; the
+      // scoops before it bleed speed if you ride them high: 3 m/s lost is 4 m short, into the gap
+      p.move(44, -8, 4).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
         ...MID,
         side: 'left',
-        red: 0.72,
         color: c,
       });
-      const e = lastCurve(p);
-      cornice(p, deco, e, 5, 5 + (50 * Math.PI * 90) / 180, wing.wall);
     },
   },
   // ---------------------------------------------------------------- extreme (21–30)
   {
     n: 21,
-    name: 'Long Jump',
-    idea: 'two thirty-metre transfers off climbing lips: carry the speed or fall short',
+    name: 'Flick Block',
+    idea: 'land on a small block over red, jump, and flick a quarter turn in the air onto a ramp to the side',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(60, 5), straight(30, -3)],
+        legs: [straight(45, 4)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      // (the catches are red low down: fall short onto a foot and you're back at the door)
-      p.move(30, -7, 12).curve({
-        legs: [straight(50, 4), straight(25, -3)],
-        ...TIGHT,
-        side: 'left',
-        red: 0.75,
-        color: c,
-      });
-      p.move(32, -7, -12).curve({
-        legs: [straight(45, 3)],
-        ...TIGHT,
-        side: 'right',
-        red: 0.75,
-        color: c,
-      });
+      // sized: the release (traced) is 37 m/s falling 2.7 m/s; the block's middle is where that
+      // line has come down 6 m (reach), and its top 0.6 m lower still: the line comes down at a
+      // slope of 0.34, so it clears the front edge by 0.9 m and lands on the middle
+      p.move(reach(34, -3, 6), -6.6, 3);
+      block(p, [5, 5]);
+      redFloor(p, [16, 16], 4);
+      p.move(22, -6, 26)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'right', color: c });
     },
   },
   {
     n: 22,
-    name: 'Needle',
-    idea: 'two transfers through windows barely wider than a body in flight',
+    name: 'Ridge Hops',
+    idea: 'three A-frames in a staircase: each lip throws you over the next ridge — land on its far face, above its red',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(55, 4)],
+        legs: [straight(40, 4), lip(12, 3), straight(3, 0)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      p.window(10, [9, 7], [21, 17], -4, 4);
-      p.move(8, -1.5, 6).curve({ legs: [straight(45, 3)], ...TIGHT, side: 'left', color: c });
-      p.window(10, [9, 7], [21, 17], -4, -4);
-      p.move(8, -1.5, -6).curve({ legs: [straight(40, 3)], ...TIGHT, side: 'right', color: c });
+      // sized: the first hop as Over the Top (room 10: 26 m on, 6 m down, 14 m across); traced,
+      // each lip releases at 31–33 m/s, 9.4–10 up: 1.5 s in the air, 45–48 m on, 8–10 m down,
+      // landing a few metres past the ridge (the next A-frames 28 on, 9 down, 15 across). The
+      // faces are short (10 m at 63°: 5.1 m across) with red from 0.8 down: a flight that
+      // comes down late (too far across) lands in the red, an early one hits the near face.
+      // Each lip ends in a 3 m level run-out (a lip's end cap catches a rider leaving it).
+      // (Hopping back the other way would mean climbing your own face first: it kills speed.)
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(28, 3), lip(12, 3), straight(3, 0)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        red: 0.8,
+        color: c,
+      });
+      p.move(28, -9, 15).curve({
+        lead: 12,
+        legs: [straight(28, 3), lip(12, 3), straight(3, 0)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        red: 0.8,
+        color: c,
+      });
+      p.move(28, -9, 15).curve({
+        lead: 12,
+        legs: [straight(50, 4)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        color: c,
+      });
     },
   },
   {
     n: 23,
-    name: 'The Drain',
-    idea: 'a half-turn spiral tightening round a red core, a red strip below the line',
+    name: 'Corkscrew',
+    idea: 'a steep lip throws you high: turn right round in the air onto a needle behind and below you',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(30, 2), arc(-180, 64, 10, { toRadius: 30 }), straight(40, 2)],
+        // (a 3 m level run-out after the lip: its end cap would catch a rider leaving it)
+        legs: [straight(45, 5), lip(14, 4.5), straight(3, 0)],
         ...TIGHT,
-        side: 'left',
-        red: 0.72,
+        side: 'right',
         color: c,
       });
-      // the red core at the spiral's heart
-      const e = lastCurve(p);
-      const path = curvePath(e);
-      // (the spiral's end: 10 m lead-in, 30 m straight, then π (30 − 64) / ln(30 / 64) m of spiral)
-      const r = path.at(10 + 30 + (Math.PI * (30 - 64)) / Math.log(30 / 64));
-      const cx = r.pos.x + r.dir.z * 30;
-      const cz = r.pos.z - r.dir.x * 30;
-      const low = path.at(path.length).pos.y;
-      for (const hd of [0, 45])
-        p.route.push({
-          t: 'red',
-          at: [r1(cx), r1(low - 30), r1(cz)],
-          size: [9, 22, 9],
-          heading: hd,
-        });
+      // sized (traced): the steep lip releases at 32 m/s, 12.6 up — 2.3 s in the air, 24 m down:
+      // the half circle onto the needle 38 m across, behind and below, is 60 m (1.9 s): turn
+      // it steadily, all the way down
+      p.move(0, -25, 38)
+        .turn(180)
+        .curve({ lead: 12, legs: [straight(30, 3)], ...NEEDLE, side: 'left', color: c });
+      p.move(18, -6, -6).curve({
+        lead: 9,
+        legs: [arc(-90, 28, 4), straight(20, 2)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
     n: 24,
-    name: 'Pillar Garden',
-    idea: 'four transfers, each threaded between two red posts',
+    name: 'Pinwheel',
+    idea: 'kickers round a square: each lip throws you a quarter turn right onto the next — three turns, half a spiral down',
+    level: 'extreme',
+    door: [12, 12],
+    build: ({ p, c }) => {
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(40, 4), lip(12, 3), straight(3, 0)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): each lip releases at 31–33 m/s, 10–10.6 up — 1.4 s in the air, 43 m
+      // flat, 5–6 m down: the next kicker 30 m on, 26 m across, a quarter turn right
+      for (let k = 0; k < 2; k++)
+        p.move(30, -8, 26)
+          .turn(90)
+          .curve({
+            lead: 10,
+            legs: [straight(28, 4.5), lip(12, 3), straight(3, 0)],
+            ...MID,
+            side: 'right',
+            color: c,
+          });
+      p.move(30, -8, 26)
+        .turn(90)
+        .curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+    },
+  },
+  {
+    n: 25,
+    name: 'Pinball Tunnel',
+    idea: 'six wedges left and right in a tunnel: a red ceiling above, red below — keep a low, tight line',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
@@ -891,109 +997,87 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         side: 'right',
         color: c,
       });
-      for (let k = 0; k < 4; k++) {
+      // sized (traced): as Pinball (20 m on, 4 across, 0.5–0.55 s flights at 35–44 m/s) onto
+      // wedges 6 m tall (2.7 m across), under red ceilings 4.2 m over the line: jump high, die
+      p.move(18, -6, 6);
+      for (let k = 0; k < 6; k++) {
         const right = k % 2 === 1;
-        const s = right ? -9 : 9;
-        posts(p, 14, -5, s, 10);
-        p.move(14, -5, s).curve({
-          legs: [straight(32, 2)],
-          ...TIGHT,
+        const a = p.pos;
+        p.curve({
+          lead: k ? 9 : 5,
+          legs: [straight(16, 1)],
+          ...WEDGE,
           side: right ? 'right' : 'left',
+          depth: 0.25,
           color: c,
         });
+        ceilingOver(p, a, p.pos, 4.2);
+        p.move(20, -7, right ? 4 : -4);
       }
-    },
-  },
-  {
-    n: 25,
-    name: 'Switchback',
-    idea: 'two banked hairpins: leave the first across its own back onto the second',
-    level: 'extreme',
-    door: [12, 12],
-    build: ({ p, c }) => {
-      p.move(12, -6).curve({
-        lead: 10,
-        legs: [straight(20, 2), arc(180, 34, 9), straight(15, 1)],
+      p.move(0, -1.5).curve({
+        lead: 9,
+        legs: [straight(50, 4)],
         ...TIGHT,
         side: 'right',
-        red: 0.75,
-        color: c,
-      });
-      p.move(14, -5, -9).curve({
-        legs: [straight(15, 1), arc(180, 34, 9), straight(25, 1)],
-        ...TIGHT,
-        side: 'right',
-        red: 0.75,
         color: c,
       });
     },
   },
   {
     n: 26,
-    name: 'Cannon',
-    idea: 'two booster rings fire you far and fast onto short faces bending hard',
+    name: 'Freefall',
+    idea: 'a 35 m drop onto a needle, then an up-transfer off its lip: only a rider who kept the speed makes it',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(50, 4)],
+        legs: [straight(45, 4)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      p.move(12, -5).booster(40, 8, true, [10, 10]);
-      p.move(52, -4).curve({
-        lead: 14,
-        legs: [straight(10, 1), arc(-50, 60, 4), straight(20, 1)],
-        ...SHORT,
-        side: 'left',
-        red: 0.8,
+      // sized (traced): the drop — reach(34, −3, 35) on, 35 m down — is 55 m in 1.5 s; the
+      // needle's lip then throws 35 m/s, 17 up: 1.5 s, 52 m on, landing 3 m higher (an up-transfer
+      // only the speed kept from the drop makes)
+      p.move(reach(34, -3, 35), -35, 8).curve({
+        lead: 12,
+        legs: [straight(30, 3), lip(12, 5)],
+        ...NEEDLE,
+        side: 'right',
         color: c,
       });
-      toRight(p).curve({ legs: [straight(30, 2)], ...TIGHT, side: 'right', color: c });
-      p.move(12, -5).booster(40, 8, true, [10, 10]);
-      p.move(52, -4).curve({
-        lead: 14,
-        legs: [straight(10, 1), arc(50, 60, 4), straight(20, 1)],
-        ...SHORT,
-        side: 'right',
-        red: 0.8,
+      p.move(32, 1, 8).curve({
+        lead: 12,
+        legs: [straight(50, 4)],
+        ...TIGHT,
+        side: 'left',
         color: c,
       });
     },
   },
   {
     n: 27,
-    name: 'Chain Reaction',
-    idea: 'four portals in a row that keep where you cross them, a short catch between each',
+    name: 'Blind Flick',
+    idea: 'over a crest wall onto a hidden ramp crossing your path at 60°: flick onto it by the beacon',
     level: 'extreme',
     door: [12, 12],
-    build: ({ p, c, L, wing }) => {
+    build: ({ p, c, wing, deco }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(50, 3)],
+        legs: [straight(40, 4), lip(10, 3)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      const look = (glyph: string) => ({ color: wing.glow, glyph, offset: true });
-      portal(p, 14, 32, -1.5, L(100, -60, -10), 90, [10, 10], look('α'));
-      p.move(14, -7).curve({ lead: 12, legs: [straight(30, 2)], ...SHORT, side: 'left', color: c });
-      portal(p, 14, 32, -1.5, L(150, 60, -20), -90, [10, 10], look('β'));
-      p.move(14, -7).curve({
+      // sized (traced): the lip releases at 32 m/s, 11 up — 2.0 s in the air, 65 m on, 18 m down
+      // onto a ramp crossing the flight at 60°: flick onto it as you come down by the beacon
+      p.wall(14, 0, [36, 12, 2], -13);
+      p.move(56, -20, 28).turn(60);
+      beacon(deco, p.relP(0, -8, -6), 34, wing.glow);
+      p.curve({
         lead: 12,
-        legs: [straight(30, 2)],
-        ...SHORT,
-        side: 'right',
-        color: c,
-      });
-      portal(p, 14, 32, -1.5, L(230, 60, -30), -90, [10, 10], look('γ'));
-      p.move(14, -7).curve({ lead: 12, legs: [straight(30, 2)], ...SHORT, side: 'left', color: c });
-      portal(p, 14, 32, -1.5, L(280, -40, -40), 90, [10, 10], look('δ'));
-      p.move(14, -7).curve({
-        lead: 12,
-        legs: [straight(40, 2)],
+        legs: [straight(30, 3), arc(-60, 28, 4), straight(20, 2)],
         ...TIGHT,
         side: 'right',
         color: c,
@@ -1002,97 +1086,126 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   },
   {
     n: 28,
-    name: 'Twin Spines',
-    idea: 'two tight A-frames back to back: cross a ridge, transfer, cross another',
+    name: 'Sky Steps',
+    idea: 'two small blocks over red, each a quarter turn from the last: land, jump, turn, land, jump, turn',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(18, -7);
-      spine(p, {
-        near: 'right',
-        far: 'left',
-        first: straight(30, 2),
-        rest: [straight(30, 2)],
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4)],
+        ...TIGHT,
+        side: 'right',
         color: c,
-        shape: TIGHT,
       });
-      toRight(p);
-      spine(p, {
-        near: 'right',
-        far: 'left',
-        first: straight(20, 1),
-        rest: [arc(-30, 80, 3), straight(30, 2)],
-        color: c,
-        shape: TIGHT,
-      });
+      // sized (traced): the first block's middle where the release (37 m/s, falling 3) has come
+      // down 6 m, less 3 m; the jump off it (6.9 up) at 37 m/s turns a quarter left onto the
+      // second, 27 m on, 3 m down, 0.97 s later; its jump turns you a quarter right again, 42 m
+      // on and 14 down onto the ramp
+      p.move(reach(34, -3, 6) - 3, -6, 3);
+      block(p, [4, 4]);
+      redFloor(p, [14, 14], 4);
+      p.move(20, -3, -20).turn(-90);
+      block(p, [4, 4]);
+      redFloor(p, [14, 14], 4);
+      p.move(22, -8, 22)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
     },
   },
   {
     n: 29,
-    name: 'The Gauntlet',
-    idea: 'a needle window, a red-strip bend, red posts, a red cornice and a portal, in one run',
+    name: 'Portal Relay',
+    idea: 'a portal turns you mid-flight over a tiny pillar: brake onto it, and its pad fires you a quarter turn back onto a needle',
     level: 'extreme',
     door: [12, 12],
-    build: ({ p, c, L, wing, deco }) => {
+    build: ({ p, c, wing }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(45, 3)],
+        legs: [straight(45, 4)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      p.window(10, [9, 7], [21, 17], -4, 4);
-      p.move(8, -1.5, 6).curve({
-        legs: [arc(-45, 60, 4), straight(20, 2)],
+      const exit = p.relP(20, 30, 6);
+      portal(p, 14, 34, -3, exit, 90, [8, 8], { color: wing.glow, glyph: '↱', vertical: 'zero' });
+      // sized: out of the portal level at 34 m/s heading west, 8 m down: the pillar's middle is
+      // 28 m on (0.9 s of fall at that speed would carry 30 m: brake a little or overshoot a
+      // 4 m top); its pad throws you 30 m to the left (south again) onto the needle
+      p.move(28, -8);
+      pillar(p, [4, 4]);
+      p.launch(0, -6, 1.3, -30, 0);
+      p.turn(-90).curve({
+        lead: 12,
+        legs: [straight(40, 4)],
+        ...NEEDLE,
+        side: 'right',
+        red: 0.75,
+        color: c,
+      });
+      p.move(18, -6, 6).curve({
+        lead: 9,
+        legs: [straight(40, 4)],
         ...TIGHT,
         side: 'left',
-        red: 0.7,
         color: c,
       });
-      posts(p, 14, -5, -9, 10);
-      toRight(p).curve({
-        legs: [arc(45, 60, 4), straight(30, 2)],
-        ...TIGHT,
-        side: 'right',
-        red: 0.72,
-        color: c,
-      });
-      cornice(p, deco, lastCurve(p), 5, 5 + (45 * Math.PI * 60) / 180, wing.wall);
-      portal(p, 14, 32, -1.5, L(275, -20, -34), -90, [10, 10], {
-        color: wing.glow,
-        glyph: '✶',
-        offset: true,
-      });
-      p.move(14, -7).curve({ lead: 12, legs: [straight(45, 3)], ...SHORT, side: 'left', color: c });
     },
   },
   {
     n: 30,
     name: 'The Last Door',
-    idea: 'a tightening helix with a red strip, a needle window, one last long transfer home',
+    idea: 'climb onto a tiny block, flick a quarter turn through a gap in a red deck, another quarter turn in the air, a needle, home',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [
-          straight(20, 2),
-          arc(-180, 55, 7),
-          arc(-180, 55, 7, { toRadius: 45, red: 0.72 }),
-          straight(70, 2, { red: false }),
-        ],
-        ...TIGHT,
-        side: 'left',
-        color: c,
-      });
-      p.window(10, [9, 7], [21, 17], -4, -4);
-      p.move(8, -1.5, -6).curve({
-        legs: [straight(30, 2), straight(25, -3)],
+        legs: [straight(35, 3), straight(30, -8)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      p.move(30, -7, 12).curve({ legs: [straight(40, 2)], ...WIDE, side: 'left', color: c });
+      p.move(16, -1, 3);
+      block(p, [4, 4]);
+      // the flick drops through a trapdoor: sized from the traces, the jump off the block (23.6
+      // m/s, 6.9 up) has turned about 50° by the deck 9 m down and is half way through it 21.3
+      // m on and 23.5 m left (an early flick 1.5 m nearer the block, a late one 1.5 m past),
+      // falling at a slope of 0.83 — 2.9 m along to pass: an 8 m hole leaves the steady lines
+      // about a metre either way, and a flick made clearly late (or early) meets the deck
+      trapdoor(p, {
+        f: 26,
+        side: -30,
+        v: 23.6,
+        vy: JUMP_VY,
+        h: 9,
+        hole: [8, 8],
+        around: 9,
+        at: [21.3, -23.5],
+      });
+      p.move(26, -22, -30)
+        .turn(-90)
+        .curve({ lead: 12, legs: [straight(30, 3)], ...TIGHT, side: 'left', color: c });
+      // then a quarter turn left, the way the face drops (north: the room comes back on
+      // itself, 80 m east of its start), onto a ramp met from its low side
+      p.move(14, -10, -14)
+        .turn(-90)
+        .curve({ lead: 12, legs: [straight(36, 8)], ...TIGHT, side: 'left', color: c });
+      p.move(20, -6, -5).curve({
+        lead: 9,
+        legs: [straight(30, 4)],
+        ...NEEDLE,
+        side: 'right',
+        depth: 0.3,
+        color: c,
+      });
+      p.move(20, -6, 5).curve({
+        lead: 9,
+        legs: [straight(40, 6)],
+        ...TIGHT,
+        side: 'left',
+        color: c,
+      });
     },
   },
 ];
@@ -1104,13 +1217,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
 const FLOOR_Y = [460, 320, 180];
 const COL_X = [-384, -192, 0, 192, 384];
 /** a room's start moved [right (west), ahead (south)] in its cell: it keeps inside it */
-const SHIFT: Record<number, [number, number]> = {
-  2: [30, 0],
-  20: [-40, 0],
-  25: [0, 45],
-  26: [80, 0],
-  27: [15, 0],
-};
+const SHIFT: Record<number, [number, number]> = {};
 
 /** Where room `n` (1..30) starts: its door's exit (room 1: the start platform's far edge). */
 const roomAt = (n: number): P3 => {
@@ -1210,7 +1317,7 @@ export const buildThirtyDoors = (count = THIRTY_DOORS_ROOMS.length): CourseData 
     kind: 'surf',
     mode: 'expert',
     profile: 'MOVEMENT_PROFILE v1',
-    parSec: 275,
+    parSec: 245,
     palette: PALETTE,
     sky: SKY,
     roomMat: 'panel',

@@ -4,6 +4,7 @@
 import type { Vec3 } from '@space-yz/shared';
 import type { MapReport, SightStats, Timing } from './metrics';
 import { LONG, SHORT } from './metrics';
+import { OPENNESS_TARGET, opennessProblems } from './openness';
 
 const P = (p: Vec3 | null | undefined): string =>
   p ? `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})` : '—';
@@ -334,6 +335,20 @@ export const principleChecks = (r: MapReport): PrincipleCheck[] => {
     principle: 'Height advantage with counterplay',
     verdict: strong.length ? 'WARN' : 'PASS',
     finding: `${r.height.positions.length} raised positions; ${strong.length} with overlook ÷ see-back ≥ 1.5${hp ? `; biggest overlook: ${hp.region} at ${P(hp.best.pos)} sees ${N(hp.best.overlook)} ground spots, ${N(hp.best.seeBack)} of which see its chest back` : ''}.`,
+  });
+  const op = r.openness;
+  const opBad = opennessProblems(op);
+  out.push({
+    principle: 'One duel at a time (not shot at from everywhere)',
+    verdict: opBad.length ? 'FAIL' : 'PASS',
+    finding: `a spot is watched by ${N(op.watchedMean)} m² of floor on average (90th percentile ${N(op.watchedP90)} m²; target ≤ ${OPENNESS_TARGET.watchedMean} / ${OPENNESS_TARGET.watchedP90} m²), from ${op.anglesMean} of 8 directions; ${op.wideShare}% of spots are seen from 6+ directions (target ≤ ${OPENNESS_TARGET.wideShare}%)${opBad.length ? `; misses: ${opBad.join('; ')}` : ''}${
+      op.regions.length
+        ? `; most open: ${op.regions
+            .slice(0, 3)
+            .map((x) => `${x.region} (${N(x.watchedMean)} m²)`)
+            .join(', ')}`
+        : ''
+    }.`,
   });
   const f = r.features;
   if (f.rails.length || f.pads.length) {
@@ -870,6 +885,32 @@ export const renderMarkdown = (r: MapReport, files: string[] = []): string => {
       ),
     );
   else push('No gravity pads.');
+
+  // 12. openness
+  push('## 12. Openness: one duel at a time');
+  push(
+    `For every reachable standing spot (every ${ordinal(2)} grid spot): how much standing floor within 60 m has a clear line from an eye to a player's chest there (the *watched area*), and from how many of the 8 compass directions at least two such spots see it (*angles*). A corridor spot is watched from 2 directions, a CS-style bomb site from 3–5; open ground with crates dotted about from 7–8. Targets for competitive maps: mean ≤ ${OPENNESS_TARGET.watchedMean} m², 90th percentile ≤ ${OPENNESS_TARGET.watchedP90} m², at most ${OPENNESS_TARGET.wideShare}% of spots seen from 6+ directions.`,
+  );
+  push(
+    table(
+      ['Measure', 'Value'],
+      [
+        ['Spots measured', N(r.openness.spots)],
+        [
+          'Watched area: mean / median / 90th percentile',
+          `${N(r.openness.watchedMean)} / ${N(r.openness.watchedMedian)} / ${N(r.openness.watchedP90)} m²`,
+        ],
+        ['Angles: mean / median', `${r.openness.anglesMean} / ${r.openness.anglesMedian}`],
+        ['Seen from 6+ directions', `${r.openness.wideShare}%`],
+      ],
+    ),
+  );
+  push(
+    table(
+      ['Region', 'Spots', 'Watched area (mean)', 'Angles (mean)'],
+      r.openness.regions.map((x) => [x.region, N(x.spots), `${N(x.watchedMean)} m²`, x.anglesMean]),
+    ),
+  );
 
   if (files.length) {
     push('## Files');

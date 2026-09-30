@@ -179,7 +179,7 @@ const main = (): void => {
   const want = process.argv.slice(2).find((a) => !a.startsWith('--'));
   const h = process.argv.find((a) => a.startsWith('--human'));
   const human = h ? (h.includes('=') ? Number(h.split('=')[1]) : true) : false;
-  const ids = raceMaps()
+  const ids = raceMaps(true) // (retired tracks too: they come back when redone)
     .map((m) => m.id)
     .filter((id) => !want || id === want);
   for (const id of ids) {

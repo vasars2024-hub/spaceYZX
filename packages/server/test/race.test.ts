@@ -24,8 +24,10 @@ describe('race rooms (hub)', () => {
     const results: RaceRecord[] = [];
     const hub = new GameHub({ log: () => {}, onRaceEnd: (_r, res) => results.push(res) });
     try {
-      const room = hub.createRoom({ mode: 'race', map: 'race-neon', bots: 3, botSkill: 'hard' })!;
-      expect(room.map).toBe('race-neon');
+      // (a surf map: the parkour tracks are retired until parkour is redone)
+      const map = 'surf-copper-reef';
+      const room = hub.createRoom({ mode: 'race', map, bots: 3, botSkill: 'hard' })!;
+      expect(room.map).toBe(map);
       expect(room.maxPlayers).toBe(8);
       expect(room.rules).toBeInstanceOf(RaceRules);
       expect(room.members.size).toBe(3);
@@ -37,13 +39,14 @@ describe('race rooms (hub)', () => {
       expect(results.length).toBe(1);
       const r = results[0];
       expect(r.mode).toBe('race');
-      expect(r.track).toBe('race-neon');
+      expect(r.track).toBe(map);
       expect(r.room).toBe(room.code);
       expect(r.standings.length).toBe(3);
       for (const s of r.standings) {
         expect(s.dnf).toBe(false);
-        expect(s.timeMs).toBeGreaterThan(140_000);
-        expect(s.timeMs).toBeLessThan(230_000);
+        // (hard bots take about 170 s; wide bounds: the surf maps are still being tuned)
+        expect(s.timeMs).toBeGreaterThan(60_000);
+        expect(s.timeMs).toBeLessThan(300_000);
         expect(s.splitsMs.length).toBe(room.level.def.race!.checkpoints.length + 1);
       }
       expect(r.standings.map((s) => s.place)).toEqual([1, 2, 3]);
@@ -56,11 +59,17 @@ describe('race rooms (hub)', () => {
     }
   }, 60000);
 
-  it('race rooms only take race tracks, other rooms never do', () => {
+  it('race rooms only take race maps in rotation, other rooms never do', () => {
     const hub = new GameHub({ log: () => {} });
     try {
+      expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
       expect(hub.createRoom({ mode: 'race', map: 'split-deck' })!.map).toBe(DEFAULT_RACE_MAP);
-      expect(hub.createRoom({ mode: 'race', map: 'race-sunspire' })!.map).toBe('race-sunspire');
+      expect(hub.createRoom({ mode: 'race', map: 'surf-glass-garden' })!.map).toBe(
+        'surf-glass-garden',
+      );
+      // the parkour tracks are retired until parkour is redone: never raced, even if asked for
+      for (const id of ['race-sunspire', 'race-neon', 'race-ember'])
+        expect(hub.createRoom({ mode: 'race', map: id })!.map).toBe(DEFAULT_RACE_MAP);
       // a removed surf map is ignored: the default track (never Training Bay)
       expect(hub.createRoom({ mode: 'race', map: 'surf-aurora' })!.map).toBe(DEFAULT_RACE_MAP);
     } finally {
@@ -93,10 +102,10 @@ describe('race rooms over WebSocket', () => {
   };
 
   it('create a race room by code, pick the track, start: countdown, then the race', async () => {
-    const host = bot('RaceHost', (core) => core.createRoom('race', 'race-sunspire', 1, 'easy'));
+    const host = bot('RaceHost', (core) => core.createRoom('race', 'surf-glass-garden', 1, 'easy'));
     await until(() => host.core.state === 'room');
     expect(host.core.mode).toBe('race');
-    expect(host.core.map).toBe('race-sunspire');
+    expect(host.core.map).toBe('surf-glass-garden');
     const room = server.hub.rooms.get(host.core.code)!;
     expect(room.rules).toBeInstanceOf(RaceRules);
     // a friend joins by the code
@@ -117,5 +126,12 @@ describe('race rooms over WebSocket', () => {
     await wait(300);
     expect(host.core.latest!.players.size).toBe(3);
     await until(() => host.core.localPredicted()!.raceCp === 0);
+  }, 30000);
+
+  it('asking for a retired parkour track opens the room on the default race map', async () => {
+    const host = bot('RetiredHost', (core) => core.createRoom('race', 'race-neon', 1, 'easy'));
+    await until(() => host.core.state === 'room');
+    expect(host.core.mode).toBe('race');
+    expect(host.core.map).toBe(DEFAULT_RACE_MAP);
   }, 30000);
 });

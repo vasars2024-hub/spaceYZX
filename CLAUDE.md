@@ -36,7 +36,11 @@
   mirror-symmetric (`map.test.ts` checks maps flagged `symmetric`). `orbital-ring.ts` is
   built from the owner's approved plan (map drafts, Layout 3), mirrored north ↔ south around
   z = 60 (its own test checks it), with launch pads, portals (`sim/devices.ts`) and zip-rails;
-  its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`). Modes never
+  its route timings have targets (`tools/map/test/orbital-ring-timing.test.ts`).
+  `canyon-relay.ts` (outdoor desert, mirrored north ↔ south around z = 50 and east ↔ west): adobe
+  pueblos with a mine under them and a rail tunnel under the deadly gorge, bomb basins under rock
+  arches; spawn groups station / east camp / west camp; timing targets in
+  `tools/map/test/canyon-relay-timing.test.ts`, design note `docs/maps/canyon-relay.md`. Modes never
   mix: Tower mode has no plants, Bomb mode no Tower touches, Elimination neither. Bots must be
   able to walk every route.
 - **Openness** (owner's rule): competitive maps play like CS maps — rooms, corridors, floors and

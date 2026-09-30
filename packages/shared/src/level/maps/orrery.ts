@@ -361,9 +361,22 @@ export const buildOrrery = (): LevelDef => {
   // ======================= floors =======================
   // the ground: parquet under the whole wing (walls stand on it), the hall's bronze plates
   E.push(
-    ...slab(20, 58, -46, 46, -1, 0, [[20, 31, -1.5, 1.5], [44, 58, -10, 10]], 'wood', {
-      color: PARQUET,
-    }),
+    ...slab(
+      20,
+      58,
+      -46,
+      46,
+      -1,
+      0,
+      [
+        [20, 31, -1.5, 1.5],
+        [44, 58, -10, 10],
+      ],
+      'wood',
+      {
+        color: PARQUET,
+      },
+    ),
   );
   q(slab(0, 20, 23, 46, -1, 0, [], 'wood', { color: PARQUET }));
   q(slab(0, HX, 0, HZ, -1, 0, [[0, 2, 8, 17]], 'plate', { color: HALL_FLOOR }));
@@ -394,7 +407,9 @@ export const buildOrrery = (): LevelDef => {
   q([mk(0, O.hall.roof, 0, HX + 1, O.hall.roof + 0.6, HZ + 1, 'skyglass')]);
   // the dome's ribs under the glass
   q([deco(mk(0, O.hall.roof - 0.5, 11.2, HX, O.hall.roof, 11.8, 'plate', { color: BRASS_DARK }))]);
-  E.push(deco(mk(9.7, O.hall.roof - 0.5, -HZ, 10.3, O.hall.roof, HZ, 'plate', { color: BRASS_DARK })));
+  E.push(
+    deco(mk(9.7, O.hall.roof - 0.5, -HZ, 10.3, O.hall.roof, HZ, 'plate', { color: BRASS_DARK })),
+  );
   // amber strips on the docks' sills
   q([
     deco(mk(0.3, U, HZ, 7.2, U + 0.03, HZ + 0.3, 'glow', { color: DOCK })),
@@ -438,10 +453,7 @@ export const buildOrrery = (): LevelDef => {
   q(tooth(6, 0, 19.5, false));
   q(hub(17, 19.5, 1));
   // rails round the stairwells down to the crypt
-  q([
-    mk(2, 0, 7.75, 2.25, 1.1, 17, 'plate', brass),
-    mk(0, 0, 7.75, 2, 1.1, 8, 'plate', brass),
-  ]);
+  q([mk(2, 0, 7.75, 2.25, 1.1, 17, 'plate', brass), mk(0, 0, 7.75, 2, 1.1, 8, 'plate', brass)]);
   lightQ(15, 5, 6, LAMP, 11, 0.8);
   lightQ(8, 5, 18, LAMP, 11, 0.8);
 
@@ -572,7 +584,20 @@ export const buildOrrery = (): LevelDef => {
   /** the wing's roof (velvet, like the walls): everything but the gallery and the shaft */
   function roofs(): BoxDef[] {
     return [
-      ...slab(21, 58, 0, 46, CL, U, [[21, 45, 23, 31], [44, 58, 0, 10]], 'panel', WALL),
+      ...slab(
+        21,
+        58,
+        0,
+        46,
+        CL,
+        U,
+        [
+          [21, 45, 23, 31],
+          [44, 58, 0, 10],
+        ],
+        'panel',
+        WALL,
+      ),
       mk(14, CL, 31, 21, U, 46, 'panel', WALL),
     ];
   }
@@ -586,13 +611,22 @@ export const buildOrrery = (): LevelDef => {
     [-3.3, 4.8],
   ];
   // star charts high on the hall's walls
-  const chartZ = (x: number, z: number, y: number) => [
-    deco(mk(x - 4, y, z - 0.06, x + 4, y + 7, z, 'panel', { color: STARCHART })),
+  const chartZ = (x: number, z: number, y: number, ht = 7) => [
+    deco(mk(x - 4, y, z - 0.06, x + 4, y + ht, z, 'panel', { color: STARCHART })),
     ...dots.map(([dx, dy]) =>
       deco(
-        mk(x + dx - 0.15, y + dy, z - 0.1, x + dx + 0.15, y + 0.3 + dy, z - 0.06, 'glow', {
-          color: STAR,
-        }),
+        mk(
+          x + dx - 0.15,
+          y + (dy * ht) / 7,
+          z - 0.1,
+          x + dx + 0.15,
+          y + 0.3 + (dy * ht) / 7,
+          z - 0.06,
+          'glow',
+          {
+            color: STAR,
+          },
+        ),
       ),
     ),
   ];
@@ -606,14 +640,14 @@ export const buildOrrery = (): LevelDef => {
       ),
     ),
   ];
-  q(chartZ(9.6, HZ, 10.8));
+  q(chartZ(9.6, HZ, 10.8, 6.4));
   q(chartX(HX, 5, 8));
-  q(chartZ(8, 45, 4));
-  q(chartZ(44, 45, 1.5).map((b) => b));
+  q(chartZ(8, 45, 4, 7.6));
+  q(chartZ(44, 45, 1.5, 4.6));
   // lamps and brass skirting
   const lampZ = (x: number, y: number, z: number) =>
     deco(mk(x - 0.3, y, z - 0.25, x + 0.3, y + 0.6, z, 'trim', { color: LAMP }));
-  q([lampZ(5, 5, 45), lampZ(11, 5, 45), lampZ(25, 4, 45), lampZ(40, 4, 45)]);
+  q([lampZ(2.5, 5, 45), lampZ(13, 5, 45), lampZ(25, 4, 45), lampZ(38, 4, 45)]);
   q([deco(mk(0, 0, HZ - 0.2, HX, 0.4, HZ, 'plate', brass))]);
   E.push(deco(mk(HX - 0.2, 0, -HZ, HX, 0.4, -13, 'plate', brass)));
   E.push(deco(mk(HX - 0.2, 0, -10, HX, 0.4, 10, 'plate', brass)));
@@ -688,7 +722,9 @@ export const buildOrrery = (): LevelDef => {
             group,
           });
       // team colour over the room's door and on its back wall
-      T.push(deco(mk(s * 54, DH, n * 15, s * 57, DH + 0.2, n * 15.9, 'trim', { color: tc })));
+      T.push(
+        deco(mk(s * 54, DH + 0.05, n * 16, s * 57, DH + 0.25, n * 16.12, 'trim', { color: tc })),
+      );
       T.push(deco(mk(s * 50, 1, n * 29.9, s * 56, 4.5, n * 30, tmat)));
     }
   }

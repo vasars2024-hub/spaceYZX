@@ -850,7 +850,7 @@ const antipodeWaypoints = (): WaypointDef[] => {
   fl('jc.s', -3, 12);
   // tunnel lobby, the south gallery
   fl('tunW.w', -33, -21);
-  fl('tunW.c', -28, -20.5);
+  fl('tunW.c', -27, -19);
   fl('tunW.e', -23.5, -19.5);
   fl('galS.w', -18, -20);
   fl('galS.m', -13, -19);
@@ -889,7 +889,7 @@ const antipodeWaypoints = (): WaypointDef[] => {
   fl('hallE.toA', 32, 12);
   fl('hallE.toT', 26, -12);
   fl('lobA.s', 32, 18);
-  fl('lobA.c', 31, 20.5);
+  fl('lobA.c', 33, 20.5);
   fl('lobA.w', 25.5, 19);
   fl('lobA.e', 40, 22);
   fl('galNE.e', 22, 21);
@@ -897,7 +897,7 @@ const antipodeWaypoints = (): WaypointDef[] => {
   fl('galNE.w', 8, 21);
   fl('pNE.s', 8, 13);
   fl('tunE.w', 23.5, -20);
-  fl('tunE.c', 28, -20.5);
+  fl('tunE.c', 27, -19);
   fl('tunE.e', 32, -19.5);
   fl('galSE.w', 6, -20);
   fl('galSE.m', 12, -21.5);

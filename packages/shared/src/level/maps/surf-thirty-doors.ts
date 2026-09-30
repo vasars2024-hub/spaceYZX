@@ -20,7 +20,15 @@
 // comes down, and is only as big as the spread between a clean and a sloppy line allows.
 // Hard rules kept: no bunny-hop pads, at most two fly-through-a-hole rooms, portals in three
 // rooms at most (the doors between rooms apart).
-import type { CourseData, CourseFork, CurveEl, CurveLeg, P2, P3, SceneryElement } from '../course/types';
+import type {
+  CourseData,
+  CourseFork,
+  CurveEl,
+  CurveLeg,
+  P2,
+  P3,
+  SceneryElement,
+} from '../course/types';
 import { Pen } from '../course/pen';
 import { expandCourse } from '../course/expand';
 import type { BoxDef } from '../types';
@@ -145,7 +153,15 @@ const halfpipe = (p: Pen, color: number): void => {
     p.route.push(...q.route);
   };
   // west wall B: 8 m before P0 to P0 + 60, ridden to P0 + 40
-  p.curve({ lead: 8, legs: [straight(60, 60 * g)], ...shape, side: 'left', depth: d, early: 20, color });
+  p.curve({
+    lead: 8,
+    legs: [straight(60, 60 * g)],
+    ...shape,
+    side: 'left',
+    depth: d,
+    early: 20,
+    color,
+  });
   // across to the east wall C (P0 + 10 .. P0 + 112), ridden P0 + 58 .. P0 + 88
   p.move(26, -26 * g, -lat).curve({
     lead: 56,
@@ -157,7 +173,14 @@ const halfpipe = (p: Pen, color: number): void => {
     color,
   });
   // back across to the west wall D (P0 + 62 .. P0 + 140), ridden from P0 + 106
-  p.move(26, -26 * g, lat).curve({ lead: 52, legs: [straight(26, 26 * g)], ...shape, side: 'left', depth: d, color });
+  p.move(26, -26 * g, lat).curve({
+    lead: 52,
+    legs: [straight(26, 26 * g)],
+    ...shape,
+    side: 'left',
+    depth: d,
+    color,
+  });
   ceiling(10, 60);
   ceiling(62, 112);
 };
@@ -191,7 +214,12 @@ const beacon = (deco: SceneryElement[], at: P3, h: number, color: number): void 
  * A red ceiling over the line from `a` to `b` (feet points), `clear` metres over the higher
  * one: a flat red slab 12 m wide along the way — ride higher and it takes you.
  */
-const ceilingOver = (p: Pen, a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, clear: number): void => {
+const ceilingOver = (
+  p: Pen,
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+  clear: number,
+): void => {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dz);
@@ -389,7 +417,12 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(reach(31, -3, 6), -6, 4);
       block(p, [10, 10]);
       // sized: a jump off the block (6.9 m/s up) at 31 m/s, 8 m down → 40 m
-      p.move(reach(31, JUMP_VY, 8) - 2, -8, 6).curve({ legs: [straight(80, 6)], ...WIDE, side: 'left', color: c });
+      p.move(reach(31, JUMP_VY, 8) - 2, -8, 6).curve({
+        legs: [straight(80, 6)],
+        ...WIDE,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -398,7 +431,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     idea: 'a ramp that climbs into a lip: ride it up and it throws you over a wall',
     level: 'teach',
     door: [18, 18],
-    build: ({ p, c, L }) => {
+    build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
         legs: [straight(60, 6), straight(16, -5)],
@@ -406,9 +439,11 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         side: 'right',
         color: c,
       });
+      // sized (traced): the lip releases at 27 m/s, 10 m/s up — 1.5 s in the air, 42 m on, 7 m
+      // down; the wall's top, 22 m on, is 4 m under the release: the flight clears it by 5 m (a
+      // rider who let go of the ramp before the lip comes down flat and meets the wall)
       p.wall(22, 0, [30, 10, 2], -14);
       p.move(45, -8).curve({ lead: 8, legs: [straight(80, 6)], ...WIDE, side: 'left', color: c });
-      void L;
     },
   },
   {
@@ -419,8 +454,16 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [18, 18],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...WIDE, side: 'right', color: c });
+      // sized (traced): the ring throws you at 26 m/s, 12 up (apex 3.6 m): 1.85 s in the air, 50 m
+      // on and 13 m down; the ramp is 18 m across, so steer 20° off the way it throws you
       p.move(12, -3).booster(26, 12, true, [12, 12]);
-      p.move(50, -6, 18).curve({ lead: 10, legs: [straight(80, 6)], ...WIDE, side: 'left', color: c });
+      p.move(50, -6, 18).curve({
+        lead: 10,
+        legs: [straight(80, 6)],
+        ...WIDE,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -438,7 +481,11 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         color: c,
       });
       // (turning west, into the building: sized as the lip's 9 m/s up over 22 m, 8 m down)
-      p.move(22, -8, 22).turn(90).curve({ lead: 12, legs: [straight(80, 6)], ...BROAD, side: 'right', color: c });
+      // sized (traced): the lip releases at 28 m/s, 8 up — 1.3 s in the air, 36 m flat: time to
+      // turn 90° (the landing ramp runs across the way you left, 22 m on and 22 across)
+      p.move(22, -8, 22)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(80, 6)], ...BROAD, side: 'right', color: c });
     },
   },
   // ---------------------------------------------------------------- medium (6–10)
@@ -450,10 +497,20 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [16, 16],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...STD, side: 'right', color: c });
-      p.move(14, -5, 9).turn(25).curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
-      p.move(14, -5, -9).turn(-50).curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
-      p.move(14, -5, 9).turn(50).curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
-      p.move(14, -5, -9).turn(-25).curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      // sized (traced): each transfer is 14 m on, 9 across at 32–36 m/s: 0.5–0.6 s in the air,
+      // 4–5 m down — and every ramp turned 25–50° from the last: flick that much as you land
+      p.move(14, -5, 9)
+        .turn(25)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
+      p.move(14, -5, -9)
+        .turn(-50)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      p.move(14, -5, 9)
+        .turn(50)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'left', color: c });
+      p.move(14, -5, -9)
+        .turn(-25)
+        .curve({ legs: [straight(40, 3)], ...STD, side: 'right', color: c });
     },
   },
   {
@@ -472,7 +529,12 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       });
       p.move(16, -1, 3);
       block(p, [7, 7]);
-      p.move(reach(24, JUMP_VY, 10) - 2, -10, 6).curve({ legs: [straight(70, 6)], ...STD, side: 'left', color: c });
+      p.move(reach(24, JUMP_VY, 10) - 2, -10, 6).curve({
+        legs: [straight(70, 6)],
+        ...STD,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -483,10 +545,19 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [16, 16],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...STD, side: 'right', color: c });
+      // sized (traced): 20 m on and 5–7 across at 32–40 m/s: 0.55–0.6 s flights, 5 m down each,
+      // onto faces 9 m tall at 65° (4.2 m across): a flight a metre wide misses the next one
       p.move(18, -6, 7);
       for (let k = 0; k < 5; k++) {
         const right = k % 2 === 1;
-        p.curve({ lead: k ? 9 : 5, legs: [straight(16, 1)], ...SHORT, side: right ? 'right' : 'left', depth: 0.25, color: c });
+        p.curve({
+          lead: k ? 9 : 5,
+          legs: [straight(16, 1)],
+          ...SHORT,
+          side: right ? 'right' : 'left',
+          depth: 0.25,
+          color: c,
+        });
         p.move(20, -7, right ? 5 : -5);
       }
       p.curve({ lead: 9, legs: [straight(50, 4)], ...STD, side: 'right', color: c });
@@ -500,15 +571,35 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [16, 16],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...STD, side: 'right', color: c });
-      p.move(reach(30, -2, 18), -18, 10).curve({ lead: 10, legs: [straight(45, 3)], ...BROAD, side: 'left', color: c });
-      p.move(reach(30, -2, 18), -18, -10).curve({ lead: 10, legs: [straight(45, 3)], ...BROAD, side: 'right', color: c });
-      p.move(reach(30, -2, 18), -18, 10).curve({ lead: 10, legs: [straight(45, 3)], ...BROAD, side: 'left', color: c });
+      // sized: reach(30, −2, 18) = 42 m on, 18 down (traced: 38–46 m in 1.2–1.3 s at 31–40
+      // m/s: every drop adds 2–3 m/s, so the next one is set further on)
+      p.move(reach(30, -2, 18), -18, 10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'left',
+        color: c,
+      });
+      p.move(reach(30, -2, 18), -18, -10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'right',
+        color: c,
+      });
+      p.move(reach(30, -2, 18), -18, 10).curve({
+        lead: 10,
+        legs: [straight(45, 3)],
+        ...BROAD,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
     n: 10,
     name: 'Over the Top',
-    idea: 'a lip throws you over an A-frame\'s ridge: land on its far face, the one facing away',
+    idea: "a lip throws you over an A-frame's ridge: land on its far face, the one facing away",
     level: 'medium',
     door: [16, 16],
     build: ({ p, c }) => {
@@ -521,7 +612,16 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       });
       // the A-frame's ridge stands 1 m under the release, 10 m to the right: clear it, come down
       // on its right face
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(60, 5)], ...STD, side: 'both', ride: 'right', color: c });
+      // sized (traced): the lip releases at 30 m/s, 9 up, 25 m on and 11 across it lands at the
+      // release's own height: the ridge, 1 m under it, is cleared by about 2 m
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
+        ...STD,
+        side: 'both',
+        ride: 'right',
+        color: c,
+      });
       p.move(16, -5, 9).curve({ legs: [straight(50, 4)], ...STD, side: 'left', color: c });
     },
   },
@@ -569,14 +669,19 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         side: 'right',
         color: c,
       });
+      // sized (traced): the lip releases at 31 m/s, 9.5 up — 2.0 s in the air, 21 m down; the
+      // half circle to the ramp 32 m across is 50 m of flight (1.6 s): time to turn it, not to
+      // dawdle. The post stands inside that circle, 7 m from its middle: cut it short, hit it
       p.red(10, 16, -34, [3, 44, 3]);
-      p.move(6, -20, 32).turn(180).curve({
-        lead: 12,
-        legs: [straight(20, 2), arc(-90, 45, 5), straight(30, 3)],
-        ...MID,
-        side: 'left',
-        color: c,
-      });
+      p.move(6, -20, 32)
+        .turn(180)
+        .curve({
+          lead: 12,
+          legs: [straight(20, 2), arc(-90, 45, 5), straight(30, 3)],
+          ...MID,
+          side: 'left',
+          color: c,
+        });
     },
   },
   {
@@ -591,7 +696,13 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       // the line has come 25.6 m (reach) falling 18 m/s: a descent slope of 0.53, so passing the
       // deck takes 4.5 m along — the hole is 9 m along (±2.2 m of window) and 7 m across
       trapdoor(p, { f: 38, side: 8, v: 34.4, vy: -3.3, h: 8, hole: [7, 9] });
-      p.move(38, -18, 8).curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'left', color: c });
+      p.move(38, -18, 8).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
+        ...MID,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -602,10 +713,20 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [14, 14],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...MID, side: 'right', color: c });
+      // sized (traced): 21–25 m on at 34–40 m/s, 0.62 s in the air, 6 m down onto a face 5 m
+      // tall at 62°: 2.7 m across — the window across is the face; the red below 0.75 of it
       p.move(20, -7, 5);
       for (let k = 0; k < 3; k++) {
         const right = k % 2 === 1;
-        p.curve({ lead: 9, legs: [straight(24, 1.5)], ...NEEDLE, side: right ? 'right' : 'left', depth: 0.3, red: 0.75, color: c });
+        p.curve({
+          lead: 9,
+          legs: [straight(24, 1.5)],
+          ...NEEDLE,
+          side: right ? 'right' : 'left',
+          depth: 0.3,
+          red: 0.75,
+          color: c,
+        });
         p.move(22, -7, right ? 5 : -5);
       }
       p.curve({ lead: 9, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
@@ -618,9 +739,30 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(55, 6), lip(14, 4.5)], ...MID, side: 'right', color: c });
-      p.move(33, 1, 6).curve({ lead: 10, legs: [straight(35, 4), lip(14, 4.5)], ...MID, side: 'left', color: c });
-      p.move(33, 1, -6).curve({ lead: 10, legs: [straight(20, 2), arc(-70, 40, 5), straight(20, 2)], ...MID, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(55, 6), lip(14, 4.5)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the lips release at 29–31 m/s, 11.5 up — 1.0 s in the air, 29–32 m on,
+      // landing 1–1.6 m higher than they left: an up-transfer; a release a tenth slower throws a
+      // tenth lower and shorter, and comes down under the next face
+      p.move(33, 1, 6).curve({
+        lead: 10,
+        legs: [straight(35, 4), lip(14, 4.5)],
+        ...MID,
+        side: 'left',
+        color: c,
+      });
+      p.move(33, 1, -6).curve({
+        lead: 10,
+        legs: [straight(20, 2), arc(-70, 40, 5), straight(20, 2)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -630,7 +772,16 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'hard',
     door: [14, 14],
     build: ({ p, c, wing, deco }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4), lip(12, 3)], ...MID, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4), lip(12, 3)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the lip releases at 31 m/s, 9.5 up — 2.0 s in the air, 65 m on, 22 m
+      // down: the landing is out of sight under the wall's top the whole climb; the beacon stands
+      // over it
       p.wall(16, 0, [36, 12, 2], -14);
       p.move(55, -24, 22).turn(40);
       beacon(deco, p.relP(0, -9, -6), 36, wing.glow);
@@ -646,8 +797,17 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
       p.move(reach(32, -2, 6), -6, 3);
+      // sized (traced): you land at 34 m/s 21 m on; the 7 m ledge and its friction (6/s) bleed
+      // the steady line to 11 m/s by its end (land faster or later and you overshoot the drop),
+      // and it falls 19 m in 1.1 s, 13.5 m on, onto the steep ramp
       p.platform([6, 7], 'strafe', { style: 'plain', centred: true });
-      p.move(10, -18, 3).curve({ lead: 8, legs: [straight(70, 16)], ...MID, side: 'right', color: c });
+      p.move(10, -18, 3).curve({
+        lead: 8,
+        legs: [straight(70, 16)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -658,9 +818,18 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [14, 14],
     build: ({ p, c, wing }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+      // sized: the portal is 14 m on (0.4 s at 33 m/s), its exit 10 m behind, 40 m to the left
+      // and 8 down: a 10 m opening, but where you enter it is where you come out, over a needle
+      // (2.7 m across) — enter off-centre and you miss it
       const exit = p.relP(-10, -40, -8);
       portal(p, 14, 33, -3, exit, 180, [10, 10], { color: wing.glow, glyph: '↺', offset: true });
-      p.move(14, -5).curve({ lead: 10, legs: [straight(30, 3), arc(-90, 35, 4), straight(20, 2)], ...NEEDLE, side: 'right', color: c });
+      p.move(14, -5).curve({
+        lead: 10,
+        legs: [straight(30, 3), arc(-90, 35, 4), straight(20, 2)],
+        ...NEEDLE,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -677,7 +846,15 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         side: 'right',
         color: c,
       });
-      p.move(44, -8, 4).curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'left', color: c });
+      // sized (traced): the lip releases at 29 m/s, 9.4 up — 1.4 s in the air, 41.5 m on; the
+      // scoops before it bleed speed if you ride them high: 3 m/s lost is 4 m short, into the gap
+      p.move(44, -8, 4).curve({
+        lead: 12,
+        legs: [straight(60, 5)],
+        ...MID,
+        side: 'left',
+        color: c,
+      });
     },
   },
   // ---------------------------------------------------------------- extreme (21–30)
@@ -688,14 +865,22 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
       // sized: the release (traced) is 37 m/s falling 2.7 m/s; the block's middle is where that
       // line has come down 6 m (reach), and its top 0.6 m lower still: the line comes down at a
       // slope of 0.34, so it clears the front edge by 0.9 m and lands on the middle
       p.move(reach(34, -3, 6), -6.6, 3);
       block(p, [5, 5]);
       redFloor(p, [16, 16], 4);
-      p.move(22, -6, 26).turn(90).curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'right', color: c });
+      p.move(22, -6, 26)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'right', color: c });
     },
   },
   {
@@ -705,15 +890,44 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(40, 4), lip(12, 3)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
       // sized: as Over the Top (room 10: 26 m on, 6 m down, 14 m across), traced: each lip
       // releases at 31 m/s, 9 m/s up, and clears the next ridge by 2 m; the faces are short (10
       // m at 63°: 5.1 m across) with red from 0.7 down, so a flight that comes down late (too
       // far across) lands in the red, one that comes down early hits the near face. (Hopping
       // back the other way would mean climbing your own face first: it kills the speed.)
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(28, 3), lip(12, 3)], ...TIGHT, side: 'both', ride: 'right', red: 0.7, color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(28, 3), lip(12, 3)], ...TIGHT, side: 'both', ride: 'right', red: 0.7, color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(50, 4)], ...TIGHT, side: 'both', ride: 'right', color: c });
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(28, 3), lip(12, 3)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        red: 0.7,
+        color: c,
+      });
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(28, 3), lip(12, 3)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        red: 0.7,
+        color: c,
+      });
+      p.move(26, -6, 14).curve({
+        lead: 12,
+        legs: [straight(50, 4)],
+        ...TIGHT,
+        side: 'both',
+        ride: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -723,9 +937,26 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 5), lip(14, 4.5, 0.6)], ...TIGHT, side: 'right', color: c });
-      p.move(0, -25, 38).turn(180).curve({ lead: 12, legs: [straight(30, 3)], ...NEEDLE, side: 'left', color: c });
-      p.move(18, -6, -6).curve({ lead: 9, legs: [arc(-90, 28, 4), straight(20, 2)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 5), lip(14, 4.5, 0.6)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the steep lip releases at 32 m/s, 12 up — 2.4 s in the air, 28 m down:
+      // the half circle onto the needle 38 m across, behind and below, is 60 m (1.9 s): turn
+      // it steadily, all the way down
+      p.move(0, -25, 38)
+        .turn(180)
+        .curve({ lead: 12, legs: [straight(30, 3)], ...NEEDLE, side: 'left', color: c });
+      p.move(18, -6, -6).curve({
+        lead: 9,
+        legs: [arc(-90, 28, 4), straight(20, 2)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -735,10 +966,28 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...MID, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(40, 4), lip(12, 3)],
+        ...MID,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): each lip releases at 29–33 m/s, 9–10 up — 1.35–1.4 s in the air, 40–43
+      // m flat, 5–7 m down: the next kicker 30 m on, 26 m across, a quarter turn right
       for (let k = 0; k < 2; k++)
-        p.move(30, -8, 26).turn(90).curve({ lead: 10, legs: [straight(24, 2.5), lip(12, 3)], ...MID, side: 'right', color: c });
-      p.move(30, -8, 26).turn(90).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+        p.move(30, -8, 26)
+          .turn(90)
+          .curve({
+            lead: 10,
+            legs: [straight(24, 2.5), lip(12, 3)],
+            ...MID,
+            side: 'right',
+            color: c,
+          });
+      p.move(30, -8, 26)
+        .turn(90)
+        .curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
     },
   },
   {
@@ -748,16 +997,37 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 3)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(40, 3)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): as Pinball (20 m on, 4 across, 0.5–0.55 s flights at 35–44 m/s) onto
+      // wedges 6 m tall (2.7 m across), under red ceilings 4.2 m over the line: jump high, die
       p.move(18, -6, 6);
       for (let k = 0; k < 6; k++) {
         const right = k % 2 === 1;
         const a = p.pos;
-        p.curve({ lead: k ? 9 : 5, legs: [straight(16, 1)], ...WEDGE, side: right ? 'right' : 'left', depth: 0.25, color: c });
+        p.curve({
+          lead: k ? 9 : 5,
+          legs: [straight(16, 1)],
+          ...WEDGE,
+          side: right ? 'right' : 'left',
+          depth: 0.25,
+          color: c,
+        });
         ceilingOver(p, a, p.pos, 4.2);
         p.move(20, -7, right ? 4 : -4);
       }
-      p.move(0, -1.5).curve({ lead: 9, legs: [straight(50, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(0, -1.5).curve({
+        lead: 9,
+        legs: [straight(50, 4)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -767,9 +1037,30 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
-      p.move(reach(34, -3, 35), -35, 8).curve({ lead: 12, legs: [straight(30, 3), lip(12, 5)], ...NEEDLE, side: 'right', color: c });
-      p.move(32, 1, 8).curve({ lead: 12, legs: [straight(50, 4)], ...TIGHT, side: 'left', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the drop — reach(34, −3, 35) on, 35 m down — is 55 m in 1.5 s; the
+      // needle's lip then throws 35 m/s, 17 up: 1.5 s, 52 m on, landing 3 m higher (an up-transfer
+      // only the speed kept from the drop makes)
+      p.move(reach(34, -3, 35), -35, 8).curve({
+        lead: 12,
+        legs: [straight(30, 3), lip(12, 5)],
+        ...NEEDLE,
+        side: 'right',
+        color: c,
+      });
+      p.move(32, 1, 8).curve({
+        lead: 12,
+        legs: [straight(50, 4)],
+        ...TIGHT,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -779,11 +1070,25 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c, wing, deco }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(10, 3)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(40, 4), lip(10, 3)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the lip releases at 32 m/s, 11 up — 2.0 s in the air, 65 m on, 18 m down
+      // onto a ramp crossing the flight at 60°: flick onto it as you come down by the beacon
       p.wall(14, 0, [36, 12, 2], -13);
       p.move(56, -20, 28).turn(60);
       beacon(deco, p.relP(0, -8, -6), 34, wing.glow);
-      p.curve({ lead: 12, legs: [straight(30, 3), arc(-60, 28, 4), straight(20, 2)], ...TIGHT, side: 'right', color: c });
+      p.curve({
+        lead: 12,
+        legs: [straight(30, 3), arc(-60, 28, 4), straight(20, 2)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
     },
   },
   {
@@ -793,14 +1098,26 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
+      // sized (traced): the first block's middle where the release (37 m/s, falling 3) has come
+      // down 6 m, less 3 m; the jump off it (6.9 up) at 37 m/s turns a quarter left onto the
+      // second, 27 m on, 3 m down, 0.97 s later; its jump turns you a quarter right again, 42 m
+      // on and 14 down onto the ramp
       p.move(reach(34, -3, 6) - 3, -6, 3);
       block(p, [4, 4]);
       redFloor(p, [14, 14], 4);
       p.move(20, -3, -20).turn(-90);
       block(p, [4, 4]);
       redFloor(p, [14, 14], 4);
-      p.move(22, -8, 22).turn(90).curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
+      p.move(22, -8, 22)
+        .turn(90)
+        .curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
     },
   },
   {
@@ -810,7 +1127,13 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c, wing }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(45, 4)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
       const exit = p.relP(20, 30, 6);
       portal(p, 14, 34, -3, exit, 90, [8, 8], { color: wing.glow, glyph: '↱', vertical: 'zero' });
       // sized: out of the portal level at 34 m/s heading west, 8 m down: the pillar's middle is
@@ -819,8 +1142,21 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       p.move(28, -8);
       pillar(p, [4, 4]);
       p.launch(0, -6, 1.3, -30, 0);
-      p.turn(-90).curve({ lead: 12, legs: [straight(40, 4)], ...NEEDLE, side: 'right', red: 0.75, color: c });
-      p.move(18, -6, 6).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
+      p.turn(-90).curve({
+        lead: 12,
+        legs: [straight(40, 4)],
+        ...NEEDLE,
+        side: 'right',
+        red: 0.75,
+        color: c,
+      });
+      p.move(18, -6, 6).curve({
+        lead: 9,
+        legs: [straight(40, 4)],
+        ...TIGHT,
+        side: 'left',
+        color: c,
+      });
     },
   },
   {
@@ -830,7 +1166,13 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(35, 3), straight(30, -8)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({
+        lead: 10,
+        legs: [straight(35, 3), straight(30, -8)],
+        ...TIGHT,
+        side: 'right',
+        color: c,
+      });
       p.move(16, -1, 3);
       block(p, [4, 4]);
       // the flick drops through a trapdoor: sized from the traces, the jump off the block (23.6
@@ -838,13 +1180,39 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
       // m on and 23.5 m left (an early flick 1.5 m nearer the block, a late one 1.5 m past),
       // falling at a slope of 0.83 — 2.9 m along to pass: an 8 m hole leaves the steady lines
       // about a metre either way, and a flick made clearly late (or early) meets the deck
-      trapdoor(p, { f: 26, side: -30, v: 23.6, vy: JUMP_VY, h: 9, hole: [8, 8], around: 9, at: [21.3, -23.5] });
-      p.move(26, -22, -30).turn(-90).curve({ lead: 12, legs: [straight(30, 3)], ...TIGHT, side: 'left', color: c });
+      trapdoor(p, {
+        f: 26,
+        side: -30,
+        v: 23.6,
+        vy: JUMP_VY,
+        h: 9,
+        hole: [8, 8],
+        around: 9,
+        at: [21.3, -23.5],
+      });
+      p.move(26, -22, -30)
+        .turn(-90)
+        .curve({ lead: 12, legs: [straight(30, 3)], ...TIGHT, side: 'left', color: c });
       // then a quarter turn left, the way the face drops (north: the room comes back on
       // itself, 80 m east of its start), onto a ramp met from its low side
-      p.move(14, -10, -14).turn(-90).curve({ lead: 12, legs: [straight(36, 8)], ...TIGHT, side: 'left', color: c });
-      p.move(20, -6, -5).curve({ lead: 9, legs: [straight(30, 4)], ...NEEDLE, side: 'right', depth: 0.3, color: c });
-      p.move(20, -6, 5).curve({ lead: 9, legs: [straight(40, 6)], ...TIGHT, side: 'left', color: c });
+      p.move(14, -10, -14)
+        .turn(-90)
+        .curve({ lead: 12, legs: [straight(36, 8)], ...TIGHT, side: 'left', color: c });
+      p.move(20, -6, -5).curve({
+        lead: 9,
+        legs: [straight(30, 4)],
+        ...NEEDLE,
+        side: 'right',
+        depth: 0.3,
+        color: c,
+      });
+      p.move(20, -6, 5).curve({
+        lead: 9,
+        legs: [straight(40, 6)],
+        ...TIGHT,
+        side: 'left',
+        color: c,
+      });
     },
   },
 ];

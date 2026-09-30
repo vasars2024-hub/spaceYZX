@@ -338,7 +338,9 @@ describe('surf-thirty-doors', () => {
       const heights = new Map<number, number>();
       for (const e of reds) heights.set(e.at[1], (heights.get(e.at[1]) ?? 0) + 1);
       // (a red floor under a block is cut round its stem too: a deck is wider than 20 m)
-      return reds.some((e) => (heights.get(e.at[1]) ?? 0) >= 4 && Math.max(e.size[0], e.size[2]) > 20);
+      return reds.some(
+        (e) => (heights.get(e.at[1]) ?? 0) >= 4 && Math.max(e.size[0], e.size[2]) > 20,
+      );
     });
     expect(decks.map((r) => r.n)).toEqual([14, 30]);
   });
@@ -473,7 +475,9 @@ describe('surf-thirty-doors', () => {
       const radii = curves.flatMap((e) =>
         e.legs.flatMap((l) => (l.turn ? [l.radius ?? 20, l.toRadius ?? l.radius ?? 20] : [])),
       );
-      const blocks = els.flatMap((e) => (e.t === 'jumps' ? e.pads.map((pd) => pd.size?.[0] ?? 5) : []));
+      const blocks = els.flatMap((e) =>
+        e.t === 'jumps' ? e.pads.map((pd) => pd.size?.[0] ?? 5) : [],
+      );
       const red =
         els.filter((e) => e.t === 'red').length +
         curves.filter((e) => e.red !== undefined || e.legs.some((l) => typeof l.red === 'number'))

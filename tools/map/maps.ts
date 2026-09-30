@@ -511,6 +511,73 @@ const orbitalRing = (): MapAnalysisConfig => {
   };
 };
 
+// Sakura Hold: a small castle compound mirrored north ↔ south across z = 40 (Cyan north, Orange
+// south). Coordinates from packages/shared/src/level/maps/sakura-hold.ts (the CARVE plan).
+const sakuraHold = (): MapAnalysisConfig => {
+  const regions: RegionDef[] = [];
+  const rect = (
+    name: string,
+    side: Team | null,
+    lane: string,
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    y0 = -ALL_Y,
+    y1 = ALL_Y,
+  ) => regions.push({ name, side, lane, min: v3(x0, y0, z0), max: v3(x1, y1, z1) });
+  const halves = [
+    { T: 'Cyan', side: 0 as Team, z: (z: number) => z },
+    { T: 'Orange', side: 1 as Team, z: (z: number) => 80 - z },
+  ];
+  const zr = (f: (z: number) => number, a: number, b: number): [number, number] => [
+    Math.min(f(a), f(b)),
+    Math.max(f(a), f(b)),
+  ];
+  // first match wins: the floors under and over the ground come first
+  rect('cellar', null, 'cellar', 18, 62, 13, 67, -ALL_Y, -1.2);
+  rect('keep upper floors and roof', null, 'mid', 33, 47, 33, 47, 2);
+  rect('wall-walk tower room', null, 'west', 3, 15, 33, 47, 1.5);
+  for (const { T, side, z } of halves) {
+    rect(`${T} spawn`, side, 'base', 32, 48, ...zr(z, 3, 10.5));
+    rect(`${T} spawn`, side, 'base', 3, 13, ...zr(z, 3, 10.5));
+    rect(`${T} wall-walk`, side, 'west', 3, 9, ...zr(z, 13, 33), 1.5);
+  }
+  rect('keep ground floor', null, 'mid', 33, 47, 33, 47);
+  rect('B site (storehouse court)', null, 'B', 15, 33, 29, 51);
+  rect('A site (tea garden)', null, 'A', 47, 71, 29, 51);
+  rect('moat water gate', null, 'moat', 71, 78, 33, 47);
+  for (const { T, side, z } of halves) {
+    rect(`${T} garden`, side, 'B', 13, 32, ...zr(z, 2, 11));
+    rect(`${T} east yard`, side, 'A', 48, 78, ...zr(z, 2, 13));
+    rect(`${T} front court`, side, 'mid', 32, 48, ...zr(z, 10.5, 33));
+    rect(`${T} tatami hall`, side, 'B', 15, 32, ...zr(z, 11, 24));
+    rect(`${T} west lane`, side, 'west', 2, 15, ...zr(z, 10.5, 33));
+    rect(`${T} B veranda`, side, 'B', 15, 27, ...zr(z, 24, 29));
+    rect(`${T} tea room`, side, 'A', 48, 58, ...zr(z, 11, 24));
+    rect(`${T} tea corridor`, side, 'A', 58, 64, ...zr(z, 11, 24));
+    rect(`${T} A veranda`, side, 'A', 53, 65, ...zr(z, 24, 29));
+    rect(`${T} moat`, side, 'moat', 70, 78, ...zr(z, 13, 33));
+  }
+  return {
+    id: 'sakura-hold',
+    teamNames: ['Cyan (north)', 'Orange (south)'],
+    regions,
+    baseRegion: ['Cyan spawn', 'Orange spawn'],
+    chokepoints: [],
+    lanes: [],
+    laneLabels: {
+      mid: 'front courts and keep',
+      A: 'A side (tea)',
+      B: 'B side (storehouse)',
+      west: 'west lane and wall-walk',
+      moat: 'moat',
+      cellar: 'cellar',
+      base: 'spawns',
+    },
+  };
+};
+
 // Canyon Relay: outdoor, mirrored north ↔ south across z = 50 (Cyan north, Orange south) and
 // built the same east ↔ west. Coordinates from packages/shared/src/level/maps/canyon-relay.ts (the
 // CANYON_RELAY table and the waypoint names). Its routes are checked against the owner's target
@@ -695,6 +762,7 @@ const CONFIGS: Record<string, () => MapAnalysisConfig> = {
   'split-deck': splitDeck,
   'orbital-ring': orbitalRing,
   'canyon-relay': canyonRelay,
+  'sakura-hold': sakuraHold,
 };
 
 /** Analysis setup for a map id (hand-made when available, otherwise the generic fallback). */

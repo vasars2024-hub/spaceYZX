@@ -9,10 +9,13 @@
 // the keep is a room with narrow slits instead of windows. Ground plan (north half; the south
 // half mirrors it, docs/maps/sakura-hold.md has the full text plan):
 //
-//   POSTERN (x 3..13, z 3..10)      Cyan's side spawn ("postern"): nearer B. Exits: south to the
-//        postern yard (west lane, wall-walk stairs), east into the north garden
-//   GATEHOUSE (x 32..48, z 3..10)   Cyan's main spawn ("gate") with the Tower. Exits: the main
-//        gate under the torii into the front court, side doors to the garden and the east yard
+//   POSTERN (x 3..13, z 3..10)      Cyan's side spawn ("postern"): nearer B and the wall-walk.
+//        A wooden screen (x 10) hides the spawn room; behind it a corridor leads to
+//        the two exits: south into the postern yard (west lane, wall-walk stairs), east into the
+//        north garden
+//   GATEHOUSE (x 32..48, z 3..10)   Cyan's main spawn ("gate") with the Tower. A screen behind
+//        the main gate and one beside each side door hide the spawns; exits: the main gate under
+//        the torii into the front court, side doors (z 8..10) to the garden and the east yard
 //   NORTH GARDEN / EAST YARD        open gardens along the outer wall (blossom trees, lanterns)
 //   FRONT COURT (x 32..48, z 11..24) mid: a shrine stone in the middle, the keep steps south
 //   TATAMI HALL (x 16..30) / TEA ROOM (x 50..57)  roofed, shoji-screened halls beside the front

@@ -33,7 +33,7 @@ import {
   type SimEvent,
   type Vec3,
 } from '../src/index';
-import { buildLeviathan, LEVIATHAN, spineSurfaceY } from '../src/level/maps/leviathan';
+import { buildLeviathan, LEVIATHAN } from '../src/level/maps/leviathan';
 
 // built as the match rooms build a competitive map (with the sky duel arena above it)
 let cached: LevelDef | null = null;
@@ -52,6 +52,8 @@ const standingCapsule = (feet: Vec3) => ({
   radius: 0.4,
 });
 const key = (n: number) => n.toFixed(3);
+const UP = LEVIATHAN.floors.upper;
+const LOW = LEVIATHAN.floors.marrow;
 
 const withBlocked = (d: LevelDef, names: string[]): LevelDef => {
   const blocked = new Set(names.map((n) => wpIndex(d, n)));
@@ -104,6 +106,17 @@ const sameShape = (a: Vec3[], b: Vec3[]) =>
   a.length === b.length &&
   a.every((p) => b.some((q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < 1e-4));
 
+/** a team's camp rectangle (vestibule + spawn room) that holds `p`, if any */
+const campOf = (p: { x: number; z: number }) => {
+  const C = LEVIATHAN.camp;
+  const ax = Math.abs(p.x);
+  const az = Math.abs(p.z);
+  if (ax < C.x[0] - 0.1 || ax > C.x[1] + 0.1) return null;
+  if (az <= C.mid.z + 0.1) return 'heart';
+  if (az >= C.side.d[0] - 0.1 && az <= C.side.d[1] + 0.1) return p.z < 0 ? 'skull' : 'tail';
+  return null;
+};
+
 /** walks a bot toward a waypoint; true once it stands there */
 const botWalk = (
   d: LevelDef,
@@ -132,20 +145,32 @@ const botWalk = (
   return false;
 };
 
+// the waypoints on the mirror line (x = 0) by the part of the body they are in
+const tagged = (names: string[]) => names.flatMap((n) => [`${n}N`, `${n}S`]);
+const CROSSINGS = {
+  heart: ['heart', 'heartN', 'heartS'],
+  throat: tagged(['dThrH', 'thr1', 'thr2', 'thr3', 'thr4', 'dSkull']),
+  spine: tagged(['bal', 'dSpH', 'sp1', 'sp2', 'dsp2', 'sp3', 'sp4', 'dSpSk', 'ledge']),
+  marrow: tagged(['jun', 'foramen', 'pitBot']),
+  skull: ['skSN', 'siteN', 'pitTopN'],
+  tail: ['skSS', 'siteS', 'pitTopS'],
+};
+
 describe('Leviathan map', () => {
-  it('is registered; outdoor under a nebula sky, about 120 × 134 m', () => {
+  it('is registered; outdoor under a nebula sky, about 94 × 136 m', () => {
     const m = MAPS.find((x) => x.id === 'leviathan');
     expect(m).toBeDefined();
     expect(m!.build).toBe(buildLeviathan);
+    expect(m!.symmetric).toBe(true);
     const d = def();
     expect(d.name).toBe('Leviathan');
-    expect(d.boundsMax.x - d.boundsMin.x).toBe(120);
+    expect(d.boundsMax.x - d.boundsMin.x).toBe(94);
     expect(d.boundsMax.z - d.boundsMin.z).toBe(136);
     expect(d.outdoor?.stars).toBe(true);
     expect(d.fog?.color).toBe(d.outdoor?.horizon);
-    // in line with the other maps (they use 550–800)
-    expect(d.boxes.length).toBeGreaterThan(500);
-    expect(d.boxes.length).toBeLessThan(800);
+    // in line with the other maps
+    expect(d.boxes.length).toBeGreaterThan(400);
+    expect(d.boxes.length).toBeLessThan(950);
   });
 
   it('is an exact mirror image across x = 0 (every box, rotated ones included; teams swapped)', () => {
@@ -166,7 +191,8 @@ describe('Leviathan map', () => {
             o.team !== s.team &&
             key(o.pos.x) === key(-s.pos.x) &&
             key(o.pos.z) === key(s.pos.z) &&
-            o.yawDeg === -s.yawDeg,
+            o.yawDeg === -s.yawDeg &&
+            o.group === s.group,
         ),
       ).toBe(true);
     for (const t of d.towers)
@@ -206,79 +232,89 @@ describe('Leviathan map', () => {
     expect(findOverlaps(d).map((o) => describeOverlap(d, o))).toEqual([]);
   });
 
-  it('follows the plan: open floor where the plan has floor', () => {
+  it('follows the plan: three floors, floor where the plan has floor, roofs over the rooms', () => {
     const lv = level();
-    const S = LEVIATHAN.spine;
-    const Y = LEVIATHAN.heart.balconyY;
-    const places: [string, number, number, number][] = [
-      ['camp front corridor', 49.5, 0, 0],
-      ['camp porch', 50, 0, 13.5],
-      ['flank lane', 31, 0, -9],
-      ['flank lane, south', 34, 0, 33],
-      ['rib gap', 23, 0, 8],
-      ['east aisle', 12, 0, -24],
-      ['under the balcony', 6.5, 0, -6.5],
-      ['the power-up, under the heart', 0, 0, 0],
-      ['heart balcony', 7.5, Y, 0],
-      ['heart balcony, north side', 0, Y, -7.5],
-      ['the spine', 1.4, S.y, -8],
-      ['the spine, middle', 0, S.y, 4],
-      ['the neck', 1.5, spineSurfaceY(-30), -30],
-      ['the tail root', 1.5, spineSurfaceY(30), 30],
-      ['the skull, site A', 0, 0, -56],
-      ['jaw grounds', 25, 0, -54],
-      ['tail, site B', 0, 0, 54],
-      ['tail grounds', 17.5, 0, 55],
+    const places: [string, number, number, number, boolean][] = [
+      // name, x, floor y, z, roofed (something solid within 12 m overhead)
+      ['heart camp', 41, 0, 0, true],
+      ['skull camp', 41, 0, -24, true],
+      ['Tower room', 25, 0, 5, true],
+      ['flank, first room', 30.5, 0, -14, true],
+      ['flank, second room', 30.5, 0, -40, true],
+      ['rib hall', 18, 0, 0, true],
+      ['rib gallery 1', 16, 0, -13, true],
+      ['rib gallery 2', 14, 0, -40, true],
+      ['the throat', 0, 0, -20, true],
+      ['the gullet', 0, 0, 34, true],
+      ['the power-up, in the heart', 0, 0, 0, true],
+      ['heart balcony', 0, UP, -6.75, true],
+      ['heart balcony, east', 8.75, UP, 0, true],
+      ['the spine', 0, UP, -22, true],
+      ['the spine, south', 0, UP, 31, true],
+      ['top of the stairs', 6, UP, -42.5, true],
+      ['the brow ledge', 0, UP, -47.5, true],
+      ['the skull, site A', 0, 0, -51.5, true],
+      ['behind the foramen', 5, 0, -65, true],
+      ['the tail, site B', 0, 0, 51.5, true],
+      ['jaw grounds (open to the nebula)', 24, 0, -52, false],
+      ['hip yard (open to the nebula)', 24, 0, 52, false],
+      ['marrow chamber', 0, LOW, -37, true],
+      ['marrow canal', 15, LOW, 38, true],
+      ['marrow elbow', 27, LOW, -30, true],
+      ['foramen tunnel', 0, LOW, -48, true],
     ];
-    for (const [name, x, y, z] of places)
-      for (const xx of [x, -x]) {
+    for (const [name, x, y, z, roofed] of places)
+      for (const xx of x === 0 ? [0] : [x, -x]) {
         expect(raycast(lv, v3(xx, y + 1, z), v3(0, -1, 0), 2)?.point.y, name).toBeCloseTo(y, 3);
         expect(capsuleOverlaps(lv, standingCapsule(v3(xx, y, z))), name).toBe(false);
+        expect(raycast(lv, v3(xx, y + 1, z), v3(0, 1, 0), 12) !== null, name).toBe(roofed);
       }
-    // the spine: 10 m up with nothing overhead
-    expect(raycast(lv, v3(1.4, S.y + 1, -8), v3(0, 1, 0), 50)).toBeNull();
+    // floors stack: the spine over the throat, the throat over the marrow chamber
+    expect(raycast(lv, v3(0, UP + 1, -37), v3(0, -1, 0), 20)?.point.y).toBeCloseTo(UP, 3);
+    expect(raycast(lv, v3(0, 1, -37), v3(0, -1, 0), 20)?.point.y).toBeCloseTo(0, 3);
   });
 
-  it('has 8 valid spawns per team in its camp, Towers in front, sites with floor, the power-up in the heart', () => {
+  it('has 8 valid spawns per team in three sheltered camps, Towers, sites with floor, the power-up in the heart', () => {
     const d = def();
     const lv = level();
-    const R = LEVIATHAN.camp.room;
     for (const team of [0, 1] as const) {
       const spawns = d.spawns.filter((s) => s.team === team);
       expect(spawns.length).toBe(8);
+      const count = (g: string) => spawns.filter((s) => s.group === g).length;
+      expect([count('skull'), count('heart'), count('tail')]).toEqual([3, 2, 3]);
       for (const s of spawns) {
         expect(capsuleOverlaps(lv, standingCapsule(s.pos))).toBe(false);
         expect(
           raycast(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), v3(0, -1, 0), 2)?.point.y,
         ).toBeCloseTo(s.pos.y, 3);
-        const x = team === 0 ? -s.pos.x : s.pos.x;
-        expect(x > R.x0 && x < R.x1 && Math.abs(s.pos.z) < R.z).toBe(true);
-        // facing the map
+        // in its own camp's spawn room, on its team's side, facing the map
+        expect(campOf(s.pos)).toBe(s.group);
+        expect(Math.abs(s.pos.x)).toBeGreaterThan(LEVIATHAN.camp.partition + 1);
+        expect(Math.sign(s.pos.x)).toBe(team === 0 ? -1 : 1);
         expect(Math.sign(s.yawDeg)).toBe(team === 0 ? 1 : -1);
       }
       expect(new Set(spawns.map((s) => `${s.pos.x},${s.pos.z}`)).size).toBe(8);
       const t = d.towers.find((x) => x.team === team)!;
-      expect(t.pos.x).toBe(team === 0 ? -41 : 41);
+      expect(t.pos.x).toBe(team === 0 ? -27 : 27);
       const w = wpPos(d, team === 0 ? 'towerW' : 'towerE');
       expect(Math.hypot(w.x - t.pos.x, w.z - t.pos.z)).toBeLessThan(
         t.radius + defaultConfig().rules.towerTouchRadius + 0.5,
       );
-      expect(d.controllerHomes![team].x).toBe(team === 0 ? -44.5 : 44.5);
     }
     for (const s of d.bombSites!) {
       const c = v3((s.min.x + s.max.x) / 2, s.min.y + 1, (s.min.z + s.max.z) / 2);
       expect(raycast(lv, c, v3(0, -1, 0), 2)?.point.y).toBeCloseTo(s.min.y, 3);
       expect(capsuleOverlaps(lv, standingCapsule(v3(c.x, s.min.y, c.z)))).toBe(false);
+      expect((s.max.x - s.min.x) * (s.max.z - s.min.z)).toBeGreaterThan(120);
     }
     // the power-up floats under the heart (which glows, and doesn't collide)
     expect(d.powerups!.map((p) => [p.x, p.y, p.z])).toEqual([[0, 1, 0]]);
     const heart = d.boxes.filter((b) => b.mat === 'glow' && b.color === 0xd13a7a);
     expect(heart.length).toBeGreaterThanOrEqual(4);
     for (const b of heart) expect(b.noCollide).toBe(true);
-    expect(lineOfSight(lv, v3(0, 1.6, -8), v3(0, 1.6, 8))).toBe(true);
   });
 
-  it('waypoints sit in open space, links are clear, and every one is reachable from both camps', () => {
+  it('waypoints sit in open space, links are clear, and every one is reachable from every spawn', () => {
     const lv = level();
     const wps = lv.def.waypoints!;
     expect(new Set(wps.map((w) => w.name)).size).toBe(wps.length);
@@ -295,60 +331,47 @@ describe('Leviathan map', () => {
       for (const j of w.links)
         expect(lineOfSight(lv, w.pos, wps[j].pos), `link ${w.name} → ${wps[j].name}`).toBe(true);
     }
-    for (const from of ['spawnE', 'spawnW'])
+    // from every spawn (every group of both teams) to every waypoint
+    for (const s of lv.def.spawns) {
+      let from = -1;
+      let best = Infinity;
+      wps.forEach((w, i) => {
+        const dd = Math.hypot(w.pos.x - s.pos.x, w.pos.y - 1 - s.pos.y, w.pos.z - s.pos.z);
+        if (dd < best && lineOfSight(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), w.pos)) {
+          best = dd;
+          from = i;
+        }
+      });
+      expect(best).toBeLessThan(6);
       for (let i = 0; i < wps.length; i++)
-        expect(waypointRoute(wps, wpIndex(lv.def, from), i).length, wps[i].name).toBeGreaterThan(0);
-    // the spine, the neck, the balcony and both sites are on the graph
-    for (const n of [
-      'spineB0E',
-      'spine-4',
-      'neck-26E',
-      'neck26W',
-      'balMidN',
-      'balE',
-      'heart',
-      'siteA',
-      'siteB',
-    ])
-      expect(wpIndex(lv.def, n)).toBeGreaterThanOrEqual(0);
+        expect(waypointRoute(wps, from, i).length, wps[i].name).toBeGreaterThan(0);
+    }
   });
 
-  it('the only ways between the halves: through the nave, the skull, the tail or over the spine', () => {
+  it('the halves meet only in the middle line: heart, throat / gullet, spine, marrow, skull, tail — each one on its own', () => {
     const d = def();
-    const E = wpIndex(d, 'spawnE');
-    const W = wpIndex(d, 'spawnW');
-    const route = (blocked: string[]) => {
-      const dd = withBlocked(d, blocked);
-      return waypointRoute(dd.waypoints!, E, W);
-    };
-    // the central line: everything that joins the east half to the west one
-    const heart = ['heart', 'balMidN', 'balMidS', 'rampN', 'rampS'];
-    const spine = ['spine-20', 'spine-12', 'spine-4', 'spine4', 'spine12', 'spine20'];
-    const skull = ['apron', 'foramen', 'siteA'];
-    const tail = ['siteB'];
-    expect(route([...heart, ...spine, ...skull, ...tail])).toEqual([]);
-    const names = (r: number[]) => r.map((i) => d.waypoints![i].name);
-    expect(names(route([...spine, ...skull, ...tail]))).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^(heart|balMid|ramp)/)]),
-    );
-    expect(names(route([...heart, ...skull, ...tail]))).toEqual(
-      expect.arrayContaining([expect.stringMatching(/^spine/)]),
-    );
-    expect(route([...heart, ...spine, ...tail]).length).toBeGreaterThan(0);
-    expect(route([...heart, ...spine, ...skull]).length).toBeGreaterThan(0);
+    const E = wpIndex(d, 'campME');
+    const W = wpIndex(d, 'campMW');
+    const route = (blocked: string[]) => waypointRoute(withBlocked(d, blocked).waypoints!, E, W);
+    const all = Object.values(CROSSINGS).flat();
+    expect(route(all)).toEqual([]);
+    for (const [name, nodes] of Object.entries(CROSSINGS)) {
+      const keep = new Set(nodes);
+      const r = route(all.filter((n) => !keep.has(n)));
+      expect(r.length, `only through the ${name}`).toBeGreaterThan(0);
+    }
   });
 
   it('keeps every ramp at 30° or less; the only tilted boxes are bone and crystal', () => {
     const d = def();
     const ramps = d.boxes.filter((b) => b.prism !== undefined);
-    // neck, tail root, and the balcony's four ramps
-    expect(ramps.length).toBe(6);
+    // spine stairs (4), flank pits (4), foramen pits (2)
+    expect(ramps.length).toBe(10);
     for (const b of ramps) {
       const deg = (Math.atan2(2 * b.h.y, 2 * b.h.z) * 180) / Math.PI;
       expect(deg).toBeLessThanOrEqual(30);
       expect(deg).toBeGreaterThan(20);
     }
-    // ribs, vault arches, the tail's coil and the heart: rotated, never a slab to walk up
     for (const b of d.boxes.filter((x) => x.q && x.prism === undefined))
       expect(b.mat === 'rock' || b.mat === 'glow', `${b.mat} at ${b.c.x},${b.c.y},${b.c.z}`).toBe(
         true,
@@ -361,33 +384,32 @@ describe('Leviathan map', () => {
       if (b.noCollide || b.q || b.h.x < 0.3 || b.h.z < 0.3) continue;
       const bottom = b.c.y - b.h.y;
       const h = 2 * b.h.y;
-      // things standing on the ground floor or the balcony
-      if (Math.abs(bottom) > 0.01 && Math.abs(bottom - LEVIATHAN.heart.balconyY) > 0.01) continue;
+      // things standing on a floor: the marrow, the ground, the balcony / ledges / spine
+      if (![LOW, 0, UP].some((y) => Math.abs(bottom - y) < 0.01)) continue;
       expect(h <= 1.25 || h >= 2, `${b.mat} at ${b.c.x},${b.c.y},${b.c.z}: ${h} m`).toBe(true);
     }
   });
 
-  it('no spawn is in view from anywhere outside its own hut (every surface, standing or jumping)', () => {
+  it('no spawn is in view from anywhere outside its own camp (every surface, standing or jumping)', () => {
     const lv = level();
     const targets = lv.def.spawns.flatMap((s) => [
       v3(s.pos.x, s.pos.y + 1.6, s.pos.z),
       v3(s.pos.x, s.pos.y + 0.9, s.pos.z),
     ]);
-    const C = LEVIATHAN.camp;
     let samples = 0;
-    for (let x = -59; x <= 59; x += 1.5)
+    for (let x = -46; x <= 46; x += 1.5)
       for (let z = -67; z <= 67; z += 1.5) {
         // every surface in this column, top down
-        let y = 20;
-        for (let guard = 0; guard < 6; guard++) {
-          const hit = raycast(lv, v3(x, y, z), v3(0, -1, 0), y + 2);
-          if (!hit || hit.point.y < -0.5) break;
+        let y = 12.5;
+        for (let guard = 0; guard < 8; guard++) {
+          const hit = raycast(lv, v3(x, y, z), v3(0, -1, 0), y + 8);
+          if (!hit || hit.point.y < LOW - 0.5) break;
           const f = hit.point.y;
           y = f - 0.3;
-          const inHut = Math.abs(x) >= C.x0 - 0.1 && Math.abs(z) <= C.z + 0.1 && f < 3;
-          if (inHut || capsuleOverlaps(lv, standingCapsule(v3(x, f, z)))) continue;
+          if ((campOf({ x, z }) && f < 3) || capsuleOverlaps(lv, standingCapsule(v3(x, f, z))))
+            continue;
           samples++;
-          for (const eye of [1.6, 3.0, 6.0])
+          for (const eye of [1.6, 3.0])
             for (const t of targets)
               expect(
                 lineOfSight(lv, v3(x, f + eye, z), t),
@@ -395,61 +417,63 @@ describe('Leviathan map', () => {
               ).toBe(false);
         }
       }
-    expect(samples).toBeGreaterThan(5000);
+    expect(samples).toBeGreaterThan(3000);
   });
 
-  it('falling off the edge of the fossil kills; standing at its rim does not', () => {
-    const { config, ctx, world } = sim();
-    const faller = addPlayer(world, createPlayer(1, 0, v3(0, 0, 69), 0, config));
-    const stay = addPlayer(world, createPlayer(2, 1, v3(20, 0, 64.5), 0, config));
-    for (let t = 0; t < 120; t++) step(world, {}, ctx);
-    expect(faller.alive).toBe(false);
-    expect(stay.alive).toBe(true);
-    expect(stay.grounded).toBe(true);
+  it('every camp has two ways out (its vestibule has two doors)', () => {
+    const lv = level();
+    const C = LEVIATHAN.camp;
+    const doorsOf = (zs: number[]) =>
+      zs.filter((z) => lineOfSight(lv, v3(C.x[0] + 1, 1.5, z), v3(C.x[0] - 2, 1.5, z))).length;
+    expect(doorsOf([-4.5, 4.5])).toBe(2);
+    expect(doorsOf([-20.5, -29.5])).toBe(2);
+    expect(doorsOf([20.5, 29.5])).toBe(2);
+    expect(doorsOf([0, -24, 24, -12])).toBe(0);
   });
 });
 
 describe('Leviathan bots', () => {
+  const firstOf = (team: 0 | 1, group: string) =>
+    def().spawns.find((sp) => sp.team === team && sp.group === group)!;
+
   it.each([
-    ['the spine (up the neck or the tail root)', 'spine-4'],
-    ['the heart balcony', 'balMidN'],
-    ['the power-up under the heart', 'heart'],
-    ['site A in the skull', 'siteA'],
-    ['site B in the tail', 'siteB'],
-    ['the jaw grounds', 'jawN'],
-  ] as const)('a bot walks from each camp to %s', (_name, goal) => {
+    ['site A in the skull', 'siteN'],
+    ['site B in the tail', 'siteS'],
+  ] as const)('a bot walks from every camp to %s', (_name, goal) => {
+    const d = def();
+    for (const team of [0, 1] as const)
+      for (const group of ['skull', 'heart', 'tail']) {
+        const s = firstOf(team, group);
+        expect(botWalk(d, s.pos, s.yawDeg, team, goal, 40), `${team} ${group}`).toBe(true);
+      }
+  });
+
+  it.each([
+    ['the power-up in the heart', 'heart'],
+    ['the heart balcony (up the spine stairs)', 'balN'],
+    ['the spine', 'sp2S'],
+    ['the brow ledge', 'ledgeN'],
+    ['the marrow chamber', 'junN'],
+    ['the foramen', 'foramenS'],
+  ] as const)('a bot walks from its heart camp to %s', (_name, goal) => {
     const d = def();
     for (const team of [0, 1] as const) {
-      const s = d.spawns.find((sp) => sp.team === team)!;
-      expect(
-        botWalk(
-          d,
-          s.pos,
-          s.yawDeg,
-          team,
-          goal === 'jawN' && team === 0 ? 'jawNW' : goal === 'jawN' ? 'jawNE' : goal,
-          40,
-        ),
-      ).toBe(true);
+      const s = firstOf(team, 'heart');
+      expect(botWalk(d, s.pos, s.yawDeg, team, goal, 40)).toBe(true);
     }
   });
 
-  it('a bot drops off the spine onto the balcony', () => {
+  it('a bot drops off the brow ledge onto the site', () => {
     const d = def();
-    const from = wpPos(d, 'spineB-8E');
-    expect(botWalk(d, v3(from.x, from.y - 1, from.z), 90, 0, 'balNE', 15)).toBe(true);
+    const from = wpPos(d, 'ledgeCNE');
+    expect(botWalk(d, v3(from.x, from.y - 1, from.z), 180, 0, 'siteEN', 15)).toBe(true);
   });
 
   it.each([
     ['whatever way is shortest', []],
-    [
-      'over the spine',
-      ['heart', 'balMidN', 'balMidS', 'rampN', 'rampS', 'apron', 'foramen', 'siteA', 'siteB'],
-    ],
-    [
-      'through the skull',
-      ['heart', 'balMidN', 'balMidS', 'rampN', 'rampS', 'spine-20', 'spine20', 'siteB', 'apron'],
-    ],
+    ['through the marrow', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.marrow.includes(n))],
+    ['over the spine', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.spine.includes(n))],
+    ['through the tail', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.tail.includes(n))],
   ] as [string, string[]][])(
     'a bot carries the Controller to the enemy Tower (%s)',
     (_name, blocked) => {

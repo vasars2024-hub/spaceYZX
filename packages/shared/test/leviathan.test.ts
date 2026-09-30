@@ -466,7 +466,7 @@ describe('Leviathan bots', () => {
   it('a bot drops off the brow ledge onto the site', () => {
     const d = def();
     const from = wpPos(d, 'ledgeCNE');
-    expect(botWalk(d, v3(from.x, from.y - 1, from.z), 180, 0, 'siteEN', 15)).toBe(true);
+    expect(botWalk(d, v3(from.x, from.y - 1, from.z), 180, 0, 'siteENE', 15)).toBe(true);
   });
 
   it.each([

@@ -101,7 +101,7 @@ export const LEVIATHAN = {
   throat: { x: 3, d: [9, 45] },
   spine: { x: 3, y: UP, d: [9, 45], housings: [17, 26, 35] },
   /** the stairs up to the spine, in the second rib gallery */
-  stairs: { x: [4, 8], d: [30, 41] },
+  stairs: { x: [4, 8], d: [30, 40] },
   flank: { x: [22, 32], m: 8, d1: [9, 26], d2: [27, 44] },
   /** the stair pits from the flanks down into the marrow */
   flankPit: { x: [25, 29], d: [15, 24] },
@@ -419,19 +419,19 @@ const buildRooms = (k: Kit): void => {
     vol(-S.x, UP, seg[i], S.x, UP + 3.5, seg[i + 1], SPINE_ROOM);
   door(-2, UP, 8, 2, UP + 3, 9); // spine ↔ heart balcony
   // housings: doors at the sides, then in the middle, then at the sides again
-  door(1.2, UP, 17, 3, UP + 3, 18);
+  door(0.6, UP, 17, 3, UP + 3, 18);
   door(-1.2, UP, 26, 1.2, UP + 3, 27);
-  door(1.2, UP, 35, 3, UP + 3, 36);
+  door(0.6, UP, 35, 3, UP + 3, 36);
   // the rib galleries
   vol(G.x[0], 0, G.d1[0], G.x[1], ROOM, G.d1[1]);
   vol(G.x[0], 0, G.d2[0], G.x[1], ROOM, G.d2[1]);
-  door(3, 0, 13, 4, DOOR, 16); // gallery 1 ↔ throat
-  door(16, 0, 26, 19, DOOR, 27); // gallery 1 ↔ gallery 2
-  door(21, 0, 19, 22, DOOR, 22); // gallery 1 ↔ flank
+  door(3, 0, 12, 4, DOOR, 16.5); // gallery 1 ↔ throat
+  door(15, 0, 26, 20, DOOR, 27); // gallery 1 ↔ gallery 2
+  door(21, 0, 18, 22, DOOR, 23); // gallery 1 ↔ flank
   door(17, 0, 44, 20, DOOR, 45); // gallery 2 ↔ jaw grounds
   // the stairwell up to the spine (in gallery 2) and its door onto the spine
   vol(L.stairs.x[0], 0, L.stairs.d[0], L.stairs.x[1], 9, 44);
-  door(3, UP, 41, 4, UP + 3, 44);
+  door(3, UP, 40.5, 4, UP + 3, 44);
   // the salvage flank
   vol(F.x[0], 0, F.d1[0], F.x[1], ROOM, F.d1[1], SALVAGE);
   vol(F.x[0], 0, F.d2[0], F.x[1], ROOM, F.d2[1], SALVAGE);
@@ -483,7 +483,7 @@ const buildRamps = (k: Kit): void => {
   const bone = { mat: 'rock' as Material, color: BONE_DARK };
   const marrow = { mat: 'rock' as Material, color: MARROW_FLOOR };
   for (const sz of [-1, 1]) {
-    // the stairs: from the gallery floor up to the landing (11 m run, 26.6°)
+    // the stairs: from the gallery floor up to the landing (10 m run, 28.8°)
     const [x0, x1] = L.stairs.x;
     for (const s of [1, -1]) {
       const cx = (s * (x0 + x1)) / 2;
@@ -869,8 +869,8 @@ const waypoints = (): WaypointDef[] => {
     at('g2a', 14, 0, 30);
     at('g2b', 14, 0, 40);
     at('stairBot', 6, 0, 28.5);
-    at('stairTop', 6, UP, 42.5);
-    at('dSpSt', 3.5, UP, 42.5);
+    at('stairTop', 6.5, UP, 42.2);
+    at('dSpSt', 3.5, UP, 42.2);
     // the throat
     at('thr1', 0, 0, 14.5);
     at('thr2', 0, 0, 20);
@@ -880,12 +880,14 @@ const waypoints = (): WaypointDef[] => {
     at('dSkull', 0, 0, 45.5);
     // the spine
     at('sp1', 0, UP, 13);
-    at('dsp1', 2.1, UP, 17.5);
+    at('dsp1a', 1.8, UP, 15.8);
+    at('dsp1b', 1.8, UP, 19.2);
     at('sp2', 0, UP, 22);
     at('dsp2', 0, UP, 26.5);
     at('sp3', 0, UP, 31);
-    at('dsp3', 2.1, UP, 35.5);
-    at('sp4', 0, UP, 40);
+    at('dsp3a', 1.8, UP, 33.8);
+    at('dsp3b', 1.8, UP, 37.2);
+    at('sp4', 0, UP, 41.5);
     at('dSpSk', 0, UP, 45.5);
     at('ledge', 0, UP, 47.5);
     at('ledgeC', 3, UP, 48.4);
@@ -931,11 +933,13 @@ const waypoints = (): WaypointDef[] => {
       'bal',
       'dSpH',
       'sp1',
-      'dsp1',
+      'dsp1a',
+      'dsp1b',
       'sp2',
       'dsp2',
       'sp3',
-      'dsp3',
+      'dsp3a',
+      'dsp3b',
       'sp4',
       'dSpSk',
       'ledge',
@@ -993,7 +997,7 @@ const waypoints = (): WaypointDef[] => {
     // gallery 1
     c('g1a', 'g1b', 'g1d', 'dG12');
     c('g1a', 'g1c', 'dThrG1', 'thr1');
-    link(n('dThrG1'), n('thr2'));
+
   }
   return wps;
 };

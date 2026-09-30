@@ -32,6 +32,8 @@ const ACTIONS: [string, string][] = [
   ['chatAll', 'All chat (online)'],
   ['voiceTeam', 'Push to talk: team (online)'],
   ['voiceAll', 'Push to talk: everyone (online)'],
+  ['bigMap', 'Big map (hold)'],
+  ['routeSite', 'Route: switch bomb site (A / B)'],
 ];
 
 /** Friendly names for key codes. */
@@ -127,6 +129,40 @@ export const settingsScreen = (
       s.cameraRotation,
       (v) => {
         s.cameraRotation = v;
+        apply();
+      },
+    ),
+    toggle('Minimap', s.minimap, (v) => {
+      s.minimap = v;
+      apply();
+    }),
+    toggle('Minimap turns with you (off: north stays up)', s.minimapRotate, (v) => {
+      s.minimapRotate = v;
+      apply();
+    }),
+    select<Settings['minimapSize']>(
+      'Minimap size',
+      [
+        ['small', 'Small'],
+        ['medium', 'Medium'],
+        ['large', 'Large'],
+      ],
+      s.minimapSize,
+      (v) => {
+        s.minimapSize = v;
+        apply();
+      },
+    ),
+    select<Settings['routeGuide']>(
+      'Route to your objective (red and white guide line)',
+      [
+        ['world', 'On the minimap and in the world'],
+        ['map', 'On the minimap only'],
+        ['off', 'Off'],
+      ],
+      s.routeGuide,
+      (v) => {
+        s.routeGuide = v;
         apply();
       },
     ),

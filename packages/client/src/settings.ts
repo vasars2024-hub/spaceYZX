@@ -28,6 +28,13 @@ export interface Settings {
   effects: 'full' | 'reduced' | 'minimal';
   /** show sounds as on-screen direction indicators (play without sound / headphones) */
   soundVisualizer: boolean;
+  /** the minimap in the corner (hold the big-map key for the whole map) */
+  minimap: boolean;
+  /** the minimap turns with you (your view is always up) or keeps north up */
+  minimapRotate: boolean;
+  minimapSize: 'small' | 'medium' | 'large';
+  /** the route to your objective: off, on the minimap, or on the minimap and in the world */
+  routeGuide: 'off' | 'map' | 'world';
   throwPreview: boolean;
   throwPreviewOpacity: number;
   crosshair: CrosshairSettings;
@@ -89,6 +96,8 @@ export const DEFAULT_KEYBINDS: Record<string, string[]> = {
   chatAll: ['KeyY'],
   voiceTeam: ['KeyV'],
   voiceAll: ['KeyB'],
+  bigMap: ['KeyM'],
+  routeSite: ['KeyX'],
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,6 +121,10 @@ export const DEFAULT_SETTINGS: Settings = {
   screenShake: true,
   effects: 'reduced',
   soundVisualizer: false,
+  minimap: true,
+  minimapRotate: true,
+  minimapSize: 'medium',
+  routeGuide: 'world',
   throwPreview: true,
   throwPreviewOpacity: 0.8,
   crosshair: { style: 'cross', color: '#e8fbff', size: 7, gap: 4, thickness: 2, outline: true },
@@ -162,6 +175,8 @@ export const loadSettings = (): Settings => {
     // and in a 5v5 it's a lot; switch it off once (players can turn it back on)
     if (parsed.effects === undefined) s.soundVisualizer = false;
     if (!['full', 'reduced', 'minimal'].includes(s.effects)) s.effects = 'reduced';
+    if (!['small', 'medium', 'large'].includes(s.minimapSize)) s.minimapSize = 'medium';
+    if (!['off', 'map', 'world'].includes(s.routeGuide)) s.routeGuide = 'world';
     // fairness: brightness can't be pushed past the cap by editing storage
     s.brightness = Math.min(1.2, Math.max(0.8, Number(s.brightness) || 1));
     s.renderScale = Math.min(1, Math.max(0.5, Number(s.renderScale) || 1));

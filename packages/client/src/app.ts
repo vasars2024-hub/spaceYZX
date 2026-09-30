@@ -64,6 +64,7 @@ import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
 import { ChatFeature } from './game/chat-feature';
 import { SoundRadar } from './game/sound-radar';
+import { Minimap } from './game/minimap';
 import { WorldMarkers } from './game/world-markers';
 import {
   DynamicResolution,
@@ -544,6 +545,8 @@ export class App {
     // name tags and objective markers in every mode (teammates exist outside matches too)
     client.addFeature(new WorldMarkers());
     client.addFeature(new SoundRadar(() => this.settings.soundVisualizer));
+    // the minimap and the big map, with the route to your objective (every map and mode)
+    client.addFeature(new Minimap(() => this.settings));
     // phones: on-screen controls (added last: they sit on top of the HUD)
     if (this.mobile)
       client.addFeature(

@@ -1,6 +1,8 @@
-// Antipode: two decks facing each other across a zero-G Seam (level/maps/antipode.ts). Checks the
-// half-turn symmetry, the plan, spawns (the ceiling team spawns upside down), objectives, the bot
-// graph, and steps the sim through every way across: the Seam, the Spindle, the stairwells.
+// Antipode: two decks facing each other across a zero-G Seam (level/maps/antipode.ts), each deck
+// rooms and corridors, the bomb sites on the north hull wall, flank tunnels on the south one.
+// Checks the half-turn symmetry, the plan, spawns (two detached groups a team; the ceiling team
+// spawns upside down), objectives, the bot graph, and steps the sim through every way across:
+// the launch pads, the Seam, the Spindle, the site rooms, the junction hall, the tunnels.
 import { describe, expect, it } from 'vitest';
 import {
   addPlayer,
@@ -52,6 +54,7 @@ import {
 } from '../src/index';
 import {
   ANTIPODE,
+  ANTIPODE_FLOOR,
   ANTIPODE_HANG,
   ANTIPODE_TURN,
   antipodeImage,
@@ -224,62 +227,69 @@ describe('Antipode: the map', () => {
     expect(findOverlaps(d).map((o) => describeOverlap(d, o))).toEqual([]);
   });
 
-  it('follows the plan: floor (and ceiling) where the plan has it', () => {
+  it('follows the plan: rooms on each deck, closed off from the Seam but for the well', () => {
     const lv = level();
-    const G = A.gantry;
-    const places: [string, number, number, number][] = [
-      ['bastion, spawns', -56, 0, 0],
-      ['bastion, vestibule', -45.5, 0, 0],
-      ['yard', -38, 0, 9],
-      ['floor deck, middle', -12, 0, -4],
-      ['west launch gantry', -14, G.top, 12],
-      ['east launch gantry', 14, G.top, 12],
-      ['west gantry ramp', -23, (6.2 * G.top) / 12.2, 12],
-      ['south catwalk', -30, 3.5, -21.5],
-      ['north catwalk', 30, 3.5, 21.5],
-      ['site A', 51, 0, 0],
-      ['glass floor', -24, 0, 18],
-      ['north stairwell, by its floor door', -30.5, 0, 27],
-      ['south stairwell, by its floor door', 30.5, 0, -27],
+    const F = ANTIPODE_FLOOR;
+    // every room / corridor of the plan has floor at its middle (and its twin has ceiling)
+    const places: [string, number, number][] = [
+      ['bastion, by the Tower', -50, 0],
+      ['quarters, the bunks', -45, -21],
+      ['north passage', -42, 13],
+      ['south passage', -42, -13],
+      ['home hall', -32, -4],
+      ['B lobby', -38, 20],
+      ['tunnel lobby (west)', -28, -22],
+      ['north gallery', -20, 21],
+      ['junction corridor', -3, 16],
+      ['south gallery', -18, -20],
+      ['the well', -8, 3],
+      ['east hall', 32, -2],
+      ['A lobby', 31, 22],
+      ['tunnel lobby (east)', 26, -21],
+      ['north-east gallery', 20, 21],
+      ['south-east gallery', 18, -20],
     ];
-    for (const [name, x, y, z] of places) {
-      const p = v3(x, y, z);
-      const hit = raycast(lv, v3(x, y + 1, z), DOWN, 2);
-      expect(hit?.point.y, name).toBeCloseTo(y, 2);
-      // (a hair above it: on the ramp the body stands a touch off the slope)
-      expect(capsuleOverlaps(lv, standing(v3(x, y + 0.1, z))), name).toBe(false);
-      // the same place on the ceiling deck, upside down
-      const q = antipodeImage(p);
-      const up = raycast(lv, v3(q.x, q.y - 1, q.z), UP, 2);
-      expect(up?.point.y, `${name} (ceiling)`).toBeCloseTo(q.y, 2);
+    for (const [name, x, z] of places) {
       expect(
-        capsuleOverlaps(lv, {
-          center: v3(q.x, q.y - 1.01, q.z),
-          up: UP,
-          halfSeg: 0.5,
-          radius: 0.4,
-        }),
-        `${name} (ceiling)`,
-      ).toBe(false);
+        Object.values(F).some(([x0, x1, z0, z1]) => x > x0 && x < x1 && z > z0 && z < z1),
+        `${name} in the plan`,
+      ).toBe(true);
+      const hit = raycast(lv, v3(x, 1, z), DOWN, 2);
+      expect(hit?.point.y, name).toBeCloseTo(0, 2);
+      expect(capsuleOverlaps(lv, standing(v3(x, 0.02, z))), name).toBe(false);
+      // a roof over it (the deck house), except over the well
+      const roof = raycast(lv, v3(x, 1, z), UP, 20);
+      if (name === 'the well') expect(roof).toBeNull();
+      else expect(roof?.point.y, `${name}: roof`).toBeCloseTo(A.roof, 2);
+      const q = antipodeImage(v3(x, 0, z));
+      expect(raycast(lv, v3(q.x, q.y - 1, q.z), UP, 2)?.point.y, `${name} (ceiling)`).toBeCloseTo(
+        H,
+        2,
+      );
     }
-    // the Seam is open between the decks (you see the other deck overhead) except for the
-    // Spindle, the gantry stacks and the drifting cargo
-    expect(lineOfSight(lv, v3(-30, 1.6, 0), v3(-30, H - 1.6, 0))).toBe(true);
-    expect(lineOfSight(lv, v3(-20, 1.6, 10), v3(-20, H - 1.6, -10))).toBe(true);
+    // the decks see each other only through the well
+    expect(lineOfSight(lv, v3(-10, 1.6, 8), v3(-10, H - 1.6, 8))).toBe(true);
+    expect(lineOfSight(lv, v3(-30, 1.6, 0), v3(-30, H - 1.6, 0))).toBe(false);
+    expect(lineOfSight(lv, v3(-18, 1.6, 0), v3(18, H - 1.6, 0))).toBe(false);
     expect(lineOfSight(lv, v3(-10, 10, 0), v3(10, 10, 0))).toBe(false); // the Spindle
-    // each launch gantry stands right under one of the other deck's gantries
-    for (const x of [-14, 14]) {
-      const hit = raycast(lv, v3(x, G.top + 1, 12), UP, H);
-      expect(hit?.point.y).toBeCloseTo(H - G.top, 2);
-    }
+    // the rooms are shut from each other by walls: the bastion never sees the home hall's far
+    // end, the galleries never see the Seam
+    expect(lineOfSight(lv, v3(-50, 1.6, 0), v3(-24, 1.6, 0))).toBe(false);
+    expect(lineOfSight(lv, v3(-15, 1.6, 21), v3(-15, 12, 15))).toBe(false);
+    // the side planes are closed rooms and tunnels, not an open band along the hull
+    expect(lineOfSight(lv, v3(-31, 7, 29.4), v3(31, 7, 29.4))).toBe(false);
+    expect(lineOfSight(lv, v3(-31, 7, 29.4), v3(0, 7, 29.4))).toBe(false);
+    // the tunnels' baffles: no lane down the whole bar
+    for (const y of [7.6, 9, 10.4])
+      expect(lineOfSight(lv, v3(-26, y, -29.4), v3(26, y, -29.4)), `bar at y ${y}`).toBe(false);
   });
 
-  it('has its gravity: down on the floor deck, zero-G in the Seam, up on the ceiling deck, into the Spindle and the stairwell walls', () => {
+  it('has its gravity: floor deck, the Seam, ceiling deck, the Spindle, the side planes', () => {
     const { ctx, world } = sim();
     const g = (x: number, y: number, z: number) => gravityDirAt(ctx, world, v3(x, y, z));
     expect(g(-30, 1, 0)).toEqual(v3(0, -1, 0));
     expect(g(-30, 7.9, 0)).toEqual(v3(0, -1, 0));
-    for (const y of [8.1, 12, 14, 16, 19.9]) expect(len(g(-30, y, 0)), `y ${y}`).toBe(0);
+    for (const y of [8.1, 12, 14, 16, 19.9]) expect(len(g(-10, y, 8)), `y ${y}`).toBe(0);
     expect(g(30, 20.1, 0)).toEqual(v3(0, 1, 0));
     expect(g(30, 27, 0)).toEqual(v3(0, 1, 0));
     // the Spindle's grooves pull into their faces all the way up (through the Seam)
@@ -289,16 +299,34 @@ describe('Antipode: the map', () => {
       expect(g(0, y, 5), `+z groove y ${y}`).toEqual(v3(0, 0, -1));
       expect(g(0, y, -5), `-z groove y ${y}`).toEqual(v3(0, 0, 1));
     }
-    // (but not the floor in front of a groove, where you walk in)
-    expect(g(-5, 1, 0)).toEqual(v3(0, -1, 0));
     expect(g(-8, 1, 0)).toEqual(v3(0, -1, 0));
-    // the stairwells pull into their outer walls, except by the doors (floor / ceiling)
-    expect(g(0, 14, 28)).toEqual(v3(0, 0, 1));
-    expect(g(0, 14, -28)).toEqual(v3(0, 0, -1));
-    expect(g(-30.5, 1, 27)).toEqual(v3(0, -1, 0));
-    expect(g(30.5, 27, 27)).toEqual(v3(0, 1, 0));
-    expect(g(30.5, 1, -27)).toEqual(v3(0, -1, 0));
-    expect(g(-30.5, 27, -27)).toEqual(v3(0, 1, 0));
+    // the side planes pull into the hull walls (the sites' rooms, the junction, the tunnels)
+    for (const [x, y] of [
+      [-31, 7],
+      [-31, 21],
+      [31, 14],
+      [0, 7],
+      [-14, 14],
+    ])
+      expect(g(x, y, 28), `north ${x},${y}`).toEqual(v3(0, 0, 1));
+    for (const [x, y] of [
+      [-28, 5],
+      [-10, 9],
+      [0, 14],
+      [10, 19],
+    ])
+      expect(g(x, y, -28), `south ${x},${y}`).toEqual(v3(0, 0, -1));
+    // inside each deck door the floor (ceiling) keeps its gravity until the fillet
+    for (const [x, z] of [
+      [-31, 26],
+      [-3, 26],
+      [31, 26],
+      [-28, -26],
+      [28, -26],
+    ]) {
+      expect(g(x, 1, z), `door ${x},${z}`).toEqual(v3(0, -1, 0));
+      expect(g(-x, 27, z), `door ${-x},${z} (ceiling)`).toEqual(v3(0, 1, 0));
+    }
   });
 
   it('keeps ramps at 30° or less; the 45° fillets only sit across a gravity bend', () => {
@@ -306,7 +334,6 @@ describe('Antipode: the map', () => {
     const { ctx, world } = sim();
     const turned = d.boxes.filter((b) => (b.q || b.prism !== undefined) && !b.noCollide);
     let fillets = 0;
-    let ramps = 0;
     for (const b of turned) {
       // drifting cargo in the Seam: nobody stands on it
       if (b.prism === undefined) {
@@ -314,16 +341,11 @@ describe('Antipode: the map', () => {
         expect(len(gravityDirAt(ctx, world, b.c))).toBe(0);
         continue;
       }
-      // the prism's slanted face: its outward normal in the world (level/level.ts prismShape)
       const n = normalize(qRotate(b.q!, v3(0, b.h.z, -b.prism * b.h.y)));
       const up = deckUp(b.c);
       const slope =
         (Math.acos(Math.min(1, Math.abs(n.x * up.x + n.y * up.y + n.z * up.z))) * 180) / Math.PI;
-      if (slope <= 30.01) {
-        ramps++;
-        continue;
-      }
-      // a fillet: 45°, and gravity just off its face (either side of the bend) is 45° to it
+      if (slope <= 30.01) continue;
       expect(slope, `prism at ${vkey(b.c)}`).toBeCloseTo(45, 3);
       fillets++;
       const out = v3(b.c.x + n.x * 1.2, b.c.y + n.y * 1.2, b.c.z + n.z * 1.2);
@@ -331,9 +353,8 @@ describe('Antipode: the map', () => {
       const cos = -(gdir.x * n.x + gdir.y * n.y + gdir.z * n.z);
       expect(cos, `fillet at ${vkey(b.c)}`).toBeGreaterThan(Math.cos((50 * Math.PI) / 180));
     }
-    // 4 grooves + 2 stairwells, on both decks; 2 gantry ramps + 2 catwalk ramps per deck
-    expect(fillets).toBe(12);
-    expect(ramps).toBe(8);
+    // 4 grooves + 5 side-plane doors, on both decks
+    expect(fillets).toBe(18);
   });
 
   it('keeps cover half (≤ 1.25 m) or full (≥ 2 m) on the floor deck', () => {
@@ -351,68 +372,89 @@ describe('Antipode: the map', () => {
 });
 
 describe('Antipode: spawns and objectives', () => {
-  it('has 8 spawns per team in its bastion: cyan standing on the floor, orange hanging from the ceiling', () => {
+  /** a spawn group's room (cyan's; orange's is its image) */
+  const ROOMS: Record<string, [number, number, number, number]> = {
+    bastion: [A.bastion.x0, A.bastion.x1, -A.bastion.z, A.bastion.z],
+    quarters: [A.quarters.x0, A.quarters.x1, A.quarters.z0, A.quarters.z1],
+  };
+  const inRoom = (p: Vec3, pad: number) =>
+    Object.values(ROOMS).some(([x0, x1, z0, z1]) => {
+      const inside = (q: Vec3) =>
+        q.x > x0 - pad && q.x < x1 + pad && q.z > z0 - pad && q.z < z1 + pad;
+      return (p.y < A.roof + 1 && inside(p)) || (p.y > H - A.roof - 1 && inside(antipodeImage(p)));
+    });
+
+  it('has 8 spawns per team in two detached groups: cyan standing on the floor, orange hanging from the ceiling', () => {
     const d = def();
     const lv = level();
-    const B = A.bastion;
     for (const team of [0, 1] as const) {
       const spawns = d.spawns.filter((s) => s.team === team);
       expect(spawns.length).toBe(8);
+      const groups = new Map<string, number>();
+      for (const s of spawns) groups.set(s.group!, (groups.get(s.group!) ?? 0) + 1);
+      expect([...groups.entries()].sort()).toEqual([
+        ['bastion', 4],
+        ['quarters', 4],
+      ]);
       for (const s of spawns) {
-        // the upright body createPlayer puts there is clear
         expect(capsuleOverlaps(lv, standing(s.pos)), vkey(s.pos)).toBe(false);
-        const x = team === 0 ? s.pos.x : -s.pos.x;
-        expect(x > B.x0 && x < B.blastX && Math.abs(s.pos.z) < B.z).toBe(true);
+        // in its group's room
+        const cyan = team === 0 ? s.pos : antipodeImage(v3(s.pos.x, s.pos.y + ANTIPODE_HANG, s.pos.z));
+        const [x0, x1, z0, z1] = ROOMS[s.group!];
+        expect(cyan.x > x0 && cyan.x < x1 && cyan.z > z0 && cyan.z < z1, vkey(s.pos)).toBe(true);
         if (team === 0) {
           expect(raycast(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), DOWN, 2)?.point.y).toBeCloseTo(
             0,
             3,
           );
-          expect(s.yawDeg).toBe(-90); // facing +x
+          expect(s.yawDeg).toBe(-90);
         } else {
-          // its head just under the ceiling: after the turn its feet stand there
           expect(s.pos.y + ANTIPODE_HANG).toBeCloseTo(H, 6);
           const hit = raycast(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), UP, 2);
           expect(hit?.point.y).toBeCloseTo(H, 3);
-          expect(s.yawDeg).toBe(90); // facing -x
+          expect(s.yawDeg).toBe(90);
         }
       }
     }
   });
 
-  it('no spawn is in view from outside its bastion (both decks, the Seam, gantries, catwalks, roofs, stairwells)', () => {
+  it('each spawn room has two ways out (either door alone leads to the whole map)', () => {
+    const d = def();
+    const exits: [string, string, string[]][] = [
+      ['bastion', 'home.spN', ['home.doorN', 'home.doorS']],
+      ['quarters', 'q.sp', ['q.door', 'q.edoor']],
+    ];
+    for (const [room, from, doors] of exits)
+      for (const shut of doors) {
+        const dd = withBlocked(d, [shut]);
+        const wps = dd.waypoints!;
+        // (the other door still reaches the enemy's Tower on the other deck)
+        expect(
+          waypointRoute(wps, wpIndex(dd, from), wpIndex(dd, '~home.tower')).length,
+          `${room} with ${shut} shut`,
+        ).toBeGreaterThan(0);
+      }
+  });
+
+  it('no spawn is in view from outside its room (both decks, the Seam, the side planes)', () => {
     const d = def();
     const lv = level();
-    const B = A.bastion;
-    const inBastion = (p: Vec3) =>
-      (p.x < B.x1 + 1 && Math.abs(p.z) < B.z + 1 && p.y < B.h + 1) ||
-      (p.x > -B.x1 - 1 && Math.abs(p.z) < B.z + 1 && p.y > H - B.h - 1);
     const lookouts: Vec3[] = [];
     const add = (p: Vec3) => {
-      if (inBastion(p)) return;
+      if (inRoom(p, 1)) return;
       if (capsuleOverlaps(lv, { center: p, up: UP, halfSeg: 0, radius: 0.2 })) return;
       lookouts.push(p);
     };
     for (let x = -59; x <= 59; x += 2.5)
-      for (let z = -23; z <= 23; z += 2.5)
-        for (const y of [1.0, 1.6, 7.6, 10, 14, 18, 20.4, H - 1.6, H - 1.0]) add(v3(x, y, z));
-    // gantry decks and catwalks (eye height above them), both decks
-    for (const p of [
-      v3(-14, A.gantry.top + 1.6, 12),
-      v3(14, A.gantry.top + 1.6, 12),
-      v3(-30, 5.1, -21.5),
-      v3(30, 5.1, 21.5),
-    ]) {
-      add(p);
-      add(antipodeImage(p));
-    }
-    // the stairwells
-    for (let x = -35; x <= 35; x += 3)
-      for (let y = 1; y < H; y += 2.5)
-        for (const z of [26, 28, 30, -26, -28, -30]) add(v3(x, y, z));
+      for (let z = -23.5; z <= 23.5; z += 2.5)
+        for (const y of [1.0, 1.6, 4, 10, 14, 18, H - 4, H - 1.6, H - 1.0]) add(v3(x, y, z));
+    // the side planes (a body on the hull wall: eyes 1.6 m off it)
+    for (let x = -59; x <= 59; x += 2.5)
+      for (let y = 1; y < H; y += 2)
+        for (const z of [25.8, 28, 29.4, -25.8, -28, -29.4]) add(v3(x, y, z));
     expect(lookouts.length).toBeGreaterThan(3000);
     for (const s of d.spawns) {
-      const u = s.team === 0 ? UP : DOWN; // the body once it stands
+      const u = s.team === 0 ? UP : DOWN;
       const feet = s.team === 0 ? s.pos : v3(s.pos.x, H, s.pos.z);
       const pts = [0.3, 1.0, 1.6].map((h) => v3(feet.x, feet.y + u.y * h, feet.z));
       for (const l of lookouts)
@@ -427,13 +469,11 @@ describe('Antipode: spawns and objectives', () => {
     const config = defaultConfig();
     const reach = (t: { radius: number }) => t.radius + config.rules.towerTouchRadius;
     for (const t of d.towers) {
-      // a waypoint where a carrier touches it (in the rules' touch volume)
       const w = wpPos(d, t.team === 0 ? 'home.tower' : '~home.tower');
       expect(Math.hypot(w.x - t.pos.x, w.z - t.pos.z)).toBeLessThan(reach(t) - 0.3);
       const bodyY = t.team === 0 ? 0.91 : H - 0.91;
       expect(bodyY - t.pos.y).toBeGreaterThanOrEqual(-1);
       expect(bodyY - t.pos.y).toBeLessThanOrEqual(t.height + 2);
-      // its block stands on (hangs from) its deck
       const block = raycast(
         lv,
         v3(t.pos.x + 3, t.team === 0 ? 1 : H - 1, t.pos.z),
@@ -444,23 +484,28 @@ describe('Antipode: spawns and objectives', () => {
     }
     for (const h of d.controllerHomes!)
       expect(capsuleOverlaps(lv, { center: h, up: UP, halfSeg: 0.5, radius: 0.4 })).toBe(false);
-    // site A on the floor deck in orange's half, B on the ceiling deck in cyan's half
+    // the sites: rooms on the north hull wall, halfway between the decks (A in orange's half
+    // of the hull, B in cyan's); a planter stands on the wall
     const sA = d.bombSites!.find((s) => s.name === 'A')!;
     const sB = d.bombSites!.find((s) => s.name === 'B')!;
     expect(sA.min.x).toBeGreaterThan(0);
-    expect(sA.min.y).toBe(0);
     expect(sB.max.x).toBeLessThan(0);
-    expect(sB.max.y).toBe(H);
-    const cA = v3((sA.min.x + sA.max.x) / 2, 0, (sA.min.z + sA.max.z) / 2);
-    expect(raycast(lv, v3(cA.x, 1, cA.z), DOWN, 2)?.point.y).toBeCloseTo(0, 3);
-    expect(capsuleOverlaps(lv, standing(cA))).toBe(false);
-    expect(siteAt(d.bombSites!, v3(cA.x, 0.91, cA.z))).toBe('A');
-    const cB = antipodeImage(cA);
-    expect(raycast(lv, v3(cB.x, H - 1, cB.z), UP, 2)?.point.y).toBeCloseTo(H, 3);
-    // a planter standing on the ceiling is in site B (and nobody on the floor under it is)
-    expect(siteAt(d.bombSites!, v3(cB.x, H - 0.91, cB.z))).toBe('B');
-    expect(siteAt(d.bombSites!, v3(cB.x, 0.91, cB.z))).toBeNull();
-    // power-ups: at the Spindle's middle, in the ±z grooves, in open space
+    for (const s of [sA, sB]) {
+      expect(s.min.z).toBeGreaterThanOrEqual(A.plane.z0);
+      expect(s.max.x - s.min.x).toBeGreaterThanOrEqual(10);
+      expect(s.max.y - s.min.y).toBeGreaterThanOrEqual(10);
+      const c = v3((s.min.x + s.max.x) / 2, (s.min.y + s.max.y) / 2, A.plane.z1);
+      // wall to stand on, room to stand
+      expect(raycast(lv, v3(c.x, c.y, c.z - 1), v3(0, 0, 1), 2)?.point.z).toBeCloseTo(c.z, 3);
+      const body = v3(c.x, c.y + 2, c.z - 0.91);
+      expect(
+        capsuleOverlaps(lv, { center: body, up: v3(0, 0, -1), halfSeg: 0.5, radius: 0.4 }),
+      ).toBe(false);
+      expect(siteAt(d.bombSites!, body)).toBe(s.name);
+      // nobody on either deck is in a site
+      expect(siteAt(d.bombSites!, v3(c.x, 0.91, 20))).toBeNull();
+      expect(siteAt(d.bombSites!, v3(c.x, H - 0.91, 20))).toBeNull();
+    }
     expect(d.powerups).toEqual(A.powerups);
     for (const p of d.powerups!) {
       expect(p.y).toBe(H / 2);
@@ -478,7 +523,6 @@ describe('Antipode: spawns and objectives', () => {
         capsuleOverlaps(lv, { center: w.pos, up: UP, halfSeg: 0, radius: 0.3 }),
         `waypoint ${w.name}`,
       ).toBe(false);
-      // on a surface: never floating in the Seam (a floor within 1.5 m along its gravity)
       const g = gravityDirAt(ctx, world, w.pos);
       expect(len(g), `waypoint ${w.name} in zero-G`).toBeGreaterThan(0.5);
       expect(
@@ -488,29 +532,27 @@ describe('Antipode: spawns and objectives', () => {
       for (const j of w.links)
         expect(lineOfSight(lv, w.pos, wps[j].pos), `link ${w.name} → ${wps[j].name}`).toBe(true);
     }
-    for (const from of ['home.tower', '~home.tower'])
+    // reachable from every spawn group of both teams
+    for (const from of ['home.spN', 'q.sp', '~home.spN', '~q.sp'])
       for (let i = 0; i < wps.length; i++)
         expect(waypointRoute(wps, wpIndex(d, from), i).length, wps[i].name).toBeGreaterThan(0);
-    // the decks join only where they should: up the Spindle's grooves and across the
-    // stairwells' walls
-    const floor = new Set(wps.map((w, i) => (w.pos.y < H / 2 ? i : -1)).filter((i) => i >= 0));
+    // the halves join only up the Spindle's grooves, through the site rooms, the junction
+    // hall and the tunnels' rung
+    const lower = new Set(wps.map((w, i) => (w.pos.y < H / 2 ? i : -1)).filter((i) => i >= 0));
     const crossings = wps.flatMap((w, i) =>
-      w.links.filter((j) => floor.has(i) !== floor.has(j)).map((j) => `${w.name}→${wps[j].name}`),
+      w.links.filter((j) => lower.has(i) !== lower.has(j)).map((j) => `${w.name}→${wps[j].name}`),
     );
+    const both = (a: string, b: string) => [`${a}→${b}`, `${b}→${a}`];
     expect(crossings.sort()).toEqual(
       [
-        'sp.w3→~sp.e3',
-        '~sp.e3→sp.w3',
-        'sp.e3→~sp.w3',
-        '~sp.w3→sp.e3',
-        'sp.n3→~sp.n3',
-        '~sp.n3→sp.n3',
-        'sp.s3→~sp.s3',
-        '~sp.s3→sp.s3',
-        'n.w4→~n.w4',
-        '~n.w4→n.w4',
-        's.w4→~s.w4',
-        '~s.w4→s.w4',
+        ...both('sp.w3', '~sp.e3'),
+        ...both('sp.e3', '~sp.w3'),
+        ...both('sp.n3', '~sp.n3'),
+        ...both('sp.s3', '~sp.s3'),
+        ...both('nB.top', '~nA.top'),
+        ...both('nA.top', '~nB.top'),
+        ...both('nJ.top', '~nJ.top'),
+        ...both('rung.1', '~rung.1'),
       ].sort(),
     );
   });
@@ -547,7 +589,9 @@ const walkRoute = (
   return { p, arrived: i >= names.length, ticks: t, events, config };
 };
 
-describe('Antipode: across the Seam, up the Spindle, along the stairwells', () => {
+
+describe('Antipode: across the Seam, up the Spindle, through the side planes', () => {
+
   it('an orange spawn turns over and stands on the ceiling (facing kept, no damage)', () => {
     const d = def();
     for (const s of d.spawns.filter((sp) => sp.team === 1)) {
@@ -591,65 +635,10 @@ describe('Antipode: across the Seam, up the Spindle, along the stairwells', () =
     }
   });
 
-  it('a jump off a launch gantry drifts across the Seam and lands on the other deck (the gantry over it)', () => {
-    const { config, ctx, world } = sim();
-    const G = A.gantry;
-    const p = addPlayer(world, createPlayer(1, 0, v3(14, G.top, 12), -90, config));
-    const view = yawToView(-90);
-    for (let t = 0; t < 20; t++)
-      step(world, { 1: { tick: world.tick + 1, buttons: 0, view } }, ctx);
-    expect(p.grounded).toBe(true);
-    let floated = 0;
-    let t = 0;
-    const lands: number[] = [];
-    for (; t < 60 * 6; t++) {
-      step(world, { 1: { tick: world.tick + 1, buttons: t < 2 ? Btn.Jump : 0, view } }, ctx);
-      if (p.gravity.y === 0 && p.gravity.x === 0 && p.gravity.z === 0) floated++;
-      for (const e of world.events) if (e.type === 'land' && e.player === 1) lands.push(e.speed);
-      if (t > 30 && p.grounded) break;
-    }
-    // (it lands, and turns over in the next moments)
-    for (let k = 0; k < 30; k++)
-      step(world, { 1: { tick: world.tick + 1, buttons: 0, view } }, ctx);
-    // drifted through the zero-G band for a couple of seconds, then fell "up" 1.5 m
-    expect(floated / 60).toBeGreaterThan(1.5);
-    expect(floated / 60).toBeLessThan(3.5);
-    expect(p.grounded).toBe(true);
-    expect(p.up.y).toBeCloseTo(-1, 6);
-    expect(p.pos.y).toBeCloseTo(H - G.top - 0.91, 1);
-    expect(p.hp).toBe(config.combat.maxHp);
-    expect(lands.length).toBe(1);
-  });
-
-  it('a running jump off the gantry crosses the Seam and lands on the ceiling deck itself', () => {
-    const { config, ctx, world } = sim();
-    const G = A.gantry;
-    // run south off the east gantry, jumping at its edge
-    const p = addPlayer(world, createPlayer(1, 0, v3(14, G.top, G.z1 - 0.5), 0, config));
-    const view = yawToView(0);
-    let jumped = false;
-    for (let t = 0; t < 60 * 8; t++) {
-      const jump = !jumped && p.pos.z < G.z0 + 0.6;
-      if (jump) jumped = true;
-      step(
-        world,
-        { 1: { tick: world.tick + 1, buttons: Btn.Forward | (jump ? Btn.Jump : 0), view } },
-        ctx,
-      );
-      if (jumped && p.grounded && p.pos.y > H / 2) break;
-    }
-    expect(p.grounded).toBe(true);
-    expect(p.up.y).toBeCloseTo(-1, 6);
-    // on the ceiling deck's own surface (not a gantry), after falling "up" from the Seam
-    expect(p.pos.y).toBeCloseTo(H - 0.91, 1);
-    expect(p.pos.z).toBeLessThan(G.z0 - 5);
-    expect(p.hp).toBeGreaterThan(config.combat.maxHp - 15);
-  });
-
   it('floating across the midline hands you to the other deck (both ways)', () => {
     for (const [from, vy, deckY, upY] of [
-      [v3(-24, 13.5, 8), 3, H - 0.91, -1],
-      [v3(24, 14.5, 8), -3, 0.91, 1],
+      [v3(-8, 13.5, 8), 3, H - 0.91, -1],
+      [v3(8, 14.5, 8), -3, 0.91, 1],
     ] as const) {
       const { config, ctx, world } = sim();
       const p = addPlayer(world, createPlayer(1, 0, v3(from.x, from.y - 0.91, from.z), 0, config));
@@ -666,26 +655,26 @@ describe('Antipode: across the Seam, up the Spindle, along the stairwells', () =
 
   it.each([
     [
-      '-x groove: cyan floor → site B',
+      '-x groove',
       v3(-14, 0, 0),
       -90,
       ['sp.w0', 'sp.w1', 'sp.w2', 'sp.w3', '~sp.e3', '~sp.e2', '~sp.e1', '~sp.e0', '~ring.se'],
     ],
     [
-      '+x groove: site A → orange ceiling',
+      '+x groove',
       v3(14, 0, 0),
       90,
       ['sp.e0', 'sp.e1', 'sp.e2', 'sp.e3', '~sp.w3', '~sp.w2', '~sp.w1', '~sp.w0', '~ring.nw'],
     ],
     [
       '+z groove',
-      v3(0, 0, 14),
+      v3(-3, 0, 10),
       0,
       ['sp.n0', 'sp.n1', 'sp.n2', 'sp.n3', '~sp.n3', '~sp.n2', '~sp.n1', '~sp.n0', '~ring.ne'],
     ],
     [
       '-z groove',
-      v3(0, 0, -14),
+      v3(-6, 0, -12),
       180,
       ['sp.s0', 'sp.s1', 'sp.s2', 'sp.s3', '~sp.s3', '~sp.s2', '~sp.s1', '~sp.s0', '~ring.se'],
     ],
@@ -714,31 +703,108 @@ describe('Antipode: across the Seam, up the Spindle, along the stairwells', () =
     },
   );
 
-  it.each([
-    ['north: cyan yard → orange yard', v3(-30.5, 0, 17), 180, 'n'],
-    ['south: site A → site B', v3(30.5, 0, -17), 0, 's'],
-  ] as const)(
-    'a player walks a hull stairwell floor → wall → ceiling (%s)',
-    (_n, start, yaw, k) => {
-      const route = ['out', 'door', 'in', 'w1', 'w2', 'w3', 'w4'].map((w) => `${k}.${w}`);
-      const back = [...route].reverse().map((n) => `~${n}`);
-      let onWall = 0;
-      const { p, arrived, ticks, config } = walkRoute(start, yaw, [...route, ...back], {
-        onTick: (pl) => {
-          if (Math.abs(Math.abs(pl.up.z) - 1) < 0.01) onWall++;
-        },
-      });
-      expect(arrived).toBe(true);
-      expect(ticks / 60).toBeLessThan(15);
-      expect(onWall / 60).toBeGreaterThan(6); // most of the way on the outer wall
+  it('a launch pad in the well throws you through the Seam onto the other deck (no damage)', () => {
+    for (const [x, z] of A.pads) {
+      const { config, ctx, world } = sim();
+      const p = addPlayer(world, createPlayer(1, 0, v3(x, 0.05, z), -90, config));
+      let floated = 0;
+      let t = 0;
+      for (; t < 60 * 6; t++) {
+        step(world, {}, ctx);
+        if (len(p.gravity) === 0) floated++;
+        if (t > 30 && p.grounded) break;
+      }
+      for (let k = 0; k < 30; k++) step(world, {}, ctx);
+      expect(floated / 60).toBeGreaterThan(0.3);
+      expect(p.grounded).toBe(true);
       expect(p.up.y).toBeCloseTo(-1, 6);
       expect(p.pos.y).toBeCloseTo(H - 0.91, 1);
-      // out of the ceiling door into the hall, at the other end of the stairwell
-      expect(Math.abs(p.pos.z)).toBeLessThan(A.halfZ);
-      expect(Math.sign(p.pos.x)).toBe(Math.sign(-start.x));
+      // still in the well (on the ceiling deck's well floor)
+      expect(Math.abs(p.pos.x)).toBeLessThan(A.well.x);
+      expect(Math.abs(p.pos.z)).toBeLessThan(A.well.z);
       expect(p.hp).toBe(config.combat.maxHp);
-    },
-  );
+    }
+  });
+
+  const wallWalk = (pl: PlayerState) => Math.abs(Math.abs(pl.up.z) - 1) < 0.01;
+  it.each([
+    [
+      'site B: floor door → up the wall through the site → ceiling door',
+      v3(-31, 0, 18),
+      180,
+      [
+        ...['out', 'door', 'in', 'w1', 'c', 'top'].map((w) => `nB.${w}`),
+        ...['top', 'c', 'w1', 'in', 'door', 'out'].map((w) => `~nA.${w}`),
+      ],
+      -1,
+    ],
+    [
+      'the connector: site B → junction hall → ceiling',
+      v3(-31, 0, 18),
+      180,
+      [
+        ...['out', 'door', 'in', 'w1', 'c', 'inner', 'side'].map((w) => `nB.${w}`),
+        'arm.w',
+        'nJ.wside',
+        'nJ.top',
+        ...['top', 'c', 'w1', 'in', 'door', 'out'].map((w) => `~nJ.${w}`),
+      ],
+      -1,
+    ],
+    [
+      'the flank tunnels: low bar, up the rung, high bar → ceiling',
+      v3(-28, 0, -19),
+      0,
+      [
+        ...['out', 'door', 'in', 'w1', 'w2'].map((w) => `sW.${w}`),
+        'bar.-20',
+        'bar.-10',
+        'bar.-8',
+        'rung.0',
+        'rung.1',
+        '~rung.1',
+        '~rung.0',
+        '~bar.8',
+        '~bar.10',
+        '~bar.20',
+        ...['w2', 'w1', 'in', 'door', 'out'].map((w) => `~sE.${w}`),
+      ],
+      -1,
+    ],
+    [
+      'the flank tunnels: along the low bar to the far floor lobby',
+      v3(-28, 0, -19),
+      0,
+      [
+        ...['out', 'door', 'in', 'w1', 'w2'].map((w) => `sW.${w}`),
+        'bar.-20',
+        'bar.-10',
+        'bar.-8',
+        'rung.0',
+        'bar.8',
+        'bar.10',
+        'bar.20',
+        ...['w2', 'w1', 'in', 'door', 'out'].map((w) => `sE.${w}`),
+      ],
+      1,
+    ],
+  ] as const)('a player walks a side plane (%s)', (_n, start, yaw, route, upY) => {
+    let onWall = 0;
+    const { p, arrived, ticks, config } = walkRoute(start, yaw, [...route], {
+      onTick: (pl) => {
+        if (wallWalk(pl)) onWall++;
+      },
+    });
+    expect(arrived).toBe(true);
+    expect(ticks / 60).toBeLessThan(20);
+    expect(onWall / 60).toBeGreaterThan(2.5);
+    expect(p.grounded).toBe(true);
+    expect(p.up.y).toBeCloseTo(upY, 6);
+    expect(p.pos.y).toBeCloseTo(upY > 0 ? 0.91 : H - 0.91, 1);
+    expect(Math.abs(p.pos.z)).toBeLessThan(A.halfZ);
+    expect(p.hp).toBe(config.combat.maxHp);
+  });
+
 
   it('the sky duel takes both teams up to the arena standing upright, and back home after', () => {
     const d = def();
@@ -783,14 +849,18 @@ describe('Antipode: across the Seam, up the Spindle, along the stairwells', () =
       expect(p.up.y).toBeCloseTo(p.pos.y > H / 2 ? -1 : 1, 6);
     }
   });
+
 });
+
 
 describe('Antipode bots', () => {
   const SPINDLE = ['sp.w2', 'sp.e2', 'sp.n2', 'sp.s2'];
+  const SITES = ['nB.top', 'nA.top'];
   const lanes: [string, string[]][] = [
-    ['the Spindle', ['n.w2', 's.w2']],
-    ['the north stairwell', [...SPINDLE, 's.w2']],
-    ['the south stairwell', [...SPINDLE, 'n.w2']],
+    ['the Spindle', [...SITES, 'nJ.top', 'rung.1']],
+    ['the site rooms', [...SPINDLE, 'nJ.top', 'rung.1']],
+    ['the junction hall', [...SPINDLE, ...SITES, 'rung.1']],
+    ['the flank tunnels', [...SPINDLE, ...SITES, 'nJ.top']],
   ];
   it.each(lanes.flatMap(([n, b]) => ([0, 1] as const).map((team) => [n, team, b] as const)))(
     'a bot carries the Controller to the enemy Tower on the other deck via %s (team %i)',
@@ -810,22 +880,22 @@ describe('Antipode bots', () => {
       }
       expect(ms.rounds[0]?.reason).toBe('tower');
       expect(ms.rounds[0]?.winner).toBe(team);
-      // it ended on the enemy deck
       const p = world.players[0];
       expect(p.pos.y > H / 2).toBe(team === 0);
       expect(p.alive).toBe(true);
     },
   );
 
-  it.each([
-    [0, 'A'],
-    [0, 'B'],
-    [1, 'A'],
-    [1, 'B'],
-  ] as const)('a team-%i bot walks to site %s and stands in it', (team, site) => {
+  it.each(
+    ([0, 1] as const).flatMap((team) =>
+      (['A', 'B'] as const).flatMap((site) =>
+        (['bastion', 'quarters'] as const).map((group) => [team, site, group] as const),
+      ),
+    ),
+  )('a team-%i bot walks to site %s from its %s and stands in it', (team, site, group) => {
     const d = def();
     const { config, ctx, world } = sim(d, 9);
-    const s = d.spawns.find((sp) => sp.team === team)!;
+    const s = d.spawns.find((sp) => sp.team === team && sp.group === group)!;
     const p = addPlayer(world, createPlayer(1, team, s.pos, s.yawDeg, config));
     const mem = createBotMemory(1, BOT_SKILLS.normal, 9);
     const st = d.bombSites!.find((x) => x.name === site)!;
@@ -840,7 +910,7 @@ describe('Antipode bots', () => {
   });
 
   it.each(['A', 'B'] as const)(
-    'Bomb: an orange attacker bot plants in site %s (A down on the floor deck, B on its own)',
+    'Bomb: an orange attacker bot plants in site %s (standing on the north hull wall)',
     (site) => {
       const d = def();
       const { config, ctx, world } = sim(d, 4);
@@ -858,9 +928,10 @@ describe('Antipode bots', () => {
         planted = world.events.find((e) => e.type === 'bombPlanted');
       }
       expect(planted?.type === 'bombPlanted' && planted.site).toBe(site);
-      // planted standing on the site's deck
+      // planted standing on the site's wall
       const p = world.players[0];
-      expect(p.pos.y).toBeCloseTo(site === 'A' ? 0.9 : H - 0.9, 1);
+      expect(p.up.z).toBeCloseTo(-1, 6);
+      expect(p.pos.z).toBeCloseTo(A.plane.z1 - 0.91, 1);
     },
   );
 
@@ -904,4 +975,5 @@ describe('Antipode bots', () => {
     // they go looking for each other: over the Spindle / stairwells to the other deck
     expect(crossedAny).toBe(true);
   });
+
 });

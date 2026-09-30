@@ -479,6 +479,10 @@ export const buildAntipode = (): LevelDef => {
     box(x - 0.3, 7, -P.z1, x + 0.3, 11, -P.z1 + 0.15, { mat: 'pillar', color: HULL_LO });
   box(-16, 7, -P.z1, -14, 8.2, -P.z1 + 1.2, { mat: 'engine', trim: VIOLET });
   box(14, 9.8, -P.z1, 16, 11, -P.z1 + 1.2, { mat: 'engine', trim: VIOLET });
+  // baffles: a bulkhead across half the bar on either side of the rung (staggered, so the bar
+  // is never one 60 m lane: you weave round them)
+  box(-8.5, 7, -P.z1, -7.5, 9.2, -P.z0 - 0.08, { mat: 'panel', color: WALL_S, trim: VIOLET });
+  box(7.5, 8.8, -P.z1, 8.5, 11, -P.z0 - 0.08, { mat: 'panel', color: WALL_S, trim: VIOLET });
   // the site marks: outline painted on the hull wall (the site's twin paints the other half)
   for (const site of [A.siteA, A.siteB]) {
     const y1 = Math.min(site.max.y, MID);
@@ -560,12 +564,12 @@ export const buildAntipode = (): LevelDef => {
   // ============================ cyan's quarters ============================
   const Q = A.quarters;
   // a bulkhead hides the bunks from both doors (round its end to get out)
-  box(-43, 0, Q.z0, -42, R, -19.5, { mat: 'panel', color: PANEL_LO, trim: CYAN });
+  box(-43, 0, Q.z0, -42, R, -20, { mat: 'panel', color: PANEL_LO, trim: CYAN });
   for (const [x, z] of [
-    [-45.8, -23.2],
-    [-45.8, -21.6],
-    [-44.2, -23.2],
-    [-44.2, -21.6],
+    [-46, -23],
+    [-46, -21.6],
+    [-44.4, -23],
+    [-44.4, -21.6],
   ])
     spawns.push({ pos: v3(x, 0, z), yawDeg: -90, team: 0, group: 'quarters' });
   // bunks along the back wall (half cover), the team's banner
@@ -821,8 +825,8 @@ const antipodeWaypoints = (): WaypointDef[] => {
   fl('pn.hall', -34, 9);
   fl('ps.hall', -34, -9);
   // quarters
-  fl('q.sp', -45, -20.3);
-  fl('q.gap', -42.5, -18.8);
+  fl('q.sp', -45.5, -19);
+  fl('q.gap', -42.5, -18.75);
   fl('q.n', -39.5, -20);
   fl('q.door', -39.5, -16.5);
   fl('q.e', -40, -22.8);
@@ -943,7 +947,12 @@ const antipodeWaypoints = (): WaypointDef[] => {
     ws(`${k}.w1`, x, 4);
     ws(`${k}.w2`, x, 9);
   }
-  for (const x of [-20, -10, 10, 20]) ws(`bar.${x}`, x, 9);
+  for (const x of [-20, 20]) ws(`bar.${x}`, x, 9);
+  ws('bar.-10', -11, 9);
+  ws('bar.10', 11, 9);
+  // round the baffles
+  ws('bar.-8', -8, 10.2);
+  ws('bar.8', 8, 7.8);
   ws('rung.0', 0, 9);
   ws('rung.1', 0, 12.5);
 
@@ -1098,8 +1107,10 @@ const antipodeWaypoints = (): WaypointDef[] => {
     // the south tunnels
     ['sW.w2', 'bar.-20'],
     ['bar.-20', 'bar.-10'],
-    ['bar.-10', 'rung.0'],
-    ['rung.0', 'bar.10'],
+    ['bar.-10', 'bar.-8'],
+    ['bar.-8', 'rung.0'],
+    ['rung.0', 'bar.8'],
+    ['bar.8', 'bar.10'],
     ['bar.10', 'bar.20'],
     ['bar.20', 'sE.w2'],
     ['rung.0', 'rung.1'],

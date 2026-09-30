@@ -629,9 +629,15 @@ const canyonRelay = (): MapAnalysisConfig => {
       'bridgeMidE',
       'bridgeMidW',
     ]);
-    r('contact', team, 'rail tunnel', 'plaza stair, mine hall, rail tunnel (middle)', [], T.tunnel, [
-      'tunnel',
-    ]);
+    r(
+      'contact',
+      team,
+      'rail tunnel',
+      'plaza stair, mine hall, rail tunnel (middle)',
+      [],
+      T.tunnel,
+      ['tunnel'],
+    );
     r('tower', team, enemy, 'rock bridge', ['bridgeMidE', `tower${them}`]);
     r('tower', team, enemy, 'rail tunnel', ['tunnel', `tower${them}`]);
     for (const [site, s, dest] of [

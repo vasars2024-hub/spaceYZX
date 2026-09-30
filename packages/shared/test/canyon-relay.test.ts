@@ -200,7 +200,13 @@ describe('Canyon Relay map', () => {
         ['west camp', 3],
       ]);
       // a 3v3 round starts one player in each group
-      expect(new Set(spawnOrder(spawns).slice(0, 3).map((s) => s.group)).size).toBe(3);
+      expect(
+        new Set(
+          spawnOrder(spawns)
+            .slice(0, 3)
+            .map((s) => s.group),
+        ).size,
+      ).toBe(3);
       for (const s of spawns) {
         expect(capsuleOverlaps(lv, standingCapsule(s.pos)), `spawn ${s.pos.x},${s.pos.z}`).toBe(
           false,

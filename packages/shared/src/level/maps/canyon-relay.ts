@@ -107,15 +107,11 @@ const mz = (n: Sign, z: number) => (n > 0 ? z : 2 * MZ - z);
 
 /** Rock strata by height: bands of colour; the ones at shoulder height muted. */
 const STRATA: [number, number, number][] = [
-  [-40, -20, 0x6b3d33],
-  [-20, -11, 0x96523a],
+  [-40, -11, 0x6b3d33],
   [-11, -5, 0xa35a3c],
-  [-5, -2, 0x8c5a44], // shoulder height in the mine and the basins: muted
-  [-2, 0, 0xb5653b],
+  [-5, 0, 0x8c5a44], // the mine, the rail stairs and the basins: muted
   [0, 2.2, 0x94634a], // shoulder height in the streets: muted
-  [2.2, 6.2, 0xc27a4c],
-  [6.2, 9.5, 0xc98652],
-  [9.5, 40, 0xd89a62],
+  [2.2, 40, 0xc98652],
 ];
 
 /** building heights: interior walls up to WALL, roof slab up to ROOF; compound walls */
@@ -702,7 +698,10 @@ const decorate = (
   quad(60, R.top + 0.01, 48, 62, R.top + 0.06, 48.15, 'trim', { color: 0x7fe9ff, noCollide: true });
   light(60, R.top + 1.5, 50, 0x7fe9ff, 7, 0.9);
   // mine rails along the tunnel floor
-  quad(59.2, C.rail + 0.01, 38, 59.4, C.rail + 0.08, MZ, 'trim', { color: 0x5b5048, noCollide: true });
+  quad(59.2, C.rail + 0.01, 38, 59.4, C.rail + 0.08, MZ, 'trim', {
+    color: 0x5b5048,
+    noCollide: true,
+  });
   // team banners over the station yards
   for (const n of [1, -1] as const) {
     const tc = n > 0 ? CYAN : ORANGE;
@@ -721,10 +720,7 @@ const decorate = (
     decoQuad(x - 1, y + h * 0.35, z - 0.25, x - 0.75, y + h * 0.65, z + 0.25, 'leaf', CACTUS);
   };
   cactus(70, 14.1, -2, 3.2);
-  cactus(96, 14.1, -1, 2.6);
-  cactus(119, 14.1, 20, 3);
   cactus(118, 14.1, 40, 2.4);
-  cactus(99.5, 12.1, 20, 2.2);
   cactus(79, C.gorgeFloor, 44, 2.8);
   const shrub = (x: number, y: number, z: number, w: number) =>
     decoQuad(x - w, y, z - w, x + w, y + w * 0.9, z + w, 'leaf', SHRUB);

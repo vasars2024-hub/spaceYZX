@@ -753,7 +753,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         ceilingOver(p, a, p.pos, 4.2);
         p.move(20, -7, right ? 4 : -4);
       }
-      p.curve({ lead: 9, legs: [straight(50, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(0, -1.5).curve({ lead: 9, legs: [straight(50, 4)], ...TIGHT, side: 'right', color: c });
     },
   },
   {
@@ -765,7 +765,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
       p.move(reach(34, -3, 35), -35, 8).curve({ lead: 12, legs: [straight(30, 3), lip(12, 5)], ...NEEDLE, side: 'right', color: c });
-      p.move(32, 1, 6).curve({ lead: 10, legs: [straight(50, 4)], ...TIGHT, side: 'right', color: c });
+      p.move(32, 1, 8).curve({ lead: 12, legs: [straight(50, 4)], ...TIGHT, side: 'left', color: c });
     },
   },
   {

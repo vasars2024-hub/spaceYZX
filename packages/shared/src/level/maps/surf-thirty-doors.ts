@@ -434,10 +434,11 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
         lead: 10,
         legs: [straight(50, 5), straight(14, -3)],
         ...BROAD,
-        side: 'right',
+        side: 'left',
         color: c,
       });
-      p.move(22, -8, -22).turn(-90).curve({ lead: 12, legs: [straight(80, 6)], ...BROAD, side: 'left', color: c });
+      // (turning west, into the building: sized as the lip's 9 m/s up over 22 m, 8 m down)
+      p.move(22, -8, 22).turn(90).curve({ lead: 12, legs: [straight(80, 6)], ...BROAD, side: 'right', color: c });
     },
   },
   // ---------------------------------------------------------------- medium (6–10)
@@ -805,38 +806,45 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   {
     n: 29,
     name: 'Portal Relay',
-    idea: 'a portal turns you mid-flight over a tiny pillar: brake onto its pad, and it fires you onto a needle',
+    idea: 'a portal turns you mid-flight over a tiny pillar: brake onto it, and its pad fires you a quarter turn back onto a needle',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c, wing }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
-      const exit = p.relP(20, 40, 6);
+      const exit = p.relP(20, 30, 6);
       portal(p, 14, 34, -3, exit, 90, [8, 8], { color: wing.glow, glyph: '↱', vertical: 'zero' });
+      // sized: out of the portal level at 34 m/s heading west, 8 m down: the pillar's middle is
+      // 28 m on (0.9 s of fall at that speed would carry 30 m: brake a little or overshoot a
+      // 4 m top); its pad throws you 30 m to the left (south again) onto the needle
       p.move(28, -8);
       pillar(p, [4, 4]);
-      p.launch(30, -6, 1.3, 0, 0);
-      p.curve({ lead: 12, legs: [straight(40, 4)], ...NEEDLE, side: 'right', red: 0.75, color: c });
+      p.launch(0, -6, 1.3, -30, 0);
+      p.turn(-90).curve({ lead: 12, legs: [straight(40, 4)], ...NEEDLE, side: 'right', red: 0.75, color: c });
       p.move(18, -6, 6).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
     },
   },
   {
     n: 30,
     name: 'The Last Door',
-    idea: 'climb onto a tiny block, flick a quarter turn through a gap in a red deck onto a ramp, a needle, home',
+    idea: 'climb onto a tiny block, flick a quarter turn through a gap in a red deck, another quarter turn in the air, a needle, home',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(35, 3), straight(30, -8)], ...TIGHT, side: 'right', color: c });
       p.move(16, -1, 3);
       block(p, [4, 4]);
-      // the flick drops through a trapdoor: sized from the trace, the jump off the block (23.6
-      // m/s, 6.9 up) has turned 50° by the deck 9 m down and is half way through it 22.3 m on
-      // and 24.9 m left, falling at a slope of 0.83 — 2.9 m along to pass: a 6 m hole leaves the
-      // line ±1.5 m, and a flick made late (or early) meets the deck
-      trapdoor(p, { f: 26, side: -30, v: 23.6, vy: JUMP_VY, h: 9, hole: [6, 6], around: 9, at: [22.3, -24.9] });
-      p.move(26, -22, -30).turn(-90).curve({ lead: 12, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
-      p.move(20, -6, -5).curve({ lead: 9, legs: [straight(30, 3)], ...NEEDLE, side: 'right', depth: 0.3, color: c });
-      p.move(20, -6, 5).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
+      // the flick drops through a trapdoor: sized from the traces, the jump off the block (23.6
+      // m/s, 6.9 up) has turned about 50° by the deck 9 m down and is half way through it 21.3
+      // m on and 23.5 m left (an early flick 1.5 m nearer the block, a late one 1.5 m past),
+      // falling at a slope of 0.83 — 2.9 m along to pass: an 8 m hole leaves the steady lines
+      // about a metre either way, and a flick made clearly late (or early) meets the deck
+      trapdoor(p, { f: 26, side: -30, v: 23.6, vy: JUMP_VY, h: 9, hole: [8, 8], around: 9, at: [21.3, -23.5] });
+      p.move(26, -22, -30).turn(-90).curve({ lead: 12, legs: [straight(30, 3)], ...TIGHT, side: 'left', color: c });
+      // then a quarter turn left, the way the face drops (north: the room comes back on
+      // itself, 80 m east of its start), onto a ramp met from its low side
+      p.move(14, -10, -14).turn(-90).curve({ lead: 12, legs: [straight(36, 8)], ...TIGHT, side: 'left', color: c });
+      p.move(20, -6, -5).curve({ lead: 9, legs: [straight(30, 4)], ...NEEDLE, side: 'right', depth: 0.3, color: c });
+      p.move(20, -6, 5).curve({ lead: 9, legs: [straight(40, 6)], ...TIGHT, side: 'left', color: c });
     },
   },
 ];
@@ -948,7 +956,7 @@ export const buildThirtyDoors = (count = THIRTY_DOORS_ROOMS.length): CourseData 
     kind: 'surf',
     mode: 'expert',
     profile: 'MOVEMENT_PROFILE v1',
-    parSec: 275,
+    parSec: 245,
     palette: PALETTE,
     sky: SKY,
     roomMat: 'panel',

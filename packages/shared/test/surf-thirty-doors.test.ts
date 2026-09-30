@@ -4,7 +4,7 @@
 // here on its own terms — the same kinds of checks, ported, plus what makes it a stage map:
 //
 //   data       plain JSON (a round trip builds the same level), valid, nothing clips, in range
-//   rooms      thirty, in order, each named over its gate ("n · NAME") with its own gimmick;
+//   rooms      thirty, in order, each named over its gate ("n · NAME") with its own skill test;
 //              every room's door is a portal marked with the next room's number, coming out
 //              level into a speed ring that sets that room's level speed (so every room starts
 //              the same, however you came in); the door exits and every portal exit are clear
@@ -13,11 +13,14 @@
 //              from every bay the racing-line bot clears the room on its own, and coming back is
 //              never faster than carrying on
 //   timing     a practiced clean run (STEADY_RACER) clears all thirty rooms in order without a
-//              fall in 250–310 s, no room shorter than 5 s or longer than 20 s; a human strafing
-//              at 0.6 finishes (falls allowed)
-//   devices    red zones kill at their surface; booster rings set the speed they say
+//              fall in 230–300 s, no room shorter than 5 s or longer than 20 s; a human strafing
+//              at 0.8 finishes, one at 0.6 clears the teaching and medium rooms (falls allowed:
+//              it is an Expert map)
+//   rules      the owner's rules: no bunny-hop pads (every block is one block), portals in three
+//              rooms at most (the doors apart), holes to drop through in two rooms at most
+//   devices    red zones kill at their surface; boosters and launch pads set the speed they say
 //   difficulty the rooms get harder in order: faster starts, smaller doors, tighter faces and
-//              bends, smaller windows, more red (teach → medium → hard → extreme)
+//              bends, smaller blocks, more red (teach → medium → hard → extreme)
 //   look       every room is walled in its wing's colour and numbered on its far wall
 import { describe, expect, it } from 'vitest';
 import {
@@ -134,7 +137,7 @@ describe('surf-thirty-doors', () => {
     expect(data.kind).toBe('surf');
     expect(data.profile).toBe(SURF_PROFILE.version);
     expect(race.surf && race.noJetpack && race.noSurge).toBe(true);
-    expect(data.parSec).toBeGreaterThanOrEqual(250);
+    expect(data.parSec).toBeGreaterThanOrEqual(230);
   });
 
   it('is plain JSON data: a round trip builds the same level, and the data is valid', () => {
@@ -270,7 +273,7 @@ describe('surf-thirty-doors', () => {
     }
   });
 
-  it('a practiced clean run clears all thirty rooms in order, without a fall, in 250–310 s', () => {
+  it('a practiced clean run clears all thirty rooms in order, without a fall, in 230–300 s', () => {
     const r = cleanRun();
     expect(r.finished).toBe(true);
     expect(r.respawns).toBe(0);
@@ -285,8 +288,8 @@ describe('surf-thirty-doors', () => {
       }
       last = s;
     }
-    expect(r.timeSec).toBeGreaterThanOrEqual(250);
-    expect(r.timeSec).toBeLessThanOrEqual(310);
+    expect(r.timeSec).toBeGreaterThanOrEqual(230);
+    expect(r.timeSec).toBeLessThanOrEqual(300);
     // (par is a good run: the practiced clean run, rounded)
     expect(Math.abs(r.timeSec - data.parSec)).toBeLessThan(20);
   }, 60000);
@@ -304,10 +307,41 @@ describe('surf-thirty-doors', () => {
     }
   }, 120000);
 
-  it('a human strafing at 0.6 finishes (falls allowed)', () => {
-    const r = run({ ...HUMAN_RACER, strafeEff: 0.6 }, 1200);
-    expect(r.finished).toBe(true);
-  }, 90000);
+  it('a human strafing at 0.8 finishes; one at 0.6 clears the teaching and medium rooms', () => {
+    expect(run({ ...HUMAN_RACER, strafeEff: 0.8 }, 1200).finished).toBe(true);
+    // (the gates passed: the start's split, then one per room cleared)
+    const slow = run({ ...HUMAN_RACER, strafeEff: 0.6 }, 400);
+    expect(slow.splitsSec.length).toBeGreaterThanOrEqual(11);
+  }, 120000);
+
+  it("the owner's rules: no bunny-hop pads, few portal rooms, few holes to drop through", () => {
+    const routes = roomRoutes();
+    for (const room of ROOMS) {
+      const els = routes[room.n];
+      // a block is one block (land, jump, go on): never a chain of pads, never bhop pads
+      for (const e of els)
+        if (e.t === 'jumps') {
+          expect(e.style, `room ${room.n}`).toBeUndefined();
+          expect(e.pads.length, `room ${room.n}`).toBe(1);
+        }
+    }
+    // portals in at most three rooms (each used differently), the doors apart
+    const withPortals = ROOMS.filter((room) =>
+      routes[room.n].some((e) => e.t === 'portal' && !/^\d+$/.test(e.glyph ?? '')),
+    );
+    expect(withPortals.length).toBeLessThanOrEqual(3);
+    // no windows (fly-through holes) at all, and trapdoors (a red deck with a hole: four red
+    // slabs at one height round it) in at most two rooms
+    expect(data.route.some((e) => e.t === 'window')).toBe(false);
+    const decks = ROOMS.filter((room) => {
+      const reds = routes[room.n].filter((e) => e.t === 'red' && e.size[1] === 0.6);
+      const heights = new Map<number, number>();
+      for (const e of reds) heights.set(e.at[1], (heights.get(e.at[1]) ?? 0) + 1);
+      // (a red floor under a block is cut round its stem too: a deck is wider than 20 m)
+      return reds.some((e) => (heights.get(e.at[1]) ?? 0) >= 4 && Math.max(e.size[0], e.size[2]) > 20);
+    });
+    expect(decks.map((r) => r.n)).toEqual([14, 30]);
+  });
 
   it('touching any red zone sends you back (exactly at its surface)', () => {
     const reds = def.boxes.filter((b) => b.kill);
@@ -336,8 +370,8 @@ describe('surf-thirty-doors', () => {
 
   it('portals inside the rooms keep your speed and turn you exactly as they say', () => {
     const inner = (def.portals ?? []).filter((pt) => !/^\d+$/.test(pt.glyph ?? ''));
-    // Turnaround 1, Quarter Turns 2, Portal Maze 3, Chain Reaction 4, The Gauntlet 1
-    expect(inner.length).toBe(11);
+    // Mirror 1 (a U-turn), Portal Relay 1 (a quarter turn, levelled)
+    expect(inner.length).toBe(2);
     const headingOf = (x: number, z: number) =>
       ((((Math.atan2(x, -z) * 180) / Math.PI) % 360) + 360) % 360;
     for (const pt of inner) {
@@ -379,7 +413,7 @@ describe('surf-thirty-doors', () => {
     }
   });
 
-  it('booster rings in the rooms set the speed they say (Slingshot, Cannon)', () => {
+  it('boosters and launch pads in the rooms set the speed they say', () => {
     const doorExits = doors().map((d) => d.exit);
     const rings = (def.launchPads ?? []).filter(
       (l) =>
@@ -389,7 +423,8 @@ describe('surf-thirty-doors', () => {
           g.bayLine?.some((q) => pointInAabb(v3(q.pos.x, q.pos.y + 0.9, q.pos.z), l.min, l.max)),
         ),
     );
-    expect(rings.length).toBe(3);
+    // Big Air's ring, Pad Pillars' three pads and its launch, Portal Relay's launch
+    expect(rings.length).toBe(6);
     for (const l of rings) {
       const c = v3((l.min.x + l.max.x) / 2, (l.min.y + l.max.y) / 2, (l.min.z + l.max.z) / 2);
       const { world, p } = racer(v3(c.x, c.y - 0.9, c.z), 0, 1);
@@ -397,8 +432,9 @@ describe('surf-thirty-doors', () => {
       p.vel = v3(3, -12, 25);
       p.grounded = false;
       step(world, {}, ctx);
-      expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThanOrEqual(36);
+      expect(Math.hypot(p.vel.x, p.vel.z)).toBeGreaterThanOrEqual(20);
       expect(Math.hypot(p.vel.x, p.vel.z)).toBeCloseTo(Math.hypot(l.vel.x, l.vel.z), 1);
+      expect(p.vel.y).toBeCloseTo(l.vel.y, 1);
     }
   });
 
@@ -429,7 +465,7 @@ describe('surf-thirty-doors', () => {
     expect(worst, `tightest head room at ${where}`).toBeGreaterThanOrEqual(3);
   });
 
-  it('the rooms get harder in order: faster, smaller doors, tighter faces and bends, more red', () => {
+  it('the rooms get harder in order: faster, smaller doors, tighter faces and bends, smaller blocks, more red', () => {
     const routes = roomRoutes();
     const stats = ROOMS.map((room) => {
       const els = routes[room.n].filter((e) => !e.alt);
@@ -437,7 +473,7 @@ describe('surf-thirty-doors', () => {
       const radii = curves.flatMap((e) =>
         e.legs.flatMap((l) => (l.turn ? [l.radius ?? 20, l.toRadius ?? l.radius ?? 20] : [])),
       );
-      const windows = els.flatMap((e) => (e.t === 'window' ? [e.hole[0]] : []));
+      const blocks = els.flatMap((e) => (e.t === 'jumps' ? e.pads.map((pd) => pd.size?.[0] ?? 5) : []));
       const red =
         els.filter((e) => e.t === 'red').length +
         curves.filter((e) => e.red !== undefined || e.legs.some((l) => typeof l.red === 'number'))
@@ -446,7 +482,7 @@ describe('surf-thirty-doors', () => {
         level: room.level,
         face: Math.min(...curves.map((e) => e.height)),
         radius: Math.min(Infinity, ...radii),
-        window: Math.min(Infinity, ...windows),
+        block: Math.min(Infinity, ...blocks),
         red,
         door: room.door[0],
       };
@@ -460,15 +496,21 @@ describe('surf-thirty-doors', () => {
       expect(Math.max(...b.map((s) => s.door))).toBeLessThan(Math.min(...a.map((s) => s.door)));
       // tighter faces (the smallest face of each room, on average)
       expect(mean(b.map((s) => s.face))).toBeLessThan(mean(a.map((s) => s.face)));
-      // tighter bends, smaller windows (where a level has them)
+      // tighter bends (where a level has them)
       const tight = (xs: typeof a) => Math.min(...xs.map((s) => s.radius));
       if (i >= 2) expect(tight(b)).toBeLessThan(tight([...a, ...of(LEVELS[i - 2])]));
-      const win = (xs: typeof a) => Math.min(...xs.map((s) => s.window));
-      if (i >= 2) expect(win(b)).toBeLessThan(win(a));
       // more rooms with red zones
       expect(b.filter((s) => s.red > 0).length).toBeGreaterThanOrEqual(
         a.filter((s) => s.red > 0).length,
       );
+    }
+    // smaller blocks: the smallest block of a level is smaller than any easier level's
+    let smallest = Infinity;
+    for (const l of LEVELS) {
+      const m = Math.min(...of(l).map((s) => s.block));
+      if (m === Infinity) continue;
+      expect(m, l).toBeLessThan(smallest);
+      smallest = m;
     }
     // the first ten rooms have no red at all; most extreme rooms do
     expect(stats.slice(0, 10).every((s) => s.red === 0)).toBe(true);

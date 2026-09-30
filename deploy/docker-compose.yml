@@ -1,0 +1,94 @@
+# Lethal Recoil on a rented Linux server: the game server + Caddy (HTTPS).
+#
+#   players ──https/wss──▶ Caddy (ports 80 + 443, automatic certificates)
+#                              │ 127.0.0.1:7777
+#                              ▼
+#                          game server (client files + WebSocket /ws + dashboard 127.0.0.1:7778)
+#                              │
+#                              ▼
+#                          /var/lib/lethal-recoil  (spaceyz.db + backups/)
+#
+# Settings come from deploy/.env (made by scripts/deploy/setup-server.sh; example:
+# deploy/env.example). Everyday commands (run in this folder):
+#   docker compose ps              is it running / healthy?
+#   docker compose logs -f game    live log (Ctrl+C to leave)
+#   docker compose restart game    restart the game server
+#
+# Both containers use the server's own network ("host" mode): Caddy then sees every player's
+# real address (IPv4 and IPv6), the game server and dashboard listen on 127.0.0.1 only, and the
+# ufw firewall stays in charge (Docker's published ports would bypass it).
+
+name: lethal-recoil
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+services:
+  game:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        SPACEYZ_VERSION: ${APP_VERSION:-server}
+    image: lethal-recoil:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      HOST: 127.0.0.1
+      PORT: ${GAME_PORT:-7777}
+      PUBLIC_URL: https://${DOMAIN:?Set DOMAIN in deploy/.env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # only Caddy (on this machine) may tell the game a player's real address
+      TRUST_PROXY: loopback
+      SPACEYZ_DATA: /data
+      BACKUP_HOURS: ${BACKUP_HOURS:-24}
+      DASHBOARD_HOST: 127.0.0.1
+      DASHBOARD_PORT: ${DASHBOARD_PORT:-7778}
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?Set DASHBOARD_TOKEN in deploy/.env}
+    volumes:
+      - ${DATA_DIR:-/var/lib/lethal-recoil}:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # time for "server restarting" notices and closing the database cleanly
+    stop_grace_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - game
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in deploy/.env}
+      GAME_PORT: ${GAME_PORT:-7777}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # HTTPS certificates (keep!)
+      - caddy_config:/config
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

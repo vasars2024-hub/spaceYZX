@@ -12,3 +12,8 @@ test-results/
 screenshots/
 SpaceYZ-Host*
 *.blob
+.claude/worktrees/
+tools/map/out/
+
+# rented-server settings (holds the dashboard password)
+deploy/.env

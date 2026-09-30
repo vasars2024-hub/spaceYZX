@@ -1,0 +1,151 @@
+// Every movement number in one place. Units: metres, seconds, m/s, m/s².
+// The live tuning panel edits a copy of this object; "Copy values" exports it as JSON.
+
+export const MOVEMENT_DEFAULTS = {
+  // Body
+  radius: 0.4,
+  standHeight: 1.8,
+  crouchHeight: 1.1,
+  eyeFromTopStand: 0.2,
+  eyeFromTopCrouch: 0.15,
+  stepHeight: 0.4,
+  maxWalkableSlopeDeg: 50,
+  groundSnap: 0.3,
+
+  // Gravity
+  gravity: 20,
+  upRotateDegPerSec: 600,
+
+  // Ground
+  sprintSpeed: 9,
+  runSpeed: 6.5,
+  crouchSpeed: 3.5,
+  groundAccel: 10,
+  friction: 6,
+  stopSpeed: 2,
+
+  // Jump & bhop
+  jumpHeight: 1.2,
+  jumpBufferSec: 0.1,
+  coyoteSec: 0.1,
+  landGraceSec: 0.05,
+  bhopLandingLoss: 0.02,
+
+  // Air
+  airAccel: 10,
+  airWishCap: 0.75,
+  airSoftCap: 15,
+  maxSpeed: 30,
+
+  // Tap-strafe: fresh strafe press in the air = brief sharp redirect
+  tapStrafeMinSpeed: 6,
+  tapStrafeWindowSec: 0.08,
+  tapStrafeTurnDegPerTick: 12,
+  tapStrafeSpeedKeep: 0.94,
+  tapStrafesPerAir: 2,
+
+  // Slide
+  slideStartSpeed: 7,
+  slideEndSpeed: 4,
+  slideBoost: 3,
+  slideBoostMaxSpeed: 13,
+  slideBoostCooldownSec: 2,
+  slideDecel: 2.5,
+  slideSteerAccel: 8,
+  slideSteerCap: 1.5,
+  slideMaxSpeed: 20,
+
+  // Mantle / climb
+  vaultMaxHeight: 1.25,
+  climbMaxHeight: 2.6,
+  vaultTimeSec: 0.22,
+  vaultSpeedKeep: 0.85,
+  vaultMinExitSpeed: 4,
+  climbSpeed: 6,
+  climbTimeSec: 0.5,
+
+  // Wall-jump
+  wallJumpReach: 0.35,
+  wallJumpOut: 6,
+  wallJumpUp: 6.5,
+  wallJumpSpeedKeep: 0.9,
+  wallJumpsPerAir: 2,
+
+  // Zip-rail
+  railGrabRadius: 1.0,
+  railSpeed: 16,
+  railHang: 1.1,
+  railJumpUp: 5,
+  railCooldownSec: 0.4,
+
+  // Zero-G
+  floatDriftAccel: 0.8,
+  pushOffSpeed: 9,
+  pushOffReach: 0.4,
+  thrusterImpulse: 6,
+  thrusterCharges: 3,
+  thrusterRechargeSec: 2.5,
+  maxFloatSpeed: 20,
+
+  // Jetpack (everyone, in normal gravity): press and *hold* Space in the air (with no wall to
+  // jump off) to fly. While it burns you rise and steer freely with WASD, backwards too.
+  // Holding is required so mouse-wheel jump taps (bunny hops) never start it.
+  jetpackHoldSec: 0.1,
+  jetpackFuelSec: 0.8, // thrust time on a full tank
+  jetpackUpAccel: 34, // m/s² along your up (gravity is ~20: a gentle climb)
+  jetpackMaxRise: 7, // m/s: no rocketing to the ceiling
+  jetpackDirAccel: 3, // how fast you reach the steering speed (× speed per second)
+  jetpackDirSpeed: 12, // m/s you can steer to in any direction while it burns
+  jetpackRechargeDelaySec: 0.6, // rest before the tank starts refilling
+  jetpackRechargeSec: 2.5, // empty → full
+  // Sky duel overtime (up at the floating arena, level/sky-arena.ts): a sped-up jetpack
+  skyJetpackFuelMul: 3, // bigger tank
+  skyJetpackRechargeMul: 2.5, // refills this many times faster (and after half the rest)
+  skyJetpackUpMul: 1.6, // stronger up-thrust
+  skyJetpackRiseMul: 1.6, // higher climb speed limit
+  skyJetpackDirMul: 1.5, // faster steering speed
+
+  // Mag-boots
+  magRange: 10, // zero-G: reach for the nearest surface
+  magPull: 22,
+  // Gravity shift (F) in normal gravity: stick to the nearest wall or ceiling within reach of
+  // your body (you don't have to face it); F again, a jump, or the time limit lets go
+  magNearRange: 2.5,
+  magMaxSec: 10,
+  magCooldownSec: 2,
+
+  // Dash (M3)
+  dashSpeed: 16,
+  dashCooldownSec: 3,
+  dashDurationSec: 0.15,
+
+  // Races (race tracks, sim/race.ts): the dash key is SURGE instead — a short forward burst, a
+  // few per race; the jetpack tank only refills at fuel cells (a respawn gives back the fuel you
+  // had when you passed that checkpoint or anchor); falling off (or the respawn key) puts you
+  // back at your last checkpoint after a penalty.
+  raceSurgeCharges: 3,
+  raceSurgeMul: 1.6, // × sprint speed (at least), and running speed while it lasts
+  raceSurgeSec: 1,
+  raceJetpackFuelSec: 1.6, // a race tank (no refill on its own)
+  raceJetIgniteSec: 0.15, // fuel each ignition costs on top of the burn (no hovering on taps)
+  racePenaltySec: 1.5, // frozen at the checkpoint after a fall / respawn
+  raceFuelCellRadius: 1.6, // pick-up reach of a fuel cell (body centre)
+  raceRespawnHoldSec: 0.3, // hold the respawn key this long (no accidental resets)
+  // Race movement (race tracks and surf maps only; every other mode keeps the numbers above):
+  // Source-style air control. In the air the wish direction only adds speed while your
+  // velocity along it is under raceAirWishCap, so strafing (A/D) while turning the mouse the
+  // same way adds a little speed every tick: bunny-hop chains and surfing build speed. Jumping
+  // within raceLandGraceSec of a landing gets back the speed friction took since touchdown, and a
+  // jump pressed up to raceJumpBufferSec before landing fires on the landing: people can't hit
+  // the one landing tick every time the way bots do. Hesitate longer and friction slows you.
+  raceSprintSpeed: 12, // m/s: races run a third faster than combat (sprintSpeed)
+  raceAirAccel: 100, // like surf servers' sv_airaccelerate: the wish cap is reached at once
+  raceAirWishCap: 1, // m/s (Source's 30 u ≈ 0.76 m): the speed gained per perfectly strafed tick
+  raceAirSoftCap: 34, // m/s: strafing can't push your horizontal speed past this (~2.8 × race sprint)
+  raceMaxSpeed: 50, // m/s total: surfing down ramps and long falls top out here
+  raceJumpBufferSec: 0.15, // a jump pressed this early still fires on the landing tick
+  raceLandGraceSec: 0.1, // a jump this late after landing gets back the speed friction took
+  raceSurfPenaltySec: 0.5, // surf maps: frozen this long at the stage start after a fall
+} as const;
+
+export type MovementConfig = { -readonly [K in keyof typeof MOVEMENT_DEFAULTS]: number };

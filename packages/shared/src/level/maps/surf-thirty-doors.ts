@@ -55,10 +55,10 @@ const straight = (len: number, drop: number, more: Partial<CurveLeg> = {}): Curv
 
 /**
  * A lip: the ridge climbs `rise` over `len` at the ramp's end and throws you up (vy ≈ speed ×
- * rise / len). The line rides it half way down the face (where a rider holding the ramp
- * actually is there: the flight after it starts from the line).
+ * rise / len). The line keeps its depth on the face through it (a line stepping down the face
+ * at the lip would catch: tools/race/test/surf-seams.test.ts).
  */
-const lip = (len: number, rise: number, depth = 0.5): CurveLeg => ({ len, drop: -rise, depth });
+const lip = (len: number, rise: number): CurveLeg => ({ len, drop: -rise });
 
 const DEG = Math.PI / 180;
 // (+ 0: never a negative zero, which JSON would not keep)
@@ -618,16 +618,17 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   {
     n: 11,
     name: 'Pad Pillars',
-    idea: 'land on a pillar: its pad throws you straight on, the next pillar stands off to the side — steer onto it',
+    idea: 'land on a pillar: its pad throws you straight on, the next pillar stands off to the side — steer onto it, then stop on the last',
     level: 'hard',
     door: [14, 14],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
       p.move(reach(32, -2, 5), -5, 3);
+      // sized: a pad throws 25 m/s, 15 up; the next pillar stands where that comes down to its
+      // top, reach(25, 15, 2) = 40 m on (traced 40.5–41 m), 7 m to one side, then the other
       boostPillar(p, 6);
       padHop(p, 7, 2, 5);
-      padHop(p, -7, 2, 5);
-      pillar(p.move(reach(25, 15, 2), -2, 7), [5, 5]);
+      pillar(p.move(reach(25, 15, 2), -2, -7), [5, 5]);
       p.launch(36, -10, 1.6, 0, 0);
       p.curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'left', color: c });
     },
@@ -830,12 +831,12 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(35, 3.5), straight(20, -2), straight(30, 5), lip(12, 3)],
+        legs: [straight(35, 3), straight(30, -1.2), straight(30, 3.5), lip(12, 3)],
         ...MID,
         side: 'right',
         color: c,
       });
-      // sized (traced): the lip releases at 29 m/s, 9.4 up — 1.4 s in the air, 41.5 m on; the
+      // sized (traced): the lip releases at 31 m/s, 9.9 up — 1.4 s in the air, 45.6 m on; the
       // scoops before it bleed speed if you ride them high: 3 m/s lost is 4 m short, into the gap
       p.move(44, -8, 4).curve({
         lead: 12,
@@ -881,35 +882,37 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(40, 4), lip(12, 3)],
+        legs: [straight(40, 4), lip(12, 3), straight(3, 0)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      // sized: as Over the Top (room 10: 26 m on, 6 m down, 14 m across), traced: each lip
-      // releases at 31 m/s, 9 m/s up, and clears the next ridge by 2 m; the faces are short (10
-      // m at 63°: 5.1 m across) with red from 0.7 down, so a flight that comes down late (too
-      // far across) lands in the red, one that comes down early hits the near face. (Hopping
-      // back the other way would mean climbing your own face first: it kills the speed.)
+      // sized: the first hop as Over the Top (room 10: 26 m on, 6 m down, 14 m across); traced,
+      // each lip releases at 31–33 m/s, 9.4–10 up: 1.5 s in the air, 45–48 m on, 8–10 m down,
+      // landing a few metres past the ridge (the next A-frames 28 on, 9 down, 15 across). The
+      // faces are short (10 m at 63°: 5.1 m across) with red from 0.8 down: a flight that
+      // comes down late (too far across) lands in the red, an early one hits the near face.
+      // Each lip ends in a 3 m level run-out (a lip's end cap catches a rider leaving it).
+      // (Hopping back the other way would mean climbing your own face first: it kills speed.)
       p.move(26, -6, 14).curve({
         lead: 12,
-        legs: [straight(28, 3), lip(12, 3)],
+        legs: [straight(28, 3), lip(12, 3), straight(3, 0)],
         ...TIGHT,
         side: 'both',
         ride: 'right',
-        red: 0.7,
+        red: 0.8,
         color: c,
       });
-      p.move(26, -6, 14).curve({
+      p.move(28, -9, 15).curve({
         lead: 12,
-        legs: [straight(28, 3), lip(12, 3)],
+        legs: [straight(28, 3), lip(12, 3), straight(3, 0)],
         ...TIGHT,
         side: 'both',
         ride: 'right',
-        red: 0.7,
+        red: 0.8,
         color: c,
       });
-      p.move(26, -6, 14).curve({
+      p.move(28, -9, 15).curve({
         lead: 12,
         legs: [straight(50, 4)],
         ...TIGHT,
@@ -928,12 +931,13 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(45, 5), lip(14, 4.5, 0.6)],
+        // (a 3 m level run-out after the lip: its end cap would catch a rider leaving it)
+        legs: [straight(45, 5), lip(14, 4.5), straight(3, 0)],
         ...TIGHT,
         side: 'right',
         color: c,
       });
-      // sized (traced): the steep lip releases at 32 m/s, 12 up — 2.4 s in the air, 28 m down:
+      // sized (traced): the steep lip releases at 32 m/s, 12.6 up — 2.3 s in the air, 24 m down:
       // the half circle onto the needle 38 m across, behind and below, is 60 m (1.9 s): turn
       // it steadily, all the way down
       p.move(0, -25, 38)
@@ -957,19 +961,19 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({
         lead: 10,
-        legs: [straight(40, 4), lip(12, 3)],
+        legs: [straight(40, 4), lip(12, 3), straight(3, 0)],
         ...MID,
         side: 'right',
         color: c,
       });
-      // sized (traced): each lip releases at 29–33 m/s, 9–10 up — 1.35–1.4 s in the air, 40–43
-      // m flat, 5–7 m down: the next kicker 30 m on, 26 m across, a quarter turn right
+      // sized (traced): each lip releases at 31–33 m/s, 10–10.6 up — 1.4 s in the air, 43 m
+      // flat, 5–6 m down: the next kicker 30 m on, 26 m across, a quarter turn right
       for (let k = 0; k < 2; k++)
         p.move(30, -8, 26)
           .turn(90)
           .curve({
             lead: 10,
-            legs: [straight(24, 2.5), lip(12, 3)],
+            legs: [straight(28, 4.5), lip(12, 3), straight(3, 0)],
             ...MID,
             side: 'right',
             color: c,

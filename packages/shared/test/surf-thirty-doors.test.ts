@@ -427,8 +427,8 @@ describe('surf-thirty-doors', () => {
           g.bayLine?.some((q) => pointInAabb(v3(q.pos.x, q.pos.y + 0.9, q.pos.z), l.min, l.max)),
         ),
     );
-    // Big Air's ring, Pad Pillars' three pads and its launch, Portal Relay's launch
-    expect(rings.length).toBe(6);
+    // Big Air's ring, Pad Pillars' two pads and its launch, Portal Relay's launch
+    expect(rings.length).toBe(5);
     for (const l of rings) {
       const c = v3((l.min.x + l.max.x) / 2, (l.min.y + l.max.y) / 2, (l.min.z + l.max.z) / 2);
       const { world, p } = racer(v3(c.x, c.y - 0.9, c.z), 0, 1);

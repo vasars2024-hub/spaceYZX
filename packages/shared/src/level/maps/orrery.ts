@@ -9,7 +9,7 @@
 //
 //   THE ORBIT HALL (|x| < 20, |z| < 22, ground, glass roof at 18)   the sealed hall of the
 //        orrery. Six ground doors (two per side wall, one to each gallery corridor). In the
-//        middle THE SUN (|x|, |z| ≤ 7, top y 7): its glowing core (|x|, |z| ≤ 3.5, 4 m tall)
+//        middle THE SUN (|x|, |z| ≤ 7, top y 7): its glowing core (|x|, |z| ≤ 4.5, 4 m tall)
 //        blocks every line across the hall; its top is a ledge round the core. Two brass ramps
 //        (east and west faces) climb it. Great upright gears stand in the hall's corners.
 //   THE PLANETS (LevelDef.movers) glide inside the hall between upper docks and the Sun:
@@ -54,7 +54,6 @@ const SITE = 0xc23b3b;
 
 // velvet, brass and old gold
 const VELVET = 0x5a1723;
-const VELVET_DARK = 0x3a0e16;
 const BRASS = 0xc39a48;
 const BRASS_DARK = 0x7d5a26;
 const GEAR = 0xa47a34;
@@ -85,7 +84,7 @@ export const ORRERY = {
   /** the Sun: pedestal half-size and top, core half-size and top */
   sun: 7,
   pedestal: 7,
-  core: 3.5,
+  core: 4.5,
   coreTop: 11,
   /** the orbit hall: |x| < x, |z| < z; its glass roof */
   hall: { x: 20, z: 22, roof: 18 },
@@ -566,7 +565,6 @@ export const buildOrrery = (): LevelDef => {
   lightQ(23, 5, 38, LAMP, 11, 0.8);
   lightQ(44, 5, 38, LAMP, 13, 0.8);
   // the vestibule (x 45..48 and the strip along z 11..15) and the spawn room
-  const SR = O.spawnRoom;
   q(
     wall(44, 45, 11, 30, 0, CL, [
       [11, 14, 0, DH],

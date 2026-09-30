@@ -287,19 +287,19 @@ export const MAP_BLURBS: Record<string, string> = {
   'orbital-ring':
     'Station around a reactor core: ring + basement ring, zip-rails, launch pads, rift portals.',
   'canyon-relay':
-    'Desert mesas at sunset over a deadly gorge: launch pads, rock bridges, slot canyons.',
+    'Adobe cliff villages at sunset over a deadly gorge: narrow streets, a mine and rail tunnel underneath, walled canyon sites.',
   'sakura-hold':
-    'Small blossom castle for 1v1–3v3: slow moat, a keep to climb, paper walls the Boomerang flies through.',
+    'Small blossom castle for 1v1–3v3: courts, tatami halls and a cellar loop, a slow moat, paper walls the Boomerang flies through.',
   antipode:
-    'One hollow hull, two floors: Orange stands on the ceiling. Drift through the zero-G Seam and fall up onto the enemy deck.',
+    'One hollow hull, two decks: Orange stands on the ceiling. Bomb sites on the side wall, flank tunnels in the hull, the zero-G Seam between.',
   stormglass:
-    'Two fortresses over a 70 m void at violet dusk: a glass bridge, a broken span to jump, a floating anemometer. Fall and you are gone.',
+    'Two fortresses over a 70 m void at violet dusk: bridges and a floating anemometer above, a maze of ducts and tunnels below. Fall and you are gone.',
   afterglow:
-    'A neon night market under a glass dome: dark alleys, a sunken koi plaza, rooftops and a monorail across the sky.',
+    'A neon night-market district: dark alleys, walk-through shops, a teahouse and monorail station above, a metro tunnel below.',
   orrery:
-    'A brass clockwork solar system in the dark: ride the moving planets to the Sun, or take the long way round the ring.',
+    'A brass clockwork observatory: libraries and galleries round a sealed orbit hall where the planets ride, a gear crypt below.',
   leviathan:
-    'Inside a fossil giant in a teal nebula: rib-arch cover, a walkway along its spine, a glowing heart in the middle.',
+    'Inside a fossil giant in a teal nebula: bone halls between the ribs, a heart chamber, the spine walkway above, marrow tunnels below.',
   'colossus-yard':
     'A drydock at sunrise round a half-built titan warship: container canyons, crane booms, a spine deck 15 m up. Built for ten.',
   'training-bay': 'Compact combat bay for quick fights.',

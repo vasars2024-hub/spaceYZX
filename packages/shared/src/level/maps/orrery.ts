@@ -379,7 +379,7 @@ export const buildOrrery = (): LevelDef => {
     ),
   );
   q(slab(0, 20, 23, 46, -1, 0, [], 'wood', { color: PARQUET }));
-  q(slab(0, HX, 0, HZ, -1, 0, [[0, 2, 8, 17]], 'plate', { color: HALL_FLOOR }));
+  q(slab(0, HX, 0, HZ, -1, 0, [[0, 2, 8, 17.5]], 'plate', { color: HALL_FLOOR }));
   q([mk(0, -1, HZ, HX, 0, 23, 'plate', { color: HALL_FLOOR })]);
   // the crypt and its tunnels (y -5)
   q([mk(0, B - 1, 0, 7.5, B, 8.5, 'plate', { color: CRYPT })]);
@@ -453,7 +453,7 @@ export const buildOrrery = (): LevelDef => {
   q(tooth(6, 0, 19.5, false));
   q(hub(17, 19.5, 1));
   // rails round the stairwells down to the crypt
-  q([mk(2, 0, 7.75, 2.25, 1.1, 17, 'plate', brass), mk(0, 0, 7.75, 2, 1.1, 8, 'plate', brass)]);
+  q([mk(2, 0, 7.75, 2.25, 1.1, 17.5, 'plate', brass), mk(0, 0, 7.75, 2, 1.1, 8, 'plate', brass)]);
   lightQ(15, 5, 6, LAMP, 11, 0.8);
   lightQ(8, 5, 18, LAMP, 11, 0.8);
 
@@ -461,12 +461,12 @@ export const buildOrrery = (): LevelDef => {
   q([
     ...wall(7.5, 8, 1.5, 9, B - 1, -1),
     ...wall(2, 8, 8.5, 9, B - 1, -1),
-    ...wall(2, 2.5, 9, 17, B - 1, -1),
+    ...wall(2, 2.5, 9, 17.5, B - 1, -1),
     // the crawl tunnel's side
     ...wall(8, 21, 1.5, 2, B - 1, -1),
   ]);
   // the stairwells: from the hall floor down to the crypt (north and south of the Sun)
-  const stair = wedgeRamp('z', 8.5, 17, B, 0, 0, 4, { mat: 'plate', color: RAMP });
+  const stair = wedgeRamp('z', 8.5, 17.5, B, 0, 0, 4, { mat: 'plate', color: RAMP });
   C.push(stair, mirrorZ(stair));
   // the Sun's axle: an iron column through the middle (no line across the crypt)
   q([mk(0, B, 0, 1.6, -1, 1.6, 'pillar', { color: IRON })]);
@@ -553,7 +553,7 @@ export const buildOrrery = (): LevelDef => {
   q(wall(14, 31, 30, 31, 0, UC, [[22, 26, 0, DH]]));
   q(wall(30, 31, 31, 45, 0, CL, [[32, 35, 0, DH]]));
   q([
-    mk(17, 0, 34.3, 27, 2.6, 35, 'crate', { color: SHELF }),
+    mk(17, 0, 34.3, 25, 2.6, 35, 'crate', { color: SHELF }),
     mk(19, 0, 41.5, 29, 2.6, 42.2, 'crate', { color: SHELF }),
     mk(27.5, 0, 38.5, 29.5, 1.1, 40.5, 'crate', { color: TABLE }),
   ]);
@@ -895,7 +895,7 @@ const waypoints = (): WaypointDef[] => {
   add('sunN', 0, U, -5.25, { z: false });
   // the crypt
   add('wellTop', 0, 0, 18.5);
-  add('wellMid', 0, -2.5, 12.75);
+  add('wellMid', 0, -2.5, 13);
   add('pitS', 0, B, 6);
   add('pitSE', 4.5, B, 2.5);
   add('pitE', 5, B, 0);

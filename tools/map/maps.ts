@@ -1,7 +1,7 @@
 // Per-map analysis setup: named regions (for grouping numbers), chokepoints and lanes.
 // Coordinates are read from the map code (packages/shared/src/level/maps/). When the map
 // changes, update the rectangles here so the report keeps grouping samples sensibly.
-import { v3, SPLIT_DECK, type LevelDef, type Vec3 } from '@space-yz/shared';
+import { v3, ANTIPODE, SPLIT_DECK, type LevelDef, type Vec3 } from '@space-yz/shared';
 import type { RouteSpec, TimingRules } from './timing';
 
 export type Team = 0 | 1;
@@ -690,11 +690,148 @@ export const genericConfig = (id: string, def: LevelDef): MapAnalysisConfig => {
   };
 };
 
+/**
+ * Antipode: fair by a half-turn (x, y, z) → (-x, 28 - y, z), so every region has its twin. Cyan
+ * owns the floor deck's west end, Orange the ceiling deck's east end; the other ends of each
+ * deck, the Seam, the well and the side planes' middles are shared. Spawns are the bastions and
+ * quarters (two rooms per team).
+ */
+const antipode = (): MapAnalysisConfig => {
+  const A = ANTIPODE;
+  const H = A.H;
+  const regions: RegionDef[] = [];
+  /** a rect of the lower half (floor deck side) and its image on the upper half */
+  const pair = (
+    names: [string, string],
+    sides: [Team | null, Team | null],
+    lane: string,
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    y0: number,
+    y1: number,
+  ) => {
+    regions.push({
+      name: names[0],
+      side: sides[0],
+      lane,
+      min: v3(x0, y0, z0),
+      max: v3(x1, y1, z1),
+    });
+    regions.push({
+      name: names[1],
+      side: sides[1],
+      lane,
+      min: v3(-x1, H - y1, z0),
+      max: v3(-x0, H - y0, z1),
+    });
+  };
+  const deck = A.roof + 1;
+  const B = A.bastion;
+  const Q = A.quarters;
+  pair(['Cyan spawn', 'Orange spawn'], [0, 1], 'base', B.x0, B.x1 + 0.5, -B.z, B.z, -1, deck);
+  pair(['Cyan spawn', 'Orange spawn'], [0, 1], 'base', Q.x0, Q.x1 + 0.5, Q.z0, Q.z1, -1, deck);
+  // the side planes (all heights): the sites' rooms, the connector, the tunnels
+  const [bx0, bx1] = A.roomB;
+  const [ax0, ax1] = A.roomA;
+  regions.push(
+    {
+      name: 'B site room (north wall)',
+      side: 0,
+      lane: 'B',
+      min: v3(bx0, -1, A.halfZ),
+      max: v3(bx1, H + 1, A.plane.z1 + 1),
+    },
+    {
+      name: 'A site room (north wall)',
+      side: 1,
+      lane: 'A',
+      min: v3(ax0, -1, A.halfZ),
+      max: v3(ax1, H + 1, A.plane.z1 + 1),
+    },
+    {
+      name: 'junction hall and connector (north wall)',
+      side: null,
+      lane: 'connector',
+      min: v3(-A.halfX, -1, A.halfZ),
+      max: v3(A.halfX, H + 1, A.plane.z1 + 1),
+    },
+    {
+      name: 'flank tunnels (south wall)',
+      side: null,
+      lane: 'flank',
+      min: v3(-A.halfX, -1, -A.plane.z1 - 1),
+      max: v3(A.halfX, H + 1, -A.halfZ),
+    },
+  );
+  // the Seam (zero-G, over the well) and the well's floors
+  regions.push({
+    name: 'the Seam',
+    side: null,
+    lane: 'mid',
+    min: v3(-A.seamHall.x, deck, -A.seamHall.z),
+    max: v3(A.seamHall.x, H - deck, A.seamHall.z),
+  });
+  pair(
+    ['well (floor deck)', 'well (ceiling deck)'],
+    [null, null],
+    'mid',
+    -A.well.x,
+    A.well.x,
+    -A.well.z,
+    A.well.z,
+    -1,
+    deck,
+  );
+  // the decks: each team's home end, and the far end it shares with the enemy's home overhead
+  pair(
+    ['floor deck, Cyan end', 'ceiling deck, Orange end'],
+    [0, 1],
+    'main',
+    -A.halfX,
+    0,
+    -A.halfZ,
+    A.halfZ,
+    -1,
+    deck,
+  );
+  pair(
+    ['floor deck, far end', 'ceiling deck, far end'],
+    [null, null],
+    'main',
+    0,
+    A.halfX,
+    -A.halfZ,
+    A.halfZ,
+    -1,
+    deck,
+  );
+  return {
+    id: 'antipode',
+    teamNames: ['Cyan (floor deck)', 'Orange (ceiling deck)'],
+    regions,
+    baseRegion: ['Cyan spawn', 'Orange spawn'],
+    chokepoints: [],
+    lanes: [],
+    laneLabels: {
+      base: 'spawns',
+      main: 'decks',
+      mid: 'Seam and well',
+      A: 'A site',
+      B: 'B site',
+      connector: 'north connector',
+      flank: 'flank tunnels',
+    },
+  };
+};
+
 const CONFIGS: Record<string, () => MapAnalysisConfig> = {
   kestrel,
   'split-deck': splitDeck,
   'orbital-ring': orbitalRing,
   'canyon-relay': canyonRelay,
+  antipode,
 };
 
 /** Analysis setup for a map id (hand-made when available, otherwise the generic fallback). */

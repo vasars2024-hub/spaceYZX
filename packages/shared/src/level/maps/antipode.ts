@@ -139,7 +139,7 @@ export const ANTIPODE = {
   /** cyan's bastion (floor deck); orange's is its image on the ceiling */
   bastion: { x0: -59, x1: -47, z: 9 },
   /** cyan's quarters (floor deck, the second spawn room) */
-  quarters: { x0: -47, x1: -38, z0: -24, z1: -18 },
+  quarters: { x0: -53, x1: -38, z0: -24, z1: -18 },
   /** cyan's Tower block x -56..-54, z ±1, 4 m (orange's hangs at x 54..56) */
   tower: { x: -55, h: 4 },
   /** the Spindle: core half-size, corner posts out to `post`, fillets `fillet` m */
@@ -253,7 +253,7 @@ export const ANTIPODE_FLOOR: Record<string, Rect> = {
   lobbyB: [-44, -24, 17, 24],
   hall: [-36, -22, -7, 7],
   hallToLobbyB: [-28, -24, 7, 17],
-  quarters: [-47, -38, -24, -18],
+  quarters: [-53, -38, -24, -18],
   quartersDoorN: [-41, -38, -18, -15],
   quartersDoorE: [-38, -34, -24, -21.5],
   tunnelW: [-34, -22, -24, -18],
@@ -563,13 +563,14 @@ export const buildAntipode = (): LevelDef => {
   deco(-59, 1.2, -3, -58.94, 4.4, 3, 'teamA', { trim: CYAN });
   // ============================ cyan's quarters ============================
   const Q = A.quarters;
-  // a bulkhead hides the bunks from both doors (round its end to get out)
-  box(-43, 0, Q.z0, -42, R, -20, { mat: 'panel', color: PANEL_LO, trim: CYAN });
+  // a bulkhead hides the bunks at the far end from both doors (round its end to get out:
+  // through the door-side half of the room, north to the passage or east to the tunnel lobby)
+  box(-47, 0, Q.z0, -46, R, -20.5, { mat: 'panel', color: PANEL_LO, trim: CYAN });
   for (const [x, z] of [
-    [-46, -23],
-    [-46, -21.6],
-    [-44.4, -23],
-    [-44.4, -21.6],
+    [-51.8, -23],
+    [-51.8, -21.6],
+    [-50.2, -23],
+    [-50.2, -21.6],
   ])
     spawns.push({ pos: v3(x, 0, z), yawDeg: -90, team: 0, group: 'quarters' });
   // bunks along the back wall (half cover), the team's banner
@@ -725,7 +726,7 @@ export const buildAntipode = (): LevelDef => {
   ];
   const lowerAreas: [string, string, Vec3, number][] = [
     ['Cyan bastion', 'Orange bastion', v3(-49, 0, 0), -90],
-    ['Cyan quarters', 'Orange quarters', v3(-45, 0, -19.5), -90],
+    ['Cyan quarters', 'Orange quarters', v3(-49, 0, -19.2), -90],
     ['Home hall (floor)', 'Home hall (ceiling)', v3(-24, 0, 0), -90],
     ['Well (floor, west)', 'Well (ceiling, east)', v3(-10, 0, 0), -90],
     ['B lobby (floor)', 'A lobby (ceiling)', v3(-31, 0, 18), 180],
@@ -825,9 +826,10 @@ const antipodeWaypoints = (): WaypointDef[] => {
   fl('pn.hall', -34, 9);
   fl('ps.hall', -34, -9);
   // quarters
-  fl('q.sp', -45.5, -19);
-  fl('q.gap', -42.5, -18.75);
-  fl('q.n', -39.5, -20);
+  fl('q.sp', -50, -19.3);
+  fl('q.gap', -46.5, -18.8);
+  fl('q.mid', -43, -18.9);
+  fl('q.n', -39.5, -20.3);
   fl('q.door', -39.5, -16.5);
   fl('q.e', -40, -22.8);
   fl('q.edoor', -36, -22.8);
@@ -987,7 +989,8 @@ const antipodeWaypoints = (): WaypointDef[] => {
     ['ps.q', 'q.door'],
     // quarters
     ['q.sp', 'q.gap'],
-    ['q.gap', 'q.n'],
+    ['q.gap', 'q.mid'],
+    ['q.mid', 'q.n'],
     ['q.n', 'q.door'],
     ['q.n', 'q.e'],
     ['q.e', 'q.edoor'],
@@ -1173,7 +1176,8 @@ const antipodeLights = (): LightDef[] => {
     { pos: v3(-57, 4.3, 6), color: COLD, radius: 8, intensity: 0.9 },
     { pos: v3(-57, 4.3, -6), color: COLD, radius: 8, intensity: 0.9 },
     { pos: v3(-49, 4.3, 0), color: CYAN, radius: 8, intensity: 0.8 },
-    { pos: v3(-43, 4.3, -21.5), color: CYAN, radius: 8, intensity: 1 },
+    { pos: v3(-50, 4.3, -21.5), color: CYAN, radius: 8, intensity: 1 },
+    { pos: v3(-42, 4.3, -21), color: COLD, radius: 8, intensity: 0.8 },
     // the sites' rooms on the north hull wall, the junction hall
     { pos: v3(-31, 7, 27), color: COLD, radius: 12, intensity: 1.2 },
     { pos: v3(31, 7, 27), color: COLD, radius: 12, intensity: 1.2 },

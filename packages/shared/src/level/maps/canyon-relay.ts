@@ -323,7 +323,7 @@ export const buildCanyonRelay = (): LevelDef => {
   adobe(60, 13, 67, 16, 0, COMPOUND); // south wall (thick: nothing sees in from the plaza)
   wallZ(66, 67, 2, 13, 0, COMPOUND, [[9.5, 12.5]], adobe, 3.5); // east wall, door
   // baffle inside the door: nothing outside sees the spawns
-  adobe(63.4, 9, 64.2, 13, 0, 2.5);
+  adobe(63.4, 7.5, 64.2, 13, 0, 2.5);
 
   // ======================= the storehouse (covered, alley ↔ camp) =========================
   wallZ(71, 72, 2, 15, 0, WALL, [[9.5, 12.5]], adobe, 3.2);
@@ -831,7 +831,8 @@ const waypoints = (): WaypointDef[] => {
   // station yard and the tower alley
   add('tower', MX, 0, 11.5);
   add('yard', 62.5, 0, 7.5);
-  add('yardIn', 65.1, 0, 8);
+  add('yardS', 62.5, 0, 11.5);
+  add('yardIn', 65.1, 0, 6.3);
   add('yardGap', 65.1, 0, 11);
   add('yardDoor', 66.5, 0, 11);
   add('alley', 69, 0, 11);
@@ -912,7 +913,7 @@ const waypoints = (): WaypointDef[] => {
   add('tunnel', MX, RL, MZ);
 
   chain('yard', 'yardIn', 'yardGap', 'yardDoor', 'alley', 'alleyS');
-  link('yard', 'tower');
+  chain('yard', 'yardS', 'tower');
   chain('alley', 'storeW', 'store1', 'store2', 'store3', 'storeE', 'campW', 'camp', 'campS');
   chain('campS', 'campG', 'campGate', 'mkN', 'mkM', 'rimE');
   chain('campS', 'camp3', 'gateIn', 'gate', 'cOut', 'c1', 'c2', 'c3', 'cRamp', 'cBot', 'basin');

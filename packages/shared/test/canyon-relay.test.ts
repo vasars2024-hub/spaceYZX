@@ -18,6 +18,7 @@ import {
   mapDef,
   MAPS,
   raycast,
+  spawnOrder,
   startMatch,
   step,
   TICK_DT,
@@ -25,8 +26,11 @@ import {
   v3,
   waypointRoute,
   yawToView,
+  type BotMemory,
   type LevelDef,
+  type PlayerInput,
   type SimContext,
+  type SimEvent,
   type Vec3,
 } from '../src/index';
 
@@ -47,6 +51,8 @@ const standingCapsule = (feet: Vec3) => ({
 const key = (n: number) => n.toFixed(3);
 /** mirror across the north ↔ south line z = 50 */
 const mirZ = (z: number) => 100 - z;
+/** mirror across the east ↔ west line x = 60 */
+const mirX = (x: number) => 120 - x;
 const all4 = (base: string) => ['NE', 'NW', 'SE', 'SW'].map((q) => base + q);
 
 /** The map with some waypoints cut off, so bots have to take one particular route. */
@@ -69,10 +75,8 @@ const sim = (d: LevelDef = def()) => {
 };
 
 describe('Canyon Relay map', () => {
-  it('is a competitive map next to Split Deck, Kestrel and Orbital Ring (Split Deck stays default)', () => {
+  it('is a competitive outdoor map (Split Deck stays default)', () => {
     expect(MAPS.find((x) => x.id === 'canyon-relay')?.competitive).toBe(true);
-    for (const id of ['split-deck', 'kestrel', 'orbital-ring'])
-      expect(MAPS.find((x) => x.id === id)?.competitive).toBe(true);
     expect(DEFAULT_MATCH_MAP()).toBe('split-deck');
     const d = def();
     expect(d.name).toBe('Canyon Relay');
@@ -80,22 +84,29 @@ describe('Canyon Relay map', () => {
     expect(d.outdoor?.horizon).toBe(0xf2a65a);
     expect(d.fog?.color).toBe(d.outdoor?.horizon);
     expect(d.skyArena).toBeDefined();
+    expect(d.boxes.length).toBeGreaterThan(500);
   });
 
-  it('is mirror-symmetric north ↔ south (z → 100 - z, teams swapped)', () => {
+  it('is mirror-symmetric north ↔ south (z → 100 - z, teams swapped) and east ↔ west', () => {
     const d = def();
     const boxes = new Set(
       d.boxes.map((b) => [b.c.x, b.c.y, b.c.z, b.h.x, b.h.y, b.h.z].map(key).join(',')),
     );
     for (const b of d.boxes) {
+      if (b.c.z < -3 || b.c.z > 103) continue; // far scenery beyond the north cliff
       const twin = [b.c.x, b.c.y, mirZ(b.c.z), b.h.x, b.h.y, b.h.z].map(key).join(',');
       expect(boxes.has(twin), `box ${JSON.stringify(b.c)}`).toBe(true);
+    }
+    for (const b of d.boxes.filter((x) => !x.noCollide)) {
+      const twin = [mirX(b.c.x), b.c.y, b.c.z, b.h.x, b.h.y, b.h.z].map(key).join(',');
+      expect(boxes.has(twin), `box ${JSON.stringify(b.c)} (east ↔ west)`).toBe(true);
     }
     for (const s of d.spawns)
       expect(
         d.spawns.some(
           (o) =>
             o.team !== s.team &&
+            o.group === s.group &&
             key(o.pos.x) === key(s.pos.x) &&
             key(o.pos.z) === key(mirZ(s.pos.z)),
         ),
@@ -117,50 +128,79 @@ describe('Canyon Relay map', () => {
             key(o.vel.z) === key(-p.vel.z),
         ),
       ).toBe(true);
-    // bomb sites east (A) and west (B), on the middle line
+    // bomb sites in the east (A) and west (B) basins, on the middle line
     const A = d.bombSites!.find((s) => s.name === 'A')!;
     const B = d.bombSites!.find((s) => s.name === 'B')!;
-    expect(A.min.x).toBeGreaterThan(98);
-    expect(B.max.x).toBeLessThan(22);
+    expect(A.min.x).toBeGreaterThan(101);
+    expect(B.max.x).toBeLessThan(19);
     for (const s of [A, B]) expect(s.min.z).toBe(mirZ(s.max.z));
   });
 
-  it('follows the plan: open floor where the plan has ground', () => {
+  it('follows the plan: open floor in the pueblo, the mine, the tunnel, the canyons and basins', () => {
     const lv = level();
-    const M = CANYON_RELAY.mesa;
-    // [name, x, floor y, z] in the north half (checked mirrored too)
+    const C = CANYON_RELAY;
+    // [name, x, floor y, z] in the north-east quarter (checked in all four quarters)
     const places: [string, number, number, number][] = [
-      ['Cyan camp', 52, 0, 10],
-      ['outer path, east', 88, 0, 11],
-      ['outer path, west', 32, 0, 11],
-      ['north mesa', 78, M, 21],
-      ['north mesa, gorge edge', 60, M, 40],
-      ['spire top', 62, CANYON_RELAY.spire.top, 27],
-      ['east bridge', 85, M, 46],
-      ['west bridge', 35, M, 46],
-      ['east slot canyon', 107, 0, 11],
-      ['west slot canyon', 13, 0, 30],
-      ['A basin', 107, CANYON_RELAY.basin, 46],
-      ['B basin', 13, CANYON_RELAY.basin, 46],
-      ['relay rock', 60, CANYON_RELAY.relay.top, 48],
+      ['station yard', 62.5, 0, 6],
+      ['east camp', 90, 0, 5],
+      ['storehouse', 79, 0, 12],
+      ['cantina', 78, 0, 19],
+      ['plaza', 66, 0, 25],
+      ['rim street', 75, 0, 28],
+      ['relay house', 64, 0, 32],
+      ['terrace', 64, 0, 38],
+      ['lookout', 75, 0, 36],
+      ['gatehouse', 84.5, 0, 37],
+      ['rock bridge', 85, 0, 46],
+      ['mine hall', 62, C.mine, 27],
+      ['mine gallery', 82, C.mine, 28],
+      ['cave passage', 96, C.mine, 36],
+      ['slot canyon', 108, 0, 10],
+      ['basin', 108, C.basin, 42],
     ];
     for (const [name, x, y, z] of places)
-      for (const zz of [z, mirZ(z)]) {
-        expect(raycast(lv, v3(x, y + 1, zz), v3(0, -1, 0), 2)?.point.y, name).toBeCloseTo(y, 3);
-        expect(capsuleOverlaps(lv, standingCapsule(v3(x, y, zz))), name).toBe(false);
-      }
+      for (const xx of [x, mirX(x)])
+        for (const zz of [z, mirZ(z)]) {
+          const hit = raycast(lv, v3(xx, y + 1, zz), v3(0, -1, 0), 2);
+          expect(hit?.point.y, `${name} ${xx},${zz}`).toBeCloseTo(y, 3);
+          expect(capsuleOverlaps(lv, standingCapsule(v3(xx, y, zz))), name).toBe(false);
+        }
+    // covered rooms have roofs; the mine has rock over it
+    for (const [name, x, y, z] of [
+      ['storehouse', 79, 0, 12],
+      ['cantina', 78, 0, 19],
+      ['relay house', 64, 0, 32],
+      ['lookout', 75, 0, 36],
+      ['gatehouse', 84.5, 0, 37],
+      ['mine gallery', 82, C.mine, 28],
+      ['rail tunnel', 60, C.rail, 40],
+    ] as const)
+      expect(raycast(lv, v3(x, y + 1, z), v3(0, 1, 0), 20), `${name} roof`).not.toBeNull();
+    // the rail tunnel under the gorge, all the way across
+    for (const z of [40, 45, 50, 55, 60]) {
+      expect(raycast(lv, v3(60, C.rail + 1, z), v3(0, -1, 0), 2)?.point.y).toBeCloseTo(C.rail, 3);
+      expect(capsuleOverlaps(lv, standingCapsule(v3(60, C.rail, z)))).toBe(false);
+    }
     // the gorge: a long drop, open to the sky
-    const down = raycast(lv, v3(72, 5, 50), v3(0, -1, 0), 60)!;
-    expect(down.point.y).toBeCloseTo(CANYON_RELAY.gorgeFloor, 3);
-    expect(raycast(lv, v3(72, 5, 50), v3(0, 1, 0), 200)).toBeNull();
+    const down = raycast(lv, v3(70, 5, 50), v3(0, -1, 0), 60)!;
+    expect(down.point.y).toBeCloseTo(C.gorgeFloor, 3);
+    expect(raycast(lv, v3(70, 5, 50), v3(0, 1, 0), 200)).toBeNull();
   });
 
-  it('has 8 valid spawns per team (clear capsule, floor underneath, inside its camp)', () => {
+  it('has 8 spawns per team in three sheltered groups (station yard, east camp, west camp)', () => {
     const lv = level();
-    const CP = CANYON_RELAY.camp;
     for (const team of [0, 1] as const) {
       const spawns = lv.def.spawns.filter((s) => s.team === team);
       expect(spawns.length).toBe(8);
+      const groups = new Map<string, number>();
+      for (const s of spawns) groups.set(s.group!, (groups.get(s.group!) ?? 0) + 1);
+      expect([...groups.entries()].sort()).toEqual([
+        ['east camp', 3],
+        ['station', 2],
+        ['west camp', 3],
+      ]);
+      // a 3v3 round starts one player in each group
+      expect(new Set(spawnOrder(spawns).slice(0, 3).map((s) => s.group)).size).toBe(3);
       for (const s of spawns) {
         expect(capsuleOverlaps(lv, standingCapsule(s.pos)), `spawn ${s.pos.x},${s.pos.z}`).toBe(
           false,
@@ -169,7 +209,26 @@ describe('Canyon Relay map', () => {
           raycast(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), v3(0, -1, 0), 2)?.point.y,
         ).toBeCloseTo(s.pos.y, 3);
         const z = team === 0 ? s.pos.z : mirZ(s.pos.z);
-        expect(z > CP.z0 && z < CP.z1 && s.pos.x > CP.x0 && s.pos.x < CP.x1).toBe(true);
+        const x = s.pos.x >= 60 ? s.pos.x : mirX(s.pos.x);
+        const inYard = x < 66 && z > 2 && z < 13;
+        const inCamp = x > 83 && x < 98 && z > 2 && z < 12.5;
+        expect(s.group === 'station' ? inYard : inCamp, `spawn ${s.pos.x},${s.pos.z}`).toBe(true);
+      }
+    }
+  });
+
+  it('no spawn is seen from the enemy half, the gorge, the canyons, the basins or far away', () => {
+    const lv = level();
+    const wps = lv.def.waypoints!;
+    for (const s of lv.def.spawns) {
+      const eye = v3(s.pos.x, s.pos.y + 1.6, s.pos.z);
+      for (const w of wps) {
+        const from = v3(w.pos.x, w.pos.y + 0.6, w.pos.z);
+        if (!lineOfSight(lv, from, eye)) continue;
+        const own = s.team === 0 ? w.pos.z < 42 : w.pos.z > 58;
+        const town = w.pos.x > 22 && w.pos.x < 98;
+        const d = Math.hypot(from.x - eye.x, from.z - eye.z);
+        expect(own && town && d < 20, `${w.name} sees spawn ${s.pos.x},${s.pos.z}`).toBe(true);
       }
     }
   });
@@ -191,6 +250,11 @@ describe('Canyon Relay map', () => {
       const c = v3((s.min.x + s.max.x) / 2, s.min.y + 1, (s.min.z + s.max.z) / 2);
       expect(raycast(lv, c, v3(0, -1, 0), 2)?.point.y).toBeCloseTo(s.min.y, 3);
       expect(capsuleOverlaps(lv, standingCapsule(v3(c.x, s.min.y, c.z)))).toBe(false);
+      // big enough to fight over: at least 10 × 10 m
+      expect(s.max.x - s.min.x).toBeGreaterThanOrEqual(10);
+      expect(s.max.z - s.min.z).toBeGreaterThanOrEqual(10);
+      // under the natural arch
+      expect(raycast(lv, v3(c.x, s.min.y + 1, 50), v3(0, 1, 0), 20)).not.toBeNull();
     }
     expect(d.powerups!.length).toBe(1);
     const p = d.powerups![0];
@@ -205,6 +269,26 @@ describe('Canyon Relay map', () => {
     );
     expect(mid.x > R.x0 && mid.x < R.x1 && mid.z > R.z0 && mid.z < R.z1).toBe(true);
     expect(d.launchPads!.length).toBe(4);
+  });
+
+  it('lights every covered room and the mine', () => {
+    const lights = def().lights!;
+    const lit = (x: number, y: number, z: number) =>
+      lights.some((l) => Math.hypot(l.pos.x - x, l.pos.y - y, l.pos.z - z) < l.radius * 0.8);
+    for (const [x, y, z] of [
+      [79, 1, 12], // storehouse
+      [78, 1, 19], // cantina
+      [92, 1, 18], // mine house
+      [64, 1, 32], // relay house
+      [75, 1, 36], // lookout
+      [84.5, 1, 37], // gatehouse
+      [62, CANYON_RELAY.mine + 1, 27], // mine hall
+      [82, CANYON_RELAY.mine + 1, 28], // gallery
+      [96, CANYON_RELAY.mine + 1, 36], // cave passage
+      [60, CANYON_RELAY.rail + 1, 45], // rail tunnel
+    ])
+      for (const xx of [x, mirX(x)])
+        for (const zz of [z, mirZ(z)]) expect(lit(xx, y, zz), `${xx},${y},${zz}`).toBe(true);
   });
 
   it('waypoints sit in open space, links have line of sight, every waypoint is reachable', () => {
@@ -226,10 +310,20 @@ describe('Canyon Relay map', () => {
           `waypoint ${w.name} on a launch pad`,
         ).toBe(false);
       // nothing inside the deadly gorge
-      for (const k of lv.def.killVolumes ?? [])
-        expect(w.pos.y - 1 > k.max.y, `waypoint ${w.name} in the gorge`).toBe(true);
+      for (const k of lv.def.killVolumes ?? []) {
+        const inside =
+          w.pos.x > k.min.x &&
+          w.pos.x < k.max.x &&
+          w.pos.z > k.min.z &&
+          w.pos.z < k.max.z &&
+          w.pos.y - 1 < k.max.y &&
+          w.pos.y - 1 > k.min.y;
+        expect(inside, `waypoint ${w.name} in the gorge`).toBe(false);
+      }
     }
-    for (const from of ['towerN', 'towerS'])
+    // every waypoint from each Tower and from every spawn group
+    const froms = ['towerN', 'towerS', ...all4('camp')];
+    for (const from of froms)
       for (let i = 0; i < wps.length; i++)
         expect(
           waypointRoute(wps, wpIndex(lv.def, from), i).length,
@@ -239,8 +333,8 @@ describe('Canyon Relay map', () => {
 
   it('keeps every ramp at 30° or less', () => {
     const rotated = def().boxes.filter((b) => b.q && !b.noCollide);
-    // cliff ramps, canyon passages, spire ramps and canyon dips (4 each); the fins only turn
-    // about the vertical
+    // the plaza stairs, the mine house stairs, the rail stairs and the canyon ramps (4 each);
+    // the rock fins only turn about the vertical
     const tilted = rotated.filter((b) => Math.abs(b.q!.x) + Math.abs(b.q!.z) > 1e-9);
     expect(tilted.length).toBe(16);
     for (const b of rotated) {
@@ -249,58 +343,33 @@ describe('Canyon Relay map', () => {
       expect((Math.acos(Math.min(1, upY)) * 180) / Math.PI).toBeLessThanOrEqual(30);
     }
   });
-
-  it('no spawn is in view from the enemy mesa, its spire or the outer paths', () => {
-    const lv = level();
-    const M = CANYON_RELAY.mesa;
-    const top = CANYON_RELAY.spire.top;
-    for (const north of [true, false]) {
-      const Z = (z: number) => (north ? z : mirZ(z));
-      const spawnPts = lv.def.spawns
-        .filter((s) => (s.team === 0) === north)
-        .map((s) => v3(s.pos.x, 1.6, s.pos.z));
-      // enemy lookouts (the other half), and this half's mesa and outer paths
-      const lookouts = [
-        v3(60, top + 1.6, Z(73)),
-        v3(62, top + 1.6, Z(71)),
-        v3(60, M + 1.6, Z(60)),
-        v3(85, M + 1.6, Z(62)),
-        v3(60, M + 1.6, Z(20)),
-        v3(78, M + 1.6, Z(21)),
-        v3(35, M + 1.6, Z(21)),
-        v3(90, 1.6, Z(11)),
-        v3(30, 1.6, Z(11)),
-        v3(107, 1.6, Z(11)),
-      ];
-      for (const l of lookouts)
-        for (const s of spawnPts)
-          expect(lineOfSight(lv, l, s), `${JSON.stringify(l)} sees ${JSON.stringify(s)}`).toBe(
-            false,
-          );
-    }
-  });
 });
 
-describe('Canyon Relay: the gorge and the launch pads', () => {
-  it('falling into the gorge kills; the relay rock and the bridges are safe', () => {
+describe('Canyon Relay: the gorge, the relay rock and the launch pads', () => {
+  it('falling into the gorge kills; the relay rock, the bridges and the rail tunnel are safe', () => {
     const { config, ctx, world } = sim();
+    const C = CANYON_RELAY;
     const fall = addPlayer(world, createPlayer(1, 0, v3(72, 4.5, 50), 0, config));
     const rock = addPlayer(world, createPlayer(2, 0, v3(60, 1.5, 50), 0, config));
-    const bridge = addPlayer(world, createPlayer(3, 1, v3(85, 4.5, 50), 0, config));
-    const west = addPlayer(world, createPlayer(4, 1, v3(30, 4.5, 50), 0, config));
+    const bridge = addPlayer(world, createPlayer(3, 1, v3(85, 1.5, 50), 0, config));
+    const west = addPlayer(world, createPlayer(4, 1, v3(50, 4.5, 50), 0, config));
+    const tunnel = addPlayer(world, createPlayer(5, 1, v3(60, C.rail + 0.5, 46), 0, config));
     for (let t = 0; t < 180; t++) step(world, {}, ctx);
+    const feet = (p: typeof rock) => p.pos.y - config.movement.standHeight / 2;
     expect(fall.alive).toBe(false);
     expect(west.alive).toBe(false);
     expect(rock.alive).toBe(true);
-    expect(rock.pos.y - config.movement.standHeight / 2).toBeCloseTo(CANYON_RELAY.relay.top, 1);
+    expect(feet(rock)).toBeCloseTo(C.relay.top, 1);
     expect(bridge.alive).toBe(true);
-    expect(bridge.pos.y - config.movement.standHeight / 2).toBeCloseTo(CANYON_RELAY.mesa, 1);
+    expect(feet(bridge)).toBeCloseTo(0, 1);
+    expect(tunnel.alive).toBe(true);
+    expect(feet(tunnel)).toBeCloseTo(C.rail, 1);
   });
 
-  it('sprinting off the mesa edge in the middle lands you on the relay rock (and its power-up)', () => {
+  it('sprinting off the terrace in the middle lands you on the relay rock (and its power-up)', () => {
     const { config, ctx, world } = sim();
-    // yaw 180 faces +z: from the north mesa toward the gorge
-    const p = addPlayer(world, createPlayer(1, 0, v3(60, CANYON_RELAY.mesa, 34), 180, config));
+    // yaw 180 faces +z: from the north terrace toward the gorge
+    const p = addPlayer(world, createPlayer(1, 0, v3(60, 0, 38), 180, config));
     for (let t = 0; t < 240; t++) {
       const buttons = p.pos.z < 44.5 ? Btn.Forward : 0;
       step(world, { 1: { tick: world.tick + 1, buttons, view: yawToView(180) } }, ctx);
@@ -309,7 +378,7 @@ describe('Canyon Relay: the gorge and the launch pads', () => {
     expect(p.pos.y - config.movement.standHeight / 2).toBeCloseTo(CANYON_RELAY.relay.top, 1);
   });
 
-  it('each launch pad throws you across the gorge onto the far mesa, in the open', () => {
+  it('each launch pad throws you across the gorge onto the far terrace', () => {
     const d = def();
     for (const pad of d.launchPads!) {
       const { config, ctx, world } = sim();
@@ -323,23 +392,20 @@ describe('Canyon Relay: the gorge and the launch pads', () => {
       expect(events.filter((e) => e === 'launch').length).toBe(1);
       expect(p.alive).toBe(true);
       expect(p.grounded).toBe(true);
-      expect(p.pos.y - config.movement.standHeight / 2).toBeCloseTo(CANYON_RELAY.mesa, 1);
-      // the other side of the gorge, a few metres past its edge (the mirrored pad side)
+      expect(p.pos.y - config.movement.standHeight / 2).toBeCloseTo(0, 1);
+      // the other side of the gorge, on the far terrace (the mirrored pad side)
       const z = c.z < 50 ? p.pos.z : mirZ(p.pos.z);
-      expect(z).toBeGreaterThan(CANYON_RELAY.gorge.z1 + 4);
-      expect(z).toBeLessThan(72);
-      // in toward the middle, in front of the far spire
+      expect(z).toBeGreaterThan(CANYON_RELAY.gorge.z1 + 2);
+      expect(z).toBeLessThan(64);
       expect(Math.abs(p.pos.x - 60)).toBeLessThan(3);
     }
   });
 });
 
 describe('Canyon Relay bots', () => {
-  const bridges = ['bridgeMidE', 'bridgeMidW'];
-  const canyons = [...all4('cOut'), ...all4('passBot')];
   const lanes: [string, string[]][] = [
-    ['rock bridges', canyons],
-    ['slot canyons and basins', bridges],
+    ['rock bridges', ['tunnel']],
+    ['rail tunnel under the gorge', ['bridgeMidE', 'bridgeMidW']],
   ];
   it.each(lanes.flatMap(([n, b]) => ([0, 1] as const).map((team) => [n, team, b] as const)))(
     'a bot carries the Controller to the enemy Tower via the %s (team %i)',
@@ -358,18 +424,22 @@ describe('Canyon Relay bots', () => {
       expect(ms.rounds[0]?.reason).toBe('tower');
       expect(ms.rounds[0]?.winner).toBe(team);
     },
+    60000,
   );
 
-  const siteRoutes: [string, 0 | 1, string, string[]][] = [
-    ['Cyan to A down the outer path', 0, 'siteE', ['passTopNE']],
-    ['Cyan to B over the mesa and the passage', 0, 'siteW', ['cOutNW']],
-    ['Orange to A over the mesa and the passage', 1, 'siteE', ['cOutSE']],
-    ['Orange to B down the outer path', 1, 'siteW', ['passTopSW']],
+  // [name, team, spawn group, site, waypoints cut off]
+  const siteRoutes: [string, 0 | 1, string, string, string[]][] = [
+    ['Cyan east camp to A down the slot canyon', 0, 'east camp', 'siteE', ['caveNE', 'caveSE']],
+    ['Cyan station to A through the mine and the cave', 0, 'station', 'siteE', all4('gate')],
+    ['Cyan west camp to B down the slot canyon', 0, 'west camp', 'siteW', ['caveNW', 'caveSW']],
+    ['Orange east camp to A through the mine', 1, 'east camp', 'siteE', all4('gate')],
+    ['Orange station to B down the slot canyon', 1, 'station', 'siteW', ['caveNW', 'caveSW']],
+    ['Orange west camp to B through the mine', 1, 'west camp', 'siteW', all4('gate')],
   ];
-  it.each(siteRoutes)('a bot walks %s', (_name, team, site, blocked) => {
+  it.each(siteRoutes)('a bot walks %s', (_name, team, group, site, blocked) => {
     const d = withBlocked(def(), blocked);
     const { config, ctx, world } = sim(d);
-    const s = d.spawns.find((sp) => sp.team === team)!;
+    const s = d.spawns.find((sp) => sp.team === team && sp.group === group)!;
     const p = addPlayer(world, createPlayer(1, team, s.pos, s.yawDeg, config));
     const mem = createBotMemory(1, BOT_SKILLS.normal, 9);
     const goal = wpPos(d, site);
@@ -385,4 +455,35 @@ describe('Canyon Relay bots', () => {
     expect(p.alive).toBe(true);
     expect(arrived).toBe(true);
   });
+
+  it('an Elimination match with bots (3v3, one per spawn group) plays rounds to a result', () => {
+    const d = def();
+    const { config, ctx, world } = sim(d);
+    const mems: BotMemory[] = [];
+    let id = 1;
+    for (const team of [0, 1] as const)
+      for (const group of ['station', 'east camp', 'west camp']) {
+        const s = d.spawns.find((sp) => sp.team === team && sp.group === group)!;
+        addPlayer(world, createPlayer(id, team, s.pos, s.yawDeg, config));
+        mems.push(createBotMemory(id, BOT_SKILLS.normal, id * 17));
+        id++;
+      }
+    const ms = createMatch('3v3', 'elim');
+    startMatch(ms, world, ctx);
+    const kills: SimEvent[] = [];
+    while (ms.rounds.length < 1 && world.tick < 60 * (5 + 80 + 40)) {
+      const inputs: Record<number, PlayerInput> = {};
+      for (const mem of mems) {
+        const p = world.players.find((q) => q.id === mem.id)!;
+        if (p.alive) inputs[p.id] = botThink(world, ctx, p, mem);
+      }
+      step(world, inputs, ctx);
+      updateMatch(ms, world, ctx);
+      applyBotObjectives(ms, world, ctx, mems);
+      kills.push(...world.events.filter((e) => e.type === 'kill'));
+    }
+    expect(ms.rounds.length).toBe(1);
+    expect(ms.rounds[0].winner).not.toBeNull();
+    expect(kills.length).toBeGreaterThan(0);
+  }, 120000);
 });

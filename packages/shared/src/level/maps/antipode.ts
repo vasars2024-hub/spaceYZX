@@ -31,6 +31,7 @@
 //   SOUTH PLANE (z -31..-25, gravity into the south hull wall) — the flank loop: an H of tunnels.
 //   The low bar (y 7..11) joins the floor deck's two tunnel lobbies (x ±28); the high bar
 //   (y 17..21) the ceiling deck's; the rung at x 0 joins the bars (floor ↔ ceiling).
+//   Staggered baffles either side of the rung break each bar's 60 m line.
 //
 //   THE SEAM (x ±24, z ±20, y 9..19, zero-G) over the WELL (x ±13, z ±11): jump or jetpack out
 //        of the well, drift across (push off the walls, the Spindle, the cargo), and past the
@@ -41,7 +42,9 @@
 //        at its middle (y 14) in the ±z grooves.
 //   SPAWNS  two detached groups per team, each a closed room with two exits: the BASTION (the
 //        Tower, near B's floor door: the home site) and the QUARTERS (south-west, by the tunnel
-//        lobby: the flank and the far site).
+//        lobby: the flank and the far site). The quarters' bunks sit behind a bulkhead at its far
+//        (west) end, so neither door sees them; the 2.5 m gap round the bulkhead is wide enough
+//        for bots to turn through.
 //
 // Why 28 m between the decks: a jump is 1.2 m and a fall of 22 m kills (config), so each deck's
 // band of gravity is 8 m and falling out of the Seam onto a deck never hurts.
@@ -367,13 +370,20 @@ export const buildAntipode = (): LevelDef => {
     box(x0, S.y0, z0, x1, MID, z1, bulk);
   // the rooms' ceiling light strips (under the roof) along each room's long axis
   for (const [name, [x0, x1, z0, z1]] of Object.entries(F)) {
-    if (name === 'well' || name === 'quarters' || name.includes('Door') || name.startsWith('hallTo'))
+    if (
+      name === 'well' ||
+      name === 'quarters' ||
+      name.includes('Door') ||
+      name.startsWith('hallTo')
+    )
       continue;
     if (name.startsWith('gallery')) continue; // (their bulkhead ribs reach the roof)
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
-    if (x1 - x0 >= z1 - z0) deco(x0 + 1, R - 0.08, cz - 0.15, x1 - 1, R - 0.01, cz + 0.15, 'trim', { color: COLD_DIM });
-    else deco(cx - 0.15, R - 0.08, z0 + 1, cx + 0.15, R - 0.01, z1 - 1, 'trim', { color: COLD_DIM });
+    if (x1 - x0 >= z1 - z0)
+      deco(x0 + 1, R - 0.08, cz - 0.15, x1 - 1, R - 0.01, cz + 0.15, 'trim', { color: COLD_DIM });
+    else
+      deco(cx - 0.15, R - 0.08, z0 + 1, cx + 0.15, R - 0.01, z1 - 1, 'trim', { color: COLD_DIM });
   }
 
   // ============================ the side planes ============================
@@ -382,7 +392,10 @@ export const buildAntipode = (): LevelDef => {
   for (const s of [1, -1] as const) {
     const side = s > 0 ? 'north' : 'south';
     const Z = (z: number) => s * z;
-    const zr = (a: number, b: number): [number, number] => [Math.min(Z(a), Z(b)), Math.max(Z(a), Z(b))];
+    const zr = (a: number, b: number): [number, number] => [
+      Math.min(Z(a), Z(b)),
+      Math.max(Z(a), Z(b)),
+    ];
     const [pz0, pz1] = zr(P.z0, P.z1);
     const [dz0, dz1] = zr(W, P.z0);
     const plan = s > 0 ? NORTH_PLANE : SOUTH_PLANE;
@@ -437,9 +450,18 @@ export const buildAntipode = (): LevelDef => {
         },
       );
       // the door's frame light and hazard stripes across the threshold
-      deco(u0 - 0.2, D.h, Z(W) - (s > 0 ? 0.08 : 0), u1 + 0.2, D.h + 0.2, Z(W) + (s > 0 ? 0 : 0.08), 'trim', {
-        color: VIOLET,
-      });
+      deco(
+        u0 - 0.2,
+        D.h,
+        Z(W) - (s > 0 ? 0.08 : 0),
+        u1 + 0.2,
+        D.h + 0.2,
+        Z(W) + (s > 0 ? 0 : 0.08),
+        'trim',
+        {
+          color: VIOLET,
+        },
+      );
       for (let x = u0 + 0.25; x < u1 - 0.5; x += 1)
         deco(x, 0.004, dz0 + 0.1, x + 0.5, 0.02, dz1 - 0.1, 'trim', { color: HAZARD });
     }
@@ -448,9 +470,18 @@ export const buildAntipode = (): LevelDef => {
     for (const [x0, x1, y0, y1] of plan) {
       const ym = (y0 + y1) / 2;
       if (y1 - y0 < 3) continue;
-      deco(x0 + 0.5, ym - 0.15, Z(P.z0) - (s > 0 ? 0 : 0.08), x1 - 0.5, ym + 0.15, Z(P.z0) + (s > 0 ? 0.08 : 0), 'trim', {
-        color: s > 0 ? COLD : VIOLET,
-      });
+      deco(
+        x0 + 0.5,
+        ym - 0.15,
+        Z(P.z0) - (s > 0 ? 0 : 0.08),
+        x1 - 0.5,
+        ym + 0.15,
+        Z(P.z0) + (s > 0 ? 0.08 : 0),
+        'trim',
+        {
+          color: s > 0 ? COLD : VIOLET,
+        },
+      );
     }
   }
 
@@ -487,7 +518,9 @@ export const buildAntipode = (): LevelDef => {
   for (const site of [A.siteA, A.siteB]) {
     const y1 = Math.min(site.max.y, MID);
     const zz = P.z1 - 0.02;
-    deco(site.min.x, site.min.y, zz, site.max.x, site.min.y + 0.15, P.z1 - 0.004, 'trim', { color: SITE });
+    deco(site.min.x, site.min.y, zz, site.max.x, site.min.y + 0.15, P.z1 - 0.004, 'trim', {
+      color: SITE,
+    });
     deco(site.min.x, site.min.y, zz, site.min.x + 0.15, y1, P.z1 - 0.004, 'trim', { color: SITE });
     deco(site.max.x - 0.15, site.min.y, zz, site.max.x, y1, P.z1 - 0.004, 'trim', { color: SITE });
   }

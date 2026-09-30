@@ -399,7 +399,8 @@ describe('Antipode: spawns and objectives', () => {
       for (const s of spawns) {
         expect(capsuleOverlaps(lv, standing(s.pos)), vkey(s.pos)).toBe(false);
         // in its group's room
-        const cyan = team === 0 ? s.pos : antipodeImage(v3(s.pos.x, s.pos.y + ANTIPODE_HANG, s.pos.z));
+        const cyan =
+          team === 0 ? s.pos : antipodeImage(v3(s.pos.x, s.pos.y + ANTIPODE_HANG, s.pos.z));
         const [x0, x1, z0, z1] = ROOMS[s.group!];
         expect(cyan.x > x0 && cyan.x < x1 && cyan.z > z0 && cyan.z < z1, vkey(s.pos)).toBe(true);
         if (team === 0) {
@@ -589,9 +590,7 @@ const walkRoute = (
   return { p, arrived: i >= names.length, ticks: t, events, config };
 };
 
-
 describe('Antipode: across the Seam, up the Spindle, through the side planes', () => {
-
   it('an orange spawn turns over and stands on the ceiling (facing kept, no damage)', () => {
     const d = def();
     for (const s of d.spawns.filter((sp) => sp.team === 1)) {
@@ -805,7 +804,6 @@ describe('Antipode: across the Seam, up the Spindle, through the side planes', (
     expect(p.hp).toBe(config.combat.maxHp);
   });
 
-
   it('the sky duel takes both teams up to the arena standing upright, and back home after', () => {
     const d = def();
     const { config, ctx, world } = sim(d);
@@ -849,9 +847,7 @@ describe('Antipode: across the Seam, up the Spindle, through the side planes', (
       expect(p.up.y).toBeCloseTo(p.pos.y > H / 2 ? -1 : 1, 6);
     }
   });
-
 });
-
 
 describe('Antipode bots', () => {
   const SPINDLE = ['sp.w2', 'sp.e2', 'sp.n2', 'sp.s2'];
@@ -975,5 +971,4 @@ describe('Antipode bots', () => {
     // they go looking for each other: over the Spindle / stairwells to the other deck
     expect(crossedAny).toBe(true);
   });
-
 });

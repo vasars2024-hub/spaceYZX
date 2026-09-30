@@ -696,19 +696,20 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   },
   {
     n: 22,
-    name: 'Sky Pillars',
-    idea: 'tiny pillars high and low: each pad throws you straight on, the next pillar is off to the side',
+    name: 'Ridge Hops',
+    idea: 'three A-frames in a staircase: each lip throws you over the next ridge — land on its far face, above its red',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...TIGHT, side: 'right', color: c });
-      p.move(reach(34, -2, 5), -5, 3);
-      boostPillar(p, 5);
-      padHop(p, 9, -3, 5);
-      padHop(p, -9, 5, 5);
-      pillar(p.move(reach(25, 15, 2), -2, 8), [5, 5]);
-      p.launch(36, -10, 1.6, 0, 0);
-      p.curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...TIGHT, side: 'right', color: c });
+      // sized: as Over the Top (room 10: 26 m on, 6 m down, 14 m across), traced: each lip
+      // releases at 31 m/s, 9 m/s up, and clears the next ridge by 2 m; the faces are short (10
+      // m at 63°: 5.1 m across) with red from 0.7 down, so a flight that comes down late (too
+      // far across) lands in the red, one that comes down early hits the near face. (Hopping
+      // back the other way would mean climbing your own face first: it kills the speed.)
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(28, 3), lip(12, 3)], ...TIGHT, side: 'both', ride: 'right', red: 0.7, color: c });
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(28, 3), lip(12, 3)], ...TIGHT, side: 'both', ride: 'right', red: 0.7, color: c });
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(50, 4)], ...TIGHT, side: 'both', ride: 'right', color: c });
     },
   },
   {

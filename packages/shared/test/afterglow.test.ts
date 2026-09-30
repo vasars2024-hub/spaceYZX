@@ -283,30 +283,28 @@ describe('Afterglow map', () => {
 
   it('each spawn group has two ways out, and the groups are apart', () => {
     const d = def();
-    const wps = d.waypoints!;
-    // the waypoints that lead out of each group's room (east half)
+    // the room's waypoint and the first waypoints of its two ways out (east half)
     const exits: Record<string, [string, string[]]> = {
       north: ['nYardE', ['nYardSE', 'nYardNE']], // → Tower hall / → the corridor to the alley
-      metro: ['platE', ['rampBotE', 'platOutE']], // → up to the Tower hall / → the tunnel
+      metro: ['platE', ['rampBotE', 'platInE']], // → up to the Tower hall / → the tunnel
       south: ['sYardE', ['sYardNE', 'sYardSE']], // → Tower hall / → the corridor to Rail Street
     };
-    for (const [, [room, outs]] of Object.entries(exits)) {
-      const i = wpIndex(d, room === 'platE' ? 'platE' : room);
-      const linked = new Set<string>();
-      const seen = new Set([i]);
-      // the room's own points: walk the graph while inside the group's area
-      const stack = [i];
-      while (stack.length) {
-        const k = stack.pop()!;
-        for (const j of wps[k].links) {
-          linked.add(wps[j].name!);
-          if (!seen.has(j) && ['platE', 'plat'].some((n) => wps[j].name === `${n}E`)) {
-            seen.add(j);
-            stack.push(j);
-          }
-        }
+    for (const [group, [room, outs]] of Object.entries(exits)) {
+      const wps = d.waypoints!;
+      const r = wpIndex(d, room);
+      // the room's waypoint is next to the group's spawns
+      for (const sp of d.spawns.filter((x) => x.team === 1 && x.group === group))
+        expect(Math.hypot(sp.pos.x - wps[r].pos.x, sp.pos.z - wps[r].pos.z)).toBeLessThan(6);
+      for (const o of outs) {
+        expect(wps[r].links.includes(wpIndex(d, o)), `${room} → ${o}`).toBe(true);
+        // with this way out shut, the other one still leads to both sites
+        const cut = withBlocked(d, [o]);
+        for (const site of ['siteA', 'siteB'])
+          expect(
+            waypointRoute(cut.waypoints!, r, wpIndex(d, site)).length,
+            `${group} without ${o} → ${site}`,
+          ).toBeGreaterThan(0);
       }
-      for (const o of outs) expect(linked.has(o), `${room} → ${o}`).toBe(true);
     }
     // the groups' centres are at least 20 m apart (or a floor apart)
     const centre = (g: string) => {
@@ -345,7 +343,11 @@ describe('Afterglow map', () => {
     for (const y of [P, 0, UP, M]) expect(heights.has(key(y))).toBe(true);
     for (const s of lv.def.spawns)
       expect(
-        wps.some((w) => Math.hypot(w.pos.x - s.pos.x, w.pos.z - s.pos.z) < 6 && Math.abs(w.pos.y - 1 - s.pos.y) < 0.1),
+        wps.some(
+          (w) =>
+            Math.hypot(w.pos.x - s.pos.x, w.pos.z - s.pos.z) < 6 &&
+            Math.abs(w.pos.y - 1 - s.pos.y) < 0.1,
+        ),
         `a waypoint near the ${s.group} spawn at ${JSON.stringify(s.pos)}`,
       ).toBe(true);
   });

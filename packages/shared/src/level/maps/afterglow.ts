@@ -48,7 +48,15 @@ import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
 import { qFromAxisAngle } from '../../math/quat';
 import { LevelBuilder, wedgeRamp } from '../builder';
-import type { BoxDef, LevelDef, LightDef, Material, SpawnDef, TowerDef, WaypointDef } from '../types';
+import type {
+  BoxDef,
+  LevelDef,
+  LightDef,
+  Material,
+  SpawnDef,
+  TowerDef,
+  WaypointDef,
+} from '../types';
 
 const CYAN = 0x19e3ff;
 const ORANGE = 0xff8a1f;
@@ -69,7 +77,6 @@ const FACADE_WARM = FACADES[1];
 const CEILING = 0x3b3848;
 const ROOF = 0x1a1822;
 const METAL = 0x3d4252;
-const PLATFORM = 0x55526a;
 const PILLAR = 0x2c2f3e;
 const WOOD = 0x5b3b2b;
 const WOOD_LIGHT = 0x8a5a3a;
@@ -864,7 +871,8 @@ const buildStation = ({ box, pair, deco, decoMid, light }: Kit): void => {
   ]) {
     // wall pieces between the doors (x -6..6), a lintel over the doors
     const xs = [-C.x, ...doorsAt, C.x];
-    for (let i = 0; i < xs.length - 1; i += 2) box(xs[i], Y, z0, xs[i + 1], C.top, z1, 'panel', body);
+    for (let i = 0; i < xs.length - 1; i += 2)
+      box(xs[i], Y, z0, xs[i + 1], C.top, z1, 'panel', body);
     for (let i = 1; i < xs.length - 1; i += 2)
       box(xs[i], Y + 2.4, z0, xs[i + 1], C.top, z1, 'panel', body);
   }
@@ -1065,12 +1073,12 @@ const waypoints = (): WaypointDef[] => {
   add('rampMid', 46, M / 2, 3);
   add('rampBot', 46, M, 9.5);
   add('plat', 49, M, 11);
-  add('platE', 53, M, 12);
+  add('platIn', 53, M, 12);
   add('platOut', 53, M, 17);
   chain('tower', 'hallN', 'nLink', 'nYardS', 'nYard', 'nYardN', 'nCorrE', 'nCorrW');
   chain('hallN', 'hallW', 'rampTop', 'tower', 'hallSW', 'hallS', 'sLink', 'sYardN', 'sYard');
   chain('sYard', 'sYardS', 'sCorrE', 'sCorrW');
-  chain('rampTop', 'rampMid', 'rampBot', 'plat', 'platE', 'platOut');
+  chain('rampTop', 'rampMid', 'rampBot', 'plat', 'platIn', 'platOut');
   // ---- north: Lantern Alley, the Noodle Bar, the alley's corner, Arcade Lane, Noodle Row ----
   add('alE', 43, 0, -39.2);
   add('alG', 37.5, 0, -39.2);

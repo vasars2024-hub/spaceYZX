@@ -312,7 +312,7 @@ export const MAP_BLURBS: Record<string, string> = {
   'race-ember':
     'The forge needle (very hard): five portal rooms, a jetpack under red ash ceilings — save fuel for the crucible lift — buttress wraps and a helix down the needle.',
   'surf-thirty-doors':
-    'Surf, Expert: thirty sealed rooms, each its own trick — wide first ramps, then portals, boosters, needles and red helixes. Clear a room, take its door.',
+    'Surf, Expert: thirty sealed rooms, each its own skill — surf onto small blocks, mid-air turns, flicks, pad flights, needle ramps, blind boards. Clear a room, take its door.',
   'surf-copper-reef':
     'Surf, Beginner: curved copper spillways round a lighthouse — a helix, a bhop crossing and a turning portal.',
   'surf-glass-garden':

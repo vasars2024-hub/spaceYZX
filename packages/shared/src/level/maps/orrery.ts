@@ -1,41 +1,38 @@
-// "The Orrery" — a clock the size of a cathedral: a dim observatory dome in deep space, a brass
-// model of a solar system still running in the dark (docs/NEW-MAPS.md). World x = east, z =
-// south, y up; the Well's floor is y 0. Mirror-symmetric across x = 0 — every box, spawn,
-// waypoint and moving planet (paths and timing) has its twin (Cyan, team 0, spawns west; Orange,
-// team 1, east). The outer parts are also built the same north ↔ south; the Sun's double spiral
-// ramp is not (both ramps start at the south and end at the north), so bomb site A (north
-// gallery) and B (south gallery) differ a little — both lie on the mirror line x = 0.
+// "The Orrery" — a clock the size of a cathedral: an observatory built round a brass model of
+// a solar system still running in the dark (docs/NEW-MAPS.md, docs/maps/orrery.md). World x =
+// east, z = south, y up; the ground floor is y 0. Mirror-symmetric across x = 0 — every box,
+// spawn, waypoint, light and moving planet has its twin (Cyan, team 0, west; Orange, team 1,
+// east). The building is also the same north ↔ south (bomb site A in the north gallery, B in the
+// south one), except the Sun's two ramps, which both climb from south to north.
 //
-//   THE WELL (|x| < 32, |z| < 30, y 0)   the open floor under the dome (glass at y 26, stars):
-//        four giant upright gears (full cover, 7.5 m tall), lying gear hubs (half cover), a
-//        brass orbit line on the floor. The Sun stands in its middle
-//   THE SUN (|x|, |z| ≤ 9, top y 12)   the high ground and the power-up: a glowing brass core
-//        on a pedestal, four low solar flares on top (half cover). Reached by
-//          - the DOUBLE SPIRAL: two 3 m ramps (≤ 26°) that start together at the Sun gate
-//            (south, x = 0), wind out along the south face and up the east / west faces to the
-//            NE / NW landings (y 12)
-//          - the PLANETS (moving blocks, LevelDef.movers): Mercury (north) and Venus (south)
-//   THE UNDERCROFT (y 0, ceiling 5.4)   all round the Well under the Ring deck, open to it
-//        through an arcade (lintel 3.8: the Sun can't see into it):
-//          - GEAR GALLERIES north / south (|z| 30..46): upright gears, gear teeth, hubs;
-//            site A (north) and B (south) on x = 0; ramps up to the Ring at the back
-//          - YARDS east / west (|x| 32..46): each team's Tower in front of its spawn; a ramp up
-//            to the Ring at each end
-//   THE RING (y 6)   the walkway on the deck over the undercroft, all the way round: velvet
-//        walls with star charts and brass lamps, waist-high brass rails along the Well (open
-//        only at the planets' docks), gear teeth and brass half walls
-//   SPAWNS (|x| 46.6..57.4, |z| < 9.4)   walled rooms behind the yards; two L-shaped exits
-//        (door → vestibule → yard), so nothing outside sees in
+// Three floors, CS-style: rooms, corridors and doors, nothing open from end to end.
 //
-// The planets (brass-ringed discs, big enough for a team): each waits 3 s at an end, then
-// glides to the other, forever (level/movers.ts: a pure function of the tick). Mirrored pairs
-// share one timeline; Mercury and Venus alternate (one pair is always at the Sun).
-//   MERCURY ×2 (x ±4.5)  north Ring edge (y 6)  ↔  the Sun's north face (y 12)
-//   VENUS   ×2 (x ±4.5)  the Sun's south face   ↔  south Ring edge (over the spiral's foot)
-//   SATURN  ×2 (x ±22)   north Ring edge  ↔  south Ring edge, flat at y 6 (flank to flank)
-// Nothing static stands in a planet's way, over its path, or under it within reach of a
-// standing player; the Ring's rails open only where a planet docks. Bots never ride them: every
-// place is also reached by static routes (the waypoints never touch a planet).
+//   THE ORBIT HALL (|x| < 20, |z| < 22, ground, glass roof at 18)   the sealed hall of the
+//        orrery. Six ground doors (two per side wall, one to each gallery corridor). In the
+//        middle THE SUN (|x|, |z| ≤ 7, top y 7): its glowing core (|x|, |z| ≤ 4.5, 4 m tall)
+//        blocks every line across the hall; its top is a ledge round the core. Two brass ramps
+//        (east and west faces) climb it. Great upright gears stand in the hall's corners.
+//   THE PLANETS (LevelDef.movers) glide inside the hall between upper docks and the Sun:
+//          MERCURY ×2  north upper dock (y 7)  ↔  the Sun's north ledge (y 7)
+//          VENUS   ×2  the Sun's south ledge   ↔  south upper dock (half a loop apart)
+//          SATURN  ×2  north upper dock  ↔  south upper dock, along the hall's side (x ±16)
+//        A ride is a shortcut between the upper galleries and the Sun; every place is also
+//        reached on foot (bots never ride).
+//   THE UPPER GALLERIES (y 7, north and south of the hall)   enclosed corridors along the
+//        hall's walls, with the docks as windows into it; partitions and a kiosk break them up.
+//        Doors lead onto HEAVEN, a balcony over each bomb site, and ramps lead down to the spawns.
+//   THE BOMB SITES (|x| < 14, |z| 31..45, ground, ceiling 12)   A north, B south: galleries
+//        entered from the hall (the mid corridor), from each team's star-chart library (side
+//        doors) and from heaven above. A big astrolabe plinth in the middle.
+//   THE WINGS (|x| 21..58)   per team: two clock rooms beside the hall, the Tower room (the
+//        team's Tower) and the lens workshops behind it, the star-chart libraries and map rooms
+//        by the sites, the south / north corridor, and the two spawn rooms.
+//   THE GEAR CRYPT (y -5)   under the Sun: stairwells down from the hall (north and south of
+//        the Sun), the crypt round the Sun's axle, crawl tunnels east and west, and a ramp tube
+//        up into each Tower room: the basement flank route from wing to wing.
+//   SPAWNS: two detached rooms per team (group 'north' nearer A, 'south' nearer B), each
+//        behind an L-shaped vestibule with three doors (ramp up to the gallery, lens workshop
+//        toward the Tower, map room toward the site).
 import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
 import { qFromAxisAngle } from '../../math/quat';
@@ -55,72 +52,68 @@ const CYAN = 0x19e3ff;
 const ORANGE = 0xff8a1f;
 const SITE = 0xc23b3b;
 
-// velvet, brass and old gold under a deep-blue dome
+// velvet, brass and old gold
 const VELVET = 0x5a1723;
-const VELVET_DARK = 0x3a0e16;
 const BRASS = 0xc39a48;
 const BRASS_DARK = 0x7d5a26;
 const GEAR = 0xa47a34;
 const GOLD = 0xd9a84a;
 const IRON = 0x2d2a30;
 const RAMP = 0xa98040;
-const WELL_FLOOR = 0x3a2c22;
+const HALL_FLOOR = 0x3a2c22;
 const PARQUET = 0x4b2e1c;
 const DECK_WOOD = 0x6a4428;
+const CRYPT = 0x2a2426;
 const STARCHART = 0x141b3d;
 const STAR = 0xe9efff;
 const LAMP = 0xffc47a;
 const SUNGLOW = 0xffab3d;
 const DOCK = 0xffcf6a;
-const SPAWN_FLOOR = 0x2f2a2c;
-const SPAWN_WALL = 0x46302c;
+const SHELF = 0x3b2415;
+const TABLE = 0x5b3a22;
 
-/** Key coordinates (the east half; the west half is its mirror image, x → -x). */
+/** Key coordinates (the east half, mostly the south-east quarter; the rest is mirrored). */
 export const ORRERY = {
-  /** the Ring deck's top (the walkway), its thickness, the arcade's lintel */
-  ring: 6,
-  deck: 0.6,
-  lintel: 3.8,
-  /** the Sun's top (high ground) and the dome's glass */
-  sun: 12,
-  dome: 26,
-  /** the Well: |x| < x, |z| < z (floor y 0) */
-  well: { x: 32, z: 30 },
-  /** the undercroft's / Ring's outer walls (inner faces) */
-  outer: { x: 46, z: 46 },
-  /** spawn room (east; inner faces): x0..x1, |z| < z */
-  spawn: { x0: 46.6, x1: 57.4, z: 9.4 },
-  /** the Sun: pedestal half-size, ramp band outer edge, the gate (|x| < gate) at the south */
-  pedestal: 9,
-  band: 12,
-  gate: 1.5,
-  /** the spiral's corner landing height (south → east / west faces) */
-  spiralLanding: 3.6,
+  /** the upper galleries' floor (and the Sun's ledge), their ceiling */
+  upper: 7,
+  upperCeiling: 11,
+  /** ground rooms' ceiling (the upper floor's slab underside) */
+  ceiling: 6.4,
+  /** the crypt's floor */
+  crypt: -5,
+  /** the Sun: pedestal half-size and top, core half-size and top */
+  sun: 7,
+  pedestal: 7,
+  core: 4.5,
+  coreTop: 11,
+  /** the orbit hall: |x| < x, |z| < z; its glass roof */
+  hall: { x: 20, z: 22, roof: 18 },
+  /** spawn rooms (south-east one; inner faces): x0..x1, z0..z1 */
+  spawnRoom: { x0: 49, x1: 57, z0: 16, z1: 30 },
   /** Towers: Cyan's (west) first */
-  towers: [v3(-38, 0, 0), v3(38, 0, 0)] as [Vec3, Vec3],
+  towers: [v3(-37, 0, 0), v3(37, 0, 0)] as [Vec3, Vec3],
   bombSites: {
-    A: { min: v3(-6, 0, -41), max: v3(6, 3, -33) },
-    B: { min: v3(-6, 0, 33), max: v3(6, 3, 41) },
+    A: { min: v3(-7, 0, -44), max: v3(7, 3, -35) },
+    B: { min: v3(-7, 0, 35), max: v3(7, 3, 44) },
   },
-  powerups: [v3(0, 13, 0)],
+  /** on the Sun's ledge, north and south of the core */
+  powerups: [v3(0, 8, -5.25), v3(0, 8, 5.25)],
   /**
    * The planets (east ones; each has its twin at -x with the same timeline). `at` is the centre
-   * of the walking surface where it is built (tick 0), `to` where it travels; radius of its rim.
+   * of the walking surface where it is built (tick 0), `to` where it travels; `r` its rim's
+   * apothem.
    */
   planets: {
-    mercury: { at: v3(4.5, 6, -26.4), to: v3(4.5, 12, -12.6), r: 3.5, speed: 3.5, wait: 3 },
-    venus: { at: v3(4.5, 12, 12.6), to: v3(4.5, 6, 26.4), r: 3.5, speed: 3.5, wait: 3 },
-    saturn: { at: v3(22, 6, -25.9), to: v3(22, 6, 25.9), r: 4, speed: 5.5, wait: 3 },
+    mercury: { at: v3(3.6, 7, -18.6), to: v3(3.6, 7, -10.35), r: 3.2, speed: 3, wait: 3 },
+    venus: { at: v3(3.6, 7, 10.35), to: v3(3.6, 7, 18.6), r: 3.2, speed: 3, wait: 3 },
+    saturn: { at: v3(16, 7, -18.2), to: v3(16, 7, 18.2), r: 3.6, speed: 5, wait: 3 },
   },
-  /** great gears in the Well (upright, turning about x): centre, tip radius, thickness */
-  greatGear: { x: 15, y: 1, z: 20, r: 6.5, t: 1.2 },
-  /** gallery gears (upright, turning about x) */
-  galleryGear: { x: 10, y: 0.4, z: 33.5, r: 3.2, t: 1 },
 };
 
 type Sign = 1 | -1;
 const SIGNS: Sign[] = [1, -1];
 type Extra = Omit<BoxDef, 'c' | 'h' | 'mat'>;
+type Hole = [number, number, number, number];
 
 /** A box from two corners (any order). */
 const mk = (
@@ -152,7 +145,6 @@ const turned = (
 ): BoxDef => ({
   c,
   h,
-  // (a half turn leaves a box as it was)
   ...(Math.abs(Math.sin(angle)) > 1e-9 ? { q: qFromAxisAngle(AXES[axis], angle) } : {}),
   mat,
   ...extra,
@@ -202,9 +194,8 @@ const polygon = (
 };
 
 /**
- * An upright gear turning about x (its disc in the y-z plane): a 16-gon body and `teeth` teeth
- * (bars through the middle), `t` thick. Its lower part sinks into a slot plate of the same
- * brass under the floor.
+ * An upright gear turning about x (its disc in the y-z plane): a 16-gon body and `teeth`
+ * teeth (bars through the middle), `t` thick.
  */
 const gear = (
   cx: number,
@@ -237,30 +228,29 @@ const gear = (
   return out;
 };
 
-/** A lying gear hub (half cover, 1.2 m): an eight-toothed star with a dark cap. */
+/** A lying gear hub (half cover, 1.15 m): an eight-toothed star with a dark cap. */
 const hub = (x: number, z: number, a: number): BoxDef[] => [
   mk(x - a, 0, z - a, x + a, 1.1, z + a, 'plate', { color: GEAR }),
   turned(v3(x, 0.55, z), v3(a, 0.55, a), 'y', Math.PI / 4, 'plate', { color: GEAR }),
-  turned(v3(x, 1.15, z), v3(a * 0.6, 0.05, a * 0.6), 'y', Math.PI / 8, 'pillar', {
+  turned(v3(x, 1.125, z), v3(a * 0.6, 0.025, a * 0.6), 'y', Math.PI / 8, 'pillar', {
     color: BRASS_DARK,
   }),
 ];
 
-/** A tall gear tooth (full cover, 2.8 m): a broad base and a narrower tip. */
-const tooth = (x: number, y: number, z: number, alongZ: boolean): BoxDef[] => {
+/** A tall gear tooth (full cover, `h` m): a broad base and a narrower tip. */
+const tooth = (x: number, y: number, z: number, alongZ: boolean, h = 2.5): BoxDef[] => {
   const [a, c] = alongZ ? [0.8, 1.2] : [1.2, 0.8];
   const [a2, c2] = alongZ ? [0.55, 0.95] : [0.95, 0.55];
   return [
-    mk(x - a, y, z - c, x + a, y + 2, z + c, 'plate', { color: GEAR }),
-    mk(x - a2, y + 2, z - c2, x + a2, y + 2.8, z + c2, 'plate', { color: GEAR }),
+    mk(x - a, y, z - c, x + a, y + h - 0.7, z + c, 'plate', { color: GEAR }),
+    mk(x - a2, y + h - 0.7, z - c2, x + a2, y + h, z + c2, 'plate', { color: GEAR }),
   ];
 };
 
 /**
- * A planet platform, built with its walking surface at `c.y`: a brass 16-gon rim (radius r),
+ * A planet platform, built with its walking surface at `c.y`: a brass 16-gon rim (apothem r),
  * a coloured cap on it (0.12 m step), and the planet's body hanging 2 m under it (drawn as
- * octagons, its upper half glowing so the planets read in the dark wherever they are; one
- * plain box collides for it). (Moving blocks get no baked light: glow and bright colours.)
+ * octagons, its upper half glowing; one plain box collides for it).
  */
 const planet = (c: Vec3, r: number, cap: number, body: number): BoxDef[] => {
   const t = c.y;
@@ -286,7 +276,7 @@ const slab = (
   z1: number,
   y0: number,
   y1: number,
-  holes: [number, number, number, number][],
+  holes: Hole[],
   mat: Material,
   extra: Extra = {},
 ): BoxDef[] =>
@@ -297,28 +287,56 @@ const slab = (
     .filter((r) => r.u1 - r.u0 > 1e-3 && r.v1 - r.v0 > 1e-3)
     .map((r) => mk(r.u0, y0, r.v0, r.u1, y1, r.v1, mat, extra));
 
+const WALL = { color: VELVET };
+/**
+ * A wall [x0,x1]×[y0,y1]×[z0,z1] with openings (doors, windows): [along0, along1, y0, y1],
+ * measured along its longer side. Every wall, fill and ceiling of the building shares one look
+ * (velvet panel), so where they meet they merge.
+ */
+const wall = (
+  x0: number,
+  x1: number,
+  z0: number,
+  z1: number,
+  y0: number,
+  y1: number,
+  holes: Hole[] = [],
+): BoxDef[] => {
+  const alongX = x1 - x0 >= z1 - z0;
+  return subtractHoles(
+    alongX ? { u0: x0, u1: x1, v0: y0, v1: y1 } : { u0: z0, u1: z1, v0: y0, v1: y1 },
+    holes.map(([a, b, c, d]) => ({ u0: a, u1: b, v0: c, v1: d })),
+  )
+    .filter((r) => r.u1 - r.u0 > 1e-3 && r.v1 - r.v0 > 1e-3)
+    .map((r) =>
+      alongX
+        ? mk(r.u0, r.v0, z0, r.u1, r.v1, z1, 'panel', WALL)
+        : mk(x0, r.v0, r.u0, x1, r.v1, r.u1, 'panel', WALL),
+    );
+};
+
 /** Round a coordinate (keeps mirrored boxes exactly mirrored). */
 const rd = (n: number) => Math.round(n * 1e6) / 1e6;
 
+/** a door's height */
+const DH = 3.2;
+
 export const buildOrrery = (): LevelDef => {
   const O = ORRERY;
-  const R = O.ring;
-  const U = R - O.deck; // the undercroft's ceiling
-  const L = O.lintel;
-  const WX = O.well.x;
-  const WZ = O.well.z;
-  const OX = O.outer.x;
-  const OZ = O.outer.z;
+  const U = O.upper;
+  const UC = O.upperCeiling;
+  const CL = O.ceiling;
+  const B = O.crypt;
+  const HX = O.hall.x;
+  const HZ = O.hall.z;
   const P = O.pedestal;
-  const BAND = O.band;
-  const G = O.gate;
-  const SL = O.spiralLanding;
   const S = O.sun;
+  const K = O.core;
 
-  /** on the mirror line (authored whole) */
-  const C: BoxDef[] = [];
   /** the east half (x ≥ 0): mirrored to the west at the end */
   const E: BoxDef[] = [];
+  /** on the mirror line (prisms that span it): authored whole */
+  const C: BoxDef[] = [];
   const lights: LightDef[] = [];
   const light = (x: number, y: number, z: number, color: number, radius: number, k: number) =>
     lights.push({ pos: v3(x, y, z), color, radius, intensity: k });
@@ -327,357 +345,353 @@ export const buildOrrery = (): LevelDef => {
     light(x, y, z, color, radius, k);
     if (x !== 0) light(-x, y, z, color, radius, k);
   };
+  /** east / west and north / south copies of a light (authored in the south, z > 0) */
+  const lightQ = (x: number, y: number, z: number, color: number, radius: number, k: number) => {
+    lightX(x, y, z, color, radius, k);
+    lightX(x, y, -z, color, radius, k);
+  };
   /** push boxes, plus their north ↔ south mirror (authored in the south, z > 0) */
-  const ns = (list: BoxDef[], boxes: BoxDef[]) => {
+  const q = (boxes: BoxDef[], list: BoxDef[] = E) => {
     for (const b of boxes) list.push(b, mirrorZ(b));
   };
   const deco = (b: BoxDef): BoxDef => ({ ...b, noCollide: true });
+  const brass = { color: BRASS };
 
   // ======================= floors =======================
-  const GG = O.greatGear;
-  const GL = O.galleryGear;
-  const ggSlot: [number, number, number, number] = [
-    GG.x - 0.8,
-    GG.x + 0.8,
-    GG.z - GG.r - 0.1,
-    GG.z + GG.r + 0.1,
-  ];
-  const glSlot: [number, number, number, number] = [
-    GL.x - 0.8,
-    GL.x + 0.8,
-    GL.z - GL.r - 0.1,
-    GL.z + GL.r + 0.1,
-  ];
-  // the Well: dark bronze plates, with brass slots the great gears stand in
+  // the ground: parquet under the whole wing (walls stand on it), the hall's bronze plates
   E.push(
     ...slab(
-      0,
-      WX,
-      -WZ,
-      WZ,
+      20,
+      58,
+      -46,
+      46,
       -1,
       0,
-      [ggSlot, [ggSlot[0], ggSlot[1], -ggSlot[3], -ggSlot[2]]],
-      'plate',
-      { color: WELL_FLOOR },
+      [
+        [20, 31, -1.5, 1.5],
+        [44, 58, -10, 10],
+      ],
+      'wood',
+      {
+        color: PARQUET,
+      },
     ),
   );
-  ns(E, [mk(ggSlot[0], -1, ggSlot[2], ggSlot[1], 0, ggSlot[3], 'plate', { color: GEAR })]);
-  // the undercroft: parquet (galleries, yards); gallery gear slots
-  ns(E, slab(0, OX, WZ, OZ, -1, 0, [glSlot], 'wood', { color: PARQUET }));
-  ns(E, [mk(glSlot[0], -1, glSlot[2], glSlot[1], 0, glSlot[3], 'plate', { color: GEAR })]);
-  E.push(mk(WX, -1, -WZ, OX, 0, WZ, 'wood', { color: PARQUET }));
-  // spawn room and its vestibules
-  E.push(mk(OX, -1, -15.6, 58, 0, 15.6, 'floor', { color: SPAWN_FLOOR }));
+  q(slab(0, 20, 23, 46, -1, 0, [], 'wood', { color: PARQUET }));
+  q(slab(0, HX, 0, HZ, -1, 0, [[0, 2, 8, 17.5]], 'plate', { color: HALL_FLOOR }));
+  q([mk(0, -1, HZ, HX, 0, 23, 'plate', { color: HALL_FLOOR })]);
+  // the crypt and its tunnels (y -5)
+  q([mk(0, B - 1, 0, 7.5, B, 8.5, 'plate', { color: CRYPT })]);
+  E.push(mk(7.5, B - 1, -1.5, 21, B, 1.5, 'plate', { color: CRYPT }));
+  // the upper galleries (y 7) and the heavens over the sites
+  const deck = { color: DECK_WOOD };
+  q(slab(0, 31, 23, 30, CL, U, [], 'wood', deck));
+  q([mk(0, CL, 31, 14, U, 34, 'wood', deck)]);
 
-  // ======================= the Ring deck (y 5.4..6) =======================
-  const yardHole: [number, number, number, number] = [41, OX, 16, WZ];
-  const galHole: [number, number, number, number] = [12, 26, 41.5, OZ];
-  ns(E, slab(0, OX, WZ, OZ, U, R, [galHole], 'wood', { color: DECK_WOOD }));
+  // ======================= the orbit hall =======================
+  // side wall (two doors), end walls: a door to the gallery corridor; the docks up high
   E.push(
-    ...slab(WX, OX, -WZ, WZ, U, R, [yardHole, [41, OX, -WZ, -16]], 'wood', { color: DECK_WOOD }),
+    ...wall(HX, HX + 1, -23, 23, 0, O.hall.roof, [
+      [-13, -10, 0, DH],
+      [10, 13, 0, DH],
+    ]),
   );
-  E.push(mk(OX + 0.6, U, -15.6, 58, R, 15.6, 'hull', { color: 0x2a1c1a })); // spawn roof
-
-  // ======================= outer walls: velvet, up to the dome =======================
-  const velvet = { color: VELVET };
-  ns(E, [mk(0, 0, OZ, OX + 0.6, O.dome, OZ + 0.6, 'panel', velvet)]); // galleries' back + Ring
-  E.push(mk(OX, R, -OZ, OX + 0.6, O.dome, OZ, 'panel', velvet)); // over the Ring, east
-  // below the deck at x = 46: the spawn's front, the vestibule openings, the yard's back
-  E.push(mk(OX, 0, -11, OX + 0.6, R, 11, 'panel', velvet));
-  ns(E, [
-    mk(OX, 3.2, 11, OX + 0.6, R, 15, 'panel', velvet), // over the vestibule opening
-    mk(OX, 0, 15, OX + 0.6, R, OZ, 'panel', velvet),
+  q(
+    wall(0, HX, HZ, HZ + 1, 0, O.hall.roof, [
+      [0, 2, 0, DH],
+      [0.3, 7.2, U, U + 3.5],
+      [12, HX, U, U + 3.5],
+    ]),
+  );
+  q([mk(0, O.hall.roof, 0, HX + 1, O.hall.roof + 0.6, HZ + 1, 'skyglass')]);
+  // the dome's ribs under the glass
+  q([deco(mk(0, O.hall.roof - 0.5, 11.2, HX, O.hall.roof, 11.8, 'plate', { color: BRASS_DARK }))]);
+  E.push(
+    deco(mk(9.7, O.hall.roof - 0.5, -HZ, 10.3, O.hall.roof, HZ, 'plate', { color: BRASS_DARK })),
+  );
+  // amber strips on the docks' sills
+  q([
+    deco(mk(0.3, U, HZ, 7.2, U + 0.03, HZ + 0.3, 'glow', { color: DOCK })),
+    deco(mk(12, U, HZ, HX, U + 0.03, HZ + 0.3, 'glow', { color: DOCK })),
   ]);
-  // the dome's glass
-  C.push(mk(-OX - 0.6, O.dome, -OZ - 0.6, OX + 0.6, O.dome + 0.6, OZ + 0.6, 'skyglass'));
+  lightQ(3.6, U + 1, HZ - 1, DOCK, 5, 0.5);
+  lightQ(16, U + 1, HZ - 1, DOCK, 5, 0.5);
 
-  // ======================= spawn rooms (east: Orange) =======================
-  const SP = O.spawn;
-  const sw = { color: SPAWN_WALL };
-  E.push(mk(SP.x1, 0, -15.6, 58, U, 15.6, 'panel', sw)); // back
-  ns(E, [
-    // room ↔ vestibule: a door at the back (x 53..57)
-    mk(SP.x0, 0, SP.z, 53, U, 10, 'panel', sw),
-    mk(57, 0, SP.z, SP.x1, U, 10, 'panel', sw),
-    mk(53, 3.2, SP.z, 57, U, 10, 'panel', sw),
-    // the vestibule's far wall
-    mk(SP.x0, 0, 15, SP.x1, U, 15.6, 'panel', sw),
-  ]);
-
-  // ======================= the arcade (Well ↔ undercroft) =======================
-  const fascia = { color: VELVET_DARK };
-  E.push(mk(WX, L, -WZ - 1, WX + 1, U, WZ + 1, 'panel', fascia));
-  ns(E, [mk(0, L, WZ, WX, U, WZ + 1, 'panel', fascia)]);
-  const pil = (x0: number, z0: number, x1: number, z1: number) =>
-    mk(x0, 0, z0, x1, L, z1, 'pillar', { color: BRASS_DARK });
-  E.push(pil(WX, -0.5, WX + 1, 0.5));
-  for (const z of [8, 16, 24]) ns(E, [pil(WX, z - 0.5, WX + 1, z + 0.5)]);
-  ns(E, [pil(WX, WZ, WX + 1, WZ + 1)]);
-  for (const x of [6.5, 13, 19.5, 26]) ns(E, [pil(x - 0.5, WZ, x + 0.5, WZ + 1)]);
-
-  // ======================= Ring rails (waist-high brass) =======================
-  const rail = { color: BRASS };
-  const RT = R + 1.1;
-  // along the Well: open where the planets dock (x 0.5..8.5 twins, 17.5..26.5 Saturn)
-  ns(E, [
-    mk(8.5, R, WZ, 17.5, RT, WZ + 0.3, 'plate', rail),
-    mk(26.5, R, WZ, WX + 0.3, RT, WZ + 0.3, 'plate', rail),
-  ]);
-  E.push(mk(WX, R, -WZ, WX + 0.3, RT, WZ, 'plate', rail));
-  // round the stairwells
-  ns(E, [
-    mk(yardHole[0] - 0.3, R, yardHole[2] - 0.3, yardHole[0], RT, yardHole[3], 'plate', rail),
-    mk(yardHole[0], R, yardHole[2] - 0.3, OX, RT, yardHole[2], 'plate', rail),
-    mk(galHole[0], R, galHole[2] - 0.3, galHole[1] + 0.3, RT, galHole[2], 'plate', rail),
-    mk(galHole[1], R, galHole[2], galHole[1] + 0.3, RT, OZ, 'plate', rail),
-  ]);
-  // where the planets dock: amber strips on the deck's edge
-  ns(E, [
-    deco(mk(1, R, WZ, 8, R + 0.03, WZ + 0.3, 'glow', { color: DOCK })),
-    deco(mk(18, R, WZ, 26, R + 0.03, WZ + 0.3, 'glow', { color: DOCK })),
-  ]);
-  for (const z of [WZ + 0.5, -WZ - 0.5]) {
-    lightX(4.5, R + 0.8, z, DOCK, 5, 0.5);
-    lightX(22, R + 0.8, z, DOCK, 5, 0.5);
-  }
-
-  // ======================= ramps up to the Ring =======================
-  const deckRamp = { mat: 'wood' as Material, color: DECK_WOOD };
-  // yards: along the back wall, rising toward the galleries' corners
-  ns(E, [
-    wedgeRamp(
-      'z',
-      yardHole[2],
-      yardHole[3],
-      0,
-      R,
-      (yardHole[0] + OX) / 2,
-      OX - yardHole[0],
-      deckRamp,
-    ),
-  ]);
-  // galleries: along the back wall, rising toward the site
-  ns(E, [
-    wedgeRamp('x', galHole[1], galHole[0], 0, R, (galHole[2] + OZ) / 2, OZ - galHole[2], deckRamp),
-  ]);
-
-  // ======================= the Sun =======================
-  // a dark iron pedestal (the brass spiral winds round it), crowned by the glowing gold top
-  C.push(mk(-P, 0, -P, P, S - 0.4, P, 'pillar', { color: IRON }));
-  C.push(mk(-P, S - 0.4, -P, P, S, P, 'plate', { color: GOLD, trim: SUNGLOW }));
-  // solar flares on top (half cover) round the power-up
-  for (const sx of SIGNS)
-    for (const sz of SIGNS)
-      C.push(mk(sx * 4.7, S, sz * 4.7, sx * 6.3, S + 1.1, sz * 6.3, 'glow', { color: SUNGLOW }));
-  // the core glows through slits in its north and south faces (clear of the spiral and docks)
-  for (const [x0, x1] of [
-    [-7, -3.5],
-    [-1.75, 1.75],
-    [3.5, 7],
-  ]) {
-    C.push(deco(mk(x0, 1, -P - 0.05, x1, 9, -P, 'glow', { color: SUNGLOW })));
-    C.push(deco(mk(x0, SL + 0.6, P, x1, 9, P + 0.05, 'glow', { color: SUNGLOW })));
-  }
-  // docks on the Sun's edge
-  for (const z of [-P, P - 0.3]) {
-    E.push(deco(mk(1, S, z, 8, S + 0.03, z + 0.3, 'glow', { color: DOCK })));
-    lightX(4.5, S + 0.8, z < 0 ? -P - 0.5 : P + 0.5, DOCK, 5, 0.5);
-  }
-  light(0, S + 3.5, 0, SUNGLOW, 30, 1.6);
-  light(0, 5, P + 4, SUNGLOW, 9, 0.8);
-  light(0, 5, -P - 4, SUNGLOW, 9, 0.7);
-
-  // the double spiral (east ramp; the west one is its mirror): from the gate along the south
-  // face, a landing, up the east face to the NE landing at the Sun's height
-  const ramp = { mat: 'plate' as Material, color: RAMP };
-  const mid = (P + BAND) / 2;
-  const W = BAND - P;
-  E.push(wedgeRamp('x', G, P, 0, SL, mid, W, ramp));
-  E.push(mk(P, 0, P, BAND, SL - 0.4, BAND, 'pillar', { color: IRON }));
-  E.push(mk(P, SL - 0.4, P, BAND, SL, BAND, 'plate', { color: RAMP }));
-  E.push(mk(P, 0, -P, BAND, SL, P, 'pillar', { color: IRON }));
-  E.push(wedgeRamp('z', P, -P, SL, S, mid, W, ramp));
-  E.push(mk(P, 0, -BAND, BAND, S - 0.4, -P, 'pillar', { color: IRON }));
-  E.push(mk(P, S - 0.4, -BAND, BAND, S, -P, 'plate', { color: RAMP }));
-  // rails on the spiral's outer edges (sloped along the ramps, flat round the landings): 0.9 m,
-  // low enough that a player up there shows the chest to the Well below
+  // ---- the Sun: iron pedestal, gold rim, the glowing core (blocks the hall's middle)
+  q([mk(0, 0, 0, P, S - 0.4, P, 'pillar', { color: IRON })]);
+  q([mk(0, S - 0.4, 0, P, S, P, 'plate', { color: GOLD, trim: SUNGLOW })]);
+  q([mk(0, S, 0, K, O.coreTop, K, 'glow', { color: SUNGLOW })]);
+  // slits of light down the pedestal's north and south faces (clear of the ramps)
+  q([deco(mk(1, 1, P, 5.5, S - 1, P + 0.05, 'glow', { color: SUNGLOW }))]);
+  light(0, O.coreTop + 1.5, 0, SUNGLOW, 26, 1.5);
+  lightQ(0, 4, P + 3, SUNGLOW, 9, 0.6);
+  // the ramps (east; the west one is its mirror): up the east face from south to north
+  E.push(wedgeRamp('z', P, -P, 0, S, P + 1.5, 3, { mat: 'plate', color: RAMP }));
+  // brass rail on the ramp's outer edge (low: a climber still shows the chest)
   {
-    const SR = 0.9;
-    const run1 = P - G;
-    const a1 = Math.atan2(SL, run1);
-    const len1 = Math.hypot(run1, SL);
+    const run = 2 * P;
+    const a = Math.atan2(S, run);
+    const len = Math.hypot(run, S);
     E.push(
       turned(
-        v3((G + P) / 2 - (SR / 2) * Math.sin(a1), SL / 2 + (SR / 2) * Math.cos(a1), BAND + 0.15),
-        v3(len1 / 2, SR / 2, 0.15),
-        'z',
-        a1,
-        'plate',
-        rail,
-      ),
-    );
-    E.push(mk(P, SL, BAND, BAND + 0.3, SL + SR, BAND + 0.3, 'plate', rail));
-    E.push(mk(BAND, SL, P, BAND + 0.3, SL + SR, BAND, 'plate', rail));
-    const run2 = 2 * P;
-    const rise2 = S - SL;
-    const a2 = Math.atan2(rise2, run2);
-    const len2 = Math.hypot(run2, rise2);
-    E.push(
-      turned(
-        v3(BAND + 0.15, (SL + S) / 2 + (SR / 2) * Math.cos(a2), (SR / 2) * Math.sin(a2)),
-        v3(0.15, SR / 2, len2 / 2),
+        v3(P + 3.15, S / 2 + 0.45 * Math.cos(a), 0.45 * Math.sin(a)),
+        v3(0.15, 0.45, len / 2),
         'x',
-        a2,
+        a,
         'plate',
-        rail,
+        brass,
       ),
     );
-    E.push(mk(BAND, S, -BAND - 0.3, BAND + 0.3, S + SR, -P, 'plate', rail));
-    E.push(mk(P, S, -BAND - 0.3, BAND, S + SR, -BAND, 'plate', rail));
+  }
+  // great upright gears in the hall's corners (full cover, 7.6 m) on brass bearings
+  q(gear(11, 3.8, 15, 3.8, 1, 12, 0.5));
+  q([mk(10.4, 0, 13.6, 11.6, 0.9, 16.4, 'plate', { color: GEAR })]);
+  // cover along the hall's sides (under Saturn's path: ≤ 2.5 m) and in its end strips
+  E.push(...tooth(16, 0, 0, false));
+  q(hub(16.5, 5.5, 1.1));
+  q(tooth(6, 0, 19.5, false));
+  q(hub(17, 19.5, 1));
+  // rails round the stairwells down to the crypt
+  q([mk(2, 0, 7.75, 2.25, 1.1, 17.5, 'plate', brass), mk(0, 0, 7.75, 2, 1.1, 8, 'plate', brass)]);
+  lightQ(15, 5, 6, LAMP, 11, 0.8);
+  lightQ(8, 5, 18, LAMP, 11, 0.8);
+
+  // ======================= the crypt (y -5): under the Sun =======================
+  q([
+    ...wall(7.5, 8, 1.5, 9, B - 1, -1),
+    ...wall(2, 8, 8.5, 9, B - 1, -1),
+    ...wall(2, 2.5, 9, 17.5, B - 1, -1),
+    // the crawl tunnel's side
+    ...wall(8, 21, 1.5, 2, B - 1, -1),
+  ]);
+  // the stairwells: from the hall floor down to the crypt (north and south of the Sun)
+  const stair = wedgeRamp('z', 8.5, 17.5, B, 0, 0, 4, { mat: 'plate', color: RAMP });
+  C.push(stair, mirrorZ(stair));
+  // the Sun's axle: an iron column through the middle (no line across the crypt)
+  q([mk(0, B, 0, 1.6, -1, 1.6, 'pillar', { color: IRON })]);
+  q(hub(4.5, 5, 0.9).map((b) => ({ ...b, c: v3(b.c.x, b.c.y + B, b.c.z) })));
+  lightQ(4.5, -2, 4.5, SUNGLOW, 8, 0.8);
+  lightX(14, -2, 0, LAMP, 8, 0.7);
+  // the tube: a ramp from the crawl tunnel up into the Tower room, inside a gear housing
+  E.push(wedgeRamp('x', 21, 31, B, 0, 0, 3, { mat: 'plate', color: RAMP }));
+  q([
+    ...wall(21, 30, 1.5, 4, B - 1, -1),
+    ...wall(21, 30, 1.5, 4, 0, CL),
+    ...wall(21, 30, 0, 1.5, 3, CL),
+  ]);
+  lightX(26, 1.5, 0, LAMP, 7, 0.6);
+
+  // ======================= the gallery corridors and the sites =======================
+  // fill beside the mid corridor (the upper gallery stands on it)
+  q(wall(2, 21, 23, 30, 0, CL));
+  // the site's front wall: the mid door, heaven's door up high; side wall: the library door
+  q(
+    wall(0, 14, 30, 31, 0, 12, [
+      [0, 2, 0, DH],
+      [9, 12, U, U + 3],
+    ]),
+  );
+  q(wall(14, 15, 31, 45, 0, 12, [[37, 41, 0, DH]]));
+  // the outer wall (sites, libraries, map rooms)
+  q(wall(0, 58, 45, 46, 0, 12));
+  q([mk(0, 12, 31, 15, 12.6, 45, 'panel', WALL)]);
+  // heaven's rail
+  q([mk(0, U, 34, 14, U + 1.1, 34.3, 'plate', brass)]);
+  // the site: the astrolabe plinth (full), crates by the doors, half cover at the back
+  q([mk(3, 0, 36.5, 5, 2.4, 40.5, 'plate', { color: BRASS_DARK, trim: GOLD })]);
+  q([mk(3.9, 2.4, 38, 4.1, 4.4, 39, 'plate', brass)].map((b) => deco(b)));
+  q([mk(8, 0, 33, 10, 2.2, 35, 'crate', { color: TABLE })]);
+  q([mk(10.5, 0, 42, 13, 1.1, 43.2, 'crate', { color: TABLE })]);
+  lightQ(0, 5, 32.5, LAMP, 8, 0.7);
+  lightQ(6, 9, 39, LAMP, 12, 0.9);
+  lightQ(10.5, U + 2.5, 26.5, LAMP, 9, 0.7);
+
+  // ======================= the upper galleries (y 7) =======================
+  // the wall along the clock rooms' roofs, partitions, the kiosk between the twin docks
+  q(wall(21, 31, 22, 23, U, UC));
+  q(wall(12.5, 13, 26, 30, U, UC));
+  q(wall(0, 1, 23, 27, U, UC));
+  q([mk(0, UC, 23, 45, UC + 0.6, 31, 'panel', WALL)]);
+  q([mk(1, U + 2.2, 23, 1.4, U + 2.8, 27, 'trim', { color: LAMP })].map(deco));
+  lightQ(24, U + 2.5, 26.5, LAMP, 9, 0.7);
+  lightQ(5, U + 2.5, 28, LAMP, 8, 0.6);
+
+  // ======================= the east wing (Orange) =======================
+  // the clock-room / Tower-room / lens line (x 30..31): tube, Tower doors, lens doors
+  E.push(
+    ...wall(30, 31, -23, 23, 0, CL, [
+      [-1.5, 1.5, 0, 3],
+      [-8, -5, 0, DH],
+      [5, 8, 0, DH],
+      [-20, -17, 0, DH],
+      [17, 20, 0, DH],
+    ]),
+  );
+  // clock rooms: their far wall (door to the corridor), a tall clock case, gear cover
+  q(wall(21, 31, 23, 24, 0, CL, [[24, 28, 0, DH]]));
+  q([mk(24, 0, 7.5, 27, 3.6, 10, 'crate', { color: SHELF, trim: GOLD })]);
+  q(tooth(24, 0, 19.5, true));
+  // the Tower room (|z| < 10) and the lens workshops behind it
+  q(wall(31, 44, 10, 11, 0, CL, [[36, 39, 0, DH]]));
+  E.push(...wall(43, 44, -10, 10, 0, CL));
+  q([mk(40, 0, 3, 42, 2.2, 5.5, 'crate', { color: TABLE })]);
+  q(hub(34.5, 8, 0.9));
+  q([mk(33, 0, 20.5, 36, 1.1, 22.5, 'crate', { color: TABLE })]);
+  q([mk(40, 0, 17, 42.5, 2.4, 21, 'crate', { color: SHELF })]);
+  lightQ(25.5, 5, 14, LAMP, 11, 0.8);
+  lightX(37, 5, 0, ORANGE, 10, 0.7);
+  lightQ(38, 5, 17, LAMP, 9, 0.7);
+  // the ramp shaft: from the vestibule up to the gallery (its walls reach the ceiling)
+  q(wall(31, 45, 23, 24, 0, UC));
+  q(wall(31, 58, 30, 31, 0, CL, [[45, 48, 0, DH]]));
+  q(wall(31, 45, 30, 31, CL, UC));
+  q(wall(44, 45, 23, 31, CL, UC));
+  q([wedgeRamp('x', 44, 31, 0, U, 27, 6, { mat: 'wood', color: DECK_WOOD })]);
+  lightQ(38, 6, 27, LAMP, 9, 0.7);
+  // the star-chart library (by the site) and the map room
+  q(wall(14, 31, 30, 31, 0, UC, [[22, 26, 0, DH]]));
+  q(wall(30, 31, 31, 45, 0, CL, [[32, 35, 0, DH]]));
+  q([
+    mk(17, 0, 34.3, 25, 2.6, 35, 'crate', { color: SHELF }),
+    mk(19, 0, 41.5, 29, 2.6, 42.2, 'crate', { color: SHELF }),
+    mk(27.5, 0, 38.5, 29.5, 1.1, 40.5, 'crate', { color: TABLE }),
+  ]);
+  q([
+    mk(37, 0, 36, 45, 1.1, 40, 'crate', { color: TABLE, trim: GOLD }),
+    mk(33.5, 0, 42, 35, 2.4, 43.5, 'pillar', { color: BRASS_DARK }),
+    mk(50, 0, 36, 51.5, 2.4, 37.5, 'pillar', { color: BRASS_DARK }),
+    mk(51, 0, 41.5, 54, 1.1, 43.5, 'crate', { color: TABLE }),
+  ]);
+  lightQ(23, 5, 38, LAMP, 11, 0.8);
+  lightQ(44, 5, 38, LAMP, 13, 0.8);
+  // the vestibule (x 45..48 and the strip along z 11..15) and the spawn room
+  q(
+    wall(44, 45, 11, 30, 0, CL, [
+      [11, 14, 0, DH],
+      [25, 28, 0, DH],
+    ]),
+  );
+  q(wall(44, 58, 10, 11, 0, CL));
+  q(wall(48, 49, 15, 30, 0, CL));
+  q(wall(49, 57, 15, 16, 0, CL, [[54, 57, 0, DH]]));
+  q(wall(57, 58, 11, 45, 0, CL));
+  q(roofs());
+  lightQ(46.5, 5, 20, LAMP, 9, 0.7);
+  lightQ(53, 5, 23, ORANGE, 10, 0.8);
+
+  /** the wing's roof (velvet, like the walls): everything but the gallery and the shaft */
+  function roofs(): BoxDef[] {
+    return [
+      ...slab(
+        21,
+        58,
+        0,
+        46,
+        CL,
+        U,
+        [
+          [21, 45, 23, 31],
+          [44, 58, 0, 10],
+        ],
+        'panel',
+        WALL,
+      ),
+      mk(14, CL, 31, 21, U, 46, 'panel', WALL),
+    ];
   }
 
-  // ======================= gears, hubs, teeth: the cover =======================
-  // great gears in the Well (full cover, 7.5 m) between the Sun and Saturn's path
-  ns(E, gear(GG.x, GG.y, GG.z, GG.r, GG.t, 12, 0.6));
-  // gallery gears flanking the sites, in brass bearing blocks (2.2 m: the gear's low ends
-  // never make cover between half and full height)
-  ns(E, gear(GL.x, GL.y, GL.z, GL.r, GL.t, 8, 0.4));
-  ns(E, [
-    mk(GL.x - 0.7, 0, GL.z - GL.r - 0.05, GL.x + 0.7, 2.2, GL.z + GL.r + 0.05, 'plate', {
-      color: GEAR,
-    }),
-  ]);
-  // hubs (half cover): Well, sites, gallery corners
-  ns(E, hub(22, 5, 1.2));
-  ns(E, hub(10.5, 21, 1.2));
-  ns(E, hub(3, 36, 1.1));
-  ns(E, hub(33, 41, 1.2));
-  // tall teeth (full cover)
-  E.push(...tooth(28.5, 0, 0, true)); // the Well, in front of each yard
-  ns(E, tooth(24, 0, 34, true)); // galleries
-  ns(C, tooth(0, 0, 42.5, false)); // behind each site
-  ns(E, tooth(30, R, 40, true)); // Ring corners
-  E.push(...tooth(35.5, R, 0, true)); // Ring over the yard
-  // brass half walls on the Ring (and a tooth over each site)
-  ns(E, [
-    mk(15.75, R, 33.5, 16.25, RT, 37.5, 'plate', rail),
-    mk(33.5, R, 20.75, 37, RT, 21.25, 'plate', rail),
-    mk(4.25, R, 32, 4.75, RT, 34.5, 'plate', rail),
-  ]);
-  ns(C, tooth(0, R, 41, false));
-
-  // ======================= look: star charts, lamps, brass, the armillary =======================
-  // star charts on the velvet above the Ring, lamps between them
+  // ======================= look: star charts, lamps, brass =======================
   const dots: [number, number][] = [
     [-2.9, 2.2],
-    [-0.8, 6.6],
+    [-0.8, 5.6],
     [1.7, 3.6],
-    [3.2, 7.4],
-    [-3.3, 5.8],
+    [3.2, 6.4],
+    [-3.3, 4.8],
   ];
-  const chartS = (x: number) => [
-    deco(mk(x - 4.5, 9, OZ - 0.06, x + 4.5, 18, OZ, 'panel', { color: STARCHART })),
+  // star charts high on the hall's walls
+  const chartZ = (x: number, z: number, y: number, ht = 7) => [
+    deco(mk(x - 4, y, z - 0.06, x + 4, y + ht, z, 'panel', { color: STARCHART })),
     ...dots.map(([dx, dy]) =>
       deco(
-        mk(x + dx - 0.15, 9 + dy, OZ - 0.1, x + dx + 0.15, 9.3 + dy, OZ - 0.06, 'glow', {
-          color: STAR,
-        }),
+        mk(
+          x + dx - 0.15,
+          y + (dy * ht) / 7,
+          z - 0.1,
+          x + dx + 0.15,
+          y + 0.3 + (dy * ht) / 7,
+          z - 0.06,
+          'glow',
+          {
+            color: STAR,
+          },
+        ),
       ),
     ),
   ];
-  const chartE = (z: number) => [
-    deco(mk(OX - 0.06, 9, z - 4.5, OX, 18, z + 4.5, 'panel', { color: STARCHART })),
+  const chartX = (x: number, z: number, y: number) => [
+    deco(mk(x - 0.06, y, z - 4, x, y + 7, z + 4, 'panel', { color: STARCHART })),
     ...dots.map(([dz, dy]) =>
       deco(
-        mk(OX - 0.1, 9 + dy, z + dz - 0.15, OX - 0.06, 9.3 + dy, z + dz + 0.15, 'glow', {
+        mk(x - 0.1, y + dy, z + dz - 0.15, x - 0.06, y + 0.3 + dy, z + dz + 0.15, 'glow', {
           color: STAR,
         }),
       ),
     ),
   ];
-  ns(E, [...chartS(10), ...chartS(30), ...chartE(24)]);
-  E.push(...chartE(0));
-  const lampS = (x: number) =>
-    deco(mk(x - 0.3, 12.7, OZ - 0.25, x + 0.3, 13.3, OZ, 'trim', { color: LAMP }));
-  const lampE = (z: number) =>
-    deco(mk(OX - 0.25, 12.7, z - 0.3, OX, 13.3, z + 0.3, 'trim', { color: LAMP }));
-  ns(C, [lampS(0)]);
-  ns(E, [lampS(20), lampS(40), lampE(12), lampE(36)]);
-  for (const z of [OZ - 1, -OZ + 1]) for (const x of [0, 20, 40]) lightX(x, 12.5, z, LAMP, 13, 0.8);
-  for (const z of [12, 36, -12, -36]) lightX(OX - 1, 12.5, z, LAMP, 13, 0.8);
-  // brass skirting and cornice along the walls
-  const brass = { color: BRASS };
-  ns(E, [
-    deco(mk(0, R, OZ - 0.2, OX, R + 0.4, OZ, 'plate', brass)),
-    deco(mk(0, 20, OZ - 0.3, OX, 20.4, OZ, 'plate', brass)),
-  ]);
-  E.push(deco(mk(OX - 0.2, R, -OZ + 0.2, OX, R + 0.4, OZ - 0.2, 'plate', brass)));
-  E.push(deco(mk(OX - 0.3, 20, -OZ + 0.3, OX, 20.4, OZ - 0.3, 'plate', brass)));
-  // lamps hanging under the deck (galleries, yards)
-  const hang = (x: number, z: number) =>
-    deco(mk(x - 0.3, U - 0.35, z - 0.3, x + 0.3, U, z + 0.3, 'trim', { color: LAMP }));
-  ns(C, [hang(0, 44)]);
-  ns(E, [hang(17, 44), hang(38, 43), hang(39, 22)]);
-  E.push(hang(39, 6));
-  E.push(hang(39, -6));
-  for (const z of [43, -43]) for (const x of [0, 17, 38]) lightX(x, 4.6, z, LAMP, 10, 0.8);
-  for (const z of [22, -22, 6, -6]) lightX(39, 4.6, z, LAMP, 9, 0.7);
-  lightX(20, 4.6, 36, LAMP, 8, 0.5);
-  lightX(20, 4.6, -36, LAMP, 8, 0.5);
-  // warm light on the great gears
-  for (const z of [GG.z, -GG.z]) lightX(GG.x, 9, z, LAMP, 10, 0.5);
-  // the orbit line on the Well's floor round the Sun (an octagon, apothem 17.5)
+  q(chartZ(9.6, HZ, 10.8, 6.4));
+  q(chartX(HX, 5, 8));
+  q(chartZ(8, 45, 4, 7.6));
+  q(chartZ(44, 45, 1.5, 4.6));
+  // lamps and brass skirting
+  const lampZ = (x: number, y: number, z: number) =>
+    deco(mk(x - 0.3, y, z - 0.25, x + 0.3, y + 0.6, z, 'trim', { color: LAMP }));
+  q([lampZ(2.5, 5, 45), lampZ(13, 5, 45), lampZ(25, 4, 45), lampZ(38, 4, 45)]);
+  q([deco(mk(0, 0, HZ - 0.2, HX, 0.4, HZ, 'plate', brass))]);
+  E.push(deco(mk(HX - 0.2, 0, -HZ, HX, 0.4, -13, 'plate', brass)));
+  E.push(deco(mk(HX - 0.2, 0, -10, HX, 0.4, 10, 'plate', brass)));
+  E.push(deco(mk(HX - 0.2, 0, 13, HX, 0.4, HZ, 'plate', brass)));
+  // the orbit line on the hall's floor round the Sun (an octagon, apothem 13.5)
   {
-    const a = 17.5;
+    const a = 13.5;
     const half = a * Math.tan(Math.PI / 8) + 0.15;
     for (let k = 0; k < 8; k++) {
       const th = (k * Math.PI) / 4;
       const c = v3(rd(a * Math.cos(th)), 0.01, rd(a * Math.sin(th)));
-      C.push(deco(turned(c, v3(0.15, 0.01, half), 'y', -th, 'plate', brass)));
+      if (c.x < -1e-6) continue;
+      const b = deco(turned(c, v3(0.15, 0.01, half), 'y', -th, 'plate', brass));
+      if (Math.abs(c.x) < 1e-6) C.push(b);
+      else E.push(b);
     }
   }
-  // the armillary: two brass rings hanging over the Sun from the dome's ribs
-  const armillary = (a: number, y: number, th: number) => {
+  // the armillary: a brass ring hanging over the Sun
+  {
+    const a = 10;
+    const y = 15;
+    const th = 0.25;
     const half = a * Math.tan(Math.PI / 8) + th;
     for (let k = 0; k < 8; k++) {
       const t = (k * Math.PI) / 4;
       const c = v3(rd(a * Math.cos(t)), y, rd(a * Math.sin(t)));
-      C.push(deco(turned(c, v3(th, th, half), 'y', -t, 'plate', brass)));
+      if (c.x < -1e-6) continue;
+      const b = deco(turned(c, v3(th, th, half), 'y', -t, 'plate', brass));
+      if (Math.abs(c.x) < 1e-6) C.push(b);
+      else E.push(b);
     }
-    for (const [x, z] of [
-      [a, 0],
-      [-a, 0],
-      [0, a],
-      [0, -a],
-    ])
-      C.push(
-        deco(
-          mk(x - 0.1, y + th, z - 0.1, x + 0.1, O.dome - 0.6, z + 0.1, 'plate', {
-            color: BRASS_DARK,
-          }),
-        ),
-      );
-  };
-  armillary(20, 18, 0.3);
-  armillary(13, 21, 0.25);
-  // the dome's ribs
-  const ribs = { color: BRASS_DARK };
-  C.push(deco(mk(-OX, O.dome - 0.6, -0.4, OX, O.dome, 0.4, 'plate', ribs)));
-  C.push(deco(mk(-0.4, O.dome - 0.6, -OZ, 0.4, O.dome, OZ, 'plate', ribs)));
-  ns(C, [deco(mk(-OX, O.dome - 0.6, 22.6, OX, O.dome, 23.4, 'plate', ribs))]);
-  E.push(deco(mk(22.6, O.dome - 0.6, -OZ, 23.4, O.dome, OZ, 'plate', ribs)));
-  light(0, 22, 0, 0x6f8cff, 45, 0.35);
+  }
+  light(0, 16, 0, 0x6f8cff, 30, 0.35);
 
   // ======================= sites =======================
   for (const st of [O.bombSites.A, O.bombSites.B]) {
     const w = 0.12;
     const t = { color: SITE };
-    C.push(deco(mk(st.min.x, 0.01, st.min.z, st.max.x, 0.05, st.min.z + w, 'trim', t)));
-    C.push(deco(mk(st.min.x, 0.01, st.max.z - w, st.max.x, 0.05, st.max.z, 'trim', t)));
-    C.push(deco(mk(st.min.x, 0.01, st.min.z + w, st.min.x + w, 0.05, st.max.z - w, 'trim', t)));
-    C.push(deco(mk(st.max.x - w, 0.01, st.min.z + w, st.max.x, 0.05, st.max.z - w, 'trim', t)));
-    light(0, 3, (st.min.z + st.max.z) / 2, 0xff6a5a, 8, 0.5);
+    const cz = (st.min.z + st.max.z) / 2;
+    const edge = [
+      mk(0, 0.01, st.min.z, st.max.x, 0.05, st.min.z + w, 'trim', t),
+      mk(0, 0.01, st.max.z - w, st.max.x, 0.05, st.max.z, 'trim', t),
+      mk(st.max.x - w, 0.01, st.min.z + w, st.max.x, 0.05, st.max.z - w, 'trim', t),
+    ];
+    E.push(...edge.map(deco));
+    light(0, 3, cz, 0xff6a5a, 8, 0.5);
   }
 
   // ======================= teams: Towers, spawns, homes =======================
@@ -690,22 +704,27 @@ export const buildOrrery = (): LevelDef => {
     const tc = team === 0 ? CYAN : ORANGE;
     const tmat: Material = team === 0 ? 'teamA' : 'teamB';
     const tp = O.towers[team];
-    // the Tower: a team-coloured column from the yard's floor to the deck
-    T.push(mk(tp.x - 1, 0, -1, tp.x + 1, U, 1, tmat, { trim: tc }));
+    // the Tower: a team-coloured column from floor to ceiling
+    T.push(mk(tp.x - 1, 0, -1, tp.x + 1, CL, 1, tmat, { trim: tc }));
     towers.push({ team, pos: tp, radius: 1.5, height: 4 });
-    homes.push(v3(s * 41.5, 0.9, 0));
-    for (const x of [50, 54])
-      for (const z of [-4.5, -1.5, 1.5, 4.5])
-        spawns.push({ pos: v3(s * x, 0, z), yawDeg: team === 0 ? -90 : 90, team });
-    // team colour: over each exit (outside) and on the room's back wall
-    for (const n of SIGNS)
+    homes.push(v3(s * 40.5, 0.9, 0));
+    for (const n of SIGNS) {
+      const group = n < 0 ? 'north' : 'south';
+      for (const x of [51.5, 55])
+        for (const z of [22, 26.5])
+          spawns.push({
+            pos: v3(s * x, 0, n * z),
+            // facing the room's door (north-west for Orange's south room)
+            yawDeg: s * (n > 0 ? 45 : 135),
+            team,
+            group,
+          });
+      // team colour over the room's door and on its back wall
       T.push(
-        deco(mk(s * (OX - 0.1), 3.25, n * 11.2, s * OX, 3.45, n * 14.8, 'trim', { color: tc })),
+        deco(mk(s * 54, DH + 0.05, n * 16, s * 57, DH + 0.25, n * 16.12, 'trim', { color: tc })),
       );
-    T.push(deco(mk(s * (SP.x1 - 0.1), 1, -6, s * SP.x1, 4.5, 6, tmat)));
-    light(s * 52, 4, 0, tc, 11, 0.9);
-    light(s * 52, 3.5, 12.5, tc, 6, 0.5);
-    light(s * 52, 3.5, -12.5, tc, 6, 0.5);
+      T.push(deco(mk(s * 50, 1, n * 29.9, s * 56, 4.5, n * 30, tmat)));
+    }
   }
 
   // ======================= the planets (moving blocks) =======================
@@ -735,8 +754,8 @@ export const buildOrrery = (): LevelDef => {
 
   return {
     name: 'The Orrery',
-    boundsMin: v3(-58, -2, -OZ - 0.6),
-    boundsMax: v3(58, O.dome + 1, OZ + 0.6),
+    boundsMin: v3(-58, B - 2, -46),
+    boundsMax: v3(58, O.hall.roof + 1, 46),
     defaultGravity: v3(0, -1, 0),
     boxes,
     zones: [],
@@ -747,17 +766,17 @@ export const buildOrrery = (): LevelDef => {
     controllerHomes: homes,
     waypoints: waypoints(),
     areas: [
-      { name: 'Cyan spawn', pos: v3(-52, 0, 0), yawDeg: -90 },
-      { name: 'Orange spawn', pos: v3(52, 0, 0), yawDeg: 90 },
-      { name: 'The Sun', pos: v3(0, S, 2), yawDeg: 180 },
-      { name: 'Sun gate (spiral)', pos: v3(0, 0, 14), yawDeg: 0 },
-      { name: 'A site (north gallery)', pos: v3(0, 0, -38), yawDeg: 180 },
-      { name: 'B site (south gallery)', pos: v3(0, 0, 38), yawDeg: 0 },
-      { name: 'Ring, north', pos: v3(0, R, -38), yawDeg: 180 },
-      { name: 'Ring, east', pos: v3(40, R, 0), yawDeg: 90 },
-      { name: 'West yard', pos: v3(-37.5, 0, 8), yawDeg: -90 },
-      { name: 'The Well', pos: v3(-22, 0, 0), yawDeg: -90 },
-      { name: 'Mercury dock', pos: v3(-4.5, R, -33), yawDeg: 180 },
+      { name: 'Cyan spawn (south)', pos: v3(-53, 0, 24), yawDeg: -45 },
+      { name: 'Orange spawn (south)', pos: v3(53, 0, 24), yawDeg: 45 },
+      { name: 'The Sun', pos: v3(0, S, 5.25), yawDeg: 180 },
+      { name: 'Orbit hall, east', pos: v3(15, 0, 3), yawDeg: -90 },
+      { name: 'A site (north gallery)', pos: v3(0, 0, -42.5), yawDeg: 180 },
+      { name: 'B site (south gallery)', pos: v3(0, 0, 42.5), yawDeg: 0 },
+      { name: 'Heaven over B', pos: v3(6, U, 32.5), yawDeg: 0 },
+      { name: 'South upper gallery', pos: v3(-7, U, 28), yawDeg: 90 },
+      { name: 'Gear crypt', pos: v3(0, B, 6), yawDeg: 0 },
+      { name: 'West Tower room', pos: v3(-34, 0, 5), yawDeg: -90 },
+      { name: 'West library (B)', pos: v3(-23, 0, 36), yawDeg: 90 },
     ],
     fog: { color: 0x0a1027, near: 40, far: 170 },
     ambient: 0.62,
@@ -771,7 +790,6 @@ export const buildOrrery = (): LevelDef => {
     movers,
     sky: {
       moons: [
-        // a banded giant hanging over the dome, a pale moon, a far red one
         { dir: v3(0.35, 0.8, -0.49), sizeDeg: 20, color: 0x9fb2e6 },
         { dir: v3(-0.62, 0.6, 0.5), sizeDeg: 3.5, color: 0xe6e0d0 },
         { dir: v3(0.8, 0.35, 0.49), sizeDeg: 1.5, color: 0xd98a6a },
@@ -781,14 +799,14 @@ export const buildOrrery = (): LevelDef => {
 };
 
 /**
- * Bot waypoints (static routes only: none is on or over a planet's path at the Ring or the
- * Sun's edge). Authored in the south-east quarter and mirrored: a name gets 'N'/'S' when it is
- * mirrored north ↔ south and 'E'/'W' when mirrored east ↔ west ('galRampTopSE'). Nodes on
- * x = 0 or z = 0 have no copy there; the Sun's spiral is mirrored east ↔ west only.
+ * Bot waypoints (static routes only: none on or over a planet's path). Authored in the
+ * south-east quarter and mirrored: a name gets 'N'/'S' when mirrored north ↔ south and 'E'/'W'
+ * when mirrored east ↔ west ('spawnSE'). Nodes on x = 0 or z = 0 have no copy there. The
+ * Sun's ramps are the same north and south (authored with `z: false`, explicit names).
  */
 const waypoints = (): WaypointDef[] => {
-  const R = ORRERY.ring;
-  const S = ORRERY.sun;
+  const U = ORRERY.upper;
+  const B = ORRERY.crypt;
   const wps: WaypointDef[] = [];
   const flags = new Map<string, { x: boolean; z: boolean }>();
   const nameOf = (base: string, s: Sign, n: Sign) => {
@@ -809,76 +827,124 @@ const waypoints = (): WaypointDef[] => {
     if (i < 0) throw new Error(`waypoint ${name} missing`);
     return i;
   };
-  /** link two bases in every mirrored copy (`south`: only the south copies) */
-  const link = (a: string, b: string, south = false) => {
-    for (const n of south ? [1 as Sign] : SIGNS)
-      for (const s of SIGNS) {
-        const i = idx(nameOf(a, s, n));
-        const j = idx(nameOf(b, s, n));
-        if (i === j) continue;
-        if (!wps[i].links.includes(j)) wps[i].links.push(j);
-        if (!wps[j].links.includes(i)) wps[j].links.push(i);
-      }
+  const both = (i: number, j: number) => {
+    if (i === j) return;
+    if (!wps[i].links.includes(j)) wps[i].links.push(j);
+    if (!wps[j].links.includes(i)) wps[j].links.push(i);
+  };
+  /** link two bases in every mirrored copy */
+  const link = (a: string, b: string) => {
+    for (const n of SIGNS) for (const s of SIGNS) both(idx(nameOf(a, s, n)), idx(nameOf(b, s, n)));
   };
   const chain = (...names: string[]) => {
     for (let i = 1; i < names.length; i++) link(names[i - 1], names[i]);
   };
+  /** link a node's north and south copies (both sides) */
+  const acrossZ = (base: string) => {
+    for (const s of SIGNS) both(idx(nameOf(base, s, -1)), idx(nameOf(base, s, 1)));
+  };
 
-  // spawn room, vestibules, yard, Tower
-  add('spawn', 50, 0, 0);
-  add('room', 55, 0, 6.5);
-  add('vest', 55, 0, 12.5);
-  add('vestOut', 48.5, 0, 12.5);
-  add('yardV', 43.5, 0, 13);
-  add('tower', 41.5, 0, 0);
-  add('yard', 37.5, 0, 8);
-  add('yardEnd', 36.5, 0, 24);
-  add('rampMid', 43.5, 3, 23);
-  add('rampTop', 43.5, R, 33);
-  // the Well
-  add('colo', 29, 0, 4);
-  add('well', 22, 0, 0);
-  add('wellMid', 21, 0, 11);
-  add('gearOut', 21, 0, 20);
-  add('corner', 15.5, 0, 10.5);
-  add('field', 6, 0, 20);
-  add('siteGate', 0, 0, 27);
-  add('archWell', 17.5, 0, 28);
-  // galleries and sites ('siteS' = B, 'siteN' = A)
-  add('arch', 16.25, 0, 34);
-  add('gal', 21, 0, 39);
-  add('galEnd', 38, 0, 37);
-  add('galMid', 13.5, 0, 39.5);
-  add('site', 0, 0, 39);
-  add('galRampFoot', 28, 0, 43.75);
-  add('galRampTop', 10, R, 43.75);
-  // the Ring
-  add('ringSite', 0, R, 38);
-  add('ringS1', 8, R, 37);
-  add('ringS2', 22, R, 39.5);
-  add('ringCorner', 37, R, 36);
-  add('ringYard2', 38.8, R, 25);
-  add('ringYard1', 38.8, R, 12);
-  add('ringYard0', 40, R, 0);
-  // the Sun: the gate (south only), the spiral (east / west), the top
-  add('gate', 0, 0, 14, { z: false });
-  add('sr0', 0, 0, 11, { z: false });
-  add('sr1', 5.25, 1.8, 10.5, { z: false });
-  add('srL', 10.5, ORRERY.spiralLanding, 10.5, { z: false });
-  add('sr2', 10.5, 7.8, 0);
-  add('srTop', 10.5, S, -10.5, { z: false });
-  add('sunSide', 5, S, 0);
-  add('sunN', 0, S, -6, { z: false });
-  add('sunC', 0, S, 2, { z: false });
+  // spawn room, vestibule, ramp up to the gallery
+  add('spawn', 53, 0, 24);
+  add('rIn', 55.5, 0, 18.5);
+  add('rOut', 55.5, 0, 12.8);
+  add('vN', 46.5, 0, 12.8);
+  add('vMid', 46.5, 0, 20);
+  add('vS', 46.5, 0, 26.5);
+  add('vD3', 46.5, 0, 29.5);
+  add('rampLow', 42, 1.1, 27);
+  add('rampHigh', 34, 5.4, 27);
+  add('uE', 28, U, 26.5);
+  add('uSat', 17, U, 24.5);
+  add('uW', 10, U, 24.5);
+  add('uCtr', 0, U, 28.5);
+  add('heaven', 10.5, U, 32.5);
+  add('heavenC', 0, U, 32.5);
+  // map room, library, the site
+  add('mapN', 46.5, 0, 33.5);
+  add('mapC', 48, 0, 40);
+  add('mapW', 33, 0, 33.5);
+  add('libE', 28.5, 0, 33.5);
+  add('libN', 24, 0, 33);
+  add('libMid', 25.5, 0, 38);
+  add('libW', 17, 0, 39);
+  add('siteE', 12, 0, 39);
+  add('siteNE', 5, 0, 34);
+  add('siteN', 0, 0, 33.5);
+  add('siteC', 0, 0, 39.5);
+  add('site', 0, 0, 42.5);
+  add('siteSE', 7.5, 0, 42);
+  // the mid corridor and the hall
+  add('bcorr', 0, 0, 26.5);
+  add('hallDoor', 0, 0, 20);
+  add('hallS1', 6, 0, 17);
+  add('hallGap', 11, 0, 20.6);
+  add('hallCorner', 14.5, 0, 19.5);
+  add('hallE', 15, 0, 11.5);
+  add('hallEc', 12.5, 0, 3);
+  add('sunFoot', 8.5, 0, 9);
+  // the Sun's ramps and ledge (the same north and south: named explicitly)
+  add('sunRampMid', 8.5, 3.5, 0);
+  add('sunRampTop', 8.5, 6.4, -5.8, { z: false });
+  add('sunNE', 5.25, U, -5.25, { z: false });
+  add('sunE', 5.25, U, 0);
+  add('sunSE', 5.25, U, 5.25, { z: false });
+  add('sunS', 0, U, 5.25, { z: false });
+  add('sunN', 0, U, -5.25, { z: false });
+  // the crypt
+  add('wellTop', 0, 0, 18.5);
+  add('wellMid', 0, -2.5, 13);
+  add('pitS', 0, B, 6);
+  add('pitSE', 4.5, B, 2.5);
+  add('pitE', 5, B, 0);
+  add('crawl', 14, B, 0);
+  add('tubeLow', 22.5, B + 0.75, 0);
+  add('tubeHigh', 29, -1, 0);
+  // clock room, Tower room, lens workshop
+  add('clockW', 22.5, 0, 11.5);
+  add('clockSW', 22.5, 0, 5.5);
+  add('clockTr', 28.5, 0, 6.5);
+  add('clockE', 27, 0, 18.5);
+  add('clockS', 26, 0, 21.5);
+  add('scorr', 26, 0, 27);
+  add('tubeTop', 32.5, 0, 0);
+  add('trDoor', 33, 0, 4.5);
+  add('tower', 34.5, 0, 0);
+  add('trS', 37.5, 0, 4);
+  add('trLens', 37.5, 0, 8.5);
+  add('lens', 37.5, 0, 13);
+  add('lensE', 42, 0, 12.5);
+  add('lensW', 33, 0, 18.5);
 
-  chain('spawn', 'room', 'vest', 'vestOut', 'yardV', 'yard', 'tower');
-  chain('yardV', 'rampMid', 'rampTop', 'ringCorner');
-  chain('yard', 'colo', 'well');
-  chain('yard', 'yardEnd', 'galEnd', 'gal', 'arch', 'archWell', 'gearOut', 'wellMid', 'colo');
-  chain('wellMid', 'corner', 'field', 'siteGate', 'site', 'galMid', 'arch');
-  chain('gal', 'galRampFoot', 'galRampTop', 'ringS1', 'ringSite');
-  chain('ringS1', 'ringS2', 'ringCorner', 'ringYard2', 'ringYard1', 'ringYard0');
-  link('field', 'gate', true);
-  chain('gate', 'sr0', 'sr1', 'srL', 'sr2', 'srTop', 'sunSide', 'sunC', 'sunN');
+  chain('spawn', 'rIn', 'rOut', 'vN', 'vMid', 'vS', 'vD3', 'mapN');
+  chain('vS', 'rampLow', 'rampHigh', 'uE', 'uSat', 'uW', 'uCtr');
+  chain('uW', 'heaven', 'heavenC');
+  chain('mapN', 'mapW', 'libE', 'libMid', 'libW', 'siteE', 'siteSE', 'site', 'siteC', 'siteN');
+  link('mapN', 'mapC');
+  chain('libE', 'libN', 'scorr', 'clockS', 'clockE', 'clockW', 'clockSW', 'clockTr');
+  chain('siteE', 'siteNE', 'siteN', 'bcorr', 'hallDoor', 'hallS1', 'hallGap', 'hallCorner');
+  chain('hallCorner', 'hallE');
+  chain('hallE', 'hallEc');
+  link('hallE', 'sunFoot');
+  link('hallS1', 'sunFoot');
+  link('hallE', 'clockW');
+  chain('hallDoor', 'wellTop', 'wellMid', 'pitS', 'pitSE', 'pitE', 'crawl', 'tubeLow', 'tubeHigh');
+  chain('tubeHigh', 'tubeTop', 'tower', 'trS', 'trLens', 'lens', 'lensE', 'vN');
+  link('tubeTop', 'trDoor');
+  chain('clockTr', 'trDoor');
+  chain('lens', 'lensW', 'clockE');
+  acrossZ('hallEc');
+  // the Sun: up the ramp (south foot → north top), round the ledge
+  for (const s of SIGNS) {
+    const n = (b: string) => idx(nameOf(b, s, 1));
+    const at = (b: string, z: Sign) => idx(nameOf(b, s, z));
+    both(at('sunFoot', 1), n('sunRampMid'));
+    both(n('sunRampMid'), n('sunRampTop'));
+    both(n('sunRampTop'), n('sunNE'));
+    both(n('sunNE'), n('sunE'));
+    both(n('sunE'), n('sunSE'));
+    both(n('sunSE'), n('sunS'));
+    both(n('sunNE'), n('sunN'));
+  }
   return wps;
 };

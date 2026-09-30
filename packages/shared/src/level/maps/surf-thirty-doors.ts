@@ -661,15 +661,15 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   },
   {
     n: 24,
-    name: 'Ridge Runner',
-    idea: 'three A-frames in a row, each further over: clear each ridge and come down on its far face, never on the near one',
+    name: 'Pinwheel',
+    idea: 'kickers round a square: each lip throws you a quarter turn right onto the next — three turns, half a spiral down',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...MID, side: 'right', color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(30, 2.5), lip(12, 3, 0.75)], ...MID, side: 'both', ride: 'right', color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(30, 2.5), lip(12, 3, 0.75)], ...MID, side: 'both', ride: 'right', color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(40, 4)], ...MID, side: 'both', ride: 'right', color: c });
+      for (let k = 0; k < 2; k++)
+        p.move(26, -8, 30).turn(90).curve({ lead: 10, legs: [straight(24, 2.5), lip(12, 3)], ...MID, side: 'right', color: c });
+      p.move(26, -8, 30).turn(90).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
     },
   },
   {

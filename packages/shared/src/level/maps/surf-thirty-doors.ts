@@ -204,6 +204,46 @@ const ceilingOver = (p: Pen, a: { x: number; y: number; z: number }, b: { x: num
   });
 };
 
+/**
+ * A red deck with one hole in it, hung across a drop (a trapdoor): the pen at the release, the
+ * flight going `f` ahead, `side` right and `drop` down onto the next ramp at `v` m/s leaving
+ * with `vy`. The deck hangs `h` metres under the release (its top); the hole is centred where
+ * the steady line is half way through it (feet 1.2 m under the top: reach(v, vy, h + 1.2) on
+ * from the release, toward the landing), `hole` [across, along] metres. The deck reaches
+ * `around` metres past the hole every way (never nearer than 4 m to the release). sized:
+ * falling through a 0.6 m deck with a 1.8 m body at a descent slope k = |vy(t)| / v takes
+ * (1.8 + 0.6) / k metres along, so the hole's `along` is that plus a window of ±w for the line
+ * (w says how hard it is).
+ */
+const trapdoor = (
+  p: Pen,
+  o: { f: number; side: number; v: number; vy: number; h: number; hole: P2; around?: number },
+): void => {
+  const k = reach(o.v, o.vy, o.h + 1.2) / Math.hypot(o.f, o.side);
+  const hf = r1(o.f * k);
+  const hs = r1(o.side * k);
+  const [W, D] = o.hole;
+  const A = o.around ?? 10;
+  const u = -o.h - 0.6;
+  const f0 = Math.max(4, hf - D / 2 - A);
+  const f1 = hf + D / 2 + A;
+  const sw = W + 2 * A;
+  // (before the hole, after it, and either side of it)
+  const slab = (fa: number, fb: number, sa: number, sb: number): void => {
+    if (fb - fa > 0.5 && sb - sa > 0.5)
+      p.red(r1((fa + fb) / 2), r1((sa + sb) / 2), r1(u), [r1(sb - sa), 0.6, r1(fb - fa)]);
+  };
+  slab(f0, hf - D / 2, hs - sw / 2, hs + sw / 2);
+  slab(hf + D / 2, f1, hs - sw / 2, hs + sw / 2);
+  slab(hf - D / 2, hf + D / 2, hs - sw / 2, hs - W / 2);
+  slab(hf - D / 2, hf + D / 2, hs + W / 2, hs + sw / 2);
+};
+
+/** A red floor slab `size` [across, along] its top `down` metres under the pen, centred on it. */
+const redFloor = (p: Pen, size: P2, down: number): void => {
+  p.red(0, 0, r1(-down - 0.6), [size[0], 0.6, size[1]]);
+};
+
 // ---------------------------------------------------------------------------------------------
 // The rooms
 
@@ -527,6 +567,10 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [14, 14],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(50, 4)], ...MID, side: 'right', color: c });
+      // sized: the release (traced) is 34.4 m/s falling 3.3 m/s; the deck hangs 8 m down, where
+      // the line has come 25.6 m (reach) falling 18 m/s: a descent slope of 0.53, so passing the
+      // deck takes 4.5 m along — the hole is 9 m along (±2.2 m of window) and 7 m across
+      trapdoor(p, { f: 38, side: 8, v: 34.4, vy: -3.3, h: 8, hole: [7, 9] });
       p.move(38, -18, 8).curve({ lead: 12, legs: [straight(60, 5)], ...MID, side: 'left', color: c });
     },
   },

@@ -57,7 +57,7 @@ const straight = (len: number, drop: number, more: Partial<CurveLeg> = {}): Curv
  * rise / len). The line rides it half way down the face (where a rider holding the ramp
  * actually is there: the flight after it starts from the line).
  */
-const lip = (len: number, rise: number): CurveLeg => ({ len, drop: -rise, depth: 0.5 });
+const lip = (len: number, rise: number, depth = 0.5): CurveLeg => ({ len, drop: -rise, depth });
 
 const DEG = Math.PI / 180;
 // (+ 0: never a negative zero, which JSON would not keep)
@@ -555,8 +555,8 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [14, 14],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(55, 6), lip(14, 4.5)], ...MID, side: 'right', color: c });
-      p.move(30, 1, 6).curve({ lead: 10, legs: [straight(35, 4), lip(14, 4.5)], ...MID, side: 'right', color: c });
-      p.move(30, 1, 6).curve({ lead: 10, legs: [straight(20, 2), arc(-70, 40, 5), straight(20, 2)], ...MID, side: 'right', color: c });
+      p.move(33, 1, 6).curve({ lead: 10, legs: [straight(35, 4), lip(14, 4.5)], ...MID, side: 'left', color: c });
+      p.move(33, 1, -6).curve({ lead: 10, legs: [straight(20, 2), arc(-70, 40, 5), straight(20, 2)], ...MID, side: 'right', color: c });
     },
   },
   {
@@ -582,7 +582,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...MID, side: 'right', color: c });
       p.move(reach(32, -2, 6), -6, 3);
-      p.platform([6, 7], 'strafe', { style: 'plain' });
+      p.platform([6, 7], 'strafe', { style: 'plain', centred: true });
       p.move(10, -18, 3).curve({ lead: 8, legs: [straight(70, 16)], ...MID, side: 'right', color: c });
     },
   },
@@ -639,10 +639,10 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 3)], ...TIGHT, side: 'right', color: c });
       p.move(reach(34, -2, 5), -5, 3);
-      boostPillar(p, 4);
-      padHop(p, 9, -3, 4);
-      padHop(p, -9, 5, 4);
-      pillar(p.move(reach(25, 15, 2), -2, 8), [4, 4]);
+      boostPillar(p, 5);
+      padHop(p, 9, -3, 5);
+      padHop(p, -9, 5, 5);
+      pillar(p.move(reach(25, 15, 2), -2, 8), [5, 5]);
       p.launch(36, -10, 1.6, 0, 0);
       p.curve({ lead: 12, legs: [straight(60, 5)], ...TIGHT, side: 'left', color: c });
     },
@@ -654,7 +654,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 5), lip(14, 6)], ...TIGHT, side: 'right', color: c });
+      p.move(12, -6).curve({ lead: 10, legs: [straight(45, 5), lip(14, 4.5, 0.6)], ...TIGHT, side: 'right', color: c });
       p.move(0, -25, 38).turn(180).curve({ lead: 12, legs: [straight(30, 3)], ...NEEDLE, side: 'left', color: c });
       p.move(18, -6, -6).curve({ lead: 9, legs: [arc(-90, 28, 4), straight(20, 2)], ...TIGHT, side: 'right', color: c });
     },
@@ -662,14 +662,14 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   {
     n: 24,
     name: 'Ridge Runner',
-    idea: 'three A-frames: hop each ridge and land on its far face, left, right, left — red waits low',
+    idea: 'three A-frames in a row, each further over: clear each ridge and come down on its far face, never on the near one',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
-      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(10, 2.5)], ...TIGHT, side: 'right', color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(30, 2.5), lip(10, 2.5)], ...TIGHT, side: 'both', ride: 'right', red: 0.75, color: c });
-      p.move(26, -6, -14).curve({ lead: 12, legs: [straight(30, 2.5), lip(10, 2.5)], ...TIGHT, side: 'both', ride: 'left', red: 0.75, color: c });
-      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(40, 4)], ...TIGHT, side: 'both', ride: 'right', red: 0.75, color: c });
+      p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(12, 3)], ...MID, side: 'right', color: c });
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(30, 2.5), lip(12, 3, 0.75)], ...MID, side: 'both', ride: 'right', color: c });
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(30, 2.5), lip(12, 3, 0.75)], ...MID, side: 'both', ride: 'right', color: c });
+      p.move(26, -6, 14).curve({ lead: 12, legs: [straight(40, 4)], ...MID, side: 'both', ride: 'right', color: c });
     },
   },
   {
@@ -712,7 +712,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     build: ({ p, c, wing, deco }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(40, 4), lip(10, 3)], ...TIGHT, side: 'right', color: c });
       p.wall(14, 0, [36, 12, 2], -13);
-      p.move(45, -20, 18).turn(60);
+      p.move(56, -20, 28).turn(60);
       beacon(deco, p.relP(0, -8, -6), 34, wing.glow);
       p.curve({ lead: 12, legs: [straight(30, 3), arc(-60, 28, 4), straight(20, 2)], ...TIGHT, side: 'right', color: c });
     },
@@ -725,7 +725,7 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(45, 4)], ...TIGHT, side: 'right', color: c });
-      p.move(reach(34, -3, 6), -6, 3);
+      p.move(reach(34, -3, 6) - 3, -6, 3);
       block(p, [4, 4]);
       p.move(20, -3, -20).turn(-90);
       block(p, [4, 4]);
@@ -752,15 +752,16 @@ export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   {
     n: 30,
     name: 'The Last Door',
-    idea: 'climb, land a tiny block, turn right round through a gap in a red deck onto a needle, and home',
+    idea: 'climb onto a tiny block, flick a quarter turn through a gap in a red deck onto a ramp, a needle, home',
     level: 'extreme',
     door: [12, 12],
     build: ({ p, c }) => {
       p.move(12, -6).curve({ lead: 10, legs: [straight(35, 3), straight(30, -8)], ...TIGHT, side: 'right', color: c });
       p.move(16, -1, 3);
       block(p, [4, 4]);
-      p.move(0, -25, 36).turn(180).curve({ lead: 12, legs: [straight(30, 3)], ...NEEDLE, side: 'left', color: c });
-      p.move(18, -6, -6).curve({ lead: 9, legs: [straight(30, 3), arc(90, 30, 5), straight(20, 2)], ...TIGHT, side: 'right', color: c });
+      p.move(26, -22, -30).turn(-90).curve({ lead: 12, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
+      p.move(20, -6, -5).curve({ lead: 9, legs: [straight(30, 3)], ...NEEDLE, side: 'right', depth: 0.3, color: c });
+      p.move(20, -6, 5).curve({ lead: 9, legs: [straight(40, 4)], ...TIGHT, side: 'left', color: c });
     },
   },
 ];

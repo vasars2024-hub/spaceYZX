@@ -25,6 +25,8 @@ import {
   queueTeamSizes,
   RANKED_QUEUE_IDS,
   rankedQueue,
+  raceTracks,
+  NO_RACE_TRACKS_TEXT,
 } from '@space-yz/shared';
 import { h, button } from './menus';
 import { icon } from './icons';
@@ -255,7 +257,8 @@ const hoursLine = (info: RankedInfo | null, at: number): { text: string; closed:
 
 /**
  * One queue's live line: "7 searching · 3v3 ready", or why it's closed ("Opens at 20 online ·
- * now 12").
+ * now 12", or the Race queue's "No race tracks right now" while every track is retired — the
+ * server closes it for the same reason, from the same map list).
  */
 export const queueCountText = (
   id: RankedQueueId,
@@ -265,6 +268,10 @@ export const queueCountText = (
   const c = counts?.ranked[id];
   if (!counts || !c) return { text: '', open: true };
   if (!c.open) {
+    if (rankedQueue(id)?.kind === 'race' && !raceTracks().length) {
+      const text = NO_RACE_TRACKS_TEXT[0].toUpperCase() + NO_RACE_TRACKS_TEXT.slice(1);
+      return { text, open: false };
+    }
     const parts = c.threshold > 0 ? [`Opens at ${c.threshold} online · now ${counts.online}`] : [];
     if (hours) parts.push(c.threshold > 0 ? `or ${hours}` : hours);
     return { text: parts.join(' ') || 'Closed right now', open: false };

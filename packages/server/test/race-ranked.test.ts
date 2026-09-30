@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import type * as SqliteModule from 'node:sqlite';
-import { RACE_DEFAULTS, raceMaps, raceTracks, surfMaps } from '@space-yz/shared';
+import { RACE_DEFAULTS, getMap, raceMaps, raceTracks, surfMaps } from '@space-yz/shared';
 import { createServices, type Services } from '../src/services';
 import { migrate, SCHEMA_VERSION } from '../src/services/db';
 import { raceTrackPool } from '../src/services/queue';
@@ -73,23 +73,74 @@ describe('Race queue', () => {
   });
   afterEach(() => s.close());
 
-  const racer = (name: string): Conn =>
+  /** a fake connection (what it is sent goes to `sent`) */
+  const racer = (name: string, sent: Record<string, unknown>[] = []): Conn =>
     ({
       name,
       accountId: s.accounts.login(name).account.id,
       roomCode: null,
       closed: false,
       rttMs: 20,
-      sendJson: () => {},
+      sendJson: (m: Record<string, unknown>) => void sent.push(m),
     }) as unknown as Conn;
 
-  it('the track pool is every race track, never a surf map', () => {
+  it('the track pool is every race track in rotation, never a surf map or a retired track', () => {
     expect(raceTrackPool()).toEqual(
       raceMaps()
         .filter((m) => !m.surf)
         .map((m) => m.id),
     );
-    expect(raceTrackPool()).toEqual(['race-sunspire', 'race-neon', 'race-ember']);
+    // the parkour tracks are retired until parkour is redone: the pool is empty
+    for (const m of raceTracks(true)) expect(m.retired).toBe(true);
+    expect(raceTrackPool()).toEqual([]);
+  });
+
+  describe('with no tracks (every race track retired)', () => {
+    beforeEach(() => {
+      s.queue.trackPool = raceTrackPool;
+    });
+
+    it('the Race queue is closed and says why; nobody is matched on nothing', () => {
+      const c = s.queue.counts();
+      expect(c.ranked.race).toMatchObject({ open: false, searching: 0 });
+      expect(s.queue.queueStatus('race', 100)).toMatchObject({ open: false, noMaps: true });
+      // the other queues are untouched
+      expect(c.ranked['duels-1v1'].open).toBe(true);
+      const a = racer('Closed1');
+      expect(s.queue.set(a, 'race')).toMatch(/Race is closed: no race tracks right now/);
+      expect(s.queue.size('race')).toBe(0);
+      clock += 60_000;
+      s.queue.tick();
+      expect(rooms.length).toBe(0);
+    });
+
+    it('a multi-search skips Race and searches the rest', () => {
+      const sent: Record<string, unknown>[] = [];
+      const a = racer('Multi1', sent);
+      expect(s.queue.set(a, ['duels-1v1', 'race'])).toBeNull();
+      expect(s.queue.size('race')).toBe(0);
+      expect(s.queue.size('duels-1v1')).toBe(1);
+      expect(String(sent.find((m) => m.t === 'notice')?.msg)).toMatch(
+        /Race is closed: no race tracks/,
+      );
+    });
+
+    it('searchers are dropped (told why) when the last track leaves rotation', () => {
+      let pool = ['track-a'];
+      s.queue.trackPool = () => pool;
+      const sent: Record<string, unknown>[] = [];
+      const a = racer('Drop1', sent);
+      const b = racer('Drop2');
+      expect(s.queue.set(a, 'race')).toBeNull();
+      expect(s.queue.set(b, 'race')).toBeNull();
+      pool = [];
+      clock += 60_000;
+      s.queue.tick();
+      expect(rooms.length).toBe(0);
+      expect(s.queue.size('race')).toBe(0);
+      expect(sent.at(-1)).toMatchObject({ t: 'queue', mode: null });
+      expect(String(sent.at(-1)!.error)).toMatch(/no race tracks right now/);
+    });
   });
 
   it('gathers 2+ racers for 20 s after the 2nd joined, then starts one ranked race room', () => {
@@ -246,7 +297,13 @@ describe('Race ladder and personal bests', () => {
       [a, 58_500],
       [b, 59_000],
     ]);
-    // the profile shows every track (then the surf maps by mode), with your place on it
+    // (TRACK is a retired parkour track: its bests and board are kept, out of rotation)
+    expect(getMap(TRACK).retired).toBe(true);
+    const SURF = 'surf-copper-reef';
+    run(a, 40_000, SURF);
+    run(b, 41_000, SURF);
+    // the profile shows every race map in rotation (the tracks, then the surf maps by mode),
+    // with your place on it; retired tracks are left out (their rows stay in the database)
     const bests = s.ranked.profile(b)!.raceBests;
     expect(bests.map((x) => x.track)).toEqual([...raceTracks(), ...surfMaps()].map((m) => m.id));
     expect(bests.map((x) => x.track).sort()).toEqual(
@@ -255,8 +312,10 @@ describe('Race ladder and personal bests', () => {
         .sort(),
     );
     for (const x of bests) expect(x.mode).toBe(raceMaps().find((m) => m.id === x.track)!.mode);
-    expect(bests.find((x) => x.track === TRACK)).toMatchObject({ timeMs: 59_000, position: 2 });
-    const other = raceMaps().find((m) => m.id !== TRACK);
+    expect(bests.find((x) => x.track === SURF)).toMatchObject({ timeMs: 41_000, position: 2 });
+    expect(bests.find((x) => x.track === TRACK)).toBeUndefined();
+    expect(s.ranked.raceBest(b, TRACK)).toBe(59_000);
+    const other = raceMaps().find((m) => m.id !== SURF);
     if (other) expect(bests.find((x) => x.track === other.id)!.timeMs).toBeNull();
   });
 

@@ -1,43 +1,48 @@
 // "Leviathan" — the fight inside a dead god: the fossilised skeleton of a colossal space creature
-// drifting through a teal nebula, about 120 × 134 m (world x = east, world z = south, ground
-// y 0). The creature lies head north (−z) to tail south (+z); its backbone runs along z through
-// x = 0 and the map is a mirror image across x = 0 (registry flag `symmetric`): Cyan (team 0)
-// camps on the west flank, Orange (team 1) on the east flank. Both bomb sites sit on the mirror
-// line, so both teams have the same ways to each.
+// drifting through a teal nebula (world x = east, world z = south, ground y 0). The creature lies
+// head north (−z) to tail south (+z); its backbone runs along z through x = 0 and the map is a
+// mirror image across x = 0 (registry flag `symmetric`): Cyan (team 0) camps on the west flank,
+// Orange (team 1) on the east flank. Both bomb sites sit on the mirror line, so both teams have
+// the same ways to each. The head half and the tail half are built on the same plan (mirrored
+// north ↔ south, dressed differently), so A and B are the same distance from every camp.
 //
-//   SALVAGE CAMPS (|x| 47..58.5, |z| ≤ 11.5)  roofed spawn huts clamped to the flanks. The spawn
-//        room (|x| 52..58, |z| ≤ 7) is closed toward the map and opens only at its back corners
-//        into the side corridors; three exits: the front door (the Tower stands before it at
-//        |x| 41) and a side door onto each porch
-//   FLANK LANES (|x| 24..46)  outside the ribcage along the whole body: a blast shield before each
-//        camp, scaffolds clamped to rib feet, crates, work lamps; north to the jaw grounds, south
-//        to the tail grounds
-//   THE RIBS (|z| 4, 12, 20, 28)  a colonnade of tall ivory arches down both sides, hanging from
-//        the spine and standing on feet at |x| 23: full cover you can see between (6.6 m gaps)
-//   THE NAVE (|x| < 22, |z| < 44)  under the ribs, floored with the fused belly plates; an aisle
-//        either side of the backbone with fallen bone and salvage for cover
-//   THE HEART (x 0, z 0)  a crystallised heart hanging under the spine, glowing red-violet over
-//        the power-up, circled by a salvage ring balcony at y 4 (ramps from east, west, north,
-//        south). You can walk under the ring to the power-up
-//   THE SPINE (|z| ≤ 22, y 10)  a 6 m walkway along the top of the backbone — the high ground
-//        over the whole map, cover only from the vertebra processes (full blades on the middle
-//        line, waist-high knobs at the edges); drop off its edge onto the balcony. The neck
-//        (z −22..−42) and the tail root (z 22..42) slope down to the ground at 26.6°: the only
-//        ways up
-//   THE SKULL (|x| ≤ 16, z −67..−45)  bomb site A: a bone cathedral 12 m to its vaulted roof,
-//        crystal-filled eye sockets in the face, the foramen (7 m) south where the neck comes
-//        down, jaw doors east / west and temporal windows over a waist-high sill (vault in); the
-//        lower jaw lies outside on the jaw grounds
-//   THE TAIL (z 44..67)  bomb site B: behind the hip bones the tail runs on along the ground as a
-//        line of vertebrae, rises at the south edge and coils back north overhead
+// You fight *inside* the body, on three floors — rooms and corridors, not an open hall:
 //
-// Falling off the fossil (low rock rims all round, porch rails at the camps) drops you into the
-// nebula: a kill volume under the map.
+//   MARROW (y −4.5)  canals under the ribcage: from each flank a stair pit drops into an elbow and
+//        a canal that runs to the marrow chamber under the throat (the loop between the halves),
+//        and on through the foramen tunnel that climbs into the skull (or the tail) from below
+//   GROUND (y 0)
+//     THE HEART (|x| ≤ 10, |z| ≤ 8)  the crystal heart's chamber, 10 m tall, with four doors
+//          (the rib halls east / west, the throat north, the gullet south) and a balcony ring
+//     RIB HALLS (|x| 11..21, |z| ≤ 8)  between the heart and the flanks, a bone rib across the door
+//     RIB GALLERIES (|x| 4..21)  rooms between the ribs, two per quarter (|z| 9..26 and 27..44),
+//          fallen ribs and salvage inside, doors into the throat, the flanks and the jaw grounds
+//     THE THROAT / THE GULLET (|x| ≤ 3, |z| 9..45)  the mid corridors from the heart to the sites,
+//          a vertebra standing in the middle of each
+//     SALVAGE FLANKS (|x| 22..32)  three roofed salvage rooms per side joined by offset doors; the
+//          middle one holds the team's Tower, the ones either side a stair pit into the marrow
+//     JAW GROUNDS / HIP YARDS (|x| 15..32, |z| 45..60)  open to the nebula, walled in by bone
+//     THE SKULL (site A, north) / THE TAIL (site B, south) (|x| ≤ 14, |z| 46..66)  bone
+//          cathedrals 11 m tall: the throat door, a jaw door on each side, the foramen pit behind
+//          the site (the marrow tunnel comes up it) and the brow ledge over the throat door
+//     SALVAGE CAMPS (|x| 33..45)  each team's spawns in three roofed huts — the skull camp (north,
+//          3 spawns), the heart camp (middle, 2), the tail camp (south, 3) — a vestibule with two
+//          doors, the spawn room behind a partition
+//   UPPER (y 5.5)
+//     THE SPINE  the enclosed walkway on top of the backbone over the throat and the gullet,
+//          broken into four segments by vertebra housings; stairs up from the second rib gallery,
+//          its ends open onto the heart's balcony ring and the sites' ledges
 import type { Quat } from '../../math/quat';
 import { qFromAxisAngle, qMul, quat } from '../../math/quat';
 import type { Vec3 } from '../../math/vec3';
 import { v3 } from '../../math/vec3';
-import { LevelBuilder, wedgeRamp } from '../builder';
+import {
+  LevelBuilder,
+  shellAround,
+  wedgeRamp,
+  type OpenVolume,
+  type SurfaceStyle,
+} from '../builder';
 import type {
   BoxDef,
   KillVolumeDef,
@@ -56,14 +61,17 @@ const SITE = 0xc23b3b;
 // the dead god
 const BONE = 0xe8dcc4;
 const BONE_DARK = 0xb8a88c;
-const STERNUM = 0x9c8f78; // the fused belly plates the nave stands on
+const STERNUM = 0x9c8f78; // the fused belly plates the body's rooms stand on
 const MATRIX = 0x26343d; // the fossil rock the skeleton is set in
 const MATRIX_RIM = 0x34454f;
+const MARROW = 0x5b3a48; // the canals under the ribcage
+const MARROW_FLOOR = 0x3e2a33;
 // bioluminescence
 const TEAL = 0x2ef2d0;
 const VIOLET = 0xa46bff;
 const HEART = 0xd13a7a;
 const HEART_VIOLET = 0x8a3cff;
+const CRYSTAL = 0x6b3fa0;
 // salvage
 const STEEL = 0x56616b;
 const STEEL_DARK = 0x353d45;
@@ -73,57 +81,95 @@ const DRAB = 0x4f5c52;
 const TARP = 0x6f5a3c;
 const LAMP = 0xffb46a;
 
-/** Walkway height of the spine. */
-const SPINE_Y = 10;
+/** Floor heights: the marrow canals, the ground, the spine and the balconies / ledges. */
+const LOW = -5;
+const UP = 5.5;
+/** Clear height of a ground-floor room (its roof slab is 1 m over it: the upper floor). */
+const ROOM = 4.5;
 
-/** Key coordinates (the plan). East (+x) is authored, west mirrors it. */
+/**
+ * The plan. East (+x) is authored and mirrored to the west; north (−z) is authored in `d` = |z|
+ * and mirrored to the south. Every range is [from, to] in metres.
+ */
 export const LEVIATHAN = {
-  spine: {
-    y: SPINE_Y,
-    /** half width of the walkway */
-    halfWidth: 3,
-    /** the flat top runs over |z| ≤ flatZ ... */
-    flatZ: 22,
-    /** ... the neck and the tail root slope down to the ground at |z| = footZ */
-    footZ: 42,
-    /** vertebra processes on top: full blades on x = 0, half knobs at the edges (|x| 2.1..2.9) */
-    bladeZ: [-16, -8, 0, 8, 16],
-    knobZ: [-20, -12, -4, 4, 12, 20],
-    /** blades down the neck and the tail root */
-    slopeBladeZ: [-34, -26, 26, 34],
+  floors: { marrow: LOW, ground: 0, upper: UP },
+  heart: { x: 10, z: 8, height: 10, balconyY: UP, pos: v3(0, 7.2, 0) },
+  ribHall: { x: [11, 21], z: 8 },
+  /** the rib galleries, two per quarter */
+  galleries: { x: [4, 21], d1: [9, 26], d2: [27, 44] },
+  /** the throat (north) and the gullet (south), the spine over them */
+  throat: { x: 3, d: [9, 45] },
+  spine: { x: 3, y: UP, d: [9, 45], housings: [17, 26, 35] },
+  /** the stairs up to the spine, in the second rib gallery */
+  stairs: { x: [4, 8], d: [30, 40] },
+  flank: { x: [22, 32], m: 8, d1: [9, 26], d2: [27, 44] },
+  /** the stair pits from the flanks down into the marrow */
+  flankPit: { x: [25, 29], d: [15, 24] },
+  jaw: { x: [15, 32], d: [45, 60] },
+  /** the skull (north) and the tail (south): bone halls, the site in front of the foramen pit */
+  skull: { x: 14, d: [46, 66], height: 11, ledge: { x: 8, d: [46, 49] } },
+  foramen: { x: 2.5, d: [55, 64] },
+  marrow: {
+    chamber: { x: 6, d: [32, 42] },
+    tunnel: { x: 2, d: [42, 55] },
+    canal: { x: [6, 25], d: [36, 40] },
+    elbow: { x: [25, 29], d: [24, 40] },
   },
-  /** rib arches (both sides) and where their feet stand */
-  ribs: { z: [-28, -20, -12, -4, 4, 12, 20, 28], footX: 23 },
-  nave: { x: 22, z0: -44, z1: 44 },
-  flank: { x0: 24, x1: 46 },
-  heart: { pos: v3(0, 4.6, 0), balconyY: 4, outer: 10, inner: 5 },
-  /** Orange's camp (Cyan's mirrors it) and the spawn room inside it */
-  camp: { x0: 47, x1: 58.5, z: 11.5, room: { x0: 52, x1: 58, z: 7 }, height: 3.6 },
-  skull: { x: 16, z0: -67, z1: -45, roof: 12 },
-  tail: { z0: 44, z1: 67 },
-  /** Towers: Cyan's (west) first */
-  towers: [v3(-41, 0, 0), v3(41, 0, 0)] as [Vec3, Vec3],
+  /** Orange's camps (Cyan's mirror them): vestibule x 33..36, spawn room x 37..45 */
+  camp: {
+    x: [33, 45],
+    partition: 36,
+    side: { d: [17, 31] },
+    mid: { z: 6 },
+  },
+  /** Towers: Cyan's (west) first, in the middle salvage room */
+  towers: [v3(-27, 0, 0), v3(27, 0, 0)] as [Vec3, Vec3],
   bombSites: {
-    A: { min: v3(-9, 0, -62), max: v3(9, 3, -50) },
-    B: { min: v3(-11, 0, 47), max: v3(11, 3, 60.5) },
+    A: { min: v3(-11, 0, -55), max: v3(11, 3, -49.2) },
+    B: { min: v3(-11, 0, 49.2), max: v3(11, 3, 55) },
   },
   powerups: [v3(0, 1, 0)],
 };
 
-/** Height of the backbone's walking surface at `z` (the flat top, then the neck / tail root). */
-export const spineSurfaceY = (z: number): number => {
-  const S = LEVIATHAN.spine;
-  const a = Math.abs(z);
-  if (a <= S.flatZ) return S.y;
-  if (a >= S.footZ) return 0;
-  return (S.y * (S.footZ - a)) / (S.footZ - S.flatZ);
+type Extra = Omit<BoxDef, 'c' | 'h' | 'mat'>;
+type Box6 = [number, number, number, number, number, number];
+
+const rotX = (a: number) => qFromAxisAngle(v3(1, 0, 0), a);
+const rotY = (a: number) => qFromAxisAngle(v3(0, 1, 0), a);
+const rotZ = (a: number) => qFromAxisAngle(v3(0, 0, 1), a);
+
+// room looks
+const BODY: Omit<OpenVolume, 'min' | 'max'> = {
+  floor: { mat: 'rock', color: STERNUM },
+  wall: { mat: 'rock', color: BONE },
+  ceiling: { mat: 'rock', color: BONE_DARK },
+};
+const SALVAGE: Omit<OpenVolume, 'min' | 'max'> = {
+  floor: { mat: 'plate', color: STEEL_DARK },
+  wall: { mat: 'panel', color: HUT },
+  ceiling: { mat: 'hull', color: STEEL_DARK },
+};
+const YARD: Omit<OpenVolume, 'min' | 'max'> = {
+  floor: { mat: 'rock', color: MATRIX },
+  wall: { mat: 'rock', color: MATRIX_RIM },
+  lid: false,
+};
+const MARROW_ROOM: Omit<OpenVolume, 'min' | 'max'> = {
+  floor: { mat: 'rock', color: MARROW_FLOOR },
+  wall: { mat: 'rock', color: MARROW },
+  ceiling: { mat: 'rock', color: MARROW },
+};
+const SPINE_ROOM: Omit<OpenVolume, 'min' | 'max'> = {
+  floor: { mat: 'rock', color: BONE_DARK } as SurfaceStyle,
+  wall: { mat: 'rock', color: BONE },
+  ceiling: { mat: 'rock', color: BONE_DARK },
 };
 
-type Extra = Omit<BoxDef, 'c' | 'h' | 'mat'>;
-
-/** Authoring helpers shared by the parts of the map. */
+/** Authoring helpers. `x` ranges are east (mirrored west), `d` ranges north (mirrored south). */
 interface Kit {
   b: LevelBuilder;
+  lights: LightDef[];
+  /** one box as given */
   box: (
     x0: number,
     y0: number,
@@ -134,26 +180,44 @@ interface Kit {
     mat: Material,
     extra?: Extra,
   ) => void;
-  /** a box and its mirror across x = 0 (one box if it already straddles x = 0 evenly) */
+  /** a box and its mirror across x = 0 (one box if it straddles x = 0 evenly) */
   sym: Kit['box'];
-  /** a bone box and its mirror */
-  bone: (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => void;
-  /** a rotated box */
+  /** a box at north distance d0..d1 and its twin south (z = −d and z = +d), each mirrored in x */
+  quad: (
+    x0: number,
+    y0: number,
+    d0: number,
+    x1: number,
+    y1: number,
+    d1: number,
+    mat: Material,
+    extra?: Extra,
+  ) => void;
+  /** an open volume, mirrored in x and (unless it straddles z = 0) north ↔ south */
+  vol: (
+    x0: number,
+    y0: number,
+    d0: number,
+    x1: number,
+    y1: number,
+    d1: number,
+    o?: Omit<OpenVolume, 'min' | 'max'>,
+  ) => void;
+  /** a doorway / window: carves, adds no walls */
+  door: (x0: number, y0: number, d0: number, x1: number, y1: number, d1: number) => void;
   obb: (c: Vec3, h: Vec3, q: Quat, mat: Material, extra?: Extra) => void;
-  /** a rotated box and its mirror (the mirror of rotation q is (q.x, −q.y, −q.z, q.w)) */
+  /** a rotated box and its mirror across x = 0 */
   symObb: Kit['obb'];
-  /** a light and its mirror */
+  /** a light and its mirror in x (and north ↔ south when `both`) */
   light: (x: number, y: number, z: number, color: number, radius: number, k: number) => void;
+  lightQ: (x: number, y: number, d: number, color: number, radius: number, k: number) => void;
 }
-
-const rotZ = (a: number) => qFromAxisAngle(v3(0, 0, 1), a);
-const rotX = (a: number) => qFromAxisAngle(v3(1, 0, 0), a);
-const rotY = (a: number) => qFromAxisAngle(v3(0, 1, 0), a);
 
 export const buildLeviathan = (): LevelDef => {
   const L = LEVIATHAN;
   const b = new LevelBuilder();
   const lights: LightDef[] = [];
+  const vols: OpenVolume[] = [];
   const box: Kit['box'] = (x0, y0, z0, x1, y1, z1, mat, extra = {}) => {
     b.box(
       v3(Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)),
@@ -161,18 +225,46 @@ export const buildLeviathan = (): LevelDef => {
       { mat, ...extra },
     );
   };
+  const straddles = (a: number, c: number) => Math.min(a, c) === -Math.max(a, c);
   const sym: Kit['sym'] = (x0, y0, z0, x1, y1, z1, mat, extra = {}) => {
     box(x0, y0, z0, x1, y1, z1, mat, extra);
-    if (Math.min(x0, x1) !== -Math.max(x0, x1)) box(-x0, y0, z0, -x1, y1, z1, mat, extra);
+    if (!straddles(x0, x1)) box(-x0, y0, z0, -x1, y1, z1, mat, extra);
+  };
+  const quad: Kit['quad'] = (x0, y0, d0, x1, y1, d1, mat, extra = {}) => {
+    sym(x0, y0, -d0, x1, y1, -d1, mat, extra);
+    if (!straddles(d0, d1)) sym(x0, y0, d0, x1, y1, d1, mat, extra);
+  };
+  const addVol = (
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    o: Omit<OpenVolume, 'min' | 'max'>,
+  ) =>
+    vols.push({
+      min: v3(Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1)),
+      max: v3(Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)),
+      ...o,
+    });
+  const vol: Kit['vol'] = (x0, y0, d0, x1, y1, d1, o = BODY) => {
+    for (const sz of straddles(d0, d1) ? [1] : [-1, 1]) {
+      addVol(x0, y0, sz * d0, x1, y1, sz * d1, o);
+      if (!straddles(x0, x1)) addVol(-x0, y0, sz * d0, -x1, y1, sz * d1, o);
+    }
   };
   const obb: Kit['obb'] = (c, h, q, mat, extra = {}) => {
     b.boxes.push({ c, h, q, mat, ...extra });
   };
   const k: Kit = {
     b,
+    lights,
     box,
     sym,
-    bone: (x0, y0, z0, x1, y1, z1) => sym(x0, y0, z0, x1, y1, z1, 'rock', { color: BONE }),
+    quad,
+    vol,
+    door: (x0, y0, d0, x1, y1, d1) => vol(x0, y0, d0, x1, y1, d1, { walls: false }),
     obb,
     symObb: (c, h, q, mat, extra = {}) => {
       obb(c, h, q, mat, extra);
@@ -182,20 +274,18 @@ export const buildLeviathan = (): LevelDef => {
       lights.push({ pos: v3(x, y, z), color, radius, intensity });
       if (x !== 0) lights.push({ pos: v3(-x, y, z), color, radius, intensity });
     },
+    lightQ: (x, y, d, color, radius, intensity) => {
+      k.light(x, y, -d, color, radius, intensity);
+      if (d !== 0) k.light(x, y, d, color, radius, intensity);
+    },
   };
 
-  buildGround(k);
-  buildSpine(k);
-  for (const z of L.ribs.z) {
-    // the rib's centreline tops out just under the spine's walking surface where it hangs
-    const surf = Math.min(spineSurfaceY(z - 0.7), spineSurfaceY(z + 0.7));
-    ribArch(k, z, Math.min(SPINE_Y - 0.8, surf - 0.75));
-  }
+  buildRooms(k);
+  shellAround(b, vols);
+  buildRamps(k);
   buildHeart(k);
-  buildSkull(k);
-  buildTail(k);
+  buildSites(k);
   buildCover(k);
-  buildCamps(k);
 
   // Towers, spawns, Controller homes, team colour
   const towers: TowerDef[] = [];
@@ -207,31 +297,50 @@ export const buildLeviathan = (): LevelDef => {
     const tc = team === 0 ? CYAN : ORANGE;
     b.block(v3(tp.x, 2, tp.z), v3(2, 4, 2), { mat: team === 0 ? 'teamA' : 'teamB', trim: tc });
     towers.push({ team, pos: tp, radius: 1.5, height: 4 });
-    homes.push(v3(s * 44.5, 0.9, 0));
-    for (const x of [53.5, 56])
-      for (const z of [-4.5, -1.5, 1.5, 4.5])
-        spawns.push({ pos: v3(s * x, 0, z), yawDeg: team === 0 ? 90 : -90, team });
-    // over the front door, along the spawn room's back wall
-    box(s * 46.9, 3, -4, s * 47, 3.2, 4, 'trim', { color: tc, noCollide: true });
-    box(s * 57.9, 2.9, -6, s * 58, 3.1, 6, 'trim', { color: tc, noCollide: true });
-    const tl = (x: number, y: number, z: number, c: number, r: number, i: number) =>
-      lights.push({ pos: v3(s * x, y, z), color: c, radius: r, intensity: i });
-    tl(55, 2.8, 0, tc, 9, 0.9);
-    tl(49.5, 2.8, 0, tc, 8, 0.6);
-    tl(45, 3.2, 0, tc, 9, 0.8);
-    for (const z of [-9.25, 9.25]) tl(53, 2.8, z, tc, 7, 0.5);
-    for (const z of [-13.5, 13.5]) tl(50, 2.6, z, LAMP, 8, 0.6);
+    homes.push(v3(s * 30.5, 0.9, 0));
+    const yawDeg = team === 0 ? 90 : -90;
+    // the skull camp (north), the heart camp (middle), the tail camp (south): out of view of
+    // both vestibule doors
+    for (const [group, sz] of [
+      ['skull', -1],
+      ['tail', 1],
+    ] as const)
+      for (const [x, d] of [
+        [38.5, 29.4],
+        [38.5, 18.6],
+        [44, 22.2],
+      ])
+        spawns.push({ pos: v3(s * x, 0, sz * d), yawDeg, team, group });
+    for (const z of [-1.2, 1.2])
+      spawns.push({ pos: v3(s * 43.5, 0, z), yawDeg, team, group: 'heart' });
+    // team colour: strips over the vestibule doors and along the spawn rooms' back walls
+    const strip = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) =>
+      box(s * x0, y0, z0, s * x1, y1, z1, 'trim', { color: tc, noCollide: true });
+    for (const sz of [-1, 1]) {
+      strip(44.9, 3.2, sz * 19, 45, 3.4, sz * 29);
+      strip(33.9, 3.2, sz * 23, 34, 3.4, sz * 25);
+    }
+    strip(44.9, 3.2, -4, 45, 3.4, 4);
+    const tl = (x: number, y: number, z: number, r: number, i: number) =>
+      lights.push({ pos: v3(s * x, y, z), color: tc, radius: r, intensity: i });
+    for (const sz of [-1, 1]) {
+      tl(41, 3.6, sz * 24, 9, 0.9);
+      tl(34.5, 3.6, sz * 24, 7, 0.6);
+    }
+    tl(41, 3.6, 0, 8, 0.9);
+    tl(34.5, 3.6, 0, 7, 0.6);
+    tl(29, 3.8, 0, 8, 0.7);
   }
 
   decorate(k);
 
-  // falling off the fossil: into the nebula
-  const killVolumes: KillVolumeDef[] = [{ min: v3(-300, -80, -300), max: v3(300, -5, 300) }];
+  // nothing leads off the fossil, but a fall anywhere below the marrow ends in the nebula
+  const killVolumes: KillVolumeDef[] = [{ min: v3(-300, -80, -300), max: v3(300, -12, 300) }];
 
   return b.build({
     name: 'Leviathan',
-    boundsMin: v3(-60, -6, -68),
-    boundsMax: v3(60, 18, 68),
+    boundsMin: v3(-47, -7, -68),
+    boundsMax: v3(47, 13, 68),
     defaultGravity: v3(0, -1, 0),
     zones: [],
     rails: [],
@@ -241,20 +350,22 @@ export const buildLeviathan = (): LevelDef => {
     controllerHomes: homes,
     waypoints: waypoints(),
     areas: [
-      { name: 'Cyan camp', pos: v3(-49.5, 0, 0), yawDeg: 90 },
-      { name: 'Orange camp', pos: v3(49.5, 0, 0), yawDeg: -90 },
-      { name: 'West flank', pos: v3(-31, 0, -9), yawDeg: 90 },
-      { name: 'Nave, east aisle', pos: v3(12, 0, -24), yawDeg: 180 },
-      { name: 'The Heart', pos: v3(0, 0, -7), yawDeg: 180 },
-      { name: 'Heart balcony', pos: v3(7, L.heart.balconyY, -7), yawDeg: -90 },
-      { name: 'The Spine', pos: v3(0, SPINE_Y, -12), yawDeg: 180 },
-      { name: 'The neck', pos: v3(1.5, spineSurfaceY(-30), -30), yawDeg: 0 },
-      { name: 'A site (skull)', pos: v3(0, 0, -53), yawDeg: 0 },
-      { name: 'Jaw grounds', pos: v3(25, 0, -54), yawDeg: -90 },
-      { name: 'B site (tail)', pos: v3(4, 0, 54.5), yawDeg: 180 },
+      { name: 'Cyan heart camp', pos: v3(-41, 0, 0), yawDeg: 90 },
+      { name: 'Orange skull camp', pos: v3(41, 0, -24), yawDeg: -90 },
+      { name: 'Orange Tower room', pos: v3(29, 0, 4), yawDeg: -90 },
+      { name: 'The Heart', pos: v3(0, 0, 5), yawDeg: 180 },
+      { name: 'Heart balcony', pos: v3(0, UP, -6.75), yawDeg: 0 },
+      { name: 'Rib hall, east', pos: v3(18, 0, 0), yawDeg: -90 },
+      { name: 'Rib gallery, north-east', pos: v3(16, 0, -13), yawDeg: 180 },
+      { name: 'The throat', pos: v3(0, 0, -20), yawDeg: 180 },
+      { name: 'The spine, north', pos: v3(0, UP, -22), yawDeg: 180 },
+      { name: 'Marrow chamber, north', pos: v3(0, LOW, -37), yawDeg: 180 },
+      { name: 'Jaw grounds, east', pos: v3(24, 0, -52), yawDeg: -90 },
+      { name: 'A site (skull)', pos: v3(0, 0, -50), yawDeg: 180 },
+      { name: 'B site (tail)', pos: v3(0, 0, 50), yawDeg: 0 },
     ],
     fog: { color: 0x14595e, near: 45, far: 190 },
-    ambient: 0.82,
+    ambient: 0.72,
     sideTint: { neg: CYAN, pos: ORANGE, amount: 0.05 },
     lights,
     bombSites: [
@@ -274,111 +385,147 @@ export const buildLeviathan = (): LevelDef => {
   });
 };
 
-/** Floors (the belly plates, the fossil rock, the camps' decking) and the rims round the edge. */
-const buildGround = (k: Kit): void => {
-  const { box, sym } = k;
-  box(-22, -1, -44, 22, 0, 44, 'rock', { color: STERNUM });
-  sym(22, -1, -44, 46, 0, 44, 'rock', { color: MATRIX });
-  box(-34, -1, -67, 34, 0, -44, 'rock', { color: MATRIX }); // jaw grounds and the skull
-  box(-34, -1, 44, 34, 0, 67, 'rock', { color: MATRIX }); // tail grounds
-  sym(46, -1, -16, 58.5, 0, 16, 'plate', { color: STEEL_DARK }); // the camps' decking
-  // low rims along every edge (half cover; beyond them the nebula)
-  const rim = { color: MATRIX_RIM };
-  sym(16, 0, -67, 34, 1, -66, 'rock', rim); // north, beside the skull's face
-  sym(33, 0, -66, 34, 1, -44, 'rock', rim);
-  sym(34, 0, -44, 46, 1, -43, 'rock', rim);
-  sym(45, 0, -43, 46, 1, -16, 'rock', rim);
-  sym(45, 0, 16, 46, 1, 43, 'rock', rim);
-  sym(34, 0, 43, 46, 1, 44, 'rock', rim);
-  sym(33, 0, 44, 34, 1, 66, 'rock', rim);
-  box(-34, 0, 66, 34, 1, 67, 'rock', rim); // south, behind the tail
-  // porch rails at the camps
-  const rail = { color: STEEL };
-  sym(46, 0, -16, 58.5, 1, -15, 'hull', rail);
-  sym(46, 0, 15, 58.5, 1, 16, 'hull', rail);
-  sym(57.5, 0, -15, 58.5, 1, -11.5, 'hull', rail);
-  sym(57.5, 0, 11.5, 58.5, 1, 15, 'hull', rail);
+/** Every room, corridor, doorway and window as open volumes (walls come from shellAround). */
+const buildRooms = (k: Kit): void => {
+  const { vol, door } = k;
+  const L = LEVIATHAN;
+  const G = L.galleries;
+  const F = L.flank;
+  const K = L.skull;
+  const M = L.marrow;
+  const C = L.camp;
+  const DOOR = 3.5;
+
+  // ---- the heart and the rib halls (straddle z = 0) ----
+  vol(-L.heart.x, 0, -L.heart.z, L.heart.x, L.heart.height, L.heart.z);
+  vol(L.ribHall.x[0], 0, -8, L.ribHall.x[1], ROOM, 8);
+  door(L.heart.x, 0, -2, L.ribHall.x[0], DOOR, 2); // heart ↔ rib hall
+  // ---- the salvage flank's middle room (the Tower) and the heart camp ----
+  vol(F.x[0], 0, -F.m, F.x[1], ROOM, F.m, SALVAGE);
+  vol(C.x[0], 0, -C.mid.z, C.partition, ROOM, C.mid.z, SALVAGE);
+  vol(C.partition + 1, 0, -C.mid.z, C.x[1], ROOM, C.mid.z, SALVAGE);
+  door(C.partition, 0, -1, C.partition + 1, DOOR, 1);
+
+  // ---- one quarter (north-east), mirrored to the other three ----
+  // rib hall doors: into the flank and into the first gallery
+  door(L.ribHall.x[1], 0, 3, F.x[0], DOOR, 6);
+  door(15, 0, 8, 18, DOOR, 9);
+  // the throat, the spine over it (four segments between vertebra housings)
+  vol(-L.throat.x, 0, L.throat.d[0], L.throat.x, ROOM, L.throat.d[1]);
+  door(-1.5, 0, 8, 1.5, DOOR, 9); // throat ↔ heart
+  const S = L.spine;
+  const seg = [S.d[0], ...S.housings.flatMap((h) => [h, h + 1]), S.d[1]];
+  for (let i = 0; i < seg.length; i += 2)
+    vol(-S.x, UP, seg[i], S.x, UP + 3.5, seg[i + 1], SPINE_ROOM);
+  door(-2, UP, 8, 2, UP + 3, 9); // spine ↔ heart balcony
+  // housings: doors at the sides, then in the middle, then at the sides again
+  door(0.6, UP, 17, 3, UP + 3, 18);
+  door(-1.2, UP, 26, 1.2, UP + 3, 27);
+  door(0.6, UP, 35, 3, UP + 3, 36);
+  // the rib galleries
+  vol(G.x[0], 0, G.d1[0], G.x[1], ROOM, G.d1[1]);
+  vol(G.x[0], 0, G.d2[0], G.x[1], ROOM, G.d2[1]);
+  door(3, 0, 12, 4, DOOR, 16.5); // gallery 1 ↔ throat
+  door(15, 0, 26, 20, DOOR, 27); // gallery 1 ↔ gallery 2
+  door(21, 0, 18, 22, DOOR, 23); // gallery 1 ↔ flank
+  door(17, 0, 44, 20, DOOR, 45); // gallery 2 ↔ jaw grounds
+  // the stairwell up to the spine (in gallery 2) and its door onto the spine
+  vol(L.stairs.x[0], 0, L.stairs.d[0], L.stairs.x[1], 9, 44);
+  door(3, UP, 40.5, 4, UP + 3, 44);
+  // the salvage flank
+  vol(F.x[0], 0, F.d1[0], F.x[1], ROOM, F.d1[1], SALVAGE);
+  vol(F.x[0], 0, F.d2[0], F.x[1], ROOM, F.d2[1], SALVAGE);
+  door(22, 0, 8, 25, DOOR, 9); // middle ↔ first
+  door(29, 0, 26, 32, DOOR, 27); // first ↔ second
+  door(25, 0, 44, 29, DOOR, 45); // second ↔ jaw grounds
+  // the flank's stair pit down to the marrow
+  const P = L.flankPit;
+  vol(P.x[0], LOW, P.d[0], P.x[1], 0, P.d[1], MARROW_ROOM);
+  // the side camp: vestibule, spawn room; doors into both flank rooms
+  const CS = C.side.d;
+  vol(C.x[0], 0, CS[0], C.partition, ROOM, CS[1], SALVAGE);
+  vol(C.partition + 1, 0, CS[0], C.x[1], ROOM, CS[1], SALVAGE);
+  door(C.partition, 0, 23, C.partition + 1, DOOR, 25);
+  door(F.x[1], 0, 19, C.x[0], DOOR, 22);
+  door(F.x[1], 0, 28, C.x[0], DOOR, 31);
+  // heart camp doors (both halves of the mirror in z come from this quarter)
+  door(F.x[1], 0, 3, C.x[0], DOOR, 6);
+  // the jaw grounds, open to the nebula
+  vol(L.jaw.x[0], 0, L.jaw.d[0], L.jaw.x[1], 10, L.jaw.d[1], YARD);
+  // the skull: a bone cathedral; the throat door, the spine door over it, a jaw door each side
+  vol(-K.x, 0, K.d[0], K.x, K.height, K.d[1]);
+  door(-1.5, 0, 45, 1.5, DOOR, 46);
+  door(-2, UP, 45, 2, UP + 3, 46);
+  door(K.x, 0, 50, L.jaw.x[0], DOOR, 54);
+  // the foramen pit behind the site, the tunnel under it, the marrow chamber and canal
+  const FO = L.foramen;
+  vol(-FO.x, LOW, FO.d[0], FO.x, 0, FO.d[1], MARROW_ROOM);
+  vol(-M.tunnel.x, LOW, M.tunnel.d[0], M.tunnel.x, -1, M.tunnel.d[1], MARROW_ROOM);
+  vol(-M.chamber.x, LOW, M.chamber.d[0], M.chamber.x, -1, M.chamber.d[1], MARROW_ROOM);
+  vol(M.canal.x[0], LOW, M.canal.d[0], M.canal.x[1], -1, M.canal.d[1], MARROW_ROOM);
+  vol(M.elbow.x[0], LOW, M.elbow.d[0], M.elbow.x[1], -1, M.elbow.d[1], MARROW_ROOM);
+  // windows onto the nebula: the skull's eye sockets, the camps' back walls
+  for (const w of WINDOWS) door(...w);
+  door(...MID_WINDOW);
+};
+
+/** Window openings (east / north quarter; glass goes in them). */
+const WINDOWS: Box6[] = [
+  [4, 4, 66, 10, 8, 67], // eye sockets (the tail: the vents in its tip)
+  [45, 1.4, 21, 46, 3.2, 27], // side camp, back wall
+];
+const MID_WINDOW: Box6 = [45, 1.4, -2.5, 46, 3.2, 2.5];
+
+/** Ramps: the stairs to the spine, the flank pits and the foramen pits. */
+const buildRamps = (k: Kit): void => {
+  const { b, quad } = k;
+  const L = LEVIATHAN;
+  const bone = { mat: 'rock' as Material, color: BONE_DARK };
+  const marrow = { mat: 'rock' as Material, color: MARROW_FLOOR };
+  for (const sz of [-1, 1]) {
+    // the stairs: from the gallery floor up to the landing (10 m run, 28.8°)
+    const [x0, x1] = L.stairs.x;
+    for (const s of [1, -1]) {
+      const cx = (s * (x0 + x1)) / 2;
+      b.boxes.push(
+        wedgeRamp('z', sz * L.stairs.d[0], sz * L.stairs.d[1], 0, UP, cx, x1 - x0, bone),
+      );
+      // the flank pit: down to the elbow (9 m, 26.6°)
+      const P = L.flankPit;
+      b.boxes.push(
+        wedgeRamp(
+          'z',
+          sz * P.d[0],
+          sz * P.d[1],
+          0,
+          LOW,
+          (s * (P.x[0] + P.x[1])) / 2,
+          P.x[1] - P.x[0],
+          marrow,
+        ),
+      );
+    }
+    // the foramen: from the tunnel up to the back of the site (9 m, 26.6°)
+    const FO = L.foramen;
+    b.boxes.push(wedgeRamp('z', sz * FO.d[0], sz * FO.d[1], LOW, 0, 0, 2 * FO.x, marrow));
+  }
+  // the landing at the top of the stairs (solid bone under it)
+  quad(L.stairs.x[0], 0, L.stairs.d[1], L.stairs.x[1], UP, 44, 'rock', { color: BONE_DARK });
+  // kick-rails along the flank pits' long sides (half cover; step over them to drop in)
+  const P = L.flankPit;
+  quad(P.x[0] - 0.5, 0, P.d[0], P.x[0], 1.1, P.d[1], 'hull', { color: STEEL });
+  quad(P.x[1], 0, P.d[0], P.x[1] + 0.5, 1.1, P.d[1], 'hull', { color: STEEL });
 };
 
 /**
- * The backbone: vertebral bodies (bone) with darker discs between them along the flat top
- * (|z| ≤ 22, y 7..10), the neck and the tail root as solid wedges down to the ground, and the
- * processes on top. Work lamps hang under it.
- */
-const buildSpine = (k: Kit): void => {
-  const { b, sym, bone } = k;
-  const S = LEVIATHAN.spine;
-  const W = S.halfWidth;
-  for (let c = -20; c <= 20; c += 4) {
-    const z0 = c === -20 ? -S.flatZ : c - 1.7;
-    const z1 = c === 20 ? S.flatZ : c + 1.7;
-    bone(-W, 7, z0, W, S.y, z1);
-    if (c < 20) sym(-2.8, 7.3, c + 1.7, 2.8, S.y, c + 2.3, 'rock', { color: BONE_DARK });
-  }
-  // neck (north) and tail root (south): 20 m ramps, 26.6°
-  b.boxes.push(wedgeRamp('z', -S.flatZ, -S.footZ, S.y, 0, 0, 2 * W, { mat: 'rock', color: BONE }));
-  b.boxes.push(wedgeRamp('z', S.flatZ, S.footZ, S.y, 0, 0, 2 * W, { mat: 'rock', color: BONE }));
-  for (const z of S.bladeZ) bone(-0.4, S.y, z - 0.8, 0.4, S.y + 2.4, z + 0.8);
-  for (const z of S.knobZ) bone(2.1, S.y, z - 0.6, 2.9, S.y + 1.1, z + 0.6);
-  // blades down the neck and the tail root (rooted in the wedge, 2+ m over its surface)
-  for (const z of S.slopeBladeZ) {
-    const lo = Math.min(spineSurfaceY(z - 0.8), spineSurfaceY(z + 0.8));
-    const hi = Math.max(spineSurfaceY(z - 0.8), spineSurfaceY(z + 0.8));
-    bone(-0.4, lo - 0.3, z - 0.8, 0.4, hi + 2.2, z + 0.8);
-  }
-  // teal growths on the knobs' outer sides
-  for (const z of [-12, 12])
-    sym(2.9, S.y, z - 0.5, 2.98, S.y + 0.7, z + 0.5, 'glow', { color: TEAL, noCollide: true });
-  // hanging work lamps under the backbone (cables from the vertebrae)
-  for (const z of [-20, 20]) {
-    sym(2.45, 5.2, z - 0.05, 2.55, 7, z + 0.05, 'hull', { color: STEEL_DARK, noCollide: true });
-    sym(2.25, 4.95, z - 0.25, 2.75, 5.2, z + 0.25, 'trim', { color: LAMP, noCollide: true });
-  }
-};
-
-/**
- * One pair of ribs (both sides) at `z`: a quarter ellipse from under the spine (x 2.6,
- * centreline height `apex`) out and down to a vertical foot at x 23, drawn as six rotated bone
- * segments overlapping at the joints, standing on a knuckle on the floor.
- */
-const ribArch = (k: Kit, z: number, apex: number): void => {
-  const A = LEVIATHAN.ribs.footX;
-  const B = apex - 3;
-  const t0 = Math.asin(2.6 / A);
-  const N = 6;
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= N; i++) {
-    const t = t0 + ((Math.PI / 2 - t0) * i) / N;
-    pts.push([A * Math.sin(t), 3 + B * Math.cos(t)]);
-  }
-  for (let i = 0; i < N; i++) {
-    const [x0, y0] = pts[i];
-    const [x1, y1] = pts[i + 1];
-    const len = Math.hypot(x1 - x0, y1 - y0);
-    k.symObb(
-      v3((x0 + x1) / 2, (y0 + y1) / 2, z),
-      v3(len / 2 + (i === 0 ? 0.35 : 0.25), 0.6, 0.7),
-      rotZ(Math.atan2(y1 - y0, x1 - x0)),
-      'rock',
-      { color: BONE },
-    );
-  }
-  k.bone(A - 0.6, 0, z - 0.7, A + 0.6, 3.3, z + 0.7); // foot
-  k.bone(A - 1, 0, z - 0.95, A + 1, 0.7, z + 0.95); // knuckle
-};
-
-/**
- * The heart: a cluster of red-violet crystal hanging from the spine over the power-up (it
- * glows, it doesn't collide), violet crystals growing from the floor under it, and the salvage
- * ring balcony around it at y 4 with four ramps.
+ * The heart: a cluster of red-violet crystal hanging in its chamber over the power-up (it glows,
+ * it doesn't collide), crystal columns growing from the floor, and the balcony ring at y 5.5 that
+ * the spine opens onto.
  */
 const buildHeart = (k: Kit): void => {
-  const { b, sym, obb, light } = k;
+  const { sym, quad, obb, light } = k;
   const H = LEVIATHAN.heart;
-  const Y = H.balconyY;
   const glow = (color: number): Extra => ({ color, noCollide: true });
-  // crystal core: square-sectioned pieces turned 45° about y and tilted about x (so each is its
-  // own mirror image), and the aorta up into the vertebra
   const c = H.pos;
   obb(c, v3(1.25, 1.6, 1.25), qMul(rotX(0.32), rotY(Math.PI / 4)), 'glow', glow(HEART));
   obb(
@@ -389,11 +536,10 @@ const buildHeart = (k: Kit): void => {
     glow(HEART),
   );
   obb(v3(0, c.y - 1.3, -0.35), v3(0.7, 1.0, 0.7), rotX(0.9), 'glow', glow(HEART));
-  // crystal spikes jutting north and south
   for (const s of [1, -1])
     obb(v3(0, c.y - 0.2, s * 1.6), v3(0.25, 1.4, 0.25), rotX(s * 0.7), 'glow', glow(HEART));
-  sym(-0.35, 6.2, -0.35, 0.35, 7, 0.35, 'glow', glow(HEART));
-  // violet crystals growing from the floor round the power-up, and the stain under the heart
+  sym(-0.35, 8.9, -0.35, 0.35, H.height, 0.35, 'glow', glow(HEART)); // the aorta
+  // violet crystals round the power-up and the stain under the heart
   for (const [x, z, h] of [
     [2.6, 0.6, 0.9],
     [2.2, -1.8, 0.6],
@@ -401,299 +547,201 @@ const buildHeart = (k: Kit): void => {
   ] as const)
     sym(x - 0.25, 0, z - 0.25, x + 0.25, h, z + 0.25, 'glow', glow(HEART_VIOLET));
   sym(-1.6, 0, -1.6, 1.6, 0.02, 1.6, 'glow', glow(0x5a2150));
-  // the balcony ring: salvage decking on four posts
-  const deck = { color: STEEL };
-  sym(-H.outer, Y - 0.6, -H.outer, H.outer, Y, -H.inner, 'plate', deck);
-  sym(-H.outer, Y - 0.6, H.inner, H.outer, Y, H.outer, 'plate', deck);
-  sym(H.inner, Y - 0.6, -H.inner, H.outer, Y, H.inner, 'plate', deck);
-  sym(9, 0, -10, 10, Y - 0.6, -9, 'hull', { color: STEEL_DARK });
-  sym(9, 0, 9, 10, Y - 0.6, 10, 'hull', { color: STEEL_DARK });
-  // waist-high barricades on its corners
-  sym(8, Y, -10, 10, Y + 1.1, -8, 'crate', { color: RUST });
-  sym(8, Y, 8, 10, Y + 1.1, 10, 'crate', { color: RUST });
-  // ramps up: east / west along x, north / south along z (8 m run, 26.6°)
-  const ramp = { mat: 'plate' as Material, color: STEEL };
-  b.boxes.push(wedgeRamp('x', 18, H.outer, 0, Y, 0, 4, ramp));
-  b.boxes.push(wedgeRamp('x', -18, -H.outer, 0, Y, 0, 4, ramp));
-  b.boxes.push(wedgeRamp('z', -18, -H.outer, 0, Y, 0, 4, ramp));
-  b.boxes.push(wedgeRamp('z', 18, H.outer, 0, Y, 0, 4, ramp));
-  // lamp posts on the ring's outer edge (either side of the east / west ramps)
-  for (const z of [-4, 4]) {
-    sym(9.6, Y, z - 0.1, 9.8, Y + 2.2, z + 0.1, 'hull', { color: STEEL_DARK });
-    sym(9.45, Y + 2.2, z - 0.25, 9.95, Y + 2.4, z + 0.25, 'trim', { color: LAMP, noCollide: true });
-  }
-  // the heart's light: red-violet, strongest at its core
+  // crystal columns (full cover) in the four quarters
+  quad(4.4, 0, 3.4, 5.6, 2.4, 4.6, 'rock', { color: CRYSTAL });
+  // the balcony ring: north and south strips, east and west strips, posts in the corners
+  const Y = H.balconyY;
+  quad(-H.x, Y - 0.5, 5.5, H.x, Y, H.z, 'plate', { color: STEEL });
+  sym(7.5, Y - 0.5, -5.5, H.x, Y, 5.5, 'plate', { color: STEEL });
+  quad(9.2, 0, 7.2, H.x, Y - 0.5, H.z, 'hull', { color: STEEL_DARK });
+  // waist-high salvage on the ring's corners
+  quad(9.2, Y, 2, H.x, Y + 1.1, 3.6, 'crate', { color: RUST });
+  quad(3, Y, 7.2, 4.6, Y + 1.1, H.z, 'crate', { color: RUST });
   light(0, c.y, 0, HEART, 16, 2.1);
   light(0, 1.2, 0, HEART_VIOLET, 9, 1.3);
-  light(0, 6.6, 0, HEART, 9, 1.2);
-  light(6, 5.5, -1, HEART_VIOLET, 11, 0.9);
-  light(0, 5.5, -6, HEART, 11, 0.9);
-  light(0, 5.5, 6, HEART, 11, 0.9);
-  light(6.5, 1.8, -6.5, HEART_VIOLET, 8, 0.7);
-  light(6.5, 1.8, 6.5, HEART_VIOLET, 8, 0.7);
+  light(0, 9.2, 0, HEART, 9, 1.0);
+  light(6, 3, 0, HEART_VIOLET, 10, 0.9);
+  k.lightQ(0, 3, 5, HEART, 10, 0.9);
+  k.lightQ(8.5, Y + 2, 6.5, HEART_VIOLET, 9, 0.8);
 };
 
 /**
- * The skull (site A): a bone hall x −15..15, z −66..−46, 12 m to the vaulted roof. The foramen
- * (7 m wide) south where the neck comes down, jaw doors east / west, temporal windows over a
- * waist-high sill (vault in), crystal-filled eye sockets in the face. Outside, the lower jaw
- * lies on the jaw grounds with its fangs.
+ * The skull (site A, north) and the tail (site B, south): the brow ledge over the throat door on
+ * two bone pillars, site cover, the eye sockets (glass to the nebula); the tail's coil of
+ * vertebrae hanging over its site.
  */
-const buildSkull = (k: Kit): void => {
-  const { b, sym, bone, symObb, light } = k;
+const buildSites = (k: Kit): void => {
+  const { sym, quad, obb, symObb, light } = k;
   const K = LEVIATHAN.skull;
-  const o = { mat: 'rock' as Material, color: BONE };
-  const top = K.roof;
-  // south wall: the foramen
-  b.wall('z', K.z1 - 0.5, 1, -K.x, K.x, 0, top, [{ u0: -3.5, u1: 3.5, v0: 0, v1: 4.5 }], o);
-  // north wall (the face): two eye sockets
-  const eyes = [
-    { u0: -9, u1: -3, v0: 3.5, v1: 8 },
-    { u0: 3, u1: 9, v0: 3.5, v1: 8 },
-  ];
-  b.wall('z', K.z0 + 0.5, 1, -K.x, K.x, 0, top, eyes, o);
-  // side walls: a jaw door and a temporal window each
-  for (const s of [1, -1])
-    b.wall(
-      'x',
-      s * (K.x - 0.5),
-      1,
-      K.z0 + 1,
-      K.z1 - 1,
-      0,
-      top,
-      [
-        { u0: -52, u1: -48, v0: 0, v1: 3.5 },
-        { u0: -62, u1: -57, v0: 1.2, v1: 4.2 },
-      ],
-      o,
-    );
-  // the cranium: roof and dome steps
-  bone(-K.x, top, K.z0, K.x, top + 1, K.z1);
-  bone(-13, top + 1, -64, 13, top + 2, -48);
-  bone(-9, top + 2, -61, 9, top + 3, -51);
-  // the eye sockets: crystal membranes (see-through to the nebula) over teal sills
-  sym(3, 3.5, K.z0, 9, 8, K.z0 + 1, 'skyglass', { color: 0x3fd6c4 });
-  sym(3, 3.3, K.z0 + 1, 9, 3.5, K.z0 + 1.08, 'glow', { color: TEAL, noCollide: true });
-  // vault arches inside (the cathedral's ribs), springing from the side walls at 6 m
-  for (const z of [-51, -56, -61]) {
+  const LE = K.ledge;
+  const boneX = { color: BONE };
+  // the brow ledge (y 5.5) and its pillars
+  quad(-LE.x, UP - 0.5, LE.d[0], LE.x, UP, LE.d[1], 'plate', { color: STEEL });
+  quad(7, 0, 48, 8, UP - 0.5, 49, 'rock', boneX);
+  // a low bone lip along the ledge's edge (half cover), open over the site's middle
+  quad(5, UP, 48.6, LE.x, UP + 1.1, 49, 'rock', { color: BONE_DARK });
+  // glass in the windows
+  for (const sz of [-1, 1]) {
+    sym(4, 4, sz * 66.4, 10, 8, sz * 66.6, 'skyglass', { color: 0x3fd6c4 });
+    sym(4, 3.8, sz * 65.9, 10, 4, sz * 66, 'glow', { color: TEAL, noCollide: true });
+    sym(45.4, 1.4, sz * 21, 45.6, 3.2, sz * 27, 'skyglass', { color: 0x3fd6c4 });
+  }
+  sym(45.4, 1.4, -2.5, 45.6, 3.2, 2.5, 'skyglass', { color: 0x3fd6c4 });
+
+  // ---- A (skull): salvage stacks and fallen teeth ----
+  const skull = (
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    mat: Material,
+    extra: Extra,
+  ) => sym(x0, y0, -z0, x1, y1, -z1, mat, extra);
+  skull(4, 0, 52.5, 6.5, 2.4, 54.5, 'crate', { color: DRAB });
+  skull(11.5, 0, 49.5, 13.5, 1.1, 51, 'crate', { color: RUST });
+  skull(10.5, 0, 58, 12.5, 2.4, 60, 'rock', boneX); // a broken fang
+  skull(9, 0, 62.5, 11, 1.1, 64.5, 'rock', boneX);
+  // the cathedral's vault: bone arches springing from the side walls
+  for (const d of [52, 58, 64]) {
     const A = K.x - 1;
-    const B = top - 6;
+    const B = K.height - 6.5;
     const N = 4;
     const pts: [number, number][] = [];
     for (let i = 0; i <= N; i++) {
       const t = (Math.PI / 2) * (i / N);
-      pts.push([A * Math.cos(t), 6 + B * Math.sin(t)]);
+      pts.push([A * Math.cos(t), 6.3 + B * Math.sin(t)]);
     }
     for (let i = 0; i < N; i++) {
       const [x0, y0] = pts[i];
       const [x1, y1] = pts[i + 1];
       const len = Math.hypot(x1 - x0, y1 - y0);
       symObb(
-        v3((x0 + x1) / 2, (y0 + y1) / 2 - 0.2, z),
-        v3(len / 2 + 0.3, 0.45, 0.5),
+        v3((x0 + x1) / 2, (y0 + y1) / 2 - 0.35, -d),
+        v3(len / 2 + 0.3, 0.3, 0.45),
         rotZ(Math.atan2(y1 - y0, x1 - x0)),
         'rock',
-        { color: BONE },
+        { color: BONE, noCollide: true },
       );
     }
   }
-  // site A cover: salvage stacks either side of the middle, crates by the walls, a fallen horn,
-  // a broken tooth, crates inside the foramen
-  sym(3, 0, -58, 5.5, 2.4, -55.5, 'crate', { color: DRAB });
-  sym(9.5, 0, -53.5, 11.5, 1.1, -51.5, 'crate', { color: RUST });
-  bone(-1.5, 0, -64.5, 1.5, 1.1, -63);
-  bone(11, 0, -64.5, 13.5, 2.4, -62);
-  sym(6, 0, -48.5, 8, 1.1, -47.2, 'crate', { color: RUST });
-  bone(-1.2, 0, -49, 1.2, 2.6, -47.8); // a bone pillar just inside the foramen
-  // the lower jaw on the jaw grounds: a long bone with fangs (full cover), a loose vertebra
-  bone(18, 0, -64, 19.5, 2.4, -53);
-  for (const z of [-62, -58.5, -55]) bone(18.3, 2.4, z - 0.5, 19.2, 3.4, z + 0.5);
-  bone(28.5, 0, -60, 31, 1.1, -57.5);
-  // violet growths along the inside of the side walls
-  for (const z of [-60, -54])
-    sym(14.2, 0, z - 0.8, 14.95, 0.5, z + 0.8, 'glow', { color: VIOLET, noCollide: true });
-  light(6, 5.5, -64.5, TEAL, 14, 1.2);
-  light(0, 9, -56, VIOLET, 18, 1.0);
-  light(8, 3, -52, LAMP, 10, 0.8);
-  light(4, 3, -60, LAMP, 9, 0.7);
-  light(14, 1.2, -57, VIOLET, 6, 0.8);
-  light(0, 3.5, -44, TEAL, 10, 0.9);
-  light(22, 3.5, -58, TEAL, 12, 0.8);
-  light(17, 3, -50, LAMP, 8, 0.7);
-};
+  light(0, 9, -58, VIOLET, 16, 1.0);
+  light(7, 4, -64, TEAL, 12, 1.1);
+  light(6, 3, -51, LAMP, 10, 0.8);
+  light(0, 3, -47.5, LAMP, 7, 0.7);
+  light(0, UP + 2.5, -47.5, TEAL, 9, 0.8);
 
-/**
- * The tail (site B): the hip bones close the nave's south end (gaps beside the tail root and
- * out at the flanks); behind them the tail runs along the ground as vertebrae on the middle
- * line, rises at the south edge (a full column) and coils back north overhead, its tip hanging
- * over the site.
- */
-const buildTail = (k: Kit): void => {
-  const { sym, bone, obb, light } = k;
-  // hip bones (full cover)
-  bone(7, 0, 44, 16, 3.2, 45.2);
-  bone(8, 3.2, 44.1, 15, 3.8, 45.1);
-  // tail vertebrae along the ground
-  bone(-1.2, 0, 44.3, 1.2, 2.4, 46.7);
-  bone(-1, 0, 48.5, 1, 1.1, 50.5);
-  bone(-1, 0, 57, 1, 2.2, 59);
-  bone(-1.3, 0, 61.3, 1.3, 5.2, 64.3); // the tail rising
-  // the coil: vertebrae on a spiral in the y-z plane, turned about x (their own mirror images)
-  const steps = 13;
+  // ---- B (tail): a tail fin, crates, the coil overhead ----
+  const tail = (
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    mat: Material,
+    extra: Extra,
+  ) => sym(x0, y0, z0, x1, y1, z1, mat, extra);
+  tail(3.5, 0, 52.5, 6, 2.4, 54.5, 'rock', boneX); // a tail fin
+  tail(11.5, 0, 48, 13.5, 1.1, 50, 'crate', { color: RUST });
+  tail(9.5, 0, 57, 12, 2.4, 59.5, 'crate', { color: DRAB });
+  tail(3.5, 0, 60.5, 5.5, 1.1, 62.5, 'rock', boneX);
+  // the coil: vertebrae on a spiral in the y-z plane (their own mirror images), high over the
+  // pit, never low enough to stand on
+  const steps = 11;
   for (let i = 0; i <= steps; i++) {
     const phi = ((-20 + (i * 320) / steps) * Math.PI) / 180;
-    const r = 7.2 - (i / steps) * 4.2;
-    const s = 1.25 - (i / steps) * 0.6;
+    const r = 2.2 - (i / steps) * 1.0;
+    const s = 0.75 - (i / steps) * 0.3;
     obb(
-      v3(0, 8.5 + r * Math.sin(phi), 55 + r * Math.cos(phi)),
+      v3(0, 7.8 + r * Math.sin(phi), 59.5 + r * Math.cos(phi)),
       v3(s, s * 0.9, s * 0.8),
       rotX(-phi),
       'rock',
-      { color: BONE },
+      {
+        color: BONE,
+        noCollide: true,
+      },
     );
   }
-  // cover around the site: bone fragments, crates, a tail fin
-  bone(6, 0, 50.5, 7.5, 2.4, 53);
-  bone(8, 0, 56, 10, 1.1, 57.5);
-  sym(5, 0, 57.5, 7, 1.1, 59.5, 'crate', { color: RUST });
-  sym(20, 0, 50, 23, 2.4, 52, 'crate', { color: DRAB });
-  sym(25, 0, 58, 27, 1.1, 60, 'crate', { color: RUST });
-  bone(13.5, 0, 62, 16, 2.4, 64.5);
-  // teal growths along the tail
-  for (const z of [51.5, 55.5])
-    sym(1.2, 0, z - 0.6, 1.9, 0.35, z + 0.6, 'glow', { color: TEAL, noCollide: true });
-  light(0, 12, 55, TEAL, 16, 1.2);
-  light(0, 3, 53.5, VIOLET, 12, 0.9);
-  light(6, 3, 58, LAMP, 9, 0.8);
-  light(11.5, 3.5, 47, TEAL, 10, 0.8);
-  light(22, 3.5, 56, LAMP, 11, 0.8);
-  light(0, 3, 41, TEAL, 9, 0.8);
+  light(0, 9, 58, TEAL, 16, 1.1);
+  light(7, 4, 64, VIOLET, 12, 1.0);
+  light(6, 3, 51, LAMP, 10, 0.8);
+  light(0, 3, 47.5, LAMP, 7, 0.7);
+  light(0, UP + 2.5, 47.5, VIOLET, 9, 0.8);
 };
 
-/** Cover in the nave's aisles and the flank lanes; scaffolds clamped to rib feet. */
+/** Cover in the rib halls, galleries, flanks and jaw grounds; lamps and growths. */
 const buildCover = (k: Kit): void => {
-  const { sym, bone } = k;
-  const crate = (x0: number, z0: number, x1: number, z1: number, h: number, color = RUST) =>
-    sym(x0, 0, z0, x1, h, z1, 'crate', { color });
-  const machine = (x0: number, z0: number, x1: number, z1: number, h: number) =>
-    sym(x0, 0, z0, x1, h, z1, 'hull', { color: STEEL });
-  // aisles (x 3..22): fallen vertebrae, salvage crates, generators
-  bone(12, 0, -34, 15.5, 2.4, -31.5);
-  bone(8, 0, -39.5, 10.5, 1.1, -37.5);
-  crate(6, -27, 8.2, -24.8, 1.1);
-  crate(15.5, -28.6, 17.9, -26.2, 2.4, DRAB);
-  machine(14.5, -17.5, 17.5, -15.5, 2.2);
-  crate(5.5, -13.5, 7.5, -11.5, 1.1);
-  crate(15, -9, 17.2, -7, 1.1, DRAB);
-  crate(15, 7, 17.2, 9, 1.1, DRAB);
-  crate(5.5, 11.5, 7.5, 13.5, 1.1);
-  machine(14.5, 15.5, 17.5, 17.5, 2.2);
-  crate(15.5, 26.2, 17.9, 28.6, 2.4, DRAB);
-  crate(6, 24.8, 8.2, 27, 1.1);
-  bone(12, 0, 31.5, 15.5, 2.4, 34);
-  bone(8, 0, 37.5, 10.5, 1.1, 39.5);
-  // beside the neck and the tail root, and rib stubs inside the feet: they break the lines down
-  // the length of the aisles
-  crate(3, -36, 5.2, -34, 2.4, DRAB);
-  crate(3, 34, 5.2, 36, 2.4, DRAB);
-  for (const z of [-28, -12, 12, 28]) bone(18.5, 0, z - 0.7, 21.8, 2.4, z + 0.7);
-  // flank lanes (x 24..46): a blast shield before each camp, crates, cable spools
-  machine(33.5, -3.5, 34.5, 3.5, 2.6);
-  crate(38, -9.5, 40.4, -7.1, 1.1);
-  crate(38, 7.1, 40.4, 9.5, 1.1);
-  crate(36, -23.4, 38.4, -21, 1.1);
-  crate(38.5, -30, 41.5, -27, 2.4, DRAB);
-  crate(27.5, -38, 29.9, -35.6, 2.4);
-  crate(36, 21, 38.4, 23.4, 1.1);
-  crate(38.5, 27, 41.5, 30, 2.4, DRAB);
-  crate(27.5, 35.6, 29.9, 38, 2.4);
-  // salvage containers midway along the flank lanes
-  sym(29.5, 0, -27.5, 33, 2.6, -25, 'hull', { color: STEEL_DARK });
-  sym(29.5, 0, 25, 33, 2.6, 27.5, 'hull', { color: STEEL_DARK });
-  sym(40, 0, -18.5, 42.4, 1.1, -16.5, 'hull', { color: STEEL_DARK });
-  sym(40, 0, 16.5, 42.4, 1.1, 18.5, 'hull', { color: STEEL_DARK });
-  // salvage scaffolds against the outside of rib feet: a deck at 3 m on four posts, a work lamp
-  for (const z of [-28, -12, 12, 28]) {
-    const x0 = 24.3;
-    const x1 = 27.1;
-    const post = { color: STEEL_DARK };
-    for (const x of [x0, x1 - 0.2])
-      for (const zz of [z - 1.4, z + 1.2]) sym(x, 0, zz, x + 0.2, 2.8, zz + 0.2, 'hull', post);
-    sym(x0, 2.8, z - 1.4, x1, 3, z + 1.4, 'grate', { color: STEEL });
-    sym(x1 - 0.4, 3, z - 0.1, x1 - 0.2, 4.6, z + 0.1, 'hull', { ...post, noCollide: true });
-    sym(x1 - 0.55, 4.6, z - 0.25, x1 - 0.05, 4.8, z + 0.25, 'trim', {
-      color: LAMP,
-      noCollide: true,
-    });
-    k.light(x1 - 0.3, 4.4, z, LAMP, 12, 0.9);
-  }
+  const { sym, quad, lightQ } = k;
+  const bone = { color: BONE };
+  // rib halls: a rib across the heart door (full cover), a crate by each flank door
+  sym(13, 0, -2.5, 14, 2.4, 2.5, 'rock', bone);
+  quad(18.5, 0, 5.5, 20.5, 1.1, 7.5, 'crate', { color: RUST });
+  lightQ(17, 3.8, 0, TEAL, 11, 0.9);
+  // the throat / gullet: a vertebra in the middle
+  quad(-1.6, 0, 26, 1.6, ROOM, 28, 'rock', { color: BONE_DARK });
+  lightQ(0, 3.8, 18, TEAL, 11, 0.8);
+  lightQ(0, 3.8, 38, VIOLET, 11, 0.8);
+  // the spine: dim teal between the housings
+  for (const d of [13, 22, 31, 40]) lightQ(0, UP + 3, d, TEAL, 8, 0.7);
+  // gallery 1: a fallen rib across the room, a generator, crates
+  quad(4, 0, 17, 12, 2.4, 18, 'rock', bone);
+  quad(10, 0, 10, 12, 2.4, 12, 'hull', { color: STEEL });
+  quad(18.5, 0, 11, 20.5, 1.1, 13, 'crate', { color: DRAB });
+  quad(6, 0, 23, 8, 1.1, 25, 'crate', { color: RUST });
+  lightQ(14, 3.8, 14, TEAL, 11, 0.9);
+  lightQ(12, 3.8, 22, VIOLET, 10, 0.8);
+  // gallery 2: salvage stacks
+  quad(11, 0, 34, 13, 2.4, 36, 'crate', { color: DRAB });
+  quad(17, 0, 38, 19, 1.1, 40, 'crate', { color: RUST });
+  quad(18, 0, 29, 20.5, 2.4, 31, 'rock', bone);
+  lightQ(14, 3.8, 35, TEAL, 12, 0.9);
+  lightQ(6, 8, 38, LAMP, 9, 0.8);
+  // the flank: a salvage container in the second room, a crate in the first
+  quad(25, 0, 33, 28, 2.6, 38, 'hull', { color: STEEL_DARK });
+  quad(30, 0, 10, 31.5, 1.1, 12, 'crate', { color: RUST });
+  lightQ(27, 3.8, 12, LAMP, 11, 0.9);
+  lightQ(30, 3.8, 22, LAMP, 10, 0.8);
+  lightQ(27, 3.8, 30, LAMP, 10, 0.8);
+  lightQ(27, 3.8, 41, LAMP, 10, 0.8);
+  lightQ(25, 3.8, 4, LAMP, 10, 0.8);
+  // the jaw grounds: the lower jaw with its fangs (full cover), salvage
+  quad(19, 0, 55, 20.5, 2.4, 59, 'rock', bone);
+  for (const d of [55.8, 58.2]) quad(19.3, 2.4, d - 0.4, 20.2, 3.4, d + 0.4, 'rock', bone);
+  quad(27, 0, 49, 29.5, 2.4, 51, 'crate', { color: DRAB });
+  quad(22, 0, 56, 24, 1.1, 58, 'crate', { color: RUST });
+  quad(25, 2.8, 47.5, 27.4, 2.95, 50.5, 'panel', { color: TARP, noCollide: true });
+  lightQ(24, 4, 52, TEAL, 14, 0.9);
+  lightQ(29, 3, 57, LAMP, 9, 0.8);
+  // the marrow: violet and teal glow
+  lightQ(0, -2, 37, VIOLET, 10, 1.0);
+  lightQ(0, -2, 49, TEAL, 9, 0.9);
+  lightQ(15, -2, 38, VIOLET, 10, 0.9);
+  lightQ(27, -2, 34, TEAL, 9, 0.9);
+  lightQ(27, -2, 26, VIOLET, 9, 0.9);
+  lightQ(27, 1.5, 19.5, TEAL, 9, 0.8);
+  lightQ(0, -1.5, 58, TEAL, 9, 0.9);
 };
 
-/**
- * The salvage camps (Orange's east, Cyan's mirrored): a roofed hut x 47..58.5, z −11.5..11.5,
- * 3.6 m inside. The spawn room (x 52..58, z −7..7) is closed toward the front and opens only at
- * its back corners into the side corridors; they lead to the front corridor and its door
- * (facing the map, the Tower before it) and to a side door onto each porch.
- */
-const buildCamps = (k: Kit): void => {
-  const { b, sym } = k;
-  const C = LEVIATHAN.camp;
-  const R = C.room;
-  const H = C.height;
-  const wall = { mat: 'panel' as Material, color: HUT };
-  const door = (u0: number, u1: number) => ({ u0, u1, v0: 0, v1: 2.8 });
-  for (const s of [1, -1]) {
-    b.wall('x', s * (C.x0 + 0.25), 0.5, -C.z, C.z, 0, H, [door(-1.5, 1.5)], wall); // front
-    b.wall('x', s * (C.x1 - 0.25), 0.5, -C.z, C.z, 0, H, [], wall); // back
-    // north / south walls, a side door at the front corner of each
-    const u0 = s > 0 ? C.x0 + 0.5 : -(C.x1 - 0.5);
-    const u1 = s > 0 ? C.x1 - 0.5 : -(C.x0 + 0.5);
-    const d = s > 0 ? door(C.x0 + 0.5, C.x0 + 2.5) : door(-(C.x0 + 2.5), -(C.x0 + 0.5));
-    for (const n of [1, -1]) b.wall('z', n * (C.z - 0.25), 0.5, u0, u1, 0, H, [d], wall);
-  }
-  // the spawn room: its front wall is solid; its north / south walls open at the back end
-  sym(R.x0 - 0.5, 0, -R.z - 0.5, R.x0, H, R.z + 0.5, 'panel', { color: HUT });
-  sym(R.x0, 0, -R.z - 0.5, 55.5, H, -R.z, 'panel', { color: HUT });
-  sym(R.x0, 0, R.z, 55.5, H, R.z + 0.5, 'panel', { color: HUT });
-  sym(C.x0, H, -C.z, C.x1, H + 0.4, C.z, 'plate', { color: STEEL }); // roof
-  // clamps: girders from the roof edge down into the decking; a tarp awning over the door
-  for (const z of [-11, 11]) sym(46.4, 0, z - 0.3, 47, 4.4, z + 0.3, 'hull', { color: STEEL_DARK });
-  sym(45.4, 2.82, -2.2, 47, 2.95, 2.2, 'panel', { color: TARP, noCollide: true });
-};
-
-/** Glow growths by the rib feet, work lamps, the nave's light, site outlines, far rocks. */
+/** Glow growths along the body's walls, the heart camp's awnings, site outlines, far rocks. */
 const decorate = (k: Kit): void => {
-  const { sym, light } = k;
+  const { sym, quad } = k;
   const L = LEVIATHAN;
-  // bioluminescent growths beside the rib feet, alternating teal / violet
-  L.ribs.z.forEach((z, i) => {
-    const col = i % 2 === 0 ? TEAL : VIOLET;
-    const g = { color: col, noCollide: true };
-    sym(20.6, 0, z + 1.2, 21.4, 0.55, z + 2.0, 'glow', g);
-    sym(21.5, 0, z + 1.4, 21.9, 0.3, z + 1.8, 'glow', g);
-    sym(24.2, 0, z - 2.1, 24.8, 0.4, z - 1.5, 'glow', g);
-    light(21, 1, z + 1.6, col, 7, 0.9);
-  });
-  // violet growths on the balcony posts' outer faces
-  sym(10, 0.4, -9.8, 10.06, 1.6, -9.2, 'glow', { color: VIOLET, noCollide: true });
-  sym(10, 0.4, 9.2, 10.06, 1.6, 9.8, 'glow', { color: VIOLET, noCollide: true });
-  // work lamps on poles in the flank lanes and floodlights in the aisles
-  const lamp = (x: number, z: number, h: number, r: number) => {
-    sym(x - 0.1, 0, z - 0.1, x + 0.1, h, z + 0.1, 'hull', { color: STEEL_DARK });
-    sym(x - 0.25, h, z - 0.25, x + 0.25, h + 0.2, z + 0.25, 'trim', {
-      color: LAMP,
-      noCollide: true,
-    });
-    light(x - 0.4, h - 0.2, z, LAMP, r, 0.9);
-  };
-  for (const z of [-36, -20, 20, 36]) lamp(44.1, z, 3.6, 13);
-  for (const z of [-30, 30]) lamp(20, z, 2.6, 12);
-  // the nave: soft teal high under the ribs, violet over the heart
-  for (const z of [-36, -24, -12, 12, 24, 36]) light(12, 7, z, TEAL, 16, 0.6);
-  light(0, 11.5, -16, TEAL, 12, 0.6);
-  light(0, 11.5, 16, TEAL, 12, 0.6);
-  light(0, 11.5, 0, VIOLET, 10, 0.6);
+  const teal = { color: TEAL, noCollide: true };
+  const violet = { color: VIOLET, noCollide: true };
+  // growths at the foot of the walls (flush against them)
+  quad(4, 0, 9.5, 4.6, 0.4, 11, 'glow', teal);
+  quad(20.4, 0, 32, 21, 0.5, 34, 'glow', violet);
+  quad(2.4, 0, 30, 3, 0.3, 32, 'glow', teal);
+  quad(-0.8, LOW, 41.4, 0.8, LOW + 0.3, 42, 'glow', violet);
+  quad(6.5, LOW, 39.5, 9, LOW + 0.3, 40, 'glow', teal);
+  quad(13.2, 0, 60, 14, 0.5, 62, 'glow', violet);
+  quad(15, 0, 45.4, 17, 0.4, 46, 'glow', teal);
+  sym(10.4, 0, -1.5, 10.9, 0.01, 1.5, 'glow', { color: HEART_VIOLET, noCollide: true });
+  // salvage lamps over the flank doors
+  quad(22, 3.6, 3.8, 22.3, 3.8, 5.2, 'trim', { color: LAMP, noCollide: true });
   // site outlines (the west edge is the mirror of the east one)
   for (const st of [L.bombSites.A, L.bombSites.B]) {
     const w = 0.12;
@@ -711,8 +759,8 @@ const decorate = (k: Kit): void => {
 
 /**
  * Bot waypoints, named. East (+x) nodes are authored and mirrored: `name` + 'E' / 'W'; nodes on
- * x = 0 have no suffix. Orange (team 1) camps east: 'towerE' is Orange's Tower, 'spawnE' the
- * middle of its spawn room.
+ * x = 0 have no suffix. North / south twins end in 'N' / 'S' before that suffix. Orange (team 1)
+ * camps east: 'towerE' is Orange's Tower, 'campME' its heart camp.
  */
 const waypoints = (): WaypointDef[] => {
   const wps: WaypointDef[] = [];
@@ -748,184 +796,207 @@ const waypoints = (): WaypointDef[] => {
   const chain = (...names: string[]) => {
     for (let i = 1; i < names.length; i++) link(names[i - 1], names[i]);
   };
-  const Y = LEVIATHAN.heart.balconyY;
-  const S = SPINE_Y;
 
-  // camp
-  add('spawn', 54.75, 0, 0);
-  for (const [n, z] of [
+  // the middle (z = 0)
+  add('heart', 0, 0, 0);
+  add('heartMid', 6.5, 0, 0);
+  add('dHeart', 10.5, 0, 0);
+  add('ribC', 18, 0, 0);
+  add('tower', 30, 0, 0);
+  add('vestM', 34.5, 0, 0);
+  add('dInnerM', 36.5, 0, 0);
+  add('campM', 41, 0, 0);
+  add('balE', 8.75, UP, 0);
+  chain('heart', 'heartMid', 'dHeart');
+  chain('vestM', 'dInnerM', 'campM');
+
+  for (const [T, sz] of [
     ['N', -1],
     ['S', 1],
   ] as const) {
-    add(`spawn${n}`, 56.75, 0, z * 5.5);
-    add(`open${n}`, 56.75, 0, z * 7.25);
-    add(`cor${n}`, 56.5, 0, z * 9.25);
-    add(`corF${n}`, 49.5, 0, z * 9.25);
-    add(`door${n}`, 48.5, 0, z * 11.25);
-    add(`porch${n}`, 48.5, 0, z * 13.5);
-    add(`porchOut${n}`, 43.5, 0, z * 13.5);
-    add(`lane${n}`, 40, 0, z * 5);
-  }
-  add('corF', 49.5, 0, 0);
-  add('tower', 44, 0, 0);
-  // flank lane
-  add('flank', 31, 0, 0);
-  add('flankN8', 31, 0, -9);
-  add('flankN20', 33.5, 0, -18);
-  add('flankN32', 34, 0, -33);
-  add('flankN42', 30, 0, -41);
-  add('flankS8', 31, 0, 9);
-  add('flankS20', 33.5, 0, 18);
-  add('flankS32', 34, 0, 33);
-  add('flankS42', 30, 0, 41);
-  // rib gaps
-  for (const z of [0, -8, -16, -24, 8, 16, 24]) add(`gap${z}`, 23, 0, z);
-  // nave aisles
-  add('aisleN6', 13.5, 0, -5);
-  add('aisleN16', 11.5, 0, -13);
-  add('aisleN24', 12, 0, -24);
-  add('aisleN32', 10, 0, -31);
-  add('aisleN40', 13, 0, -41);
-  add('aisleS6', 13.5, 0, 5);
-  add('aisleS16', 11.5, 0, 13);
-  add('aisleS24', 12, 0, 24);
-  add('aisleS32', 10, 0, 31);
-  add('aisleS40', 13, 0, 41);
-  // the heart: under the balcony, the power-up, the balcony and its ramps
-  add('heart', 0, 0, 0);
-  add('underN', 6.5, 0, -6.5);
-  add('underS', 6.5, 0, 6.5);
-  add('under', 7, 0, 0);
-  add('rampX', 19.5, 0, 0);
-  add('rampN', 0, 0, -19.5);
-  add('rampS', 0, 0, 19.5);
-  add('bal', 7.5, Y, 0);
-  add('balN', 7, Y, -7);
-  add('balS', 7, Y, 7);
-  add('balMidN', 0, Y, -7.5);
-  add('balMidS', 0, Y, 7.5);
-  // the spine: x = 0 between the blades, x ±1.4 beside them; edge nodes to drop from
-  for (const z of [-20, -12, -4, 4, 12, 20]) add(`spine${z}`, 0, S, z);
-  for (const z of [-16, -8, 0, 8, 16]) add(`spineB${z}`, 1.4, S, z);
-  add('edgeN', 2.6, S, -8);
-  add('edgeS', 2.6, S, 8);
-  // neck and tail root
-  for (const z of [-26, -34, 26, 34]) add(`neck${z}`, 1.5, spineSurfaceY(z), z);
-  add('neckFoot', 1.8, 0, -43.2);
-  add('tailFoot', 2, 0, 43.1);
-  // skull (site A) and the jaw grounds
-  add('apron', 0, 0, -43.8);
-  add('foramen', 0, 0, -45.5);
-  add('skullIn', 4, 0, -49.5);
-  add('siteA', 0, 0, -56);
-  add('siteAE', 7, 0, -53);
-  add('siteAN', 8, 0, -50);
-  add('jawIn', 12.5, 0, -50);
-  add('jawDoor', 15.5, 0, -50);
-  add('jawOut', 20.5, 0, -50);
-  add('jaw', 25, 0, -54);
-  add('jawN', 25.5, 0, -62);
-  add('templeOut', 21.5, 0, -59.5);
-  // tail (site B)
-  add('hipGap', 5, 0, 44.6);
-  add('siteBN', 4, 0, 48);
-  add('siteB', 0, 0, 54);
-  add('siteBE', 4, 0, 54.5);
-  add('siteBS', 3.5, 0, 61);
-  add('tailOut', 20, 0, 46.5);
-  add('tailOut2', 17.5, 0, 55);
-  add('tailOut3', 21, 0, 61.5);
+    const n = (s: string) => `${s}${T}`;
+    const at = (name: string, x: number, feet: number, d: number) => add(n(name), x, feet, sz * d);
+    // heart and its balcony
+    at('heart', 0, 0, 5);
+    at('dThrH', 0, 0, 8.5);
+    at('bal', 0, UP, 6.75);
+    at('balC', 8.75, UP, 6.75);
+    at('dSpH', 0, UP, 8.5);
+    // rib hall, the Tower room, the heart camp's doors
+    at('ribGap', 13.5, 0, 5);
+    at('dRibG', 16.5, 0, 8.5);
+    at('dRibF', 21.5, 0, 4.5);
+    at('fm', 25, 0, 5);
+    at('dCampM', 32.5, 0, 4.5);
+    at('vestM', 34.5, 0, 4.5);
+    at('dFM1', 23.5, 0, 8.5);
+    // the flank's first room and its pit
+    at('f1w', 23.5, 0, 12);
+    at('f1wn', 23.5, 0, 20.5);
+    at('f1nw', 23.5, 0, 25);
+    at('f1ne', 30.5, 0, 25);
+    at('f1e', 30.5, 0, 20.5);
+    at('f1se', 30.5, 0, 14);
+    at('f1top', 27, 0, 13.5);
+    at('dF12', 30.5, 0, 26.5);
+    at('dG1F', 21.5, 0, 20.5);
+    // side camp
+    at('dCampS1', 32.5, 0, 20.5);
+    at('dCampS2', 32.5, 0, 29.5);
+    at('vestA', 34.5, 0, 29.5);
+    at('vestB', 34.5, 0, 20.5);
+    at('vest', 34.5, 0, 24);
+    at('dInner', 36.5, 0, 24);
+    at('camp', 41, 0, 24);
+    // the flank's second room
+    at('f2s', 30.5, 0, 29.5);
+    at('f2e', 30.5, 0, 40);
+    at('f2w', 23.5, 0, 31);
+    at('f2nw', 23.5, 0, 41);
+    at('dF2J', 27, 0, 44.5);
+    // jaw grounds
+    at('jaw', 24, 0, 52);
+    at('dG2J', 18.5, 0, 44.5);
+    at('dJaw', 14.5, 0, 52);
+    // gallery 1
+    at('g1a', 16, 0, 13);
+    at('g1b', 16, 0, 22);
+    at('g1c', 8, 0, 13.5);
+    at('g1d', 9, 0, 21.5);
+    at('dThrG1', 3.5, 0, 14.5);
+    at('dG12', 17.5, 0, 26.5);
+    // gallery 2 and the stairs
+    at('g2a', 14, 0, 30);
+    at('g2b', 14, 0, 40);
+    at('stairBot', 6, 0, 28.5);
+    at('stairTop', 6.5, UP, 42.2);
+    at('dSpSt', 3.5, UP, 42.2);
+    // the throat
+    at('thr1', 0, 0, 14.5);
+    at('thr2', 0, 0, 20);
+    at('thrP', 2.3, 0, 27);
+    at('thr3', 0, 0, 34);
+    at('thr4', 0, 0, 42);
+    at('dSkull', 0, 0, 45.5);
+    // the spine
+    at('sp1', 0, UP, 13);
+    at('dsp1a', 1.8, UP, 15.8);
+    at('dsp1b', 1.8, UP, 19.2);
+    at('sp2', 0, UP, 22);
+    at('dsp2', 0, UP, 26.5);
+    at('sp3', 0, UP, 31);
+    at('dsp3a', 1.8, UP, 33.8);
+    at('dsp3b', 1.8, UP, 37.2);
+    at('sp4', 0, UP, 41.5);
+    at('dSpSk', 0, UP, 45.5);
+    at('ledge', 0, UP, 47.5);
+    at('ledgeC', 3, UP, 48.4);
+    // the site
+    at('skS', 0, 0, 48);
+    at('site', 0, 0, 51.5);
+    at('siteE', 7.5, 0, 52);
+    at('skN', 8, 0, 61);
+    at('skNN', 5, 0, 65);
+    at('pitTop', 0, 0, 65);
+    // the marrow
+    at('pitBot', 0, LOW, 53.5);
+    at('foramen', 0, LOW, 47);
+    at('jun', 0, LOW, 37);
+    at('junE', 4, LOW, 38);
+    at('canal', 15, LOW, 38);
+    at('elbow', 27, LOW, 38);
+    at('elbowS', 27, LOW, 30);
+    at('pitBotF', 27, LOW, 25.5);
 
-  // camp: spawn room → side corridors → front door (Tower) / porches
-  for (const n of ['N', 'S']) {
-    chain('spawn', `spawn${n}`, `open${n}`, `cor${n}`, `corF${n}`, 'corF');
-    chain(`corF${n}`, `door${n}`, `porch${n}`, `porchOut${n}`);
-    link(`porchOut${n}`, `flank${n}8`);
-    link(`porchOut${n}`, `lane${n}`);
-    link(`porchOut${n}`, `flank${n}20`);
-    link(`lane${n}`, `flank${n}8`);
-    link(`lane${n}`, 'tower');
+    const c = (...names: string[]) => chain(...names.map(n));
+    // heart
+    link('heart', n('heart'));
+    link('heartMid', n('heart'));
+    c(
+      'heart',
+      'dThrH',
+      'thr1',
+      'thr2',
+      'thrP',
+      'thr3',
+      'thr4',
+      'dSkull',
+      'skS',
+      'site',
+      'siteE',
+      'dJaw',
+      'jaw',
+    );
+    link('balE', n('balC'));
+    c(
+      'balC',
+      'bal',
+      'dSpH',
+      'sp1',
+      'dsp1a',
+      'dsp1b',
+      'sp2',
+      'dsp2',
+      'sp3',
+      'dsp3a',
+      'dsp3b',
+      'sp4',
+      'dSpSk',
+      'ledge',
+      'ledgeC',
+    );
+    c('sp4', 'dSpSt', 'stairTop', 'stairBot', 'g2a');
+    link(n('ledgeC'), n('siteE'), true); // drop off the brow ledge onto the site
+    // rib hall
+    link('dHeart', n('ribGap'));
+    link('ribC', n('ribGap'));
+    link('ribC', n('dRibF'));
+    link('ribC', n('dRibG'));
+    c('ribGap', 'dRibG', 'g1a');
+    c('dRibF', 'fm', 'dFM1', 'f1w', 'f1wn', 'dG1F', 'g1b');
+    link('tower', n('fm'));
+    link('tower', n('dCampM'));
+    c('fm', 'dCampM', 'vestM');
+    link('vestM', n('vestM'));
+    // flank room 1, the pit, the side camp
+    c(
+      'f1wn',
+      'f1nw',
+      'f1ne',
+      'dF12',
+      'f2s',
+      'dCampS2',
+      'vestA',
+      'vest',
+      'vestB',
+      'dCampS1',
+      'f1e',
+      'f1ne',
+    );
+    c('vest', 'dInner', 'camp');
+    c('f1w', 'f1top', 'f1se', 'f1e');
+    c(
+      'f1top',
+      'pitBotF',
+      'elbowS',
+      'elbow',
+      'canal',
+      'junE',
+      'jun',
+      'foramen',
+      'pitBot',
+      'pitTop',
+      'skNN',
+      'skN',
+      'siteE',
+    );
+    // flank room 2 and the jaw grounds
+    c('f2s', 'f2e', 'dF2J', 'jaw');
+    c('f2s', 'f2w', 'f2nw', 'dF2J');
+    c('jaw', 'dG2J', 'g2b', 'g2a', 'dG12', 'g1b');
+    // gallery 1
+    c('g1a', 'g1b', 'g1d', 'dG12');
+    c('g1a', 'g1c', 'dThrG1', 'thr1');
   }
-  link('corF', 'tower');
-  // flank lanes and the rib gaps
-  chain('flankN8', 'flankN20', 'flankN32', 'flankN42');
-  chain('flankS8', 'flankS20', 'flankS32', 'flankS42');
-  link('flank', 'flankN8');
-  link('flank', 'flankS8');
-  link('flank', 'gap0');
-  link('flankN8', 'gap-8');
-  link('flankN20', 'gap-16');
-  link('flankN20', 'gap-24');
-  link('flankS8', 'gap8');
-  link('flankS20', 'gap16');
-  link('flankS20', 'gap24');
-  // aisles
-  link('gap0', 'rampX');
-  link('gap0', 'aisleN6');
-  link('gap0', 'aisleS6');
-  link('gap-8', 'aisleN6');
-  link('gap-16', 'aisleN16');
-  link('gap-24', 'aisleN24');
-  link('gap8', 'aisleS6');
-  link('gap16', 'aisleS16');
-  link('gap24', 'aisleS24');
-  chain('aisleN6', 'aisleN16', 'aisleN24', 'aisleN32', 'aisleN40');
-  chain('aisleS6', 'aisleS16', 'aisleS24', 'aisleS32', 'aisleS40');
-  link('flankN42', 'aisleN40');
-  link('flankS42', 'aisleS40');
-  // the heart
-  link('aisleN6', 'underN');
-  link('aisleS6', 'underS');
-  chain('underN', 'under', 'underS');
-  for (const u of ['underN', 'under', 'underS']) link(u, 'heart');
-  link('rampX', 'aisleN6');
-  link('rampX', 'aisleS6');
-  link('rampX', 'bal');
-  chain('bal', 'balN', 'balMidN');
-  chain('bal', 'balS', 'balMidS');
-  link('rampN', 'balMidN');
-  link('rampS', 'balMidS');
-  link('rampN', 'aisleN16');
-  link('rampS', 'aisleS16');
-  // the spine (zigzag round the blades) and the drops onto the balcony (one way)
-  for (const [a, c] of [
-    [-20, -16],
-    [-12, -16],
-    [-12, -8],
-    [-4, -8],
-    [-4, 0],
-    [4, 0],
-    [4, 8],
-    [12, 8],
-    [12, 16],
-    [20, 16],
-  ])
-    link(`spine${a}`, `spineB${c}`);
-  link('spineB-8', 'edgeN');
-  link('spineB8', 'edgeS');
-  link('edgeN', 'balN', true);
-  link('edgeS', 'balS', true);
-  // neck (north) and tail root (south)
-  chain('spine-20', 'neck-26', 'neck-34', 'neckFoot', 'apron');
-  chain('spine20', 'neck26', 'neck34', 'tailFoot');
-  link('neckFoot', 'aisleN40');
-  link('tailFoot', 'aisleS40');
-  // skull
-  chain('apron', 'foramen', 'skullIn', 'siteAN', 'jawIn', 'jawDoor', 'jawOut', 'jaw', 'jawN');
-  link('skullIn', 'siteA');
-  link('siteA', 'siteAE');
-  link('siteAE', 'siteAN');
-  link('jawOut', 'flankN42');
-  link('jaw', 'flankN42');
-  chain('jawN', 'templeOut', 'jaw');
-  link('aisleN40', 'apron');
-  // tail
-  chain('tailFoot', 'hipGap', 'siteBN', 'siteBE', 'siteBS');
-  link('siteBN', 'siteB');
-  link('siteBE', 'siteB');
-  link('aisleS40', 'hipGap');
-  link('aisleS40', 'tailOut');
-  chain('flankS42', 'tailOut', 'tailOut2', 'tailOut3', 'siteBS');
-  link('tailOut2', 'siteBE');
   return wps;
 };

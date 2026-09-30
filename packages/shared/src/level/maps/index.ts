@@ -64,6 +64,13 @@ export interface MapInfo {
    * as a tag and group by it; personal bests and leaderboards stay per map, grouped by mode)
    */
   mode?: CourseMode;
+  /**
+   * out of rotation (kept, not deleted, to come back later): no menu, room, practice or queue
+   * offers it, but it is still a map the game has (mapExists) so old personal bests, boards,
+   * replays and Map Maker edits that name it keep working. The parkour race tracks are retired
+   * until parkour is redone.
+   */
+  retired?: boolean;
 }
 
 /** A map built from course data (a surf map when it has a `mode`). */
@@ -72,6 +79,7 @@ const courseMap = (
   name: string,
   course: () => CourseData,
   mode?: CourseMode,
+  retired?: boolean,
 ): MapInfo => ({
   id,
   name,
@@ -80,6 +88,7 @@ const courseMap = (
   competitive: false,
   race: true,
   ...(mode ? { surf: true, mode } : {}),
+  ...(retired ? { retired: true } : {}),
 });
 
 /** The standard surf modes in the order the menus list them, with their tag colours. */
@@ -156,10 +165,11 @@ export const MAPS: MapInfo[] = [
     arena: true,
   },
   // parkour race tracks (rules/race.ts): never competitive, never in a combat mode's pool;
-  // sky courses built from course data (level/course), easiest first
-  courseMap('race-sunspire', 'Sunspire', sunspireCourse),
-  courseMap('race-neon', 'Neon Drift', neonDriftCourse),
-  courseMap('race-ember', 'Ember Spire', emberSpireCourse),
+  // sky courses built from course data (level/course), easiest first. RETIRED (out of every
+  // menu, room and queue) until parkour is redone — the files stay and still build.
+  courseMap('race-sunspire', 'Sunspire', sunspireCourse, undefined, true),
+  courseMap('race-neon', 'Neon Drift', neonDriftCourse, undefined, true),
+  courseMap('race-ember', 'Ember Spire', emberSpireCourse, undefined, true),
   // surf maps (docs/movement-map-design): raced like tracks, listed apart by mode (Beginner,
   // Intermediate), never in the ranked Race queue
   courseMap('surf-copper-reef', 'Copper Reef', copperReefCourse, 'beginner'),
@@ -179,20 +189,39 @@ export const MAPS: MapInfo[] = [
   courseMap('surf-thirty-doors', 'Thirty Doors', thirtyDoorsCourse, 'expert'),
 ];
 
-/** Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs). */
-export const raceMaps = (): MapInfo[] => MAPS.filter((m) => m.race);
-/** The race tracks only (the ranked Race queue's pool). */
-export const raceTracks = (): MapInfo[] => MAPS.filter((m) => m.race && !m.surf);
+/** Is this map in rotation? (not `retired`: menus, rooms, practice and queues may offer it) */
+export const inRotation = (m: MapInfo): boolean => !m.retired;
+/** Is this a map id the game has and offers (known and not retired)? */
+export const mapInRotation = (id: string): boolean => MAPS.some((m) => m.id === id && !m.retired);
+/**
+ * Every map you can race on: the race tracks and the surf maps (race rooms, practice, PBs).
+ * Retired maps are left out unless `includeRetired` (tools, old boards).
+ */
+export const raceMaps = (includeRetired = false): MapInfo[] =>
+  MAPS.filter((m) => m.race && (includeRetired || !m.retired));
+/**
+ * The race tracks only (the ranked Race queue's pool). Empty while the parkour tracks are
+ * retired (the Race queue is closed then); `includeRetired` lists them anyway (tools, tests).
+ */
+export const raceTracks = (includeRetired = false): MapInfo[] =>
+  MAPS.filter((m) => m.race && !m.surf && (includeRetired || !m.retired));
+/** Why the Race queue is closed while it has no tracks (server refusals and the menus say it). */
+export const NO_RACE_TRACKS_TEXT = 'no race tracks right now — parkour is being rebuilt';
 /** The surf maps only (Beginner first, then Intermediate; in registry order within a mode). */
-export const surfMaps = (): MapInfo[] =>
-  SURF_MODES.flatMap(({ mode }) => MAPS.filter((m) => m.race && m.surf && m.mode === mode));
+export const surfMaps = (): MapInfo[] => SURF_MODES.flatMap(({ mode }) => surfMapsOf(mode));
 /** The surf maps of one mode. */
 export const surfMapsOf = (mode: CourseMode): MapInfo[] =>
-  MAPS.filter((m) => m.race && m.surf && m.mode === mode);
-/** Is this a map id the game still has? (old personal bests, drafts and edits of removed maps) */
+  MAPS.filter((m) => m.race && m.surf && m.mode === mode && !m.retired);
+/**
+ * Is this a map id the game still has? (old personal bests, drafts and edits of removed maps)
+ * True for retired maps too: retired is out of rotation, not removed.
+ */
 export const mapExists = (id: string): boolean => MAPS.some((m) => m.id === id);
-/** The track race rooms use unless the players pick another one. */
-export const DEFAULT_RACE_MAP = 'race-sunspire';
+/**
+ * The map race rooms use unless the players pick another one: the easiest Beginner surf map
+ * while the parkour race tracks are retired (was 'race-sunspire').
+ */
+export const DEFAULT_RACE_MAP = 'surf-copper-reef';
 
 /** The map Arena 1v1 rooms and practice run on. */
 export const ARENA_MAP_ID = 'arena';

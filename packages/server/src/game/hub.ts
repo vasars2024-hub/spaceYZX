@@ -232,9 +232,12 @@ export class GameHub {
     switch (msg.t) {
       case 'createRoom': {
         const mode: RoomMode = ROOM_MODES.includes(msg.mode) ? msg.mode : 'practice';
-        // (arena maps only for the Arena, which picks its own; race tracks only for races)
+        // (arena maps only for the Arena, which picks its own; race tracks only for races;
+        // retired maps for nobody)
         const race = mode === 'race';
-        const map = MAPS.some((m) => m.id === msg.map && !m.arena && !!m.race === race)
+        const map = MAPS.some(
+          (m) => m.id === msg.map && !m.arena && !m.retired && !!m.race === race,
+        )
           ? (msg.map as string)
           : race
             ? DEFAULT_RACE_MAP
@@ -412,7 +415,7 @@ export class GameHub {
       : arena
         ? ARENA_MAP_ID
         : race
-          ? getMap(opts.map).race
+          ? getMap(opts.map).race && !getMap(opts.map).retired
             ? opts.map
             : DEFAULT_RACE_MAP
           : brawl && !brawlMaps().some((m) => m.id === opts.map)

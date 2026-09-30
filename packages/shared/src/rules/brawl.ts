@@ -87,10 +87,10 @@ export const brawlTarget = (bs: Pick<BrawlState, 'variant' | 'settings'>): numbe
 
 /**
  * The Brawl map rotation: the big Brawl maps first (Colossus Yard), then the competitive maps
- * (never Arena / race tracks).
+ * (never Arena / race tracks / retired maps).
  */
 export const brawlMaps = (maps: readonly MapInfo[] = MAPS): MapInfo[] => {
-  const ok = maps.filter((m) => !m.arena && !m.race);
+  const ok = maps.filter((m) => !m.arena && !m.race && !m.retired);
   return [...ok.filter((m) => m.brawl), ...ok.filter((m) => !m.brawl && m.competitive)];
 };
 

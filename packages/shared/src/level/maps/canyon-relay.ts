@@ -311,7 +311,7 @@ export const buildCanyonRelay = (): LevelDef => {
   rock(116, 2, 120, MZ, MN - 0.5, 14); // east, along the canyon and the basin
   // between the town and the canyon: the canyon gate (z 5..9) through it
   rock(98, 2, 101, 5, -0.5, 12);
-  rock(98, 5, 101, 9, 4, 12);
+  rock(99, 5, 100.4, 9, 4, 12); // the gate's arch (open to the sky either side of it)
   rock(98, 9, 101, 25, -0.5, 12);
   rock(98, 25, 101, 37, MN - 0.5, 12);
   rock(98, 37, 101, 41, -2, 12); // over the cave mouth
@@ -831,7 +831,8 @@ const waypoints = (): WaypointDef[] => {
   // station yard and the tower alley
   add('tower', MX, 0, 11.5);
   add('yard', 62.5, 0, 7.5);
-  add('yardIn', 65.2, 0, 8);
+  add('yardIn', 65.1, 0, 8);
+  add('yardGap', 65.1, 0, 11);
   add('yardDoor', 66.5, 0, 11);
   add('alley', 69, 0, 11);
   add('alleyS', 69, 0, 17.5);
@@ -848,7 +849,7 @@ const waypoints = (): WaypointDef[] => {
   add('campGate', 86.5, 0, 13.2);
   add('camp3', 97, 0, 11.5);
   add('gateIn', 97, 0, 7);
-  add('gate', 99.5, 0, 7);
+  add('gate', 98.5, 0, 7);
   // slot canyon, basin, site
   add('cOut', 103, 0, 7);
   add('c1', 104.5, 0, 13.5);
@@ -905,13 +906,12 @@ const waypoints = (): WaypointDef[] => {
   add('g1M', 82, MN, 28.5);
   add('g2N', 96, MN, 28);
   add('g2S', 96, MN, 39);
-  add('cave', 99.5, MN, 39);
+  add('cave', 98.5, MN, 39);
   add('railTop', MX, MN, 30.5);
   add('railBot', MX, RL, 39);
   add('tunnel', MX, RL, MZ);
 
-  chain('yard', 'yardIn', 'yardDoor', 'alley', 'alleyS');
-  chain('tower', 'yardDoor');
+  chain('yard', 'yardIn', 'yardGap', 'yardDoor', 'alley', 'alleyS');
   link('yard', 'tower');
   chain('alley', 'storeW', 'store1', 'store2', 'store3', 'storeE', 'campW', 'camp', 'campS');
   chain('campS', 'campG', 'campGate', 'mkN', 'mkM', 'rimE');

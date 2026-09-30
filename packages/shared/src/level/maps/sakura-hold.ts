@@ -813,9 +813,10 @@ const waypoints = (): WaypointDef[] => {
   add('gNE', 47.1, 0, 5.5);
   add('gSideW', 32.8, 0, 8.6);
   add('gSideE', 47.2, 0, 8.6);
-  add('gGateW', 37, 0, 9.3);
-  add('gGateE', 43, 0, 9.3);
-  add('gate', 40, 0, 10.5);
+  add('gGateW', 36, 0, 9.3);
+  add('gGateE', 44, 0, 9.3);
+  add('gate', 40, 0, 9.4);
+  add('gateOut', 40, 0, 11.6);
   // postern (side spawn)
   add('pIn', 9.5, 0, 4.5);
   add('pMid', 6, 0, 6);
@@ -915,7 +916,7 @@ const waypoints = (): WaypointDef[] => {
   // A court
   add('aNW', 54.5, 0, 30.5);
   add('aN', 59.5, 0, 34);
-  add('aNE', 63.3, 0, 30.5);
+  add('aNE', 63.8, 0, 30.5);
   add('aE', 63.3, 0, 35.5);
   add('aW', 54.5, 0, MZ);
   add('aTea', 59, 0, MZ);
@@ -935,7 +936,7 @@ const waypoints = (): WaypointDef[] => {
   chain('tower', 'gW', 'gGateW', 'gate', 'gGateE', 'gE', 'tower');
   chain('gW', 'gNW', 'gSideW', 'garE');
   chain('gE', 'gNE', 'gSideE', 'eDoor');
-  chain('gate', 'court');
+  chain('gate', 'gateOut', 'court');
   chain('pIn', 'pMid');
   chain('pIn', 'pSouth', 'pDoorS', 'yard', 'yardE', 'lane');
   chain('pIn', 'pNE', 'pDoorE', 'garW', 'garden', 'garE');
@@ -962,7 +963,7 @@ const waypoints = (): WaypointDef[] => {
   chain('aVer', 'aVerW', 'aNW', 'aW');
   chain('aVer', 'aN', 'aE', 'siteA');
   chain('aNW', 'aN');
-  chain('aVer', 'aNE', 'aE');
+  chain('aNE', 'aE');
   chain('aW', 'aTea', 'siteA');
   return wps;
 };

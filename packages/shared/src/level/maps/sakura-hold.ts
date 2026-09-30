@@ -91,7 +91,7 @@ export const SAKURA_HOLD = {
   wall: 3,
   cellar: -3.2,
   /** Towers: Cyan's (north) first, inside the gatehouses */
-  towers: [v3(40, 0, 5), v3(40, 0, 75)] as [Vec3, Vec3],
+  towers: [v3(40, 0, 4), v3(40, 0, 76)] as [Vec3, Vec3],
   bombSites: {
     A: { min: v3(55, 0, 33), max: v3(63, 3, 47) },
     B: { min: v3(16, 0, 33), max: v3(26, 3, 47) },
@@ -115,16 +115,16 @@ type Cell = 'O' | '#' | 'o' | 'r' | 'd' | 'w' | 'W' | 'x';
 const CARVE: [Cell, number, number, number, number][] = [
   // --- Cyan postern (side spawn) and its yard
   ['r', 3, 3, 13, 10],
-  ['d', 4, 10, 7, 11],
+  ['d', 11, 10, 13, 11],
   ['d', 13, 6, 14, 9],
   ['o', 3, 11, 15, 13],
   // --- north garden
   ['o', 14, 3, 31, 11],
-  ['d', 31, 7, 32, 10],
+  ['d', 31, 8, 32, 10],
   // --- gatehouse (main spawn)
   ['r', 32, 3, 48, 10],
   ['d', 38, 10, 42, 11],
-  ['d', 48, 7, 49, 10],
+  ['d', 48, 8, 49, 10],
   // --- front court and the keep steps
   ['o', 32, 11, 48, 24],
   ['o', 37, 24, 43, 33],
@@ -279,11 +279,10 @@ export const buildSakuraHold = (): LevelDef => {
       const k = [x0, y0, a, x1, y1, c, mat, extra.color ?? -1, extra.noCollide ? 1 : 0].join();
       if (seen.has(k)) continue;
       seen.add(k);
-      b.box(
-        v3(Math.min(x0, x1), Math.min(y0, y1), a),
-        v3(Math.max(x0, x1), Math.max(y0, y1), c),
-        { mat, ...extra },
-      );
+      b.box(v3(Math.min(x0, x1), Math.min(y0, y1), a), v3(Math.max(x0, x1), Math.max(y0, y1), c), {
+        mat,
+        ...extra,
+      });
     }
   };
   const deco = (
@@ -303,7 +302,8 @@ export const buildSakuraHold = (): LevelDef => {
     if (y1 > cut) box(x0, Math.max(y0, cut), z0, x1, y1, z1, 'panel', { color: PLASTER });
   };
   const light = (x: number, y: number, z: number, color: number, radius: number, k: number) => {
-    for (const zz of z === MZ ? [z] : [z, N - z]) lights.push({ pos: v3(x, y, zz), color, radius, intensity: k });
+    for (const zz of z === MZ ? [z] : [z, N - z])
+      lights.push({ pos: v3(x, y, zz), color, radius, intensity: k });
   };
   /** a ramp and its twin, with solid steps under it */
   const ramp = (
@@ -332,7 +332,8 @@ export const buildSakuraHold = (): LevelDef => {
       if (top <= yLow + 0.1) continue;
       const w0 = across - width / 2;
       const w1 = across + width / 2;
-      if (axis === 'x') box(Math.min(a, c), yLow, w0, Math.max(a, c), top, w1, 'wood', { color: 0x4a3326 });
+      if (axis === 'x')
+        box(Math.min(a, c), yLow, w0, Math.max(a, c), top, w1, 'wood', { color: 0x4a3326 });
       else box(w0, yLow, Math.min(a, c), w1, top, Math.max(a, c), 'wood', { color: 0x4a3326 });
     }
   };
@@ -384,7 +385,11 @@ export const buildSakuraHold = (): LevelDef => {
     const R = CELLAR_ROCK;
     if (x < R.x0 || x >= R.x1 || z < R.z0 || z >= R.z1) return null;
     if (!cellarOpen(x, z)) return 'rock';
-    return STAIRWELLS.some((h) => inRect(x, z, [h[0], h[1], h[2], h[3] + 2]) || inRect(x, z, mirrorRect([h[0], h[1], h[2], h[3] + 2])))
+    return STAIRWELLS.some(
+      (h) =>
+        inRect(x, z, [h[0], h[1], h[2], h[3] + 2]) ||
+        inRect(x, z, mirrorRect([h[0], h[1], h[2], h[3] + 2])),
+    )
       ? 'stair'
       : 'open';
   };
@@ -449,11 +454,17 @@ export const buildSakuraHold = (): LevelDef => {
     const t = 0.1;
     const p = 0.4;
     if (alongX) {
-      box(x0 + p, 0, z0 - t, x1 - p, top, z0 + t, 'paper', { color: PLASTER, boomerangPasses: true });
+      box(x0 + p, 0, z0 - t, x1 - p, top, z0 + t, 'paper', {
+        color: PLASTER,
+        boomerangPasses: true,
+      });
       box(x0, 0, z0 - 0.2, x0 + p, top, z0 + 0.2, 'wood', { color: WOOD });
       box(x1 - p, 0, z0 - 0.2, x1, top, z0 + 0.2, 'wood', { color: WOOD });
     } else {
-      box(x0 - t, 0, z0 + p, x0 + t, top, z1 - p, 'paper', { color: PLASTER, boomerangPasses: true });
+      box(x0 - t, 0, z0 + p, x0 + t, top, z1 - p, 'paper', {
+        color: PLASTER,
+        boomerangPasses: true,
+      });
       box(x0 - 0.2, 0, z0, x0 + 0.2, top, z0 + p, 'wood', { color: WOOD });
       box(x0 - 0.2, 0, z1 - p, x0 + 0.2, top, z1, 'wood', { color: WOOD });
     }
@@ -481,7 +492,8 @@ export const buildSakuraHold = (): LevelDef => {
   box(T.x0 - 0.4, CEIL, T.z0 - 0.4, T.x1 + 0.4, CEIL + 0.5, T.z1 + 0.4, 'panel', { color: TILE });
 
   // ======================= verandas: posts along the open edge =======================
-  for (const x of [18.5, 21.5, 24.5, 55.5, 58.5, 61.5]) box(x - 0.15, 0, 28.7, x + 0.15, CEIL, 29, 'wood', { color: WOOD });
+  for (const x of [18.5, 21.5, 24.5, 55.5, 58.5, 61.5])
+    box(x - 0.15, 0, 28.7, x + 0.15, CEIL, 29, 'wood', { color: WOOD });
 
   // ======================= cover =======================
   /** stone lantern: waist-high base, a glowing lamp on it (decoration) */
@@ -525,12 +537,11 @@ export const buildSakuraHold = (): LevelDef => {
   lantern(56.5, 34.5);
   lantern(57.5, 29.8);
   // gatehouse: a screen behind the main gate and beside each side door (no look inside)
-  box(37, 0, 8, 43, CEIL, 8.6, 'wood', { color: WOOD });
-  box(33.6, 0, 6.4, 34, CEIL, 10, 'wood', { color: WOOD });
-  box(46, 0, 6.4, 46.4, CEIL, 10, 'wood', { color: WOOD });
+  box(37.6, 0, 6.8, 42.4, CEIL, 7.2, 'wood', { color: WOOD });
+  box(35, 0, 5.8, 35.4, CEIL, 10, 'wood', { color: WOOD });
+  box(44.6, 0, 5.8, 45, CEIL, 10, 'wood', { color: WOOD });
   // postern: screens inside both doors
-  box(3, 0, 7.8, 8.2, CEIL, 8.2, 'wood', { color: WOOD });
-  box(11, 0, 5.4, 11.4, CEIL, 10, 'wood', { color: WOOD });
+  box(10, 0, 5.4, 10.4, CEIL, 10, 'wood', { color: WOOD });
 
   // ======================= blossom trees (canopies above head height) =======================
   const tree = (x: number, z: number, h: number) => {
@@ -554,20 +565,20 @@ export const buildSakuraHold = (): LevelDef => {
     const tc = team === 0 ? CYAN : ORANGE;
     b.block(v3(tp.x, 2, tp.z), v3(2, 4, 2), { mat: team === 0 ? 'teamA' : 'teamB', trim: tc });
     towers.push({ team, pos: tp, radius: 1.5, height: 4 });
-    homes.push(v3(tp.x, 0.9, mz(n, 7.2)));
+    homes.push(v3(tp.x, 0.9, mz(n, 6)));
     const yaw = team === 0 ? 180 : 0;
     for (const [x, z] of [
-      [34.5, 4.5],
-      [36.5, 6.5],
-      [43.5, 6.5],
-      [45.5, 4.5],
+      [38.1, 5],
+      [38.2, 6.2],
+      [41.8, 6.2],
+      [41.9, 5],
     ])
       spawns.push({ pos: v3(x, 0, mz(n, z)), yawDeg: yaw, team, group: 'gate' });
     for (const [x, z] of [
       [5, 5],
       [7.5, 5],
       [5, 7],
-      [9.5, 6.5],
+      [8.5, 5.8],
     ])
       spawns.push({ pos: v3(x, 0, mz(n, z)), yawDeg: yaw, team, group: 'postern' });
   }
@@ -591,8 +602,16 @@ export const buildSakuraHold = (): LevelDef => {
   // ======================= markings and lights =======================
   for (const st of [S.bombSites.A, S.bombSites.B]) {
     const w = 0.12;
-    b.box(v3(st.min.x, 0, st.min.z), v3(st.max.x, 0.03, st.min.z + w), { mat: 'trim', color: SITE, noCollide: true });
-    b.box(v3(st.min.x, 0, st.max.z - w), v3(st.max.x, 0.03, st.max.z), { mat: 'trim', color: SITE, noCollide: true });
+    b.box(v3(st.min.x, 0, st.min.z), v3(st.max.x, 0.03, st.min.z + w), {
+      mat: 'trim',
+      color: SITE,
+      noCollide: true,
+    });
+    b.box(v3(st.min.x, 0, st.max.z - w), v3(st.max.x, 0.03, st.max.z), {
+      mat: 'trim',
+      color: SITE,
+      noCollide: true,
+    });
   }
   for (const n of SIGNS) {
     const tc = n > 0 ? CYAN : ORANGE;
@@ -625,8 +644,16 @@ export const buildSakuraHold = (): LevelDef => {
   light(59, 3, 34, LANTERN, 8, 0.6);
   light(74, 3, 26, LANTERN, 8, 0.6);
   // far scenery: hills and a pagoda silhouette in the mist
-  const far = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, mat: Material, color: number) =>
-    b.box(v3(x0, y0, z0), v3(x1, y1, z1), { mat, color, noCollide: true });
+  const far = (
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    mat: Material,
+    color: number,
+  ) => b.box(v3(x0, y0, z0), v3(x1, y1, z1), { mat, color, noCollide: true });
   far(90, 8.1, -80, 130, 26, -40, 'leaf', 0x5d7280);
   far(60, 8.1, -120, 110, 34, -90, 'leaf', 0x4f6275);
   far(100, 8.1, -10, 125, 18, 40, 'leaf', 0x687d88);
@@ -649,9 +676,9 @@ export const buildSakuraHold = (): LevelDef => {
     controllerHomes: homes,
     waypoints: waypoints(),
     areas: [
-      { name: 'Cyan gatehouse', pos: v3(40, 0, 7.2), yawDeg: 180 },
+      { name: 'Cyan gatehouse', pos: v3(40, 0, 6), yawDeg: 180 },
       { name: 'Cyan postern', pos: v3(7, 0, 6), yawDeg: 180 },
-      { name: 'Orange gatehouse', pos: v3(40, 0, 72.8), yawDeg: 0 },
+      { name: 'Orange gatehouse', pos: v3(40, 0, 74), yawDeg: 0 },
       { name: 'Front court', pos: v3(40, 0, 15), yawDeg: 180 },
       { name: 'Tatami hall', pos: v3(20, 0, 17), yawDeg: 180 },
       { name: 'Tea corridor', pos: v3(60.5, 0, 14), yawDeg: 180 },
@@ -705,7 +732,12 @@ const buildKeep = (b: LevelBuilder, box: BoxFn): void => {
   const top = 16;
   const wallOpts = { mat: 'panel' as Material, color: PLASTER };
   const baseOpts = { mat: 'rock' as Material, color: STONE };
-  const slit = (u: number, y: number, w = 0.4) => ({ u0: u - w / 2, u1: u + w / 2, v0: y + 1, v1: y + 2 });
+  const slit = (u: number, y: number, w = 0.4) => ({
+    u0: u - w / 2,
+    u1: u + w / 2,
+    v0: y + 1,
+    v1: y + 2,
+  });
   const door = { u0: 38, u1: 42, v0: 0, v1: DOOR };
   // north / south walls (full width) and east / west walls (between them)
   const nsSlits = [slit(40, 4), slit(36, 8), slit(44, 8), slit(40, 12, 0.6)];
@@ -806,26 +838,27 @@ const waypoints = (): WaypointDef[] => {
   };
 
   // gatehouse (main spawn)
-  add('tower', MX, 0, 7.2);
-  add('gW', 35, 0, 5.5);
-  add('gE', 45, 0, 5.5);
-  add('gNW', 32.9, 0, 5.5);
-  add('gNE', 47.1, 0, 5.5);
-  add('gSideW', 32.8, 0, 8.6);
-  add('gSideE', 47.2, 0, 8.6);
-  add('gGateW', 36, 0, 9.3);
-  add('gGateE', 44, 0, 9.3);
-  add('gate', 40, 0, 9.4);
-  add('gateOut', 40, 0, 11.6);
+  add('tower', MX, 0, 6);
+  add('gW', 37, 0, 3.8);
+  add('gE', 43, 0, 3.8);
+  add('gNW', 33.3, 0, 4);
+  add('gNE', 46.7, 0, 4);
+  add('gSideW', 33, 0, 8.8);
+  add('gSideE', 47, 0, 8.8);
+  add('gInW', 36, 0, 6);
+  add('gInE', 44, 0, 6);
+  add('gGateW', 36, 0, 8.4);
+  add('gGateE', 44, 0, 8.4);
+  add('gate', 40, 0, 8.6);
+  add('gateOut', 40, 0, 12.6);
   // postern (side spawn)
-  add('pIn', 9.5, 0, 4.5);
+  add('pIn', 7, 0, 3.8);
   add('pMid', 6, 0, 6);
-  add('pSouth', 9.5, 0, 9.1);
-  add('pDoorS', 5.5, 0, 9.1);
-  add('pNE', 12.2, 0, 4.5);
-  add('pDoorE', 12.4, 0, 7.5);
-  add('yard', 6, 0, 12);
-  add('yardE', 12, 0, 12);
+  add('pNE', 11.7, 0, 3.6);
+  add('pCor', 12, 0, 6.5);
+  add('pDoorS', 11.6, 0, 10.5);
+  add('pDoorE', 13.5, 0, 7);
+  add('yard', 7, 0, 11.7);
   // north garden
   add('garW', 15.5, 0, 7.5);
   add('garden', 22, 0, 9.5);
@@ -858,9 +891,10 @@ const waypoints = (): WaypointDef[] => {
   // B court
   add('bN', 16.9, 0, 30.5);
   add('bNE', 25.8, 0, 30.5);
+  add('bEc', 25.5, 0, 33.8);
   add('bW', 17.1, 0, 36);
   add('bE', 25.5, 0, 36);
-  add('bKuraN', 21, 0, 34.8);
+  add('bKuraN', 21, 0, 33);
   add('bKura', 21, 0, MZ);
   add('siteB', 17, 0, MZ);
   add('bEast', 25.5, 0, MZ);
@@ -933,13 +967,15 @@ const waypoints = (): WaypointDef[] => {
   add('cStairE', 53.5, Y, 23.8);
   add('cStairMidE', 53.5, -2, 19.5);
 
-  chain('tower', 'gW', 'gGateW', 'gate', 'gGateE', 'gE', 'tower');
+  chain('gW', 'gInW', 'tower', 'gInE', 'gE');
+  chain('gInW', 'gGateW', 'gate', 'gGateE', 'gInE');
+  chain('gate', 'gateOut');
   chain('gW', 'gNW', 'gSideW', 'garE');
   chain('gE', 'gNE', 'gSideE', 'eDoor');
-  chain('gate', 'gateOut', 'court');
+  chain('gateOut', 'court');
   chain('pIn', 'pMid');
-  chain('pIn', 'pSouth', 'pDoorS', 'yard', 'yardE', 'lane');
-  chain('pIn', 'pNE', 'pDoorE', 'garW', 'garden', 'garE');
+  chain('pIn', 'pNE', 'pCor', 'pDoorS', 'lane', 'yard');
+  chain('pCor', 'pDoorE', 'garW', 'garden', 'garE');
   chain('garden', 'garS', 'hDoorN', 'hall');
   chain('yard', 'wFoot', 'wTop', 'walk', 'wRoom', 'wRoomE', 'wStairs', 'wDown', 'siteB');
   chain('court', 'courtW', 'hFront', 'hallE', 'hallMid', 'hallNE', 'hall');
@@ -955,8 +991,9 @@ const waypoints = (): WaypointDef[] => {
   chain('courtS', 'steps', 'kDoor', 'kIn');
   chain('lane', 'laneMid', 'laneS', 'bVer', 'bVerE', 'bNE');
   chain('bVer', 'bN', 'bW', 'siteB');
-  chain('bNE', 'bE', 'bEast', 'bLink', 'kWDoor', 'kStairW');
+  chain('bNE', 'bEc', 'bE', 'bEast', 'bLink', 'kWDoor', 'kStairW');
   chain('bN', 'bKuraN', 'bKura');
+  chain('bEc', 'bKuraN');
   chain('kIn', 'kInW', 'kStairW');
   chain('kIn', 'kInE', 'kEDoor', 'aLink', 'aW');
   chain('kStairW', 'k1Top', 'k1E', 'k1a', 'k2a', 'k2W', 'roof', 'roofN');

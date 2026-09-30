@@ -3,8 +3,10 @@
 // practice. What happens to each racer's body (gates, falls, fuel cells, SURGE) is the
 // simulation's (sim/race.ts), so it is predicted online; this module runs the race around it.
 //
-//   lobby      free running (gates don't count, falls are free). The countdown starts
-//              `lobbySec` after the first racer is in (the host can start it sooner).
+//   lobby      free running (gates don't count for the race and falls are free, but a fall
+//              brings you back to the last gate you passed: sim/race.ts). The countdown starts
+//              `lobbySec` after the first racer is in (the host can start it sooner). A racer
+//              who joins mid-race free-runs the same way until the next race.
 //   countdown  3-2-1: every racer frozen on the start grid, surges and fuel cells reset.
 //   racing     the clock runs from GO. Gates are timed (splits); crossing the finish records
 //              your time. A racer still out at `dnfParMul` × par time is DNF; once all but one

@@ -162,6 +162,7 @@ export const createPlayer = (
     raceFuelKept: m.raceJetpackFuelSec,
     raceHold: 0,
     raceAnchor: -1,
+    raceFreeCp: 0,
     portalYaw: 0,
   };
 };

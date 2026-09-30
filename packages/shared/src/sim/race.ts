@@ -6,6 +6,10 @@
 //              (raceCp: -1 = not racing, 0..N checkpoints passed, N + 1 = finished)
 //   anchors    surf maps' recovery anchors (RaceDef.anchors): passing one in its section makes
 //              it where you come back (raceAnchor) until the next gate; never progress
+//   free run   not racing (raceCp -1: a race room's lobby, a racer waiting for the next race, a
+//              practice room or free roam on a race map): the gates, in order, and the anchors
+//              still set where you come back (raceFreeCp), never race progress; passing the
+//              finish starts the run over (back to the start)
 //   falls      below killY, inside a kill volume, touching a red zone (BoxDef.kill) or far out
 //              of bounds: back to your latest anchor or checkpoint, frozen there for
 //              racePenaltySec (surf maps: raceSurfPenaltySec; no penalty outside a race)
@@ -108,8 +112,9 @@ export const placeRacer = (
 };
 
 /**
- * Back to the last checkpoint (the start, before checkpoint 1): while racing you stand frozen
- * there for the penalty; in the lobby or after the finish it's instant.
+ * Back to the last checkpoint (the start, before checkpoint 1) or recovery anchor: while racing
+ * you stand frozen there for the penalty; free running (raceFreeCp) or after the finish it's
+ * instant.
  */
 export const sendRacerBack = (
   world: WorldState,
@@ -121,8 +126,10 @@ export const sendRacerBack = (
   if (!race) return;
   const m = ctx.config.movement;
   const racing = isRacing(race, p);
-  const anchor = racing ? p.raceAnchor : -1;
-  const at = raceRespawnPoint(race, p.raceCp, anchor);
+  const free = p.raceCp < 0;
+  const cp = free ? p.raceFreeCp : p.raceCp;
+  const anchor = racing || free ? p.raceAnchor : -1;
+  const at = raceRespawnPoint(race, cp, anchor);
   // (racing: the fuel you had when you passed this checkpoint or anchor; else a full tank)
   placeRacer(p, m, at.respawn, at.yawDeg, racing ? p.raceFuelKept : m.raceJetpackFuelSec);
   const penaltySec = race.surf ? m.raceSurfPenaltySec : m.racePenaltySec;
@@ -131,11 +138,11 @@ export const sendRacerBack = (
   const e: SimEvent = {
     type: 'raceRespawn',
     player: p.id,
-    cp: Math.max(0, p.raceCp),
+    cp: Math.max(0, cp),
     reason,
     penalty: racing,
   };
-  if (anchor >= 0 && race.anchors?.[anchor]?.cp === p.raceCp) e.anchor = anchor;
+  if (anchor >= 0 && race.anchors?.[anchor]?.cp === cp) e.anchor = anchor;
   world.events.push(e);
 };
 
@@ -209,14 +216,23 @@ export const updateRaceBody = (world: WorldState, ctx: SimContext, p: PlayerStat
       p.raceFuelKept = p.jetFuel;
       world.events.push({ type: 'raceCp', player: p.id, cp: p.raceCp, finish: p.raceCp > n });
     }
+  } else if (p.raceCp < 0) {
+    // free running: the next gate in order is where a fall brings you back from now on (no
+    // event, no split: not a race); the finish starts the run over
+    const g = p.raceFreeCp < n ? race.checkpoints[p.raceFreeCp] : race.finish;
+    if (pointInAabb(pos, g.min, g.max)) {
+      p.raceFreeCp = p.raceFreeCp < n ? p.raceFreeCp + 1 : 0;
+      p.raceAnchor = -1;
+    }
   }
-  // recovery anchors of this section, in route order: the latest one passed is where you
-  // come back (never progress, never a split)
+  // recovery anchors of this section (racing or free running), in route order: the latest one
+  // passed is where you come back (never progress, never a split)
   const anchors = race.anchors;
-  if (anchors && p.raceCp >= 0 && p.raceCp <= n)
+  const section = p.raceCp < 0 ? p.raceFreeCp : p.raceCp;
+  if (anchors && p.raceCp <= n)
     for (let i = anchors.length - 1; i > p.raceAnchor; i--) {
       const a = anchors[i];
-      if (a.cp !== p.raceCp || !pointInAabb(pos, a.min, a.max)) continue;
+      if (a.cp !== section || !pointInAabb(pos, a.min, a.max)) continue;
       p.raceAnchor = i;
       p.raceFuelKept = p.jetFuel;
       world.events.push({ type: 'raceAnchor', player: p.id, anchor: i });
@@ -248,6 +264,7 @@ export const resetRacer = (
   placeRacer(p, m, feet, yawDeg);
   p.raceCp = cp;
   p.raceAnchor = -1;
+  p.raceFreeCp = 0;
   p.racePenalty = 0;
   p.raceFuel = 0;
   p.raceFuelKept = m.raceJetpackFuelSec;

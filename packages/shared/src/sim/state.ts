@@ -97,6 +97,12 @@ export interface PlayerState extends CombatPlayerState {
   /** surf maps: the recovery anchor (RaceDef.anchors) a fall brings you back to; -1 = none */
   raceAnchor: number;
   /**
+   * free running (raceCp -1: a race room's lobby, waiting for the next race, a practice room or
+   * free roam on a race map): gates passed in order, 0..N (0 = none: the start). Where a fall
+   * or the respawn key brings you back; never race progress
+   */
+  raceFreeCp: number;
+  /**
    * degrees turning portals (PortalDef.turn) have turned you so far, 0..360: the client turns
    * its camera with you when it changes (the view you send is the camera's)
    */

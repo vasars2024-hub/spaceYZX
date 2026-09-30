@@ -245,6 +245,80 @@ describe('race rules: checkpoints', () => {
   });
 });
 
+describe('race rules: free running (lobby, joined mid-race, practice rooms, free roam)', () => {
+  const walkOff = (r: RaceSim, id: number) => {
+    let e = null as null | { cp: number; penalty: boolean };
+    for (let i = 0; i < 60 * 5 && !e; i++) {
+      tick(r, { [id]: { buttons: Btn.Forward, view: yawToView(-90) } });
+      for (const x of r.world.events) if (x.type === 'raceRespawn' && x.player === id) e = x;
+    }
+    return e;
+  };
+
+  it('a fall brings you back to the last gate you passed, instantly; never race progress', () => {
+    const r = makeRace(2, { lobbySec: 600 });
+    const [a, b] = r.players;
+    const race = r.ctx.level.def.race!;
+    expect(r.st.phase).toBe('lobby');
+    for (let i = 0; i < 60 * 6 && a.raceFreeCp < 1; i++) tick(r, { 1: { buttons: Btn.Forward } });
+    expect(a.raceFreeCp).toBe(1);
+    expect(a.raceCp).toBe(-1);
+    // (no split: it is not a race)
+    expect(r.st.entries).toEqual([]);
+    expect(walkOff(r, 1)).toEqual(expect.objectContaining({ cp: 1, penalty: false }));
+    const at = race.checkpoints[0].respawn;
+    expect(a.pos.x).toBeCloseTo(at.x, 5);
+    expect(a.pos.z).toBeCloseTo(at.z, 5);
+    expect(a.frozen).toBe(false);
+    // the other runner passed nothing: the start
+    expect(walkOff(r, 2)).toEqual(expect.objectContaining({ cp: 0, penalty: false }));
+    expect(b.pos.z).toBeCloseTo(race.start.respawn.z, 5);
+    // the respawn key: the same
+    ticks(r, 20, { 1: { buttons: Btn.Forward } });
+    ticks(r, 40, { 1: { buttons: Btn.Recall } });
+    expect(a.pos.z).toBeCloseTo(at.z, 1);
+  });
+
+  it('gates count in order; the finish starts the run over; a new race starts afresh', () => {
+    const r = makeRace(1, { lobbySec: 600 });
+    const p = r.players[0];
+    const race = r.ctx.level.def.race!;
+    const into = (g: { min: PlayerState['pos']; max: PlayerState['pos'] }) => {
+      p.pos = v3((g.min.x + g.max.x) / 2, g.min.y + 2.4, (g.min.z + g.max.z) / 2);
+      tick(r);
+    };
+    into(race.checkpoints[1]);
+    expect(p.raceFreeCp).toBe(0);
+    into(race.checkpoints[0]);
+    into(race.checkpoints[1]);
+    expect(p.raceFreeCp).toBe(2);
+    into(race.finish);
+    expect(p.raceFreeCp).toBe(0);
+    into(race.checkpoints[0]);
+    expect(p.raceFreeCp).toBe(1);
+    toGo(r);
+    expect(p.raceCp).toBe(0);
+    expect(p.raceFreeCp).toBe(0);
+  });
+
+  it('a racer who joined mid-race free-runs with checkpoints; the racers race on', () => {
+    const r = makeRace(1);
+    toGo(r);
+    const race = r.ctx.level.def.race!;
+    const late = addPlayer(r.world, createPlayer(2, 0, race.grid[1].pos, 0, r.ctx.config));
+    r.players.push(late);
+    raceJoin(r.st, r.world, r.ctx, 2);
+    expect(late.raceCp).toBe(-1);
+    for (let i = 0; i < 60 * 6 && late.raceFreeCp < 1; i++)
+      tick(r, { 1: { buttons: Btn.Forward }, 2: { buttons: Btn.Forward } });
+    expect(late.raceFreeCp).toBe(1);
+    expect(r.players[0].raceCp).toBe(1);
+    expect(walkOff(r, 2)).toEqual(expect.objectContaining({ cp: 1, penalty: false }));
+    expect(late.pos.z).toBeCloseTo(race.checkpoints[0].respawn.z, 5);
+    expect(r.st.racers).toEqual([1]);
+  });
+});
+
 describe('race rules: surge and fuel', () => {
   it('three SURGE charges: +60 % of sprint speed at once, none outside a race', () => {
     const r = makeRace(1);

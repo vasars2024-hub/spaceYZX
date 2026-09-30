@@ -18,17 +18,10 @@
 // "sized:"): a flight's length is its speed × its air time, the air time is the fall
 // (t = (vy + √(vy² + 2 g h)) / g, g = 20 m/s²), a landing block sits where the steady line
 // comes down, and is only as big as the spread between a clean and a sloppy line allows.
-// Hard rules kept: no bunny-hop pads, at most two fly-through-a-hole rooms, portals in three
-// rooms at most (the doors between rooms apart).
-import type {
-  CourseData,
-  CourseFork,
-  CurveEl,
-  CurveLeg,
-  P2,
-  P3,
-  SceneryElement,
-} from '../course/types';
+// Hard rules kept: no bunny-hop pads (a block is one block: land, jump, go on), no windows to
+// fly through and only two trapdoors to drop through (rooms 14 and 30), portals in two rooms
+// (the doors between rooms apart).
+import type { CourseData, CourseFork, CurveLeg, P2, P3, SceneryElement } from '../course/types';
 import { Pen } from '../course/pen';
 import { expandCourse } from '../course/expand';
 import type { BoxDef } from '../types';
@@ -382,10 +375,6 @@ export interface DoorRoom {
   door: P2;
   build: (k: Kit) => void;
 }
-
-/** Transfers between opposing faces: from a right face across to the right, and back. */
-const toLeft = (p: Pen, f = 14, u = -5, s = 9): Pen => p.move(f, u, s);
-const toRight = (p: Pen, f = 14, u = -5, s = 9): Pen => p.move(f, u, -s);
 
 export const THIRTY_DOORS_ROOMS: DoorRoom[] = [
   // ---------------------------------------------------------------- teach (1–5)

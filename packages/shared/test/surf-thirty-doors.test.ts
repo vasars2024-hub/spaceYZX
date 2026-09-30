@@ -334,7 +334,9 @@ describe('surf-thirty-doors', () => {
     // slabs at one height round it) in at most two rooms
     expect(data.route.some((e) => e.t === 'window')).toBe(false);
     const decks = ROOMS.filter((room) => {
-      const reds = routes[room.n].filter((e) => e.t === 'red' && e.size[1] === 0.6);
+      const reds = routes[room.n].filter(
+        (e): e is Extract<RouteElement, { t: 'red' }> => e.t === 'red' && e.size[1] === 0.6,
+      );
       const heights = new Map<number, number>();
       for (const e of reds) heights.set(e.at[1], (heights.get(e.at[1]) ?? 0) + 1);
       // (a red floor under a block is cut round its stem too: a deck is wider than 20 m)

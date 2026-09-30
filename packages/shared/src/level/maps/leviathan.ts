@@ -571,7 +571,7 @@ const buildHeart = (k: Kit): void => {
  * vertebrae hanging over its site.
  */
 const buildSites = (k: Kit): void => {
-  const { sym, quad, box, obb, symObb, light } = k;
+  const { sym, quad, obb, symObb, light } = k;
   const K = LEVIATHAN.skull;
   const LE = K.ledge;
   const boneX = { color: BONE };
@@ -997,7 +997,6 @@ const waypoints = (): WaypointDef[] => {
     // gallery 1
     c('g1a', 'g1b', 'g1d', 'dG12');
     c('g1a', 'g1c', 'dThrG1', 'thr1');
-
   }
   return wps;
 };

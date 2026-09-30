@@ -471,9 +471,24 @@ describe('Leviathan bots', () => {
 
   it.each([
     ['whatever way is shortest', []],
-    ['through the marrow', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.marrow.includes(n))],
-    ['over the spine', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.spine.includes(n))],
-    ['through the tail', Object.values(CROSSINGS).flat().filter((n) => !CROSSINGS.tail.includes(n))],
+    [
+      'through the marrow',
+      Object.values(CROSSINGS)
+        .flat()
+        .filter((n) => !CROSSINGS.marrow.includes(n)),
+    ],
+    [
+      'over the spine',
+      Object.values(CROSSINGS)
+        .flat()
+        .filter((n) => !CROSSINGS.spine.includes(n)),
+    ],
+    [
+      'through the tail',
+      Object.values(CROSSINGS)
+        .flat()
+        .filter((n) => !CROSSINGS.tail.includes(n)),
+    ],
   ] as [string, string[]][])(
     'a bot carries the Controller to the enemy Tower (%s)',
     (_name, blocked) => {

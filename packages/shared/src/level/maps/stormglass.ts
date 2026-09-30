@@ -132,8 +132,8 @@ export const STORMGLASS = {
   /** Towers: Cyan's (west) first */
   towers: [v3(-64, 0, 0), v3(64, 0, 0)] as [Vec3, Vec3],
   bombSites: {
-    A: { min: v3(-7, 0, -41), max: v3(7, 3, -32) },
-    B: { min: v3(-7, -4, 36), max: v3(7, -1, 43) },
+    A: { min: v3(-7, 0, -39.5), max: v3(7, 3, -31) },
+    B: { min: v3(-6.3, -4, 35.5), max: v3(6.3, -1, 41.8) },
   },
   /** on the perch, beside the mast */
   powerups: [v3(0, 11.2, -1.5)],
@@ -164,13 +164,13 @@ export const STORMGLASS = {
   ] as [number, number, number, number, number][],
   /** the drop chain off the Anemometer's north edge down to the Glass Bridge (east; mirrored) */
   dropShards: [
-    [5, -18, 8.5, -14.5, 3.6],
-    [9.5, -24.5, 13, -21, 1.6],
+    [8, -15.5, 11.5, -12, 3.6],
+    [15, -24.5, 18.5, -21, 1.6],
   ] as [number, number, number, number, number][],
   /** spawn groups (east; mirrored): the dome gallery (north, upstairs), the keep, the hatch */
   spawnGroups: {
     gallery: [v3(56.5, 5, -32), v3(58.5, 5, -29), v3(55, 5, -28.5)],
-    keep: [v3(67.5, 0, -5), v3(67.5, 0, 5)],
+    keep: [v3(67.5, 0, -5), v3(66, 0, -7.5)],
     hatch: [v3(66, -4, 17), v3(66, -4, 21.5), v3(63, -4, 23)],
   } as Record<string, Vec3[]>,
 };
@@ -319,34 +319,71 @@ const solidify = (vols: Vol[], masses: Mass[], put: BoxFn): void => {
       }
     }
   }
-  // greedy merge: grow each box along z, then x, then y over cells of the same style
+  // greedy merge: from each free cell grow a box over cells of the same style, one axis after
+  // the other; of the six axis orders keep the one that covers the most cells
   const done = new Uint8Array(cells.length);
-  const same = (i: number, j: number, k: number, m: number) =>
-    cells[at(i, j, k)] === m && !done[at(i, j, k)];
+  const n3 = [nx, ny, nz];
+  const ORDERS = [
+    [2, 0, 1],
+    [2, 1, 0],
+    [0, 2, 1],
+    [0, 1, 2],
+    [1, 0, 2],
+    [1, 2, 0],
+  ];
+  const free = (c: number[], m: number) => {
+    const a = at(c[0], c[1], c[2]);
+    return cells[a] === m && !done[a];
+  };
+  /** all cells of lo..hi (exclusive hi) free with style m? */
+  const allFree = (lo: number[], hi: number[], m: number) => {
+    for (let i = lo[0]; i < hi[0]; i++)
+      for (let j = lo[1]; j < hi[1]; j++)
+        for (let k = lo[2]; k < hi[2]; k++) if (!free([i, j, k], m)) return false;
+    return true;
+  };
+  /** the biggest box (in cells) growing from cell (i, j, k), over the six axis orders */
+  const grow = (i: number, j: number, k: number, m: number): [number[], number[], number] => {
+    let best: [number[], number[], number] = [[i, j, k], [i + 1, j + 1, k + 1], 1];
+    for (const order of ORDERS) {
+      const lo = [i, j, k];
+      const hi = [i + 1, j + 1, k + 1];
+      for (const ax of order)
+        for (;;) {
+          if (hi[ax] >= n3[ax]) break;
+          const lo2 = [...lo];
+          const hi2 = [...hi];
+          lo2[ax] = hi[ax];
+          hi2[ax] = hi[ax] + 1;
+          if (!allFree(lo2, hi2, m)) break;
+          hi[ax]++;
+        }
+      const n = (hi[0] - lo[0]) * (hi[1] - lo[1]) * (hi[2] - lo[2]);
+      if (n > best[2]) best = [lo, hi, n];
+    }
+    return best;
+  };
+  // seeds that grow the biggest boxes go first (a stable sort: ties keep the scan order)
+  const seeds: [number, number, number, number][] = [];
   for (let j = 0; j < ny; j++)
     for (let i = 0; i < nx; i++)
       for (let k = 0; k < nz; k++) {
         const m = cells[at(i, j, k)];
-        if (m === 0 || done[at(i, j, k)]) continue;
-        let k1 = k + 1;
-        while (k1 < nz && same(i, j, k1, m)) k1++;
-        const rowOk = (ii: number, jj: number) => {
-          for (let kk = k; kk < k1; kk++) if (!same(ii, jj, kk, m)) return false;
-          return true;
-        };
-        let i1 = i + 1;
-        while (i1 < nx && rowOk(i1, j)) i1++;
-        const slabOk = (jj: number) => {
-          for (let ii = i; ii < i1; ii++) if (!rowOk(ii, jj)) return false;
-          return true;
-        };
-        let j1 = j + 1;
-        while (j1 < ny && slabOk(j1)) j1++;
-        for (let jj = j; jj < j1; jj++)
-          for (let ii = i; ii < i1; ii++) for (let kk = k; kk < k1; kk++) done[at(ii, jj, kk)] = 1;
-        const st = styles[m - 1];
-        put(xs[i], ys[j], zs[k], xs[i1], ys[j1], zs[k1], st.mat, { color: st.color });
+        if (m !== 0) seeds.push([i, j, k, grow(i, j, k, m)[2]]);
       }
+  seeds.sort((a, c) => c[3] - a[3]);
+  for (const [i, j, k] of seeds) {
+    const m = cells[at(i, j, k)];
+    if (done[at(i, j, k)]) continue;
+    const [lo, hi] = grow(i, j, k, m);
+    for (let ii = lo[0]; ii < hi[0]; ii++)
+      for (let jj = lo[1]; jj < hi[1]; jj++)
+        for (let kk = lo[2]; kk < hi[2]; kk++) done[at(ii, jj, kk)] = 1;
+    const st = styles[m - 1];
+    put(xs[lo[0]], ys[lo[1]], zs[lo[2]], xs[hi[0]], ys[hi[1]], zs[hi[2]], st.mat, {
+      color: st.color,
+    });
+  }
 };
 
 // styles of the rooms
@@ -418,14 +455,17 @@ const plan = (): { vols: Vol[]; carves: Vol[] } => {
   vol(37, 45, G0, G1, -6, 6, deck);
   cut(36, 37, G0, G1, -6, 6);
   ns((a, c) => cut(36, 37, G1, G1 + 0.6, a, c), -4.4, -3.6); // slots for the zip-rail cables
-  cut(45, 46, G0, G0 + 3, -2.5, 2.5);
+  // two doors to the front hall, in the corners: none lines up with the courtyard door
+  ns((a, c) => cut(45, 46, G0, G0 + 3, a, c), -6, -3);
   vol(46, 56, G0, G1, -8, 8, deck);
   // the keep courtyard (the Tower), open to the sky
   vol(S.courtyard.x0, S.courtyard.x1, G0, G0 + 8, S.courtyard.z0, S.courtyard.z1, {
     ...deck,
     lid: false,
   });
-  cut(56, 58, G0, G0 + 3.2, -2, 2);
+  // the courtyard door, off to the south: nothing seen through the gate bay's doors lines up
+  // with it and the keep spawns (north)
+  cut(56, 58, G0, G0 + 3.2, 4, 7);
 
   // ---------------- the instrument floor (y 5) ----------------
   // the dome gallery / radio room over the halls (a glass dome over the north one); the stair
@@ -461,7 +501,10 @@ const plan = (): { vols: Vol[]; carves: Vol[] } => {
   // south: the hatch (a spawn), a tunnel up to the cellar and one west to the south vault
   vol(56, 68, U0, U1, 14, 25, under);
   vol(60, 63, U0, U1, 11, 14, under);
-  vol(44, 56, U0, U1, 19, 22, under);
+  // (a dog-leg before the hatch: no straight look into the spawn from the tunnel)
+  vol(44, 52, U0, U1, 19, 22, under);
+  vol(52, 55, U0, U1, 19, 22, under);
+  vol(52, 56, U0, U1, 22, 25, under);
   vol(44, 47, U0, U1, 22, 26, under);
 
   // ---------------- the Eye ----------------
@@ -594,22 +637,24 @@ export const buildStormglass = (): LevelDef => {
   for (const [x0, x1, y0, y1, z0, z1] of glassPanels)
     both(x0, y0, z0, x1, y1, z1, 'skyglass', { color: GLASS, trim: GLASS_EDGE });
 
-  // chicanes in the tunnels: pipe bundles from wall to the middle, alternating sides
+  // chicanes in the tunnels: pipe bundles from the wall to just past the middle, alternating
+  // sides (no straight look down a tunnel)
   const pipeBank = { color: PIPE };
+  const CHICANE = 2.1;
   for (const [x, north] of [
     [15, true],
     [25, false],
-    [33.5, true],
+    [34, true],
   ] as [number, boolean][]) {
-    const [a, c] = north ? [DU.z0, DU.z0 + 2.4] : [DU.z1 - 2.4, DU.z1];
+    const [a, c] = north ? [DU.z0, DU.z0 + CHICANE] : [DU.z1 - CHICANE, DU.z1];
     both(x, F.under, a, x + 1, -1.3, c, 'hull', pipeBank);
   }
   for (const [x, south] of [
-    [17, true],
-    [26, false],
-    [32, true],
+    [15, true],
+    [25, false],
+    [34, true],
   ] as [number, boolean][]) {
-    const [a, c] = south ? [GA.z1 - 2.4, GA.z1] : [GA.z0, GA.z0 + 2.4];
+    const [a, c] = south ? [GA.z1 - CHICANE, GA.z1] : [GA.z0, GA.z0 + CHICANE];
     both(x, F.under, a, x + 1, -1, c, 'hull', pipeBank);
   }
 
@@ -721,8 +766,8 @@ export const buildStormglass = (): LevelDef => {
   // halls: crates by the stair, a cabinet in the middle
   quad(50, 0, -35, 52, 1.1, -33.5, 'crate', crate);
   quad(55.5, 0, -32, 57, 2.4, -29.5, 'panel', cab);
-  // front hall: two cabinets (full) either side of the courtyard door
-  quad(53, 0, -6, 54.5, 2.4, -4, 'panel', cab);
+  // front hall: a cabinet (full) on the north side, across from the courtyard door
+  both(53, 0, -6, 54.5, 2.4, -4, 'panel', cab);
   // pad bays: a crate
   quad(43, 0, -10, 44.5, 1.1, -8.5, 'crate', crate);
   // the cistern: pillars
@@ -831,7 +876,7 @@ export const buildStormglass = (): LevelDef => {
   });
   // the Sag's floor: a fallen gear housing (half) in the middle, cabinets (full) in the corners,
   // crates (half) under the balcony
-  box(-1.6, SG.y, 39, 1.6, SG.y + 1.1, 40.2, 'panel', { color: BRASS_DARK });
+  box(-1.6, SG.y, 40.3, 1.6, SG.y + 1.1, 41.5, 'panel', { color: BRASS_DARK });
   both(4, SG.y, 42, 5.5, SG.y + 2.4, 43.6, 'panel', cab);
   both(4, SG.y, 25, 5.2, SG.y + 1.1, 26.2, 'crate', crate);
   both(6.5, SG.y, 36.5, 7.7, SG.y + 1.1, 37.7, 'crate', crate);
@@ -1208,7 +1253,7 @@ const decorate = (
     [26, -12, 46],
     [23, -19, 44],
     [27, -26, 47],
-    [24.5, CY + 1, 45],
+    [24.5, -36, 45],
   ]);
   bolt([
     [62, -6, -60],
@@ -1236,5 +1281,184 @@ const decorate = (
   blob(0, -12, -10, -96, 9, 'rock', far(SHARD_TOP));
 };
 
-/** Bot waypoints (filled in below). */
-const waypoints = (): WaypointDef[] => [];
+/**
+ * Bot waypoints, named (tests and tools refer to them by name). Authored for the east half at
+ * world coordinates and mirrored west; names end in E / W ('bhNE'), one on the middle line has
+ * none ('siteA'). Bots walk every floor: the deck rooms, the instrument floor, the undercroft,
+ * the Glass Bridge into the Lens, the Cable Duct into the crypt, the Broken Span and the Pipe
+ * Gallery into the Sag, the catwalks up to the Anemometer — never the gap jump, the pads, the
+ * rails or the shards.
+ */
+const waypoints = (): WaypointDef[] => {
+  const S = STORMGLASS;
+  const U = S.floors.under;
+  const F5 = S.floors.upper;
+  const wps: WaypointDef[] = [];
+  const onMid = new Map<string, boolean>();
+  const nameOf = (base: string, s: Sign) => `${base}${onMid.get(base) ? '' : s > 0 ? 'E' : 'W'}`;
+  /** a waypoint at `feet` + 1 m (body height) */
+  const add = (base: string, x: number, feet: number, z: number) => {
+    onMid.set(base, x === 0);
+    for (const s of SIGNS) {
+      if (x === 0 && s < 0) continue;
+      wps.push({ pos: v3(s * x, feet + 1, z), links: [], name: nameOf(base, s) });
+    }
+  };
+  const idx = (name: string) => {
+    const i = wps.findIndex((w) => w.name === name);
+    if (i < 0) throw new Error(`waypoint ${name} missing`);
+    return i;
+  };
+  const link = (a: string, c: string) => {
+    for (const s of SIGNS) {
+      const i = idx(nameOf(a, s));
+      const j = idx(nameOf(c, s));
+      if (i === j) continue;
+      if (!wps[i].links.includes(j)) wps[i].links.push(j);
+      if (!wps[j].links.includes(i)) wps[j].links.push(i);
+    }
+  };
+  const chain = (...names: string[]) => {
+    for (let i = 1; i < names.length; i++) link(names[i - 1], names[i]);
+  };
+  const cw = (x: number) => (S.rimX - x) * 0.25;
+
+  // ---- the deck: the keep, the front hall, the gate bay ----
+  add('tower', 61.5, 0, 0);
+  add('door', 57, 0, 5.5);
+  add('front', 50.5, 0, 0);
+  add('gate', 41, 0, 0);
+  // north / south alike (z mirrored)
+  for (const [n, k] of [
+    ['N', -1],
+    ['S', 1],
+  ] as const) {
+    add(`yard${n}`, 60, 0, k * 7.5);
+    add(`pass${n}`, 59.5, 0, k * 15);
+    add(`pass${n}2`, 59.5, 0, k * 19.5);
+    add(`corr${n}0`, 52.5, 0, k * 23.5);
+    add(`corr${n}2`, 52.5, 0, k * 19.5);
+    add(`corr${n}1`, 52.5, 0, k * 14);
+    add(`corr${n}3`, 52.5, 0, k * 10.5);
+    add(`front${n}`, 51.5, 0, k * 6.5);
+    add(`gdOut${n}`, 42, 0, k * 4.5);
+    add(`gdIn${n}`, 49, 0, k * 4.5);
+    add(`padPass${n}`, 48, 0, k * 14);
+    add(`padBay${n}`, 42.5, 0, k * 13.5);
+    add(`hall${n}`, 52.5, 0, k * 29);
+    add(`bh${n}`, 44.5, 0, k * 28);
+    add(`bh${n}2`, 40, 0, k * 28.5);
+    // the stair up to the instrument floor, the gallery / radio room, the upper corridor
+    add(`stairFoot${n}`, 59.5, 0, k * 38.6);
+    add(`stairMid${n}`, 54, 2.5, k * 38.75);
+    add(`stairTop${n}`, 48, F5, k * 38.5);
+    add(`gal${n}`, 53, F5, k * 30);
+    add(`uCorr${n}0`, 52.5, F5, k * 23.5);
+    add(`uCorr${n}1`, 52.5, F5, k * 10.5);
+    // the vault under the bridgehead / spanhead, its stair pit up, the tunnel to the cistern
+    add(`vault${n}In`, 38.5, U, k * 30.95);
+    add(`vault${n}1`, 41.5, U, k * 28);
+    add(`vault${n}2`, 45.5, U, k * 28.5);
+    add(`vault${n}3`, 45, U, k * 38.5);
+    add(`pitFoot${n}`, 42.25, U, k * 39.3);
+    add(`pitMid${n}`, 42.25, -2, k * 34);
+    add(`pitTop${n}`, 42.25, 0, k * 28.8);
+    add(`tun${n}`, 42.2, U, k * 17);
+    add(`cis${n}`, 41.5, U, k * 7);
+    add(`cellar${n}`, 62, U, k * 7);
+  }
+  add('upDeck', 51, F5, 0);
+  add('cis', 45, U, 0);
+  add('cisLink', 54.5, U, 0);
+  add('cellar', 62, U, 0);
+  // the north tunnel vault → keep cellar; the south one vault → the hatch → the cellar
+  add('tunK1', 60.5, U, -28.5);
+  add('tunK2', 60.5, U, -12.5);
+  add('hTun1', 45.5, U, 20.5);
+  add('hTun2', 53.5, U, 20.5);
+  add('hTun3', 53.5, U, 23.5);
+  add('hatch', 60, U, 22);
+  add('hatchN', 61.5, U, 12.5);
+
+  // ---- the catwalk and the Anemometer ----
+  add('cw0', 37.5, 0, 0);
+  add('cw1', 30, cw(30), 0);
+  add('cw2', 21, cw(21), 0);
+  add('cwTop', 13.5, cw(13.5), 0);
+  add('d', 9, S.disc.y, 0);
+  add('dN', 5.5, S.disc.y, -6.5);
+  add('dS', 5.5, S.disc.y, 6.5);
+  add('discN', 0, S.disc.y, -8.5);
+  add('rampFoot', 0, S.disc.y, 11.3);
+  add('perchS', 0, S.perch.y, 2);
+  add('perch', 1.8, S.perch.y, -1.2);
+
+  // ---- the Glass Bridge, the Lens (A), its stair pit, the crypt and the Cable Duct ----
+  add('gbHead', 38.5, 0, -32);
+  add('gb1', 25, 0, -32);
+  add('gb2', 15.5, 0, -32);
+  add('lens', 9, 0, -32);
+  add('siteA', 0, 0, -35);
+  add('pitTop', 0, 0, -30.7);
+  add('pitMid', 0, -2, -26);
+  add('pitFoot', 0, -3.75, -22.5);
+  add('cryptFoot', 2.6, U, -22.6);
+  add('crypt', 4.5, U, -32);
+  add('cryptMid', 0, U, -36);
+  add('d0', 10, U, -32);
+  // the pipe-bank chicane: a waypoint either side of each bank, in its gap (a bot that reaches
+  // one heads straight through the gap to the next)
+  add('d1a', 12.6, U, -30.95);
+  add('d1b', 18.4, U, -30.95);
+  add('d2a', 22.6, U, -33.05);
+  add('d2b', 28.4, U, -33.05);
+  add('d3a', 31.6, U, -30.95);
+
+  // ---- the Broken Span, the Sag (B), the Pipe Gallery ----
+  add('spHead', 38.5, 0, 32);
+  add('sp1', 21, 0, 32.2);
+  add('spIn', 10, 0, 32);
+  add('sagTop', 10, 0, 34.3);
+  add('sagRampMid', 10, -2, 39);
+  add('sagFoot', 10, S.sag.y, 43.3);
+  add('siteB', 0, S.sag.y, 37.5);
+  add('pg1a', 12.6, U, 30.95);
+  add('pg1b', 18.4, U, 30.95);
+  add('pg2a', 22.6, U, 33.05);
+  add('pg2b', 28.4, U, 33.05);
+  add('pg3a', 31.6, U, 30.95);
+  add('sagIn', 9, U, 32);
+
+  // keep, front hall, gate bay, catwalk up to the Anemometer and the perch
+  chain('tower', 'door', 'front');
+  chain('gate', 'cw0', 'cw1', 'cw2', 'cwTop', 'd');
+  chain('d', 'dN', 'discN');
+  chain('d', 'dS', 'rampFoot', 'perchS', 'perch');
+  for (const n of ['N', 'S']) {
+    // courtyard → side passage → corridor → front hall; the pad bay; the hall and bridgehead
+    chain('tower', `yard${n}`, `pass${n}`, `pass${n}2`, `corr${n}2`);
+    chain(`corr${n}0`, `corr${n}2`, `corr${n}1`, `corr${n}3`, `front${n}`, 'front');
+    chain(`corr${n}1`, `padPass${n}`, `padBay${n}`);
+    chain('gate', `gdOut${n}`, `gdIn${n}`, 'front');
+    link(`gdIn${n}`, `front${n}`);
+    chain(`corr${n}0`, `hall${n}`, `bh${n}`, `bh${n}2`);
+    // upstairs: the hall stair, the gallery / radio room, the upper corridor, the instrument deck
+    chain(`hall${n}`, `stairFoot${n}`, `stairMid${n}`, `stairTop${n}`, `gal${n}`);
+    chain(`gal${n}`, `uCorr${n}0`, `uCorr${n}1`, 'upDeck');
+    // downstairs: the pit, the vault, the tunnel to the cistern and on to the keep cellar
+    chain(`bh${n}2`, `pitTop${n}`, `bh${n}`);
+    chain(`pitTop${n}`, `pitMid${n}`, `pitFoot${n}`, `vault${n}3`, `vault${n}2`, `vault${n}1`);
+    chain(`vault${n}In`, `vault${n}1`, `tun${n}`, `cis${n}`, 'cis', 'cisLink', 'cellar');
+    link('cellar', `cellar${n}`);
+  }
+  chain('vaultN2', 'tunK1', 'tunK2', 'cellarN');
+  chain('vaultS2', 'hTun1', 'hTun2', 'hTun3', 'hatch', 'hatchN', 'cellarS');
+  // the Glass Bridge into the Lens; down the pit into the crypt; the Cable Duct back home
+  chain('bhN2', 'gbHead', 'gb1', 'gb2', 'lens', 'siteA', 'pitTop', 'pitMid', 'pitFoot');
+  chain('pitFoot', 'cryptFoot', 'crypt', 'cryptMid');
+  chain('crypt', 'd0', 'd1a', 'd1b', 'd2a', 'd2b', 'd3a', 'vaultNIn');
+  // the Broken Span into the Sag and down its ramp; the Pipe Gallery under it
+  chain('bhS2', 'spHead', 'sp1', 'spIn', 'sagTop', 'sagRampMid', 'sagFoot', 'siteB');
+  chain('vaultSIn', 'pg3a', 'pg2b', 'pg2a', 'pg1b', 'pg1a', 'sagIn', 'siteB');
+  return wps;
+};

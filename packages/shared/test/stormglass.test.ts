@@ -1,6 +1,8 @@
-// Stormglass (docs/NEW-MAPS.md): two walled bastions over The Eye, a floorless middle crossed by
-// the Glass Bridge (north, into the Lens: site A), the Broken Span (south, a running jump over the
-// Sag: site B) and the Anemometer (centre: pads, zip-rails, catwalks, the perch).
+// Stormglass (docs/NEW-MAPS.md, docs/maps/stormglass.md): two bastions of rooms on three floors
+// (the undercroft, the deck, the instrument floor) over The Eye, a floorless middle crossed by the
+// Glass Bridge (north, into the Lens: site A) with the Cable Duct under it (into the crypt, up the
+// pit), the Broken Span (south, a running jump over the Sag: site B) with the Pipe Gallery under
+// it, and the Anemometer (centre: pads, zip-rails, catwalks, the perch).
 import { describe, expect, it } from 'vitest';
 import {
   addPlayer,
@@ -87,7 +89,7 @@ describe('Stormglass map', () => {
     expect(d.boundsMax.z - d.boundsMin.z).toBe(110);
     expect(d.outdoor?.sun).toBeDefined();
     expect(d.fog?.color).toBe(d.outdoor?.horizon);
-    expect(d.boxes.length).toBeLessThan(900);
+    expect(d.boxes.length).toBeLessThan(1500);
     // the cloud sea and its lightning far below
     expect(d.boxes.some((b) => b.mat === 'cloud' && b.c.y < STORMGLASS.killY - 20)).toBe(true);
     expect(d.boxes.some((b) => b.mat === 'glow' && b.c.y < STORMGLASS.killY - 10)).toBe(true);
@@ -146,33 +148,52 @@ describe('Stormglass map', () => {
     expect(findOverlaps(d).map((o) => describeOverlap(d, o))).toEqual([]);
   });
 
-  it('follows the plan: floor where the plan has ground', () => {
+  it('follows the plan: floor where the plan has ground, on all three floors', () => {
     const lv = level();
     const S = STORMGLASS;
+    const U = S.floors.under;
+    const F5 = S.floors.upper;
     const places: [string, number, number, number][] = [
       ['courtyard', 62, 0, 6],
-      ['rim terrace', 46, 0, 0],
-      ['north wing', 46, 0, -30],
-      ['south wing', 50, 0, 30],
-      ['north corridor', 59.5, 0, -21.5],
+      ['front hall', 50, 0, 0],
+      ['gate bay', 41, 0, 0],
+      ['north corridor', 52.5, 0, -17],
+      ['pad bay', 42.5, 0, -13.5],
+      ['bridgehead', 44.5, 0, -28],
+      ['north hall', 52.5, 0, -29],
+      ['south hall', 52.5, 0, 29],
+      ['keep passage', 59.5, 0, -15],
+      ['dome gallery', 53, F5, -30],
+      ['radio room', 53, F5, 30],
+      ['upper corridor', 52.5, F5, 17],
+      ['instrument deck', 51, F5, 0],
+      ['north vault', 45.5, U, -28.5],
+      ['south vault', 45.5, U, 28.5],
+      ['cistern', 45, U, 0],
+      ['keep cellar', 62, U, 0],
+      ['hatch', 61, U, 19.5],
+      ['Cable Duct', 20.5, U, -32],
+      ['crypt', 4.5, U, -32],
+      ['Pipe Gallery', 22, U, 32],
       ['Glass Bridge', 22, 0, -32],
-      ['the Lens (A)', 0, 0, -32],
+      ['the Lens (A)', 6, 0, -35],
       ['Broken Span', 20, 0, 32.2],
       ['span lip', 3, 0, 32],
-      ['sag ramp landing', 17.8, 0, 36.5],
-      ['the Sag (B)', 0, S.sag.y, 34],
+      ['the Sag (B)', 3, S.sag.y, 38],
       ['the Anemometer', 7, S.disc.y, -5],
       ['the perch', 2, S.perch.y, 1.5],
       ['catwalk', 24, 3, 0],
       ['hop shard 1', 30, 2, -10.75],
       ['lookout top', 37.25, 2.6, -10.75],
-      ['drop shard', 0, 3, -17.75],
     ];
     for (const [name, x, y, z] of places)
       for (const xx of [x, -x]) {
         expect(raycast(lv, v3(xx, y + 1, z), v3(0, -1, 0), 2)?.point.y, name).toBeCloseTo(y, 3);
         expect(capsuleOverlaps(lv, standingCapsule(v3(xx, y, z))), name).toBe(false);
       }
+    // the undercroft and the lower rooms are roofed: no sky over them
+    for (const [name, x, y, z] of places.filter(([, , y]) => y < 0 || y === F5))
+      expect(raycast(lv, v3(x, y + 1, z), v3(0, 1, 0), 40), name).not.toBeNull();
   });
 
   it('The Eye has no floor: from its air you fall into the kill volume', () => {
@@ -187,11 +208,11 @@ describe('Stormglass map', () => {
     expect(kill.max.z).toBeGreaterThan(def().boundsMax.z);
     expect(kill.max.y).toBeLessThan(S.sag.y - 3);
     for (const [x, z] of [
-      [20, -22],
+      [22, -22],
       [28, 20],
-      [10, -45],
+      [10, -47],
       [30, 45],
-      [0, 24],
+      [20, -8],
       [0, -48],
       [18, 0.2 + S.catwalk.width],
     ])
@@ -199,23 +220,34 @@ describe('Stormglass map', () => {
         expect(raycast(lv, v3(xx, 3, z), v3(0, -1, 0), 3 - S.killY), `${xx}, ${z}`).toBeNull();
   });
 
-  it('has 8 valid spawns per team inside its courtyard, Towers, sites with floor, the power-up', () => {
+  it('has 8 valid spawns per team in three detached groups, Towers, sites with floor, the power-up', () => {
     const d = def();
     const lv = level();
-    const Y = STORMGLASS.courtyard;
+    const S = STORMGLASS;
+    // [group, x0, x1, y, z0, z1] (east; the west team mirrored)
+    const areas: [string, number, number, number, number, number][] = [
+      ['gallery', 47, 60, S.floors.upper, -40, -26],
+      ['keep', S.courtyard.x0, S.courtyard.x1, 0, S.courtyard.z0, S.courtyard.z1],
+      ['hatch', 56, 68, S.floors.under, 14, 25],
+    ];
     for (const team of [0, 1] as const) {
       const spawns = d.spawns.filter((s) => s.team === team);
       expect(spawns.length).toBe(8);
+      expect(new Set(spawns.map((s) => s.group))).toEqual(new Set(areas.map(([g]) => g)));
       for (const s of spawns) {
         expect(capsuleOverlaps(lv, standingCapsule(s.pos))).toBe(false);
         expect(
           raycast(lv, v3(s.pos.x, s.pos.y + 1, s.pos.z), v3(0, -1, 0), 2)?.point.y,
         ).toBeCloseTo(s.pos.y, 3);
+        const [, x0, x1, y, z0, z1] = areas.find(([g]) => g === s.group)!;
         const x = team === 1 ? s.pos.x : -s.pos.x;
-        expect(x > Y.x0 && x < Y.x1 && s.pos.z > Y.z0 && s.pos.z < Y.z1).toBe(true);
+        expect(x > x0 && x < x1 && s.pos.z > z0 && s.pos.z < z1, `${s.group}`).toBe(true);
+        expect(s.pos.y).toBe(y);
         // facing the Eye
         expect(s.yawDeg).toBe(team === 0 ? -90 : 90);
       }
+      for (const [g] of areas)
+        expect(spawns.filter((s) => s.group === g).length).toBeGreaterThanOrEqual(2);
       const t = d.towers.find((x) => x.team === team)!;
       expect(Math.sign(t.pos.x)).toBe(team === 0 ? -1 : 1);
       const w = wpPos(d, team === 0 ? 'towerW' : 'towerE');
@@ -228,11 +260,46 @@ describe('Stormglass map', () => {
       const c = v3((s.min.x + s.max.x) / 2, s.min.y + 1, (s.min.z + s.max.z) / 2);
       expect(raycast(lv, c, v3(0, -1, 0), 2)?.point.y).toBeCloseTo(s.min.y, 3);
       expect(capsuleOverlaps(lv, standingCapsule(v3(c.x, s.min.y, c.z)))).toBe(false);
+      // enclosed: a roof over the site
+      expect(raycast(lv, c, v3(0, 1, 0), 30), `site ${s.name} roof`).not.toBeNull();
+      expect((s.max.x - s.min.x) * (s.max.z - s.min.z)).toBeGreaterThan(60);
     }
     // the power-up floats over the perch, the highest ground
     const [pu] = d.powerups!;
     expect(d.powerups!.length).toBe(1);
     expect(raycast(lv, pu, v3(0, -1, 0), 2)?.point.y).toBeCloseTo(STORMGLASS.perch.y, 3);
+  });
+
+  it('every spawn group has two exits: block either one and bots still get out', () => {
+    const d = def();
+    // [the group's own waypoint, its two exits] (east)
+    const groups: [string, string, string][] = [
+      ['galNE', 'stairTopNE', 'uCorrN0E'],
+      ['towerE', 'doorE', 'yardNE'],
+      ['hatchE', 'hTun3E', 'hatchNE'],
+    ];
+    for (const [from, a, c] of groups)
+      for (const shut of [a, c]) {
+        const dd = withBlocked(d, [shut]);
+        for (const goal of ['siteA', 'siteB', 'dE'])
+          expect(
+            waypointRoute(dd.waypoints!, wpIndex(dd, from), wpIndex(dd, goal)).length,
+            `${from} → ${goal} with ${shut} shut`,
+          ).toBeGreaterThan(0);
+      }
+    // (the keep's third exit: the south yard)
+    expect(wpIndex(d, 'yardSE')).toBeGreaterThanOrEqual(0);
+  });
+
+  it('the bomb sites each have entrances from both teams, over and under the Eye', () => {
+    const d = def();
+    const wps = d.waypoints!;
+    const into = (site: string) =>
+      wps[wpIndex(d, site)].links.map((j) => wps[j].name!).sort();
+    // A: the two bridge doors and the stair pit up from the crypt
+    expect(into('siteA')).toEqual(['lensE', 'lensW', 'pitTop'].sort());
+    // B: the two span ramps and the two Pipe Gallery mouths
+    expect(into('siteB')).toEqual(['sagFootE', 'sagFootW', 'sagInE', 'sagInW'].sort());
   });
 
   it('waypoints sit in open space above the void, links have line of sight, all reachable', () => {
@@ -276,17 +343,17 @@ describe('Stormglass map', () => {
           `${from} → ${wps[i].name}`,
         ).toBeGreaterThan(0);
     // the graph covers the lanes, the high ground, the sites and the power-up
-    for (const n of ['gb', 'lens', 'sp1', 'sagRamp', 'cw2', 'd'])
+    for (const n of ['gb1', 'lens', 'sp1', 'sagRampMid', 'cw2', 'd', 'd2a', 'pg2a', 'galN', 'hatch'])
       for (const s of ['E', 'W']) expect(wpIndex(lv.def, n + s)).toBeGreaterThanOrEqual(0);
-    for (const n of ['siteA', 'siteB', 'perchS', 'discN', 'rampFoot'])
+    for (const n of ['siteA', 'siteB', 'perchS', 'discN', 'rampFoot', 'cryptMid', 'upDeckE'])
       expect(wpIndex(lv.def, n)).toBeGreaterThanOrEqual(0);
   });
 
   it('keeps every ramp at 30° or less', () => {
     const rotated = def().boxes.filter((b) => b.q && !b.noCollide);
     const tilted = rotated.filter((b) => Math.abs(b.q!.x) + Math.abs(b.q!.z) > 1e-9);
-    // catwalks (2) and their railing bars (16), the sag ramps (2), the perch ramp (1)
-    expect(tilted.length).toBe(21);
+    // catwalks (2) and their railing bars (16); the stairs and ramps are wedges (unturned)
+    expect(tilted.length).toBe(18);
     for (const b of rotated) {
       const q = b.q!;
       const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
@@ -297,7 +364,7 @@ describe('Stormglass map', () => {
   it('cover is half (≤ 1.25 m) or full (≥ 2 m), nothing in between', () => {
     // standing pieces on the walkable floors: bastions, bridges, the Lens, the Sag, the perch
     const S = STORMGLASS;
-    const floors = [0, S.sag.y, S.perch.y];
+    const floors = [0, S.floors.under, S.floors.upper, S.perch.y];
     for (const b of def().boxes) {
       if (b.noCollide || b.q) continue;
       const bottom = b.c.y - b.h.y;
@@ -308,42 +375,33 @@ describe('Stormglass map', () => {
     }
   });
 
-  it('no spawn is in view from the terraces, the crossings, the shards or the high ground', () => {
+  it('no spawn is in view from the Eye, the enemy half or its own bastion front', () => {
     const lv = level();
     const S = STORMGLASS;
     for (const team of [0, 1] as const) {
       const s = team === 0 ? -1 : 1;
       const spawnPts = lv.def.spawns
         .filter((sp) => sp.team === team)
-        .map((sp) => v3(sp.pos.x, 1.6, sp.pos.z));
-      const X = (x: number) => s * x;
-      const lookouts: Vec3[] = [];
+        .flatMap((sp) => [0.6, 1.6].map((h) => v3(sp.pos.x, sp.pos.y + h, sp.pos.z)));
+      // every waypoint short of the spawn side's inner rooms (the Eye, the enemy bastion, and
+      // its own front: bridgehead, pad bays, gate bay, vaults), at eye height ...
+      const lookouts: Vec3[] = lv.def
+        .waypoints!.filter((w) => s * w.pos.x < 45)
+        .map((w) => v3(w.pos.x, w.pos.y + 0.6, w.pos.z));
+      // ... and the high spots bots never walk: lookouts, launch towers, shards, the perch rim
       for (const z of [-1, 1]) {
         lookouts.push(
-          v3(X(52.5), 1.6, 0),
-          v3(X(46), 1.6, z * 10),
-          v3(X(40), 1.6, z * 20),
-          v3(X(38), 1.6, z * 3),
-          v3(X(44), 1.6, z * 12.7),
-          v3(X(50), 1.6, z * 30),
-          v3(X(58), 1.6, z * 30),
-          v3(X(51.5), 1.6, z * 21.5),
-          v3(X(30), 1.6, z * 32),
-          v3(X(10), 1.6, z * 32),
-          v3(0, 1.6, S.lens.z),
-          v3(0, S.sag.y + 1.6, 34),
-          v3(X(8), S.disc.y + 1.6, z * 6),
-          v3(0, S.perch.y + 1.6, z * 2),
-          v3(X(-8), S.disc.y + 1.6, z * 6),
-          v3(X(24), 3 + 1.6, 0),
-          v3(X(13.75), 5 + 1.6, z * 8),
-          v3(X(30), 2 + 1.6, z * 10.75),
-          v3(X(37.25), 2.6 + 1.6, z * 10.75),
-          v3(X(40), 2.6 + 1.6, z * 16.5),
-          v3(0, 3 + 1.6, z * 17.75),
-          v3(X(-46), 1.6, 0),
-          v3(X(-40), 1.6, z * 20),
+          v3(s * 37.25, 2.6 + 1.6, z * 10.75),
+          v3(s * 40, 2.6 + 1.6, z * 16.5),
+          v3(-s * 37.25, 2.6 + 1.6, z * 10.75),
+          v3(-s * 40, 2.6 + 1.6, z * 16.5),
+          v3(0, S.perch.y + 1.6, z * 2.5),
+          v3(2.5, S.perch.y + 1.6, z * 2.5),
+          v3(-2.5, S.perch.y + 1.6, z * 2.5),
         );
+        for (const [x0, z0, x1, z1, top] of [...S.shards, ...S.dropShards])
+          for (const sx of [-1, 1])
+            lookouts.push(v3((sx * (x0 + x1)) / 2, top + 1.6, (z * (z0 + z1)) / 2));
       }
       for (const l of lookouts)
         for (const p of spawnPts)
@@ -361,7 +419,7 @@ describe('Stormglass: the Eye, the pads, the rails, the Broken Span', () => {
     const fallers = [
       v3(20, 1, -20),
       v3(-20, 1, 20),
-      v3(0, 1, 24),
+      v3(22, 1, -22),
       v3(30, 1, -45),
       v3(-15, 7, 0.2 + S.catwalk.width),
     ].map((p, i) => addPlayer(world, createPlayer(10 + i, 0, p, 0, config)));
@@ -369,7 +427,9 @@ describe('Stormglass: the Eye, the pads, the rails, the Broken Span', () => {
       [v3(22, 0.5, -32), 0],
       [v3(0, 0.5, -32), 0],
       [v3(-20, 0.5, 32.2), 0],
-      [v3(0, S.sag.y + 0.5, 34), S.sag.y],
+      [v3(3, S.sag.y + 0.5, 38), S.sag.y],
+      [v3(20.5, S.floors.under + 0.5, -32), S.floors.under],
+      [v3(22, S.floors.under + 0.5, 32), S.floors.under],
       [v3(-7, S.disc.y + 0.5, 5), S.disc.y],
       [v3(0, S.perch.y + 0.5, 1.5), S.perch.y],
     ];
@@ -569,7 +629,8 @@ describe('Stormglass: the Eye, the pads, the rails, the Broken Span', () => {
     const cases: [string, Vec3, number][] = [
       ['Glass Bridge', v3(22, 0, -32), 0],
       ['catwalk', v3(24, 3, 0), 180],
-      ['sag ramp', v3(12, -2, 36.5), 180],
+      ['Lens pit rail', v3(3, 0, -26), -90],
+      ['Sag balcony', v3(5, 0, 33), 180],
       ['Anemometer', v3(9, S.disc.y, -3), -90],
     ];
     for (const [name, at, yaw] of cases) {
@@ -590,13 +651,17 @@ describe('Stormglass: the Eye, the pads, the rails, the Broken Span', () => {
 describe('Stormglass bots', () => {
   const S = STORMGLASS;
   const disc = ['dE', 'dW'];
-  const glass = ['gbE', 'gbW'];
-  const span = ['sagRampE', 'sagRampW'];
+  const glass = ['gb1E', 'gb1W'];
+  const span = ['sp1E', 'sp1W'];
+  const duct = ['d2aE', 'd2aW'];
+  const pipes = ['pg2aE', 'pg2aW'];
   /** [lane, waypoints closed (the other lanes), where the carrier crosses x = 0: z range] */
   const lanes: [string, string[], [number, number]][] = [
-    ['catwalks over the Anemometer', [...glass, ...span], [-12, 12]],
-    ['Glass Bridge and the Lens', [...disc, ...span], [-40, -24]],
-    ['Broken Span and the Sag', [...disc, ...glass], [29, 41]],
+    ['catwalks over the Anemometer', [...glass, ...span, ...duct, ...pipes], [-12, 12]],
+    ['Glass Bridge and the Lens', [...disc, ...span, ...duct, ...pipes], [-42, -22]],
+    ['Cable Duct and the crypt', [...disc, ...span, ...glass, ...pipes], [-42, -22]],
+    ['Broken Span and the Sag', [...disc, ...glass, ...duct, ...pipes], [23, 44]],
+    ['Pipe Gallery and the Sag', [...disc, ...glass, ...duct, ...span], [23, 44]],
   ];
   it.each(lanes.flatMap(([n, b, z]) => ([0, 1] as const).map((team) => [n, team, b, z] as const)))(
     'a bot carries the Controller to the enemy Tower via the %s (team %i)',

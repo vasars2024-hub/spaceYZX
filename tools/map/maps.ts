@@ -664,8 +664,12 @@ const canyonRelay = (): MapAnalysisConfig => {
   };
 };
 
-/** Canyon Relay's target times (s) from the station yard, sprinting (its timing test checks them) */
-const CANYON_RELAY_TARGETS = { edge: 8, bridge: 10, tunnel: 10, cave: 12, canyon: 14 };
+/**
+ * Canyon Relay's target times (s) from the station yard, sprinting (its timing test checks them,
+ * ±20 %): sight contact across the gorge from the terrace ~5 s, the bridge and the rail tunnel
+ * ~6.5 s, a site through the mine ~10.5 s, down the slot canyon ~12 s.
+ */
+const CANYON_RELAY_TARGETS = { edge: 5, bridge: 6.5, tunnel: 6.5, cave: 10.5, canyon: 12 };
 
 /**
  * Fallback for maps without a hand-made setup: a base box around each team's spawns and the

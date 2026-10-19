@@ -319,15 +319,16 @@ describe('brawl: joining and leaving mid-match', () => {
 });
 
 describe('brawl: maps and determinism', () => {
-  it('rotates through the Brawl maps (first) and the competitive maps (no Arena, no race tracks)', () => {
+  it('rotates through the Brawl maps (first) and the competitive maps (no Arena, no race tracks, no grayboxes)', () => {
     const ids = brawlMaps().map((m) => m.id);
     expect(ids[0]).toBe('colossus-yard');
     expect(DEFAULT_BRAWL_MAP()).toBe('colossus-yard');
     expect(ids).not.toContain('training-bay'); // (too cramped for ten)
     expect(ids).toContain('split-deck');
     for (const m of MAPS) {
-      if (m.arena || m.race) expect(ids).not.toContain(m.id);
-      if ((m.competitive || m.brawl) && !m.arena && !m.race) expect(ids).toContain(m.id);
+      if (m.arena || m.race || m.graybox) expect(ids).not.toContain(m.id);
+      if ((m.competitive || m.brawl) && !m.arena && !m.race && !m.graybox)
+        expect(ids).toContain(m.id);
     }
     // the rotation visits every map once, then starts over
     let at = ids[0];

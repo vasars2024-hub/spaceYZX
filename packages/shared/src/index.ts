@@ -23,6 +23,8 @@ export * from './level/maps/test-ship';
 export * from './level/maps/training-bay';
 export * from './level/maps/kestrel';
 export * from './level/maps/split-deck';
+export * from './level/graybox';
+export * from './level/maps/split-deck-graybox';
 export * from './level/maps/arena';
 export * from './level/maps/orbital-ring';
 export * from './level/maps/canyon-relay';

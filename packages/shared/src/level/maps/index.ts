@@ -4,6 +4,7 @@ import { buildTestShip } from './test-ship';
 import { buildTrainingBay } from './training-bay';
 import { buildKestrel } from './kestrel';
 import { buildSplitDeck } from './split-deck';
+import { buildSplitDeckGraybox } from './split-deck-graybox';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -71,6 +72,11 @@ export interface MapInfo {
    * until parkour is redone.
    */
   retired?: boolean;
+  /**
+   * a graybox of a redesigned layout (level/graybox.ts): plain blocks for playtesting in practice
+   * and custom rooms; never in the Premier, casual or Brawl pools until it gets real geometry
+   */
+  graybox?: boolean;
 }
 
 /** A map built from course data (a surf map when it has a `mode`). */
@@ -145,6 +151,14 @@ export const MAPS: MapInfo[] = [
     build: buildLeviathan,
     competitive: true,
     symmetric: true,
+  },
+  // graybox of the redesigned Split Deck (2026 map rework): practice and custom rooms only
+  {
+    id: 'split-deck-graybox',
+    name: 'Split Deck (graybox)',
+    build: buildSplitDeckGraybox,
+    competitive: true,
+    graybox: true,
   },
   // the big Brawl map (TDM / FFA / Deathmatch practice)
   {

@@ -111,13 +111,13 @@ export interface GrayboxLayout {
 
 const WALL = '.';
 const VOID = '~';
-const STEP = 0.35;
+const STEP = 0.3; // (0.35 m steps on short treads can't be walked up)
 const SLAB = 0.5; // thickness of a floor laid over open space (catwalks, decks over a tunnel)
 const CLEAR = 3.2; // head room kept open above every floor
 const WALL_ABOVE = 10; // walls rise this far above the highest floor
 const G = 20; // MOVEMENT gravity (m/s²), for the launch pad arcs
 const HANG = 1.82; // a ceiling spawn's feet sit this far under the ceiling (see antipode.ts)
-const RAIL_Y = 1.9; // a zip-rail hangs this far over the floor (hand reach: railHang + grab)
+const RAIL_Y = 2.05; // a zip-rail hangs this far over the floor: the rider (railHang 1.1 below it) clears the floor, and it stays in grab reach
 const RAIL_H = 3; // glass along deadly drops: higher than any jump or climb (climbMaxHeight 2.6)
 const ZERO_G_STEP = 6; // zero-G columns get a waypoint every this many metres up
 
@@ -305,17 +305,22 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
         continue;
       }
       p.h = lo + ((hi - lo) * (a0 + 0.5)) / (a0 + b0 + 1);
-      // the step axis: toward the neighbour that is further along the climb
-      let best: [number, number] = [1, 0];
-      let gain = -Infinity;
-      for (const [dx, dy] of DIRS) {
+      // the step axis: the way the climb runs here — from the stair cells around it, and from the
+      // landings it touches (the low landing pulls the climb away, the high one toward it)
+      const elev = (dx: number, dy: number) => {
         const n = byPos.get(key(p.l, p.x + dx, p.y + dy));
-        const g = n && n.c === c ? (dLo.get(n) ?? 0) - a0 : -Infinity;
-        if (g > gain) {
-          gain = g;
-          best = [dx, dy];
-        }
-      }
+        if (n && n.c === c) return (dLo.get(n) ?? a0) - (dHi.get(n) ?? b0);
+        const land = nbrs(p).find(
+          (q) => q.x === p.x + dx && q.y === p.y + dy && q.c !== c && plain(q),
+        );
+        if (land && Math.abs(flatH(land) - hi) < 0.6) return a0 - b0 + 2;
+        if (land && Math.abs(flatH(land) - lo) < 0.6) return a0 - b0 - 2;
+        return a0 - b0;
+      };
+      const gx = elev(1, 0) - elev(-1, 0);
+      const gz = elev(0, 1) - elev(0, -1);
+      const best: [number, number] =
+        Math.abs(gx) >= Math.abs(gz) ? [Math.sign(gx) || 1, 0] : [0, Math.sign(gz) || 1];
       p.axis = best[0] !== 0 ? 'x' : 'z';
       p.rise = ((hi - lo) / (a0 + b0 + 1)) * (best[0] + best[1]);
     }
@@ -377,6 +382,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
   const launchPads: LaunchPadDef[] = [];
   const portals: PortalDef[] = [];
   const slots = new Map<string, [number, number][]>(); // rails cut a slot through walls
+  const flights = new Set<string>(); // cells a pad or rail carries you over (no guard glass there)
   const adjacent = (a: string, b: string) =>
     regionOf(a).some((p) => nbrs(p).some((q) => q.c === b));
   const ends = (from: string, to: string) => {
@@ -424,6 +430,10 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     const dz = cz(b.y) - pz;
     const dh = standY(b) - standY(a);
     const T = Math.min(1.6, Math.max(0.7, Math.hypot(dx, dz) / 14));
+    for (let i = 0; i <= 20; i++)
+      flights.add(
+        `${Math.floor((px + dx * (i / 20)) / s)},${Math.floor((pz + dz * (i / 20)) / s)}`,
+      );
     launchPads.push({
       min: v3(px - half, standY(a), pz - half),
       max: v3(px + half, standY(a) + 0.6, pz + half),
@@ -455,6 +465,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
         const k = `${Math.floor(a.x + 0.5 + (b.x - a.x) * t)},${Math.floor(a.y + 0.5 + (b.y - a.y) * t)}`;
         const y = ya + (yb - ya) * t;
         slots.set(k, [...(slots.get(k) ?? []), [y - 2.6, y + 0.8]]);
+        flights.add(k);
       }
       continue;
     }
@@ -738,7 +749,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
       const y0 = p.h - rise / 2;
       const y1 = p.h + rise / 2 + RAIL_H;
       for (const [dx, dy] of DIRS) {
-        if (!open(p.x + dx, p.y + dy, p)) continue;
+        if (!open(p.x + dx, p.y + dy, p) || flights.has(`${p.x + dx},${p.y + dy}`)) continue;
         // (just outside the cell, in the drop: it touches the floor's side, never cuts into it)
         const ex = dx > 0 ? (p.x + 1) * s : dx < 0 ? p.x * s : cx(p.x);
         const ez = dy > 0 ? (p.y + 1) * s : dy < 0 ? p.y * s : cz(p.y);
@@ -923,10 +934,26 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     columns.set(`${p.c}|${p.x},${p.y}`, col);
   }
   const columnOf = (p: Cell) => columns.get(`${p.c}|${p.x},${p.y}`);
+  // a stair cell's floor height at its edge toward a neighbour (its centre if beside the climb)
+  const edgeH = (p: Cell, q: Cell) => {
+    if (!p.rise) return standY(p);
+    const toward = p.axis === 'x' ? Math.sign(q.x - p.x) : Math.sign(q.y - p.y);
+    return toward ? p.h + (p.rise / 2) * toward : p.h;
+  };
   const canGo = (a: Cell, b: Cell) => {
     if (a.o !== b.o) return false;
+    // (along a flight of stairs the steps are what count, not the centres' heights)
+    if ((a.rise || b.rise) && a.o === 'up' && Math.abs(edgeH(b, a) - edgeH(a, b)) <= 0.6)
+      return true;
     const up = a.o === 'down' ? standY(a) - standY(b) : standY(b) - standY(a);
-    return up <= 2.6 && up >= -14;
+    if (up > 2.6 || up < -14) return false;
+    // (a drop must not pass through another floor or a wall laid across the way down)
+    if (a.o === 'up' && up < -0.6) {
+      const from = standY(b) + 0.3;
+      const to = standY(a) + 1.7;
+      if ((segsAt.get(`${b.x},${b.y}`) ?? []).some((g) => g.y0 > from && g.y0 < to)) return false;
+    }
+    return true;
   };
   for (const p of cells) {
     if (p.o === 'side') continue;
@@ -977,7 +1004,12 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
         if (sky) field(p, p.h - 2, p.h + 4);
         else if (p.zg) field(p, p.zg.lo - 0.2, p.zg.top);
         else if (p.o === 'down') field(p, p.airBottom ?? p.h - 4, p.h + 0.2);
-        else field(p, standY(p) - Math.abs(p.rise ?? 0) - 0.2, p.airTop ?? standY(p) + 4);
+        else {
+          // (up to whatever closes the column above: nobody jetpacks over the field)
+          const y0 = standY(p) - Math.abs(p.rise ?? 0) - 0.2;
+          const lid = (segsAt.get(`${p.x},${p.y}`) ?? []).find((g) => g.y0 > standY(p) + 1);
+          field(p, y0, lid ? lid.y0 : wallTop);
+        }
       }
     if (wallBoxes.length) sizeWalls.push({ maxTeamSize, boxes: wallBoxes });
   }

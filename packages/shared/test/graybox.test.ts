@@ -81,7 +81,8 @@ describe('Split Deck graybox', () => {
     // walk each straight flight along its rising direction, a quarter metre at a time (inside
     // the stair cells: the Catwalk overhangs the foot of A Short)
     for (const [c, a] of Object.entries(SPLIT_DECK_LAYOUT.legend)) {
-      if (!a.dir || !a.r) continue;
+      // (gravity areas are zero-G vents, not stairs)
+      if (!a.dir || !a.r || (a.k === 'gravity' && a.g !== 'stairs')) continue;
       const [lo, hi] = a.r;
       const alongX = a.dir === 'e' || a.dir === 'w';
       const cells = rows.flatMap((r, y) => [...r].flatMap((ch, x) => (ch === c ? [[x, y]] : [])));

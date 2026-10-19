@@ -106,7 +106,7 @@ export const KESTREL_GRAYBOX_LAYOUT: GrayboxLayout = {
     V: { n: 'Orange Exhaust Duct', k: 'gravity', h: -4, s: 'Exhaust Duct' },
     D: { n: 'Dock Floor', k: 'room', h: 0 },
     G: { n: 'Crane Gantry', k: 'room', h: 8 },
-    s: { n: 'Pit Stairs', k: 'ramp', r: [-4, 0] },
+    s: { n: 'Pit Stairs', k: 'ramp', r: [-4, 0], dir: 'n' },
     P: { n: 'Engine Pit', k: 'room', h: -4 },
   },
   // forcefield size walls (v2 sizes.mjs): closed at 3v3 and smaller, more at 2v2 and smaller

@@ -55,8 +55,11 @@ export const COVER_RULES = {
   /** a lane at least this many cells wide stays free past every piece, on both axes; two
    *  pieces stand at least this far apart */
   laneCells: 2,
+  /** no cover on a floor with another floor less than this above or below it (the tallest
+   *  piece is 3.4 m) */
+  stackGap: 4.5,
   /** two pieces stand at least this many cells apart */
-  pieceGap: 1,
+  pieceGap: 0.5,
   /** spawn cells nearest the spawn area's centre that get no cover (the builder's 8 spawns) */
   spawnCells: 8,
   /** partitions span up to this many cell edges */
@@ -70,6 +73,8 @@ export const COVER_RULES = {
   wideAngles: 6,
   /** stop adding full cover once the model has at most this share of such spots */
   wideShare: 0.18,
+  /** ...or once no piece gains the model this much (badness points) */
+  minGain: 1,
   /** full cover: at most one piece per this many open cells of an area */
   cellsPerPiece: 6,
   /** pieces on a bomb site: at least / at most */
@@ -129,12 +134,6 @@ const DIRS: [number, number][] = [
   [0, 1],
   [0, -1],
 ];
-const QUARTERS: [number, number][] = [
-  [-1, -1],
-  [1, -1],
-  [-1, 1],
-  [1, 1],
-];
 
 export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): BoxDef[] => {
   if (lay.cover === false || !cells.length) return [];
@@ -156,9 +155,12 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     [...r].sort((u, v) => (u.x - tx) ** 2 + (u.y - ty) ** 2 - ((v.x - tx) ** 2 + (v.y - ty) ** 2));
 
   // ---- which cells can hold cover ----------------------------------------------------------
-  // cells with another layer's floor straight above or below them (a catwalk over a hall)
-  const stacked = new Uint8Array(W * H);
-  for (const p of cells) stacked[p.y * W + p.x]++;
+  // a cell with another layer's floor less than `stackGap` above or below it gets no cover (a
+  // deck higher over a hall leaves room for the tallest piece, 3.4 m)
+  const column = new Map<number, GrayboxFloorCell[]>();
+  for (const p of cells) column.set(p.y * W + p.x, [...(column.get(p.y * W + p.x) ?? []), p]);
+  const stackedTight = (p: GrayboxFloorCell) =>
+    column.get(p.y * W + p.x)!.some((q) => q !== p && Math.abs(q.h - p.h) < R.stackGap);
   // cells the builder puts something on: the spawns (the cells nearest each spawn area's
   // centre), each team's Tower (the spawn area's cell farthest from the map's middle), the ends
   // of pads, rails and portals (the two cells of each end nearest the other end) and the cells
@@ -172,11 +174,11 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     if (!r.length) continue;
     spawnAreas.push(c);
     const [mx, my] = centreOf(r);
-    const d = (p: GrayboxFloorCell) => (p.x - mx) ** 2 + (p.y - my) ** 2;
-    const limit = d(nearest(r, mx, my)[Math.min(R.spawnCells, r.length) - 1]) + 1e-9;
+    // (the same picks as the builder's: the cells come in its order)
+    for (const p of nearest(r, mx, my).slice(0, R.spawnCells)) busy.add(p);
     const far = (p: GrayboxFloorCell) => (p.x - middle[0]) ** 2 + (p.y - middle[1]) ** 2;
     const farthest = Math.max(...r.map(far));
-    for (const p of r) if (d(p) <= limit || far(p) >= farthest - 1e-9) busy.add(p);
+    for (const p of r) if (far(p) >= farthest - 1e-9) busy.add(p);
   }
   for (const [from, to, kind] of lay.links ?? []) {
     if (kind === 'jump' || kind === 'jet') continue;
@@ -211,16 +213,11 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   };
   const coverCell = (p: GrayboxFloorCell) => {
     if (p.o !== 'up' || p.sloped || lay.layers[p.l].overlay) return false;
-    if (busy.has(p) || stacked[p.y * W + p.x] > 1) return false;
+    if (busy.has(p) || stackedTight(p)) return false;
     // a passage one or two cells wide stays clear
     if (run(p, 1, 0) + run(p, -1, 0) < 2 || run(p, 0, 1) + run(p, 0, -1) < 2) return false;
-    // the top or foot of stairs, a ledge or a drop
-    for (const [dx, dy] of DIRS) {
-      const q = cellAt(p.l, p.x + dx, p.y + dy);
-      if (q ? q.sloped || Math.abs(q.h - p.h) > 0.01 : charAt(p.l, p.x + dx, p.y + dy) !== WALL)
-        return false;
-    }
-    return true;
+    // the top or foot of stairs
+    return DIRS.every(([dx, dy]) => !cellAt(p.l, p.x + dx, p.y + dy)?.sloped);
   };
   const okAt = new Set(cells.filter(coverCell));
 
@@ -235,21 +232,25 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     floor: GrayboxFloorCell[];
   }
   const cornerAt = (l: number, vx: number, vy: number): Corner | null => {
-    const floor: GrayboxFloorCell[] = [];
-    for (const [x, y] of [
+    const around = [
       [vx - 1, vy - 1],
       [vx, vy - 1],
       [vx - 1, vy],
       [vx, vy],
-    ]) {
-      const p = cellAt(l, x, y);
-      if (p) {
-        if (!okAt.has(p)) return null;
-        floor.push(p);
-      } else if (charAt(l, x, y) !== WALL) return null;
+    ].map(([x, y]) => cellAt(l, x, y));
+    // the floor: the cells at the height of the first (or else the second) floor cell around;
+    // the others must be no floor at that height (a wall, a drop, a ledge up or down), and no
+    // stairs
+    if (around.some((p) => p?.sloped)) return null;
+    const heights = around.filter((p) => !!p).map((p) => p!.h);
+    let floor: GrayboxFloorCell[] = [];
+    for (const h of heights) {
+      floor = around.filter((p): p is GrayboxFloorCell => !!p && Math.abs(p.h - h) <= FLAT);
+      if (floor.length === 2 || floor.length === 4) break;
     }
     // (three floor cells, an inner corner of a wall: no piece fits without touching the wall)
     if (floor.length !== 2 && floor.length !== 4) return null;
+    if (!floor.every((p) => okAt.has(p))) return null;
     const p0 = floor[0];
     if (floor.some((p) => Math.abs(p.h - p0.h) > 0.01)) return null;
     // (on the line between two areas: it counts as the area most of its cells are in)
@@ -280,8 +281,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     for (const o of others) {
       // (a piece beside the lane, not in it)
       if (dx ? o[3] <= f[1] || o[1] >= f[3] : o[2] <= f[0] || o[0] >= f[2]) continue;
-      const d =
-        dx > 0 ? o[0] - f[2] : dx < 0 ? f[0] - o[2] : dy > 0 ? o[1] - f[3] : f[1] - o[3];
+      const d = dx > 0 ? o[0] - f[2] : dx < 0 ? f[0] - o[2] : dy > 0 ? o[1] - f[3] : f[1] - o[3];
       if (d >= 0) free = Math.min(free, d);
     }
     return free;
@@ -308,9 +308,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   const lanesOk = (l: number, f: Foot, ref: GrayboxFloorCell, others: Foot[] = []) => {
     const need = R.laneCells * s - 1e-6;
     const lane = (dx: number, dy: number) => laneFrom(l, f, ref, dx, dy, others);
-    return (
-      Math.max(lane(1, 0), lane(-1, 0)) >= need && Math.max(lane(0, 1), lane(0, -1)) >= need
-    );
+    return Math.max(lane(1, 0), lane(-1, 0)) >= need && Math.max(lane(0, 1), lane(0, -1)) >= need;
   };
   const spots: Spot[] = [];
   const addSpot = (l: number, vx: number, vy: number, span: number, axis: 'x' | 'z') => {
@@ -374,7 +372,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   }
   if (!spots.length) return [];
 
-    // ---- the flat sight model ----------------------------------------------------------------
+  // ---- the flat sight model ----------------------------------------------------------------
   // a sight group: a layer plus the overlay layers over it (catwalks look down into its halls)
   const groupOf = (l: number) => {
     while (l > 0 && lay.layers[l].overlay) l--;
@@ -469,7 +467,21 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
       pairTarget.push(i, j);
       pairSector.push(sector, (sector + 4) % 8);
       pairIntoSpawn.push(isSpawn(a.c) && b.c !== a.c, isSpawn(b.c) && a.c !== b.c);
-      for (const q of near) if (crosses(a.x, a.z, b.x, b.z, q.foot)) q.pairs.push(u);
+      // the spots whose footprint the line crosses (separating axes: x, z and the line's normal)
+      const x0 = Math.min(a.x, b.x);
+      const x1 = Math.max(a.x, b.x);
+      const z0 = Math.min(a.z, b.z);
+      const z1 = Math.max(a.z, b.z);
+      const ndx = Math.abs(dz);
+      const ndz = Math.abs(dx);
+      const off = dz * a.x - dx * a.z;
+      for (const q of near) {
+        const f = q.foot;
+        if (f[0] > x1 || f[2] < x0 || f[1] > z1 || f[3] < z0) continue;
+        const reach = (ndx * (f[2] - f[0]) + ndz * (f[3] - f[1])) / 2;
+        if (Math.abs(dz * (f[0] + f[2]) * 0.5 - dx * (f[1] + f[3]) * 0.5 - off) <= reach)
+          q.pairs.push(u);
+      }
     }
   }
   const targets = points;
@@ -542,8 +554,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     chosen.filter((q) => q.k.c === c && (full === undefined || q.full === full)).length;
   // two pieces stand a lane apart
   // two pieces stand at least a cell apart, and every piece keeps its lanes past the others
-  const apart = (a: Foot, b: Foot) =>
-    Math.max(a[0] - b[2], b[0] - a[2], a[1] - b[3], b[1] - a[3]);
+  const apart = (a: Foot, b: Foot) => Math.max(a[0] - b[2], b[0] - a[2], a[1] - b[3], b[1] - a[3]);
   const free = (k: Spot) => {
     const close = chosen.filter(
       ({ k: q }) => q.l === k.l && apart(q.foot, k.foot) < R.laneCells * s * 2,
@@ -552,28 +563,43 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     const feet = [...close.map(({ k: q }) => q.foot), k.foot];
     if (!lanesOk(k.l, k.foot, k.ref, feet.slice(0, -1))) return false;
     return close.every(({ k: q }) =>
-      lanesOk(q.l, q.foot, q.ref, feet.filter((f) => f !== q.foot)),
+      lanesOk(
+        q.l,
+        q.foot,
+        q.ref,
+        feet.filter((f) => f !== q.foot),
+      ),
     );
   };
   /** the free spot passing `ok` with the best model gain (ties: the first in layout order) */
+  // (lazy: a spot's gain only shrinks as cover goes in, so the last known gain is an upper
+  // bound and most spots need no new look)
+  const known = [
+    new Float64Array(spots.length).fill(Infinity),
+    new Float64Array(spots.length).fill(Infinity),
+  ];
   const best = (ok: (k: Spot) => boolean, spawn = false) => {
+    const last = known[spawn ? 1 : 0];
+    const order = spots.filter(ok).sort((p, q) => last[q.id] - last[p.id] || p.id - q.id);
     let top: Spot | null = null;
     let topGain = 0;
-    for (const k of spots) {
-      if (!ok(k) || !free(k)) continue;
+    for (const k of order) {
+      if (last[k.id] < topGain - 1e-9 || (top && last[k.id] <= topGain + 1e-9 && k.id > top.id))
+        break;
+      if (!free(k)) continue;
       const g = gainOf(k, spawn);
-      if (g > topGain + 1e-9) {
+      last[k.id] = g;
+      if (g > topGain + 1e-9 || (top && Math.abs(g - topGain) <= 1e-9 && k.id < top.id)) {
         top = k;
         topGain = g;
       }
     }
-    return top ? { k: top, gain: topGain } : null;
+    return top && topGain > 1e-9 ? { k: top, gain: topGain } : null;
   };
   const take = (k: Spot, full: boolean) => {
     chosen.push({ k, full });
     if (full) block(k);
   };
-  (globalThis as any).DBG?.('model wide at start', wideShare().toFixed(3));
   // 1. spawns: full cover where it blocks the most shots from outside into the spawn
   for (const c of spawnAreas)
     for (let n = 0; n < R.spawnPieces; n++) {
@@ -591,8 +617,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     const b = best(
       (k) => inArea(k.c, true) < fullCap(k.c) && (!isSite(k.c) || inArea(k.c) < R.siteMax),
     );
-    if (!b || b.gain < 1) {
-      (globalThis as any).DBG?.('stop', b?.gain);
+    if (!b || b.gain < R.minGain) {
       break;
     }
     take(b.k, true);
@@ -617,7 +642,6 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
       take(b.k, false);
     }
 
-  (globalThis as any).DBG?.('chosen', chosen.length, 'spots', spots.length, 'ok cells', okAt.size, '/', cells.length, 'model wide', wideShare().toFixed(3), chosen.map((q) => q.k.c + (q.full ? 'F' : 'w') + q.k.span).join(' '));
   // ---- the pieces --------------------------------------------------------------------------
   const boxes: BoxDef[] = [];
   const box = (f: Foot, y0: number, tall: number, mat: 'crate' | 'pillar') =>

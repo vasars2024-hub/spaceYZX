@@ -14,7 +14,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const AFTERGLOW_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Afterglow (graybox)',
+  name: 'Afterglow',
   cellM: 4,
   layers: [
     {

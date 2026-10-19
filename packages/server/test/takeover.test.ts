@@ -51,7 +51,7 @@ describe('taking over a bot teammate', () => {
     const a = startHeadlessBot({
       url: url(),
       name: 'Taker',
-      onReady: (core) => core.createRoom('2v2', 'kestrel', 3, 'rookie'),
+      onReady: (core) => core.createRoom('2v2', 'kestrel-graybox', 3, 'rookie'),
     });
     clients.push(a);
     await until(() => a.core.state === 'room');
@@ -123,7 +123,7 @@ describe('taking over a bot teammate', () => {
     const a = startHeadlessBot({
       url: url(),
       name: 'Practicer',
-      onReady: (core) => core.createRoom('practice', 'kestrel', 3, 'rookie'),
+      onReady: (core) => core.createRoom('practice', 'kestrel-graybox', 3, 'rookie'),
     });
     clients.push(a);
     await until(() => a.core.state === 'room');
@@ -143,7 +143,7 @@ describe('taking over a bot teammate', () => {
     const b = startHeadlessBot({
       url: url(),
       name: 'Locked',
-      onReady: (core) => core.createRoom('2v2', 'kestrel', 3, 'rookie'),
+      onReady: (core) => core.createRoom('2v2', 'kestrel-graybox', 3, 'rookie'),
     });
     clients.push(b);
     await until(() => b.core.state === 'room');

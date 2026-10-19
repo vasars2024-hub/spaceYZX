@@ -239,10 +239,15 @@ describe('friends, accounts and profiles online', () => {
     await until(() => a.social()?.friends.some((f) => f.id === ib) ?? false);
     expect(a.social()!.friends[0].presence.state).toBe('menu');
     // Kilo opens a room: Juliet sees it (joinable)
-    b.core.createRoom('2v2', 'kestrel', 0, 'normal', 'tower', 'lethal');
+    b.core.createRoom('2v2', 'kestrel-graybox', 0, 'normal', 'tower', 'lethal');
     await until(() => a.social()?.friends[0].presence.state === 'room', 6000);
     const p = a.social()!.friends[0].presence;
-    expect(p).toMatchObject({ mode: '2v2', map: 'kestrel', joinable: true, objective: 'tower' });
+    expect(p).toMatchObject({
+      mode: '2v2',
+      map: 'kestrel-graybox',
+      joinable: true,
+      objective: 'tower',
+    });
     // Kilo invites Juliet: a toast with the room
     b.core.sendJson({ t: 'invite', id: ia });
     await until(() => a.got.some((m) => m.t === 'socialNotice' && m.data.kind === 'invite'));
@@ -270,7 +275,7 @@ describe('friends, accounts and profiles online', () => {
     const b = await connect('November');
     a.core.sendJson({ t: 'friend', op: 'block', id: idOf(b) });
     await until(() => (a.social()?.blocked.length ?? 0) === 1);
-    b.core.createRoom('2v2', 'kestrel', 0, 'normal', 'tower', 'lethal');
+    b.core.createRoom('2v2', 'kestrel-graybox', 0, 'normal', 'tower', 'lethal');
     await until(() => b.core.state === 'room');
     a.core.joinRoom(b.core.code);
     await until(() => a.core.state === 'room');
@@ -292,7 +297,7 @@ describe('friends, accounts and profiles online', () => {
     a.core.sendJson({ t: 'editProfile', avatar: 99 });
     await until(() => !!last(a, 'accountResult'));
     expect(last(a, 'accountResult')).toMatchObject({ ok: false });
-    a.core.createRoom('practice', 'kestrel', 0, 'normal', 'tower', 'lethal');
+    a.core.createRoom('practice', 'kestrel-graybox', 0, 'normal', 'tower', 'lethal');
     await until(() => a.core.state === 'room');
     a.got.length = 0;
     a.core.sendJson({ t: 'account', op: 'register', username: 'Oscar', password: 'oscar-pass-1' });

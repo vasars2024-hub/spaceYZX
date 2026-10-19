@@ -68,7 +68,7 @@ describe('online 1v1 over WebSocket', () => {
     const a = startHeadlessBot({
       url,
       name: 'Delta',
-      onReady: (core) => core.createRoom('1v1', 'kestrel'),
+      onReady: (core) => core.createRoom('1v1', 'kestrel-graybox'),
     });
     bots.push(a);
     await until(() => a.core.state === 'room');
@@ -98,7 +98,7 @@ describe('online 1v1 over WebSocket', () => {
     const e = startHeadlessBot({
       url,
       name: 'Foxtrot',
-      onReady: (core) => core.createRoom('3v3', 'split-deck', 0, 'normal', 'elim', 'cs'),
+      onReady: (core) => core.createRoom('3v3', 'split-deck-graybox', 0, 'normal', 'elim', 'cs'),
     });
     bots.push(e);
     await until(() => e.core.state === 'room');

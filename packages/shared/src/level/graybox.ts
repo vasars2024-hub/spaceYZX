@@ -348,8 +348,12 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
       }
     }
   // (zero-G areas spanning several layers: one column per grid cell)
-  const columnCell = (p: Cell) =>
-    !p.zg || cells.find((q) => q.c === p.c && q.x === p.x && q.y === p.y) === p;
+  const firstOfColumn = new Map<string, Cell>();
+  for (const p of cells) {
+    const k = `${p.c}|${p.x},${p.y}`;
+    if (!firstOfColumn.has(k)) firstOfColumn.set(k, p);
+  }
+  const columnCell = (p: Cell) => !p.zg || firstOfColumn.get(`${p.c}|${p.x},${p.y}`) === p;
 
   const floorHs = cells.map((p) => p.h);
   const top = Math.max(...floorHs, ...lay.layers.map((l) => l.y));
@@ -910,11 +914,19 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     if (!p.zg && p.o !== 'side')
       wpOf.set(p, addWp(v3(cx(p.x), wpY(p), cz(p.y)), `${p.c}${p.l}:${p.x},${p.y}`));
   const yKey = (y: number) => Number(y.toFixed(3));
+  const zgHeights = new Map<string, Set<number>>();
   for (const p of cells) {
     if (!p.zg || !columnCell(p)) continue;
     // at its neighbours' waypoint heights, and every ZERO_G_STEP metres up
-    const hs = new Set<number>();
-    for (const q of regionOf(p.c)) for (const n of nbrs(q)) if (wpOf.has(n)) hs.add(yKey(wpY(n)));
+    // (the neighbours' heights are the same for every column of the area: worked out once)
+    let around = zgHeights.get(p.c);
+    if (!around) {
+      around = new Set<number>();
+      for (const q of regionOf(p.c))
+        for (const n of nbrs(q)) if (wpOf.has(n)) around.add(yKey(wpY(n)));
+      zgHeights.set(p.c, around);
+    }
+    const hs = new Set<number>(around);
     const yTop = p.zg.top === p.zg.hi ? p.zg.hi - 1 : p.zg.hi + 1;
     for (let y = p.zg.lo + 1; y < yTop; y += ZERO_G_STEP) hs.add(yKey(y));
     hs.add(yKey(yTop));

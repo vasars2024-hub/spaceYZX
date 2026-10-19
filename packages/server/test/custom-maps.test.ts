@@ -29,7 +29,7 @@ const wholeMap = (name = 'Test Map'): CustomMapDoc => ({
   launchPads: [],
 });
 
-const MAP = 'kestrel';
+const MAP = 'kestrel-graybox';
 /** An edit of a built-in map: one of its boxes removed, one block added. */
 const edit = (name = 'Kestrel edit', which = 5): CustomMapDoc => ({
   ...wholeMap(name),

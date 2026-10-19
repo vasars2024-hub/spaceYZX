@@ -14,7 +14,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const SKYFOUNT_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Skyfount (graybox)',
+  name: 'Skyfount',
   cellM: 5,
   sky: true,
   skyJetpack: true,

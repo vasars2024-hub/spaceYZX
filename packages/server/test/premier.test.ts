@@ -45,7 +45,12 @@ describe('Premier queue and map veto', () => {
     } as unknown as GameHub;
     s.queue.rand = () => 0;
     // a fixed pool of 4, so the test sees several bans whatever maps exist
-    s.queue.mapPool = () => ['split-deck', 'kestrel', 'orbital-ring', 'map-four'];
+    s.queue.mapPool = () => [
+      'split-deck-graybox',
+      'canyon-relay-graybox',
+      'orbital-ring-graybox',
+      'map-four',
+    ];
     // (these tests are about the queue itself: no players-online rule)
     s.ranked.setThresholds({ premier: 0, 'premier-cs': 0 });
   });
@@ -76,9 +81,10 @@ describe('Premier queue and map veto', () => {
 
   it('the veto pool is every competitive map with bomb sites', () => {
     const pool = premierMapPool();
-    for (const id of ['split-deck', 'orbital-ring']) expect(pool).toContain(id);
+    for (const id of ['split-deck-graybox', 'orbital-ring-graybox']) expect(pool).toContain(id);
     for (const id of pool) {
       expect(getMap(id).competitive).toBe(true);
+      expect(getMap(id).retired).toBeFalsy();
       expect(mapDef(id).bombSites?.length).toBeGreaterThan(0);
     }
     expect(pool).not.toContain('training-bay');
@@ -94,7 +100,12 @@ describe('Premier queue and map veto', () => {
     const v0 = ps[0].lastVeto()!;
     expect(v0).toBeTruthy();
     expect(v0.teamSize).toBe(5);
-    expect(v0.maps).toEqual(['split-deck', 'kestrel', 'orbital-ring', 'map-four']);
+    expect(v0.maps).toEqual([
+      'split-deck-graybox',
+      'canyon-relay-graybox',
+      'orbital-ring-graybox',
+      'map-four',
+    ]);
     expect(v0.teams[0].length + v0.teams[1].length).toBe(10);
     // queueing again during the veto is refused
     expect(s.queue.set(ps[0].conn, 'duels-1v1')).toMatch(/map veto/);
@@ -208,7 +219,7 @@ describe('Premier rooms', () => {
     const hub = new GameHub({ log: () => {} });
     const room = hub.createRoom({
       mode: '5v5',
-      map: 'split-deck',
+      map: 'split-deck-graybox',
       ranked: true,
       objective: 'bomb',
       loadout: 'cs', // ranked never takes the CS kit
@@ -220,7 +231,7 @@ describe('Premier rooms', () => {
     expect(rules.ms.rules.teamSize).toBe(4);
     const full = hub.createRoom({
       mode: '5v5',
-      map: 'split-deck',
+      map: 'split-deck-graybox',
       ranked: true,
       objective: 'bomb',
     })!;

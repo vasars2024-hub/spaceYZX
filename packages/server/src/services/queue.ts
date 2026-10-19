@@ -93,7 +93,6 @@ export const premierMapPool = (): string[] =>
       m.competitive &&
       !m.arena &&
       !m.retired &&
-      !m.graybox &&
       m.premier !== false &&
       (mapDef(m.id).bombSites?.length ?? 0) > 0,
   ).map((m) => m.id);
@@ -108,7 +107,7 @@ export const raceTrackPool = (): string[] => raceTracks().map((m) => m.id);
 /** Maps a casual match of this objective may use (Towers / bomb sites where it needs them). */
 export const casualMapPool = (objective: MatchObjective): string[] =>
   MAPS.filter((m) => {
-    if (!m.competitive || m.arena || m.race || m.retired || m.graybox) return false;
+    if (!m.competitive || m.arena || m.race || m.retired) return false;
     const d = mapDef(m.id);
     return objective === 'tower'
       ? d.towers.length >= 2

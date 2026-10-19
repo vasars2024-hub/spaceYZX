@@ -1,7 +1,7 @@
 // Grayboxes (level/graybox.ts): redesigned layouts built from their checked tile grids. The
 // Split Deck graybox is the first: it must be walkable (steps, both sites, both spawns), its
 // bots must find their way, smaller teams' force fields must leave the objectives open, and it
-// must stay out of every queue until it gets real geometry.
+// participates in the competitive pools and Brawl rotation.
 import { describe, expect, it } from 'vitest';
 import {
   addPlayer,
@@ -33,12 +33,14 @@ const ID = 'split-deck-graybox';
 const down = v3(0, -1, 0);
 
 describe('Split Deck graybox', () => {
-  it('is a graybox map: practice and custom rooms, never the Brawl rotation', () => {
+  it('is a competitive graybox map offered in practice, custom rooms and the Brawl rotation', () => {
     const m = getMap(ID);
     expect(m.id).toBe(ID);
     expect(m.competitive).toBe(true);
     expect(m.graybox).toBe(true);
-    expect(brawlMaps().map((b) => b.id)).not.toContain(ID);
+    expect(m.name).toBe('Split Deck');
+    expect(m.retired).toBeFalsy();
+    expect(brawlMaps().map((b) => b.id)).toContain(ID);
   });
 
   it('builds the layout: both sites, 8 spawns and a Tower per team, a teleport per callout', () => {

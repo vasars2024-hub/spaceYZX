@@ -14,7 +14,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Orbital Ring (graybox)',
+  name: 'Orbital Ring',
   cellM: 4,
   layers: [
     {

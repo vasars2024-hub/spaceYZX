@@ -9,7 +9,7 @@ import type { LevelDef } from '../types';
 import { buildGraybox, type GrayboxLayout } from '../graybox';
 
 export const SPLIT_DECK_LAYOUT: GrayboxLayout = {
-  name: 'Split Deck (graybox)',
+  name: 'Split Deck',
   cellM: 4,
   layers: [
     {

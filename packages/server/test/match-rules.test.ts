@@ -3,7 +3,7 @@ import { Room } from '../src/game/room';
 import { MatchRules, type MatchResult } from '../src/game/rules/match';
 
 const botRoom = (mode: '1v1' | '2v2', bots: number) => {
-  const room = new Room({ code: 'TEST01', mode, map: 'kestrel', seed: 11 });
+  const room = new Room({ code: 'TEST01', mode, map: 'kestrel-graybox', seed: 11 });
   const rules = new MatchRules(mode);
   room.rules = rules;
   for (let i = 0; i < bots; i++) room.addMember(`Bot ${i + 1}`, null, { botSkill: 'normal' });

@@ -70,7 +70,7 @@ describe('queues', () => {
       },
     } as unknown as GameHub;
     s.queue.rand = () => 0;
-    s.queue.mapPool = () => ['split-deck', 'kestrel', 'orbital-ring'];
+    s.queue.mapPool = () => ['split-deck-graybox', 'canyon-relay-graybox', 'orbital-ring-graybox'];
     // (the real race tracks are retired, which closes the Race queue: race-ranked.test.ts)
     s.queue.trackPool = () => ['track-a'];
     s.queue.onlineCount = () => 100;
@@ -171,7 +171,7 @@ describe('queues', () => {
       expect(v0).toMatchObject({ phase: 'vote', ladder: 'premier-cs', teamSize: 3 });
       expect(v0.vote!.options).toEqual(['bomb', 'elim']);
       // bans don't count during the vote
-      expect(s.queue.ban(ps[0].conn, 'kestrel')).toMatch(/no map veto/);
+      expect(s.queue.ban(ps[0].conn, 'canyon-relay-graybox')).toMatch(/no map veto/);
       for (const [i, p] of ps.entries()) s.queue.vote(p.conn, i < 4 ? 'elim' : 'bomb');
       const v1 = ps[0].last('veto')!.data as VetoView;
       expect(v1.phase).toBe('ban');
@@ -468,7 +468,7 @@ describe('Brawl results', () => {
   it("are recorded with each player's stats (objective brawl)", () => {
     const s = createServices({ dbFile: ':memory:', log: () => {} });
     const id = s.accounts.login('Brawler').account.id;
-    const room = new Room({ code: 'BRAWL1', mode: 'brawl', map: 'split-deck' });
+    const room = new Room({ code: 'BRAWL1', mode: 'brawl', map: 'split-deck-graybox' });
     const rules = new BrawlRules('brawl');
     room.rules = rules;
     rules.setup(room);

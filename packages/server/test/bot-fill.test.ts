@@ -48,7 +48,7 @@ const count = (room: Room) => {
 
 describe('bot fill in private rooms', () => {
   it('a bot leaves for each human who joins a full room, from the joining team', async () => {
-    const a = human('Host', (core) => core.createRoom('2v2', 'kestrel', 3, 'rookie'));
+    const a = human('Host', (core) => core.createRoom('2v2', 'kestrel-graybox', 3, 'rookie'));
     await until(() => a.core.state === 'room');
     const room = server.hub.rooms.get(a.core.code)!;
     expect(room.members.size).toBe(4);
@@ -90,7 +90,7 @@ describe('bot fill in private rooms', () => {
   }, 20000);
 
   it('regression: 2 humans + 1 bot in a 2v2 is not full', async () => {
-    const a = human('Anna', (core) => core.createRoom('2v2', 'kestrel', 1, 'casual'));
+    const a = human('Anna', (core) => core.createRoom('2v2', 'kestrel-graybox', 1, 'casual'));
     await until(() => a.core.state === 'room');
     const room = server.hub.rooms.get(a.core.code)!;
     await join('Ben', a.core.code);
@@ -112,7 +112,7 @@ describe('bot fill in private rooms', () => {
   }, 20000);
 
   it('unknown bot difficulties fall back to the default (casual)', async () => {
-    const a = human('Picky', (core) => core.createRoom('1v1', 'kestrel', 1, 'godlike'));
+    const a = human('Picky', (core) => core.createRoom('1v1', 'kestrel-graybox', 1, 'godlike'));
     await until(() => a.core.state === 'room');
     const room = server.hub.rooms.get(a.core.code)!;
     const bot = [...room.members.values()].find((m) => m.bot)!;

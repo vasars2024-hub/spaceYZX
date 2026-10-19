@@ -60,13 +60,13 @@ const withBlocked = (d: LevelDef, names: string[]): LevelDef => {
 };
 
 describe('Split Deck map', () => {
-  it('is the default match map: competitive, not mirror-symmetric; Kestrel stays available', () => {
-    const m = MAPS.find((x) => x.id === 'split-deck');
+  it('keeps the redesigned Split Deck as the default: competitive, not mirror-symmetric; Kestrel stays available', () => {
+    const m = MAPS.find((x) => x.id === 'split-deck-graybox');
     expect(m?.competitive).toBe(true);
     expect(m?.symmetric).toBeFalsy();
-    expect(DEFAULT_MATCH_MAP()).toBe('split-deck');
-    expect(getMap('kestrel').id).toBe('kestrel');
-    expect(mapDef('kestrel').name).toBe('Kestrel');
+    expect(DEFAULT_MATCH_MAP()).toBe('split-deck-graybox');
+    expect(getMap('kestrel-graybox').id).toBe('kestrel-graybox');
+    expect(mapDef('kestrel-graybox').name).toBe('Kestrel');
   });
 
   it('has 8 valid spawns per team (clear capsule, floor underneath, inside its base)', () => {

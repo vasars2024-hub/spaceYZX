@@ -61,7 +61,7 @@ const connect = (name: string, onReady: (c: HeadlessBot['core']) => void) => {
 /** A room with these humans (the first creates it, no bots). */
 const room = async (mode: '1v1' | '2v2', names: string[]): Promise<Player[]> => {
   const out: { bot: HeadlessBot; got: ServerMsg[]; name: string }[] = [];
-  const host = connect(names[0], (core) => core.createRoom(mode, 'kestrel', 0));
+  const host = connect(names[0], (core) => core.createRoom(mode, 'kestrel-graybox', 0));
   await until(() => host.bot.core.state === 'room');
   out.push({ ...host, name: names[0] });
   for (const name of names.slice(1)) {

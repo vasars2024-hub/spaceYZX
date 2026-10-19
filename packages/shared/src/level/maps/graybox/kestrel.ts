@@ -10,7 +10,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const KESTREL_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Kestrel (graybox)',
+  name: 'Kestrel',
   cellM: 4,
   layers: [
     {

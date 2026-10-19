@@ -11,7 +11,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Canyon Relay (graybox)',
+  name: 'Canyon Relay',
   cellM: 4,
   layers: [
     {

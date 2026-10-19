@@ -12,7 +12,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const STORMGLASS_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Stormglass (graybox)',
+  name: 'Stormglass',
   cellM: 5,
   layers: [
     {

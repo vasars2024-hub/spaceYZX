@@ -82,7 +82,7 @@ describe('Sakura Hold map', () => {
     expect(m?.competitive).toBe(true);
     expect(m?.premier).toBe(false);
     expect(m?.arena).toBeFalsy();
-    expect(DEFAULT_MATCH_MAP()).toBe('split-deck');
+    expect(DEFAULT_MATCH_MAP()).toBe('split-deck-graybox');
     const d = def();
     expect(d.name).toBe('Sakura Hold');
     expect(d.boundsMax.x - d.boundsMin.x).toBe(80);

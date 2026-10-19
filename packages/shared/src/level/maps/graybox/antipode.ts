@@ -12,7 +12,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const ANTIPODE_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Antipode (graybox)',
+  name: 'Antipode',
   cellM: 4,
   layers: [
     {

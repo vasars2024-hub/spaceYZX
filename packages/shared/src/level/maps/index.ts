@@ -83,8 +83,8 @@ export interface MapInfo {
    */
   retired?: boolean;
   /**
-   * a graybox of a redesigned layout (level/graybox.ts): plain blocks for playtesting in practice
-   * and custom rooms; never in the Premier, casual or Brawl pools until it gets real geometry
+   * a graybox of a redesigned layout (level/graybox.ts): plain blocks built from its checked
+   * tile layout (no hand-made art yet)
    */
   graybox?: boolean;
 }
@@ -116,29 +116,52 @@ export const SURF_MODES: { mode: CourseMode; label: string; color: string }[] = 
 
 export const MAPS: MapInfo[] = [
   { id: 'training-bay', name: 'Training Bay', build: buildTrainingBay, competitive: false },
-  // the first competitive map is the default for matches (online rooms, practice)
-  { id: 'split-deck', name: 'Split Deck', build: buildSplitDeck, competitive: true },
-  { id: 'kestrel', name: 'Kestrel', build: buildKestrel, competitive: true, symmetric: true },
+  // ARCHIVED (2026-10-19): the original ten competitive maps, replaced by the redesigned layouts
+  // below. `retired` keeps them buildable (old replays, personal bests, Map Maker edits) but out of
+  // every menu, room and queue; drop the flag to bring one back.
+  { id: 'split-deck', name: 'Split Deck', build: buildSplitDeck, competitive: true, retired: true },
+  {
+    id: 'kestrel',
+    name: 'Kestrel',
+    build: buildKestrel,
+    competitive: true,
+    retired: true,
+    symmetric: true,
+  },
   // mirror-symmetric north ↔ south (orbital-ring.test.ts checks it; `symmetric` means across x)
-  { id: 'orbital-ring', name: 'Orbital Ring', build: buildOrbitalRing, competitive: true },
+  {
+    id: 'orbital-ring',
+    name: 'Orbital Ring',
+    build: buildOrbitalRing,
+    competitive: true,
+    retired: true,
+  },
   // outdoor, mirrored north ↔ south like Orbital Ring (canyon-relay.test.ts checks it)
-  { id: 'canyon-relay', name: 'Canyon Relay', build: buildCanyonRelay, competitive: true },
+  {
+    id: 'canyon-relay',
+    name: 'Canyon Relay',
+    build: buildCanyonRelay,
+    competitive: true,
+    retired: true,
+  },
   // small (1v1–3v3 Elimination / Bomb): kept out of Premier's 5v5 map pool
   {
     id: 'sakura-hold',
     name: 'Sakura Hold',
     build: buildSakuraHold,
     competitive: true,
+    retired: true,
     premier: false,
   },
   // docs/NEW-MAPS.md: Antipode is fair by a half-turn (floor deck ↔ ceiling deck; antipode.test.ts
   // checks it), the others are mirrored across x = 0
-  { id: 'antipode', name: 'Antipode', build: buildAntipode, competitive: true },
+  { id: 'antipode', name: 'Antipode', build: buildAntipode, competitive: true, retired: true },
   {
     id: 'stormglass',
     name: 'Stormglass',
     build: buildStormglass,
     competitive: true,
+    retired: true,
     symmetric: true,
   },
   {
@@ -146,6 +169,7 @@ export const MAPS: MapInfo[] = [
     name: 'Afterglow',
     build: buildAfterglow,
     competitive: true,
+    retired: true,
     symmetric: true,
   },
   {
@@ -153,6 +177,7 @@ export const MAPS: MapInfo[] = [
     name: 'The Orrery',
     build: buildOrrery,
     competitive: true,
+    retired: true,
     symmetric: true,
   },
   {
@@ -160,75 +185,79 @@ export const MAPS: MapInfo[] = [
     name: 'Leviathan',
     build: buildLeviathan,
     competitive: true,
+    retired: true,
     symmetric: true,
   },
-  // graybox of the redesigned Split Deck (2026 map rework): practice and custom rooms only
+  // the redesigned maps (2026 map rework), built as grayboxes from their checked layouts
+  // (level/graybox.ts). The first competitive map in rotation is the default for matches.
   {
     id: 'split-deck-graybox',
-    name: 'Split Deck (graybox)',
+    name: 'Split Deck',
     build: buildSplitDeckGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'kestrel-graybox',
-    name: 'Kestrel (graybox)',
+    name: 'Kestrel',
     build: buildKestrelGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'orbital-ring-graybox',
-    name: 'Orbital Ring (graybox)',
+    name: 'Orbital Ring',
     build: buildOrbitalRingGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'canyon-relay-graybox',
-    name: 'Canyon Relay (graybox)',
+    name: 'Canyon Relay',
     build: buildCanyonRelayGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'sakura-hold-graybox',
-    name: 'Sakura Hold (graybox)',
+    name: 'Sakura Hold',
     build: buildSakuraHoldGraybox,
     competitive: true,
     graybox: true,
+    // small (1v1–3v3): kept out of Premier's 5v5 map pool
+    premier: false,
   },
   {
     id: 'antipode-graybox',
-    name: 'Antipode (graybox)',
+    name: 'Antipode',
     build: buildAntipodeGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'stormglass-graybox',
-    name: 'Stormglass (graybox)',
+    name: 'Stormglass',
     build: buildStormglassGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'afterglow-graybox',
-    name: 'Afterglow (graybox)',
+    name: 'Afterglow',
     build: buildAfterglowGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'orrery-graybox',
-    name: 'The Orrery (graybox)',
+    name: 'The Orrery',
     build: buildOrreryGraybox,
     competitive: true,
     graybox: true,
   },
   {
     id: 'leviathan-graybox',
-    name: 'Leviathan (graybox)',
+    name: 'Leviathan',
     build: buildLeviathanGraybox,
     competitive: true,
     graybox: true,
@@ -236,7 +265,7 @@ export const MAPS: MapInfo[] = [
   // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
   {
     id: 'skyfount-graybox',
-    name: 'Skyfount (graybox)',
+    name: 'Skyfount',
     build: buildSkyfountGraybox,
     competitive: false,
     graybox: true,
@@ -366,4 +395,5 @@ export const mapDefForSize = (id: string, teamSize: number = FULL_TEAM_SIZE): Le
 export const DEFAULT_MAP = (): string => MAPS[0].id;
 
 /** The map matches use unless the players pick another one. */
-export const DEFAULT_MATCH_MAP = (): string => (MAPS.find((m) => m.competitive) ?? MAPS[0]).id;
+export const DEFAULT_MATCH_MAP = (): string =>
+  (MAPS.find((m) => m.competitive && !m.retired) ?? MAPS[0]).id;

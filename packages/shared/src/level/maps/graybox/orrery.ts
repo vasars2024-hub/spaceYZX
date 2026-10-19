@@ -11,7 +11,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const ORRERY_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'The Orrery (graybox)',
+  name: 'The Orrery',
   cellM: 4,
   layers: [
     {

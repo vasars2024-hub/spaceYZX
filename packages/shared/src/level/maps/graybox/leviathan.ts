@@ -12,7 +12,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const LEVIATHAN_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Leviathan (graybox)',
+  name: 'Leviathan',
   cellM: 4,
   layers: [
     {

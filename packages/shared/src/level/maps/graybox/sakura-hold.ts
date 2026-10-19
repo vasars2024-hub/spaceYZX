@@ -11,7 +11,7 @@ import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
 export const SAKURA_HOLD_GRAYBOX_LAYOUT: GrayboxLayout = {
-  name: 'Sakura Hold (graybox)',
+  name: 'Sakura Hold',
   cellM: 4,
   layers: [
     {

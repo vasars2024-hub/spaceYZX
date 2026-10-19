@@ -32,9 +32,12 @@ import { keyLabel } from '../ui/settings-screen';
 import { TEAM_COLOR, towerRole } from './objectives';
 import { fogSightRange } from './world-markers';
 import {
+  CALLOUT_FONT,
+  calloutsFor,
   enemyShown,
   goalFor,
   heightOver,
+  minimapPoint,
   siteCenter,
   sliceMap,
   type Goal,
@@ -306,8 +309,7 @@ export class Minimap implements ClientFeature {
   }
 
   private toScreen(v: View, p: Vec3): [number, number] {
-    const d = sub(p, v.me);
-    return [v.cx + dot(d, v.right) * v.k, v.cy - dot(d, v.fwd) * v.k];
+    return minimapPoint(v, p);
   }
 
   private draw(
@@ -432,6 +434,29 @@ export class Minimap implements ClientFeature {
       g.lineTo(x1, y1);
       g.stroke();
       g.setLineDash([]);
+    }
+
+    // ---- callouts: screen-space text stays upright as the map turns ----
+    if (def.callouts?.length) {
+      g.save();
+      g.font = CALLOUT_FONT;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineJoin = 'round';
+      g.lineWidth = 3;
+      g.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      g.fillStyle = '#ffffff';
+      const labels = calloutsFor(def, {
+        ...v,
+        width: w,
+        height: hgt,
+        measureText: (text) => g.measureText(text).width,
+      });
+      for (const label of labels) {
+        g.strokeText(label.text, label.x, label.y);
+        g.fillText(label.text, label.x, label.y);
+      }
+      g.restore();
     }
 
     // ---- objectives ----

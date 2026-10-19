@@ -5,6 +5,16 @@ import { buildTrainingBay } from './training-bay';
 import { buildKestrel } from './kestrel';
 import { buildSplitDeck } from './split-deck';
 import { buildSplitDeckGraybox } from './split-deck-graybox';
+import { buildKestrelGraybox } from './graybox/kestrel';
+import { buildOrbitalRingGraybox } from './graybox/orbital-ring';
+import { buildCanyonRelayGraybox } from './graybox/canyon-relay';
+import { buildSakuraHoldGraybox } from './graybox/sakura-hold';
+import { buildAntipodeGraybox } from './graybox/antipode';
+import { buildStormglassGraybox } from './graybox/stormglass';
+import { buildAfterglowGraybox } from './graybox/afterglow';
+import { buildOrreryGraybox } from './graybox/orrery';
+import { buildLeviathanGraybox } from './graybox/leviathan';
+import { buildSkyfountGraybox } from './graybox/skyfount';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -158,6 +168,77 @@ export const MAPS: MapInfo[] = [
     name: 'Split Deck (graybox)',
     build: buildSplitDeckGraybox,
     competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'kestrel-graybox',
+    name: 'Kestrel (graybox)',
+    build: buildKestrelGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'orbital-ring-graybox',
+    name: 'Orbital Ring (graybox)',
+    build: buildOrbitalRingGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'canyon-relay-graybox',
+    name: 'Canyon Relay (graybox)',
+    build: buildCanyonRelayGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'sakura-hold-graybox',
+    name: 'Sakura Hold (graybox)',
+    build: buildSakuraHoldGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'antipode-graybox',
+    name: 'Antipode (graybox)',
+    build: buildAntipodeGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'stormglass-graybox',
+    name: 'Stormglass (graybox)',
+    build: buildStormglassGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'afterglow-graybox',
+    name: 'Afterglow (graybox)',
+    build: buildAfterglowGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'orrery-graybox',
+    name: 'The Orrery (graybox)',
+    build: buildOrreryGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  {
+    id: 'leviathan-graybox',
+    name: 'Leviathan (graybox)',
+    build: buildLeviathanGraybox,
+    competitive: true,
+    graybox: true,
+  },
+  // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
+  {
+    id: 'skyfount-graybox',
+    name: 'Skyfount (graybox)',
+    build: buildSkyfountGraybox,
+    competitive: false,
     graybox: true,
   },
   // the big Brawl map (TDM / FFA / Deathmatch practice)

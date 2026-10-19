@@ -302,6 +302,88 @@ export const sliceMap = (level: Level, me: Vec3, sign: 1 | -1, radius: number): 
   return out;
 };
 
+/** Screen frame shared by map geometry, markers and upright callout labels. */
+export interface MinimapProjection {
+  cx: number;
+  cy: number;
+  /** CSS pixels per metre */
+  k: number;
+  /** View centre at the slice's feet height, just like sliceMap's `me`. */
+  me: Vec3;
+  right: Vec3;
+  fwd: Vec3;
+}
+
+export const minimapPoint = (v: MinimapProjection, p: Vec3): [number, number] => {
+  const d = sub(p, v.me);
+  return [v.cx + dot(d, v.right) * v.k, v.cy - dot(d, v.fwd) * v.k];
+};
+
+export const CALLOUT_FONT = '600 10px Segoe UI, sans-serif';
+
+export interface CalloutLayoutInput extends MinimapProjection {
+  /** Player feet (distinct from the view centre on the big map). */
+  you: Vec3;
+  width: number;
+  height: number;
+  /** Width in CSS pixels using CALLOUT_FONT; injected so layout needs no canvas/DOM. */
+  measureText: (text: string) => number;
+}
+
+export interface CalloutLabel {
+  text: string;
+  /** Screen-space centre; text is always drawn upright. */
+  x: number;
+  y: number;
+  /** Collision box including outline and spacing, in CSS pixels. */
+  width: number;
+  height: number;
+}
+
+/**
+ * Labels near the current slice (within 4 m of its feet height, on floors or ceiling decks).
+ * Keep whole labels inside the frame; greedily keep the nearest player-relative anchor when
+ * screen-space boxes overlap. Equal distances use authored order for deterministic ties.
+ */
+export const calloutsFor = (
+  def: Pick<LevelDef, 'callouts'>,
+  v: CalloutLayoutInput,
+): CalloutLabel[] => {
+  const candidates = (def.callouts ?? [])
+    .map((callout, index) => ({ callout, index }))
+    .filter(({ callout }) => Math.abs(callout.pos.y - v.me.y) <= 4)
+    .map(({ callout, index }) => {
+      const text = v.measureText(callout.name) > 70 && callout.short ? callout.short : callout.name;
+      const [x, y] = minimapPoint(v, callout.pos);
+      return {
+        index,
+        distance: len(sub(callout.pos, v.you)),
+        label: { text, x, y, width: v.measureText(text) + 6, height: 16 },
+      };
+    })
+    .filter(
+      ({ label: l }) =>
+        l.x - l.width / 2 >= 4 &&
+        l.x + l.width / 2 <= v.width - 4 &&
+        l.y - l.height / 2 >= 4 &&
+        l.y + l.height / 2 <= v.height - 4,
+    )
+    .sort((a, b) => a.distance - b.distance || a.index - b.index);
+  const kept: CalloutLabel[] = [];
+  for (const { label } of candidates) {
+    if (
+      kept.some(
+        (other) =>
+          Math.abs(label.x - other.x) < (label.width + other.width) / 2 &&
+          Math.abs(label.y - other.y) < (label.height + other.height) / 2,
+      )
+    )
+      continue;
+    kept.push(label);
+  }
+  return kept;
+};
+
 /** Height of `p` over your feet along your up (▲ above / ▼ below on the map when big). */
 export const heightOver = (p: Vec3, me: Vec3, up: Vec3): number => dot(sub(p, me), up);
 

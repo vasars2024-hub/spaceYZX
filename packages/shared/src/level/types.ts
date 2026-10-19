@@ -296,6 +296,12 @@ export interface LevelDef {
   controllerHomes?: Vec3[]; // per team: where a dropped Controller returns
   waypoints?: WaypointDef[];
   areas?: { name: string; pos: Vec3; yawDeg: number }[]; // dev teleports
+  /**
+   * Callouts: the named spots of the map ("A Long", "Mid Doors"), drawn as labels on the minimap
+   * and the map overview. `pos` is the label's anchor on the floor (feet height); `short` is the
+   * minimap's shorter text when the full name doesn't fit.
+   */
+  callouts?: { name: string; short?: string; pos: Vec3 }[];
   fog?: { color: number; near: number; far: number };
   /** Tint each half of a mirrored map (x < 0 / x > 0) toward its team color (0..1 amount). */
   sideTint?: { neg: number; pos: number; amount: number };
@@ -319,6 +325,11 @@ export interface LevelDef {
   killVolumes?: KillVolumeDef[];
   /** Volumes that slow players down (a moat): sim/movement.ts. */
   slowZones?: SlowZoneDef[];
+  /**
+   * The boosted sky-duel jetpack (movement.ts sky* multipliers) everywhere on the map, not only
+   * up at the sky arena: sky-island maps where every crossing is a jetpack hop (Skyfount).
+   */
+  skyJetpack?: boolean;
   /** Sky duel overtime arena high above the ship (competitive maps; level/sky-arena.ts). */
   skyArena?: SkyArenaDef;
   /** Arena 1v1 maps: the duel pits, top pit first (rules/arena.ts). */

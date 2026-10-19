@@ -30,6 +30,9 @@ import type {
 export type GrayboxKind =
   'cyan' | 'orange' | 'site' | 'room' | 'ramp' | 'gravity' | 'pocket' | 'solid' | 'void';
 
+/** Which way a surface is walked: on top (up), on its underside (down) or on a side face. */
+export type GrayboxOrientation = 'up' | 'down' | 'side';
+
 export interface GrayboxArea {
   /** callout name */
   n: string;
@@ -40,18 +43,64 @@ export interface GrayboxArea {
   r?: [number, number];
   /** ramps: the way the floor rises (n = toward row 0); absent = follow the path between neighbours */
   dir?: 'n' | 's' | 'e' | 'w';
+  /**
+   * how the surface is walked (default: its layer's `o`, else up). 'down': upside down on the
+   * underside of a slab at `h` (gravity points up below it); 'side': on a side face of an island
+   * (gravity points sideways into it; sky maps)
+   */
+  o?: GrayboxOrientation;
+  /**
+   * gravity areas: how the graybox builds them. 'zeroG' (default): a zero-G volume over the
+   * area's cells from its lowest neighbour's floor to its highest neighbour's floor (+ head
+   * room), so any heights around it join; 'stairs': stand-in stairs between its neighbours
+   */
+  g?: 'zeroG' | 'stairs';
+  /** short label for the minimap / overview (default: `n`) */
+  s?: string;
+}
+
+/**
+ * A link between two areas that are not simply side by side. Physical build:
+ *   drop   — adjacent ledge: nothing extra; otherwise a launch pad (a drop chute) from → to
+ *   pad    — a launch pad from → to (ballistic arc)
+ *   rail   — a zip-rail from → to at hanging height
+ *   portal / tunnel — a portal pair (one way: only from → to)
+ *   jump / jet — a gap you jump or jetpack across: nothing extra (the layout leaves the gap)
+ * Bots never ride pads, rails or portals (bots/brain.ts): their routes must not need them.
+ */
+export type GrayboxLinkKind = 'drop' | 'pad' | 'rail' | 'portal' | 'tunnel' | 'jump' | 'jet';
+export type GrayboxLink = [from: string, to: string, kind: GrayboxLinkKind, oneWay?: boolean];
+
+export interface GrayboxLayer {
+  name: string;
+  /** the layer's base height (areas without `h` stand at it) */
+  y: number;
+  rows: string[];
+  /**
+   * an overlay layer (catwalks, gantries, a tunnel under the terrain): '.' there means nothing,
+   * not wall; its floors are slabs. In other layers '.' is solid wall within the layer's band.
+   */
+  overlay?: boolean;
+  /** default orientation of its areas ('down': a ceiling deck walked upside down) */
+  o?: GrayboxOrientation;
 }
 
 export interface GrayboxLayout {
   name: string;
   /** metres per cell */
   cellM: number;
-  layers: { name: string; y: number; rows: string[] }[];
+  /** lowest first */
+  layers: GrayboxLayer[];
   legend: Record<string, GrayboxArea>;
-  /** one-way launch pads: [from area, to area] (defender drops, attacker pads) */
-  pads?: [string, string][];
+  links?: GrayboxLink[];
   /** areas closed by force fields for smaller teams: team size → closed area characters */
   sizes?: Record<number, string[]>;
+  /** open sky around everything (sky maps): no outer walls or ceiling; falls into the void kill */
+  sky?: boolean;
+  /** the boosted sky-duel jetpack everywhere on the map (LevelDef.skyJetpack) */
+  skyJetpack?: boolean;
+  /** automatic cover (level/graybox-cover.ts): default on */
+  cover?: boolean;
 }
 
 const WALL = '.';
@@ -366,7 +415,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
 
   // ---- launch pads (one-way links) ---------------------------------------------------------
   const launchPads: LaunchPadDef[] = [];
-  for (const [from, to] of lay.pads ?? []) {
+  for (const [from, to] of (lay.links ?? []).filter((k) => k[2] === 'pad').map((k) => [k[0], k[1]])) {
     const src = regionOf(from);
     const dst = regionOf(to);
     if (!src.length || !dst.length)

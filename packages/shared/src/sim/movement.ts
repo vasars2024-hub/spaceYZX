@@ -59,7 +59,7 @@ export const jetpackTuning = (m: MovementConfig, def: LevelDef, pos: Vec3): Jetp
       maxRise: m.jetpackMaxRise,
       dirSpeed: m.jetpackDirSpeed,
     };
-  const sky = inSkyZone(def, pos);
+  const sky = !!def.skyJetpack || inSkyZone(def, pos);
   const fuel = m.jetpackFuelSec * (sky ? m.skyJetpackFuelMul : 1);
   const rec = sky ? m.skyJetpackRechargeMul : 1;
   return {

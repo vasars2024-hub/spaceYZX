@@ -126,11 +126,29 @@ const TEAM = ['#19e3ff', '#ff8a1f'];
 /** Exposed column tops, including thin stair treads; subtract areas without standing room. */
 const columnFloors = (def: LevelDef): LevelDef['boxes'] => {
   const solid = def.boxes.filter((b) => !b.noCollide);
+  // (boxes bucketed on an 8 m grid: a box is only compared with the boxes near it, not with
+  // every box of the map — that made the menus freeze on big graybox maps)
+  const G = 8;
+  const buckets = new Map<string, typeof solid>();
+  const keysOf = (b: (typeof solid)[number]) => {
+    const out: string[] = [];
+    for (let i = Math.floor((b.c.x - b.h.x) / G); i <= Math.floor((b.c.x + b.h.x) / G); i++)
+      for (let k = Math.floor((b.c.z - b.h.z) / G); k <= Math.floor((b.c.z + b.h.z) / G); k++)
+        out.push(`${i},${k}`);
+    return out;
+  };
+  for (const b of solid)
+    for (const k of keysOf(b)) {
+      const list = buckets.get(k);
+      if (list) list.push(b);
+      else buckets.set(k, [b]);
+    }
   return solid.flatMap((b) => {
     if (b.noRender || b.mat === 'hull' || b.mat === 'skyglass' || b.mat === 'forcefield') return [];
     const top = b.c.y + b.h.y;
     let faces = [{ x0: b.c.x - b.h.x, x1: b.c.x + b.h.x, z0: b.c.z - b.h.z, z1: b.c.z + b.h.z }];
-    for (const above of solid) {
+    const near = new Set(keysOf(b).flatMap((k) => buckets.get(k) ?? []));
+    for (const above of near) {
       if (above === b || above.c.y + above.h.y <= top + 0.01 || above.c.y - above.h.y >= top + 2)
         continue;
       const x0 = above.c.x - above.h.x;
@@ -166,7 +184,19 @@ const columnFloors = (def: LevelDef): LevelDef['boxes'] => {
  * upper decks lighter), bomb sites, Towers and spawns. Large previews include callouts;
  * menus can explicitly enable/disable them with the fourth argument. Returns SVG markup.
  */
+const thumbCache = new WeakMap<LevelDef, Map<string, string>>();
+
 export const mapThumbnail = (def: LevelDef, w = 220, h = 140, labels = w >= 360): string => {
+  // (the menus redraw their map cards on every click: draw each picture once)
+  let byLevel = thumbCache.get(def);
+  if (!byLevel) thumbCache.set(def, (byLevel = new Map()));
+  const k = `${w}x${h}${labels ? 'L' : ''}`;
+  let svg = byLevel.get(k);
+  if (svg === undefined) byLevel.set(k, (svg = drawThumbnail(def, w, h, labels)));
+  return svg;
+};
+
+const drawThumbnail = (def: LevelDef, w: number, h: number, labels: boolean): string => {
   // race and surf courses float high in the sky, with nothing at ship-deck height: draw the route
   if (def.race?.line.length) return courseThumbnail(def, w, h);
   // walkable slabs: thin boxes, inside the ship (the sky arena etc. far above is left out)

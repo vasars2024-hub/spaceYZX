@@ -326,6 +326,8 @@ export interface CalloutLayoutInput extends MinimapProjection {
   you: Vec3;
   width: number;
   height: number;
+  /** Whole-map labels: all heights, full names where space allows, short names as fallback. */
+  overview?: boolean;
   /** Width in CSS pixels using CALLOUT_FONT; injected so layout needs no canvas/DOM. */
   measureText: (text: string) => number;
 }
@@ -341,7 +343,7 @@ export interface CalloutLabel {
 }
 
 /**
- * Labels near the current slice (within 4 m of its feet height, on floors or ceiling decks).
+ * Labels near the current slice (within 4 m of its feet height), or all heights on an overview.
  * Keep whole labels inside the frame; greedily keep the nearest player-relative anchor when
  * screen-space boxes overlap. Equal distances use authored order for deterministic ties.
  */
@@ -351,35 +353,38 @@ export const calloutsFor = (
 ): CalloutLabel[] => {
   const candidates = (def.callouts ?? [])
     .map((callout, index) => ({ callout, index }))
-    .filter(({ callout }) => Math.abs(callout.pos.y - v.me.y) <= 4)
+    .filter(({ callout }) => v.overview || Math.abs(callout.pos.y - v.me.y) <= 4)
     .map(({ callout, index }) => {
-      const text = v.measureText(callout.name) > 70 && callout.short ? callout.short : callout.name;
+      const maxWidth = v.overview ? v.width - 14 : 70;
+      const text =
+        v.measureText(callout.name) > maxWidth && callout.short ? callout.short : callout.name;
       const [x, y] = minimapPoint(v, callout.pos);
       return {
         index,
         distance: len(sub(callout.pos, v.you)),
+        short: v.overview ? callout.short : undefined,
         label: { text, x, y, width: v.measureText(text) + 6, height: 16 },
       };
     })
-    .filter(
-      ({ label: l }) =>
+    .sort((a, b) => a.distance - b.distance || a.index - b.index);
+  const kept: CalloutLabel[] = [];
+  for (const { label, short } of candidates) {
+    const options = [label];
+    if (short && short !== label.text)
+      options.push({ ...label, text: short, width: v.measureText(short) + 6 });
+    const fits = options.find(
+      (l) =>
         l.x - l.width / 2 >= 4 &&
         l.x + l.width / 2 <= v.width - 4 &&
         l.y - l.height / 2 >= 4 &&
-        l.y + l.height / 2 <= v.height - 4,
-    )
-    .sort((a, b) => a.distance - b.distance || a.index - b.index);
-  const kept: CalloutLabel[] = [];
-  for (const { label } of candidates) {
-    if (
-      kept.some(
-        (other) =>
-          Math.abs(label.x - other.x) < (label.width + other.width) / 2 &&
-          Math.abs(label.y - other.y) < (label.height + other.height) / 2,
-      )
-    )
-      continue;
-    kept.push(label);
+        l.y + l.height / 2 <= v.height - 4 &&
+        !kept.some(
+          (other) =>
+            Math.abs(l.x - other.x) < (l.width + other.width) / 2 &&
+            Math.abs(l.y - other.y) < (l.height + other.height) / 2,
+        ),
+    );
+    if (fits) kept.push(fits);
   }
   return kept;
 };

@@ -18,6 +18,33 @@ const view = (more: Partial<CalloutLayoutInput> = {}): CalloutLayoutInput => ({
 type Callouts = NonNullable<LevelDef['callouts']>;
 
 describe('minimap callouts', () => {
+  it('uses the whole map height and longer full names on the overview', () => {
+    const callouts = [{ name: 'Upper Observation', short: 'Upper', pos: v3(0, 20, 0) }];
+    expect(calloutsFor({ callouts }, view())).toEqual([]);
+    expect(calloutsFor({ callouts }, view({ overview: true })).map((l) => l.text)).toEqual([
+      'Upper Observation',
+    ]);
+    const atSlice = { callouts: [{ ...callouts[0], pos: v3(0, 0, 0) }] };
+    expect(calloutsFor(atSlice, view()).map((l) => l.text)).toEqual(['Upper']);
+  });
+
+  it('tries the short name before culling overview labels at an edge or beside another name', () => {
+    const callouts = [
+      { name: 'Mid', pos: v3(0, 0, 0) },
+      { name: 'Observation Deck', short: 'Obs', pos: v3(20, 0, 0) },
+      { name: 'North Observation', short: 'N', pos: v3(-57, 0, -30) },
+      { name: 'Hidden', pos: v3(1, 0, 0) },
+    ];
+    const labels = calloutsFor({ callouts }, view({ overview: true }));
+    expect(labels.map((l) => l.text)).toEqual(['Mid', 'Obs', 'N']);
+    for (let i = 0; i < labels.length; i++)
+      for (const other of labels.slice(i + 1))
+        expect(
+          Math.abs(labels[i].x - other.x) >= (labels[i].width + other.width) / 2 ||
+            Math.abs(labels[i].y - other.y) >= (labels[i].height + other.height) / 2,
+        ).toBe(true);
+  });
+
   it('has no labels or text measurement when callouts are absent or empty', () => {
     const v = view({
       measureText: () => {

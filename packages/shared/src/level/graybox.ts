@@ -31,7 +31,7 @@ import type {
   TowerDef,
   WaypointDef,
 } from './types';
-import { grayboxCover } from './graybox-cover';
+import { coverCutsLink, grayboxCover } from './graybox-cover';
 
 export type GrayboxKind =
   'cyan' | 'orange' | 'site' | 'room' | 'ramp' | 'gravity' | 'pocket' | 'solid' | 'void';
@@ -118,6 +118,7 @@ const WALL_ABOVE = 10; // walls rise this far above the highest floor
 const G = 20; // MOVEMENT gravity (m/s²), for the launch pad arcs
 const HANG = 1.82; // a ceiling spawn's feet sit this far under the ceiling (see antipode.ts)
 const RAIL_Y = 1.9; // a zip-rail hangs this far over the floor (hand reach: railHang + grab)
+const RAIL_H = 3; // glass along deadly drops: higher than any jump or climb (climbMaxHeight 2.6)
 const ZERO_G_STEP = 6; // zero-G columns get a waypoint every this many metres up
 
 interface Cell {
@@ -136,6 +137,8 @@ interface Cell {
   /** open space kept above an up floor / below a down floor (size walls fill it) */
   airTop?: number;
   airBottom?: number;
+  /** stairs standing on the column below (their steps start at its top) */
+  onColumn?: boolean;
 }
 
 interface Seg {
@@ -168,9 +171,16 @@ const span = (a: GrayboxArea, layerY: number): [number, number] =>
 const isZeroG = (a: GrayboxArea) => a.k === 'gravity' && a.g !== 'stairs';
 const isSloped = (a: GrayboxArea) =>
   a.k === 'ramp' || (a.k === 'gravity' && a.g === 'stairs') || (!!a.r && a.k !== 'gravity');
-/** How much higher the step just past a stair cell's centre stands than the centre. */
-const stepUpOf = (p: Cell) =>
-  p.rise ? Math.abs(p.rise) / Math.max(1, Math.ceil(Math.abs(p.rise) / STEP)) : 0;
+/**
+ * How many steps a stair cell is cut into: no step higher than STEP, and an odd count so the
+ * cell's centre (where its waypoint stands) is the middle of a step, never a step's edge.
+ */
+const stepsOf = (rise: number) => {
+  const n = Math.max(1, Math.ceil(Math.abs(rise) / STEP));
+  return n % 2 ? n : n + 1;
+};
+/** How much higher the middle step of a stair cell stands than the cell's centre height. */
+const stepUpOf = (p: Cell) => (p.rise ? Math.abs(p.rise) / (2 * stepsOf(p.rise)) : 0);
 
 /** Greedy rectangles covering a set of "x,y" cells (runs along rows, stacked while equal). */
 const rectangles = (set: Set<string>, W: number, H: number) => {
@@ -322,9 +332,11 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
       const hs = ns.map(standY);
       if (a.r) hs.push(...a.r);
       if (!hs.length) hs.push(a.h ?? 0);
-      const lo = Math.min(...hs);
+      let lo = Math.min(...hs);
       const hi = Math.max(...hs);
       const ceiling = ns.some((q) => q.o === 'down' && Math.abs(q.h - hi) < 0.01);
+      // (only a ceiling deck around it: the volume hangs under the ceiling)
+      if (ceiling && hi - lo < CLEAR) lo = hi - CLEAR;
       for (const p of region) {
         p.h = lo;
         p.zg = { lo, hi, top: ceiling ? hi : hi + CLEAR };
@@ -376,26 +388,48 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     const [fx, fy] = centroid(src);
     return { src, a: nearestTo(src, tx, ty)[0], bs: nearestTo(dst, fx, fy) };
   };
+  // a launch pad: a plate in the corner of the source cell nearest the target, against its walls
+  // and off the walking line through the cell's middle (bots walk through cell centres and
+  // never ride pads), throwing you in an arc onto the target
+  const walkable = (x: number, y: number) => (cellsAt.get(`${x},${y}`) ?? []).length > 0;
   const pad = (from: string, to: string) => {
-    const { a, bs } = ends(from, to);
+    const { src, bs } = ends(from, to);
     const b = bs[0];
-    if (a.o !== 'up') return; // (pads only on upright floors)
-    const dx = cx(b.x) - cx(a.x);
-    const dz = cz(b.y) - cz(a.y);
+    const [tx, ty] = [b.x, b.y];
+    const a = nearestTo(
+      src.filter((p) => !p.rise && p.o === 'up'),
+      tx,
+      ty,
+    )[0];
+    if (!a) return; // (pads only on flat upright floors)
+    let best: [number, number] = [1, 1];
+    let walls = -1;
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        const n = [
+          walkable(a.x + sx, a.y),
+          walkable(a.x, a.y + sz),
+          walkable(a.x + sx, a.y + sz),
+        ].filter((w) => !w).length;
+        if (n > walls) {
+          walls = n;
+          best = [sx, sz];
+        }
+      }
+    const [sx, sz] = best;
+    const px = cx(a.x) + sx * (s / 4 + 0.3);
+    const pz = cz(a.y) + sz * (s / 4 + 0.3);
+    const half = s / 4 - 0.4;
+    const dx = cx(b.x) - px;
+    const dz = cz(b.y) - pz;
     const dh = standY(b) - standY(a);
-    // across a zero-G volume nothing pulls you down: aim straight at the landing
-    let crossesZeroG = false;
-    for (let t = 0.1; t < 1; t += 0.1) {
-      const k = `${Math.floor(a.x + 0.5 + (b.x - a.x) * t)},${Math.floor(a.y + 0.5 + (b.y - a.y) * t)}`;
-      if ((cellsAt.get(k) ?? []).some((q) => q.zg)) crossesZeroG = true;
-    }
     const T = Math.min(1.6, Math.max(0.7, Math.hypot(dx, dz) / 14));
     launchPads.push({
-      min: v3(a.x * s + 1, standY(a), a.y * s + 1),
-      max: v3((a.x + 1) * s - 1, standY(a) + 0.6, (a.y + 1) * s - 1),
-      vel: crossesZeroG
-        ? v3(dx / T, (dh + 1) / T, dz / T)
-        : v3(dx / T, (dh + 0.5 * G * T * T) / T, dz / T),
+      min: v3(px - half, standY(a), pz - half),
+      max: v3(px + half, standY(a) + 0.6, pz + half),
+      vel: v3(dx / T, (dh + 0.5 * G * T * T) / T, dz / T),
+      // (fires when the body touches the plate, not only when its centre is inside)
+      touch: true,
     });
   };
   for (const [from, to, kind, oneWay] of lay.links ?? []) {
@@ -466,6 +500,10 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
   for (let j = 1; j < bands.length; j++) bands[j].lo = bands[j - 1].hi;
   const stairs: Cell[] = [];
   const segsAt = new Map<string, Seg[]>();
+  // (a void cell over a lower floor: the drop is deadly, so it gets a roof with a kill volume on it)
+  const voidRoofs: { x: number; y: number; top: number }[] = [];
+  const voidLayerAt = (x: number, y: number) =>
+    lay.layers.findIndex((L, l) => !L.overlay && at(l, x, y) === VOID);
   if (!sky)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
@@ -500,6 +538,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
           p.airTop = Math.min(nextY, surf(p) + 4);
           if (p.rise) {
             stairs.push(p);
+            p.onColumn = !below;
             if (!below) floors.push({ y0: bottom, y1: p.h - rise / 2, mat: 'floor', color });
             return;
           }
@@ -515,8 +554,15 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
                     [s0, a0],
                     [a1, s1],
                   ] as [number, number][]
-                ).filter(([u, v]) => v - u > 0.05),
+                ).filter(([u, v]) => v - u > 0.3),
           );
+        const voidL = voidLayerAt(x, y);
+        const under = voidL < 0 ? [] : here.filter((p) => p.l < voidL && p.o === 'up');
+        if (under.length) {
+          const roof = Math.max(...under.map((p) => p.airTop ?? surf(p) + 4));
+          solid.push([roof, roof + SLAB]);
+          voidRoofs.push({ x, y, top: roof + SLAB });
+        }
         const segs: Seg[] = [
           ...solid.map(([y0, y1]): Seg => ({ y0, y1, mat: 'hull' })),
           ...floors,
@@ -526,7 +572,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
           const last = merged[merged.length - 1];
           if (last && g.y0 <= last.y1 + 0.01) {
             // (a merged block looks like whatever is on top of it)
-            if (g.y1 >= last.y1) {
+            if (g.y1 > last.y1 + 0.01 || (g.y1 >= last.y1 - 0.01 && g.mat !== 'hull')) {
               last.mat = g.mat;
               last.color = g.color;
             }
@@ -558,7 +604,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
   // stairs: sub-steps no higher than STEP; the last one meets the higher neighbour flush
   for (const p of stairs) {
     const rise = p.rise!;
-    const steps = Math.max(1, Math.ceil(Math.abs(rise) / STEP));
+    const steps = stepsOf(rise);
     const x0 = p.x * s;
     const z0 = p.y * s;
     const base = p.h - Math.abs(rise) / 2;
@@ -566,7 +612,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
       const f0 = i / steps;
       const f1 = (i + 1) / steps;
       const hTop = p.h - rise / 2 + rise * (rise > 0 ? f1 : f0);
-      const yBot = Math.min(base, hTop - SLAB);
+      const yBot = p.onColumn ? base : hTop - SLAB;
       const [ax0, ax1, az0, az1] =
         p.axis === 'x'
           ? [x0 + f0 * s, x0 + f1 * s, z0, z0 + s]
@@ -592,7 +638,7 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
           g: v3(0, 0, 0),
           pri: 2,
         });
-      else if (p.o === 'down') {
+      else if (!p.zg && p.o === 'down') {
         const band = bands.find((b) => b.i === p.l);
         const lo = band && band.lo > bottom ? band.lo : p.h - 12;
         zoneCells.push({ c: p.c, x: p.x, y: p.y, y0: lo, y1: p.h + 0.5, g: v3(0, 1, 0), pri: 1 });
@@ -671,6 +717,39 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
         priority: z.pri,
       });
     }
+  // guard glass: a see-through wall (RAIL_H) along every edge where a floor meets a deadly drop or
+  // the map's edge, so nobody (bots above all) falls off by accident. Areas with a jump link keep
+  // their edges open (the jump across is the point).
+  if (!sky) {
+    const jumpers = new Set(
+      (lay.links ?? []).filter((k) => k[2] === 'jump').flatMap((k) => [k[0], k[1]]),
+    );
+    const open = (x: number, y: number, p: Cell) => {
+      if (x < 0 || y < 0 || x >= W || y >= H) return true;
+      const there = cellsAt.get(`${x},${y}`) ?? [];
+      if (!there.length) return !bands.some((b) => isSolid(at(b.i, x, y)));
+      // (a void over a lower floor: deadly from up here)
+      const vl = voidLayerAt(x, y);
+      return vl >= 0 && p.l >= vl && there.every((q) => q.l < vl);
+    };
+    for (const p of cells) {
+      if (p.o !== 'up' || p.zg || jumpers.has(p.c)) continue;
+      const rise = Math.abs(p.rise ?? 0);
+      const y0 = p.h - rise / 2;
+      const y1 = p.h + rise / 2 + RAIL_H;
+      for (const [dx, dy] of DIRS) {
+        if (!open(p.x + dx, p.y + dy, p)) continue;
+        // (just outside the cell, in the drop: it touches the floor's side, never cuts into it)
+        const ex = dx > 0 ? (p.x + 1) * s : dx < 0 ? p.x * s : cx(p.x);
+        const ez = dy > 0 ? (p.y + 1) * s : dy < 0 ? p.y * s : cz(p.y);
+        boxes.push({
+          c: v3(ex + dx * 0.1, (y0 + y1) / 2, ez + dy * 0.1),
+          h: v3(dx ? 0.1 : s / 2, (y1 - y0) / 2, dy ? 0.1 : s / 2),
+          mat: 'skyglass',
+        });
+      }
+    }
+  }
   // deadly drops: void cells fall into a kill volume (sky maps: the whole sky below)
   const killVolumes: KillVolumeDef[] = [];
   if (sky)
@@ -689,6 +768,11 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
             min: v3(x * s, bottom - 20, y * s),
             max: v3((x + 1) * s, bottom + 1, (y + 1) * s),
           });
+  for (const r of voidRoofs)
+    killVolumes.push({
+      min: v3(r.x * s, r.top, r.y * s),
+      max: v3((r.x + 1) * s, r.top + 1, (r.y + 1) * s),
+    });
   // ceiling: invisible, keeps jetpacks inside the walls
   if (!sky)
     boxes.push({
@@ -699,6 +783,12 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     });
 
   // ---- spawns, towers, sites, teleports, callouts ------------------------------------------
+  // Towers fit their room (6 m where there is room for it)
+  const towerH = (p: Cell) => {
+    const room =
+      p.o === 'down' ? p.h - (p.airBottom ?? p.h - 6) : (p.airTop ?? standY(p) + 6) - standY(p);
+    return Math.max(2.5, Math.min(6, room - 0.3));
+  };
   const mid = [(W - 1) / 2, (H - 1) / 2];
   const spawns: SpawnDef[] = [];
   const towers: TowerDef[] = [];
@@ -733,8 +823,14 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     const t = far[0];
     towers.push(
       t.o === 'down'
-        ? { team, pos: v3(cx(t.x), t.h - 7, cz(t.y)), radius: 1.5, height: 6, hanging: true }
-        : { team, pos: v3(cx(t.x), standY(t), cz(t.y)), radius: 1.5, height: 6 },
+        ? {
+            team,
+            pos: v3(cx(t.x), t.h - towerH(t) - 1, cz(t.y)),
+            radius: 1.5,
+            height: towerH(t),
+            hanging: true,
+          }
+        : { team, pos: v3(cx(t.x), standY(t), cz(t.y)), radius: 1.5, height: towerH(t) },
     );
     const h0 = near[0];
     homes.push(v3(cx(h0.x), h0.o === 'down' ? h0.h - 1 : standY(h0), cz(h0.y)));
@@ -774,6 +870,23 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     pos: v3(cx(p.x), p.zg ? p.zg.lo : p.h, cz(p.y)),
   }));
 
+  // cover first: the waypoints must not link through it
+  const cover =
+    lay.cover === false
+      ? []
+      : grayboxCover(
+          lay,
+          cells.map((p) => ({
+            x: p.x,
+            y: p.y,
+            l: p.l,
+            c: p.c,
+            h: standY(p),
+            sloped: !!p.rise || !!p.zg,
+            o: p.o,
+          })),
+        );
+
   // ---- waypoints: every floor cell (zero-G: a column of them), linked where a bot can go ---
   const waypoints: WaypointDef[] = [];
   const wpOf = new Map<Cell, number>();
@@ -797,7 +910,13 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     const col = new Map<number, number>();
     const ys = [...hs].filter((y) => y >= p.zg!.lo + 0.9 && y <= yTop + 0.01).sort((a, b) => a - b);
     for (const y of ys) col.set(y, addWp(v3(cx(p.x), y, cz(p.y)), `${p.c}:${p.x},${p.y}@${y}`));
+    // (not through another floor laid across the column)
+    const between = (a: number, b: number) =>
+      (cellsAt.get(`${p.x},${p.y}`) ?? []).some(
+        (q) => !q.zg && standY(q) > a - 1 + 0.05 && standY(q) < b - 1 + 1.9,
+      );
     for (let i = 1; i < ys.length; i++) {
+      if (between(ys[i - 1], ys[i])) continue;
       link(col.get(ys[i - 1])!, col.get(ys[i])!);
       link(col.get(ys[i])!, col.get(ys[i - 1])!);
     }
@@ -817,7 +936,10 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
       const cq = q.zg ? columnOf(q) : undefined;
       if (!p.zg && !q.zg) {
         if (sky && p.c !== q.c) continue; // (islands meet only through jumps)
-        if (canGo(p, q)) link(wpOf.get(p)!, wpOf.get(q)!);
+        const wa = wpOf.get(p)!;
+        const wb = wpOf.get(q)!;
+        if (canGo(p, q) && !coverCutsLink(cover, waypoints[wa].pos, waypoints[wb].pos))
+          link(wa, wb);
       } else if (cp && cq) {
         for (const [y, i] of cp) {
           const j = cq.get(y);
@@ -860,21 +982,6 @@ export const buildGraybox = (lay: GrayboxLayout): LevelDef => {
     if (wallBoxes.length) sizeWalls.push({ maxTeamSize, boxes: wallBoxes });
   }
 
-  const cover =
-    lay.cover === false
-      ? []
-      : grayboxCover(
-          lay,
-          cells.map((p) => ({
-            x: p.x,
-            y: p.y,
-            l: p.l,
-            c: p.c,
-            h: standY(p),
-            sloped: !!p.rise || !!p.zg,
-            o: p.o,
-          })),
-        );
   const m = sky ? 30 : 0;
   return {
     name: lay.name,

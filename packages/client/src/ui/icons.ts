@@ -2,6 +2,8 @@
 // bot difficulty badges, and map thumbnails drawn from each map's real layout (floors by
 // level, bomb sites, Towers, spawns) so a new map gets its picture for free.
 import type { LevelDef } from '@space-yz/shared';
+import { v3 } from '@space-yz/shared';
+import { calloutsFor } from '../game/minimap-model';
 
 const svg = (body: string, size = 24): string =>
   `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" ` +
@@ -121,17 +123,58 @@ export const botBadge = (skill: string): HTMLSpanElement => {
 
 const TEAM = ['#19e3ff', '#ff8a1f'];
 
+/** Exposed column tops, including thin stair treads; subtract areas without standing room. */
+const columnFloors = (def: LevelDef): LevelDef['boxes'] => {
+  const solid = def.boxes.filter((b) => !b.noCollide);
+  return solid.flatMap((b) => {
+    if (b.noRender || b.mat === 'hull' || b.mat === 'skyglass' || b.mat === 'forcefield') return [];
+    const top = b.c.y + b.h.y;
+    let faces = [{ x0: b.c.x - b.h.x, x1: b.c.x + b.h.x, z0: b.c.z - b.h.z, z1: b.c.z + b.h.z }];
+    for (const above of solid) {
+      if (above === b || above.c.y + above.h.y <= top + 0.01 || above.c.y - above.h.y >= top + 2)
+        continue;
+      const x0 = above.c.x - above.h.x;
+      const x1 = above.c.x + above.h.x;
+      const z0 = above.c.z - above.h.z;
+      const z1 = above.c.z + above.h.z;
+      if (x0 >= b.c.x + b.h.x || x1 <= b.c.x - b.h.x || z0 >= b.c.z + b.h.z || z1 <= b.c.z - b.h.z)
+        continue;
+      faces = faces.flatMap((f) => {
+        const ix0 = Math.max(f.x0, x0);
+        const ix1 = Math.min(f.x1, x1);
+        const iz0 = Math.max(f.z0, z0);
+        const iz1 = Math.min(f.z1, z1);
+        if (ix0 >= ix1 || iz0 >= iz1) return [f];
+        return [
+          { ...f, x1: ix0 },
+          { ...f, x0: ix1 },
+          { x0: ix0, x1: ix1, z0: f.z0, z1: iz0 },
+          { x0: ix0, x1: ix1, z0: iz1, z1: f.z1 },
+        ].filter((r) => r.x1 > r.x0 && r.z1 > r.z0);
+      });
+      if (!faces.length) break;
+    }
+    return faces.map((f) => ({
+      c: v3((f.x0 + f.x1) / 2, top, (f.z0 + f.z1) / 2),
+      h: v3((f.x1 - f.x0) / 2, 0, (f.z1 - f.z0) / 2),
+    }));
+  });
+};
+
 /**
  * A top-down picture of a map from its level data: floors shaded by level (basement darker,
- * upper decks lighter), bomb sites, Towers and spawns. Returns SVG markup.
+ * upper decks lighter), bomb sites, Towers and spawns. Large previews include callouts;
+ * menus can explicitly enable/disable them with the fourth argument. Returns SVG markup.
  */
-export const mapThumbnail = (def: LevelDef, w = 220, h = 140): string => {
+export const mapThumbnail = (def: LevelDef, w = 220, h = 140, labels = w >= 360): string => {
   // race and surf courses float high in the sky, with nothing at ship-deck height: draw the route
   if (def.race?.line.length) return courseThumbnail(def, w, h);
   // walkable slabs: thin boxes, inside the ship (the sky arena etc. far above is left out)
-  const floors = def.boxes.filter(
-    (b) => !b.noRender && b.h.y <= 1.2 && Math.max(b.h.x, b.h.z) >= 1 && b.c.y < 40,
-  );
+  const floors = def.callouts?.length
+    ? columnFloors(def)
+    : def.boxes.filter(
+        (b) => !b.noRender && b.h.y <= 1.2 && Math.max(b.h.x, b.h.z) >= 1 && b.c.y < 40,
+      );
   if (floors.length === 0) return `<svg viewBox="0 0 ${w} ${h}"></svg>`;
   let minX = Infinity;
   let maxX = -Infinity;
@@ -172,6 +215,26 @@ export const mapThumbnail = (def: LevelDef, w = 220, h = 140): string => {
     const cx = +X(t.pos.x);
     const cz = +Z(t.pos.z);
     g += `<rect x="${cx - 3.5}" y="${cz - 3.5}" width="7" height="7" transform="rotate(45 ${cx} ${cz})" fill="#07101e" stroke="${TEAM[t.team] ?? '#fff'}" stroke-width="1.6"/>`;
+  }
+  if (labels && def.callouts?.length) {
+    const callouts = calloutsFor(def, {
+      cx: w / 2,
+      cy: h / 2,
+      k: s,
+      me: v3((minX + maxX) / 2, 0, (minZ + maxZ) / 2),
+      you: v3((minX + maxX) / 2, 0, (minZ + maxZ) / 2),
+      right: v3(1, 0, 0),
+      fwd: v3(0, 0, -1),
+      width: w,
+      height: h,
+      overview: true,
+      // Conservative estimate for the 10px semibold font; SVG layout needs no canvas/DOM.
+      measureText: (text) => text.length * 7,
+    });
+    for (const label of callouts) {
+      const text = label.text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+      g += `<text x="${label.x.toFixed(1)}" y="${label.y.toFixed(1)}" fill="#fff" stroke="#07101e" stroke-width="3" stroke-linejoin="round" paint-order="stroke" font-size="10" font-weight="600" text-anchor="middle" dominant-baseline="middle" font-family="Segoe UI, sans-serif">${text}</text>`;
+    }
   }
   return `<svg class="map-thumb" viewBox="0 0 ${w} ${h}" role="img" aria-label="Top-down view of ${def.name}">${g}</svg>`;
 };

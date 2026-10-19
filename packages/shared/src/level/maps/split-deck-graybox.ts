@@ -45,6 +45,7 @@ export const SPLIT_DECK_LAYOUT: GrayboxLayout = {
     {
       name: 'Catwalk',
       y: 4,
+      overlay: true,
       rows: [
         ...Array(8).fill('..........................'),
         ...Array(6).fill('..............WW..........'),

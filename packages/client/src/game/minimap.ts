@@ -450,6 +450,7 @@ export class Minimap implements ClientFeature {
         ...v,
         width: w,
         height: hgt,
+        overview: isBig,
         measureText: (text) => g.measureText(text).width,
       });
       for (const label of labels) {

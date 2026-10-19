@@ -107,13 +107,13 @@ export const ANTIPODE_GRAYBOX_LAYOUT: GrayboxLayout = {
     T: { n: 'Ceiling Tunnel', k: 'room', h: 28 },
     n: { n: 'Engine Stairs', k: 'room', h: 0 },
     N: { n: 'Foundry Stairs', k: 'room', h: 28 },
-    X: { n: 'South Cross Beam', k: 'gravity', h: 14, s: 'Beam' },
-    Y: { n: 'North Cross Beam', k: 'gravity', h: 14, s: 'Beam' },
+    X: { n: 'South Cross Beam', k: 'gravity', h: 14, r: [0, 14], s: 'Beam' },
+    Y: { n: 'North Cross Beam', k: 'gravity', h: 14, r: [10.8, 28], s: 'Beam' },
     H: { n: 'Engine Chains', k: 'gravity', h: 14, s: 'Chains' },
   },
   links: [
     ['E', 'A', 'tunnel'],
-    ['B', '0', 'pad', true],
+    ['B', '0', 'portal', true],
   ],
   // forcefield size walls (v2 sizes.mjs): closed at 3v3 and smaller
   sizes: {

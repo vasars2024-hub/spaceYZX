@@ -15,6 +15,11 @@ export interface QualityProfile {
   dust: boolean;
   /** light glows and light shafts (decoration) */
   atmosphere: boolean;
+  /**
+   * sharper level textures (512 px) with big soft patches against visible repeats (3 texture
+   * lookups per pixel); off = 256 px, one lookup (render/surfaces.ts)
+   */
+  richSurfaces: boolean;
 }
 
 export const QUALITY: Record<Settings['quality'], QualityProfile> = {
@@ -25,6 +30,7 @@ export const QUALITY: Record<Settings['quality'], QualityProfile> = {
     particles: 0.25,
     dust: false,
     atmosphere: false,
+    richSurfaces: false,
   },
   low: {
     maxScale: 0.75,
@@ -33,6 +39,7 @@ export const QUALITY: Record<Settings['quality'], QualityProfile> = {
     particles: 0.5,
     dust: false,
     atmosphere: false,
+    richSurfaces: false,
   },
   medium: {
     maxScale: 1,
@@ -41,8 +48,17 @@ export const QUALITY: Record<Settings['quality'], QualityProfile> = {
     particles: 1,
     dust: true,
     atmosphere: true,
+    richSurfaces: true,
   },
-  high: { maxScale: 1, minScale: 0.6, antialias: true, particles: 1, dust: true, atmosphere: true },
+  high: {
+    maxScale: 1,
+    minScale: 0.6,
+    antialias: true,
+    particles: 1,
+    dust: true,
+    atmosphere: true,
+    richSurfaces: true,
+  },
 };
 
 /** Highest device pixel ratio rendered (lowered on phones: small, very dense screens). */

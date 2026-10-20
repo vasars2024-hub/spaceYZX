@@ -1,5 +1,6 @@
-// Build the static level as a few merged meshes: procedural textures (one mesh per surface
-// kind) multiplied by lighting baked into vertex colors — a directional key light, soft ambient
+// Build the static level as a few merged meshes: procedural surface textures (render/surfaces.ts:
+// one texture array, so all ordinary surfaces are one mesh) multiplied by lighting baked into
+// vertex colors — a directional key light, soft ambient
 // occlusion, and colored point lights (explicit map lights + every strip light). Walls block
 // light, so rooms don't bleed into each other. MeshBasicMaterial = no lighting cost at runtime.
 import * as THREE from 'three';
@@ -19,36 +20,72 @@ import {
   MATERIAL_COLORS,
 } from '@space-yz/shared';
 import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
+import { MACRO_SCALE, SURFACE_SPEC, surfaceLayer, surfaceMaterial, type Surface } from './surfaces';
 import { buildOutdoorSky, buildSky } from './sky';
 
 // (one table with the Map Maker: level/materials.ts)
 export { MATERIAL_COLORS };
 
-const TEX_OF: Record<Material, TexKind | null> = {
-  hull: 'hull',
-  floor: 'floor',
-  plate: 'plate',
-  grate: 'grate',
-  panel: 'panel',
-  crate: 'crate',
-  pillar: 'pillar',
+/** The special canvas textures (render/textures.ts); everything else is a Surface. */
+const SPECIAL: Partial<Record<Material, TexKind>> = {
   engine: 'engine',
   teamA: 'team',
   teamB: 'team',
   glass: 'stars',
-  skyglass: null,
-  trim: null,
-  // natural surfaces: flat colour + baked light (the low-poly outdoor look)
-  rock: null,
-  sand: null,
-  wood: null,
-  paper: null,
-  leaf: null,
-  forcefield: null,
-  cloud: null,
-  glow: null,
   hazard: 'hazard',
-  water: null,
+};
+
+/**
+ * Which surface a material's face shows. Some materials look different on the ground than on a
+ * wall (sand: a sand floor / sandstone blocks; rock: cracked ground / layered cliff; plate:
+ * cobbles / concrete tiles).
+ */
+export const surfaceOf = (mat: Material, n: Vec3): Surface => {
+  const ground = n.y > 0.5;
+  switch (mat) {
+    case 'hull':
+      return 'hull';
+    case 'panel':
+      return 'panel';
+    case 'floor':
+      return 'concrete';
+    case 'plate':
+      return ground ? 'paving' : 'tiles';
+    case 'sand':
+      return ground ? 'sandFloor' : 'sandstone';
+    case 'rock':
+      return ground ? 'rockGround' : 'strata';
+    case 'wood':
+      return 'wood';
+    case 'crate':
+      return 'crate';
+    case 'pillar':
+      return 'pillar';
+    case 'grate':
+      return 'grate';
+    default:
+      return 'plain';
+  }
+};
+
+/**
+ * The renderer's own default colours where the shared table (level/materials.ts) is the old
+ * dark space-station blue: a box without its own `color` now looks like the real material
+ * (light steel, concrete, plaster) instead of a near-black wall. Boxes with a `color` keep it.
+ */
+const DEFAULT_LOOK: Partial<Record<Material, number>> = {
+  hull: 0xa7aeb5,
+  panel: 0xd6ccba,
+  floor: 0x9d988f,
+  plate: 0xa69e90,
+  pillar: 0xb4ac9e,
+  grate: 0x8b9298,
+  crate: 0x9a774b,
+  wood: 0x8a6441,
+};
+export const baseColorOf = (b: BoxDef): number => {
+  const mat = b.mat ?? 'hull';
+  return b.color ?? DEFAULT_LOOK[mat] ?? MATERIAL_COLORS[mat];
 };
 
 const LIGHT = normalize(v3(0.35, 1, 0.25));
@@ -122,10 +159,18 @@ class GeoBuilder {
   pos: number[] = [];
   col: number[] = [];
   uv: number[] = [];
+  /** surface meshes: per vertex (texture layer, macro u, macro v, blend); null = none */
+  surf: number[] | null = null;
+  /** the surface the next quads use, and their face normal (for the macro patches) */
+  cur = { layer: 0, blend: 0, n: v3(0, 1, 0) };
   vert(p: Vec3, c: THREE.Color, u: number, v: number): void {
     this.pos.push(p.x, p.y, p.z);
     this.col.push(c.r, c.g, c.b);
     this.uv.push(u, v);
+    if (this.surf) {
+      const [mu, mv] = worldUv(p, this.cur.n, MACRO_SCALE);
+      this.surf.push(this.cur.layer, mu, mv, this.cur.blend);
+    }
   }
   quad(
     a: Vec3,
@@ -155,6 +200,7 @@ class GeoBuilder {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    if (this.surf) g.setAttribute('surf', new THREE.Float32BufferAttribute(this.surf, 4));
     g.computeBoundingSphere();
     return g;
   }
@@ -344,17 +390,26 @@ export interface LevelMeshOptions {
   atmosphere?: boolean;
   /** only the boxes: no sky, no portals / pads / rails, no dust or glows (moving blocks) */
   boxesOnly?: boolean;
+  /**
+   * full surface detail (sharper textures, big soft patches against visible repeats): default
+   * on; the low quality presets turn it off (one texture lookup per pixel, smaller textures)
+   */
+  richSurfaces?: boolean;
 }
 
 export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): LevelMeshes => {
   const brightness = opts.brightness ?? 1;
   const ambient = (def.ambient ?? 1) * brightness;
-  const builders = new Map<TexKind | 'none', GeoBuilder>();
-  const builder = (k: TexKind | 'none') => {
+  const builders = new Map<TexKind, GeoBuilder>();
+  const builder = (k: TexKind) => {
     let b = builders.get(k);
     if (!b) builders.set(k, (b = new GeoBuilder()));
     return b;
   };
+  // every ordinary surface: one mesh (one texture array)
+  const surfGeo = new GeoBuilder();
+  surfGeo.surf = [];
+  const used = new Set<Surface>();
   const trims = new GeoBuilder();
   const glassGeo = new GeoBuilder();
   const fieldGeo = new GeoBuilder();
@@ -380,11 +435,34 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   const sun = def.outdoor?.sunLight !== undefined ? new THREE.Color(def.outdoor.sunLight) : null;
   // moving blocks are drawn on their own (render/mover-mesh.ts), never merged in here
   const moving = new Set((def.movers ?? []).flatMap((m) => m.boxes));
+  const hidden = hiddenFaces(def, moving);
+  // a face only needs its many small light tiles where a point light reaches it
+  const bakeLights = lightDefs.filter((l) => l.intensity > 0 && l.radius > 0);
+  const lit = (pts: Vec3[], n: Vec3): boolean => {
+    const lo = v3(Infinity, Infinity, Infinity);
+    const hi = v3(-Infinity, -Infinity, -Infinity);
+    for (const p of pts) {
+      lo.x = Math.min(lo.x, p.x);
+      lo.y = Math.min(lo.y, p.y);
+      lo.z = Math.min(lo.z, p.z);
+      hi.x = Math.max(hi.x, p.x);
+      hi.y = Math.max(hi.y, p.y);
+      hi.z = Math.max(hi.z, p.z);
+    }
+    return bakeLights.some((l) => {
+      const dx = Math.max(lo.x - l.pos.x, 0, l.pos.x - hi.x);
+      const dy = Math.max(lo.y - l.pos.y, 0, l.pos.y - hi.y);
+      const dz = Math.max(lo.z - l.pos.z, 0, l.pos.z - hi.z);
+      if (dx * dx + dy * dy + dz * dz > l.radius * l.radius) return false;
+      // (a light behind the face's plane never lights it)
+      return dot(sub(l.pos, pts[0]), n) > -0.05 * l.radius;
+    });
+  };
 
   def.boxes.forEach((b, bi) => {
     if (b.noRender || moving.has(bi)) return;
     const mat = b.mat ?? 'hull';
-    const base = new THREE.Color(b.color ?? MATERIAL_COLORS[mat]);
+    const base = new THREE.Color(baseColorOf(b));
     if (mat === 'forcefield') {
       // a size wall: a see-through glowing panel with bright edges (both sides visible)
       const c = base.clone().multiplyScalar(0.55 * brightness);
@@ -444,8 +522,9 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       if (k > 0) base.lerp(b.c.x < 0 ? tintNeg! : tintPos!, k);
     }
     const isTrim = mat === 'trim';
-    const tex = TEX_OF[mat];
+    const special = SPECIAL[mat] ?? null;
     FACES.forEach((f, fi) => {
+      if (hidden.has(bi * 6 + fi)) return; // pressed flat against a neighbour: never seen
       const n = worldNormal(b, fi);
       if (!n) return;
       const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
@@ -465,18 +544,33 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       const cols = f.corners.map(([, y]) =>
         shade(base, n, variation, vertical && y < 0, ambient, sun),
       );
+      let scale: number | null;
+      let g: GeoBuilder;
+      if (special) {
+        g = builder(special);
+        scale = TEX_SCALE[special];
+      } else {
+        const s = surfaceOf(mat, n);
+        used.add(s);
+        g = surfGeo;
+        g.cur.layer = surfaceLayer(s);
+        g.cur.blend = SURFACE_SPEC[s].blend;
+        g.cur.n = n;
+        scale = SURFACE_SPEC[s].scale;
+      }
       tiledQuad(
-        builder(tex ?? 'none'),
+        g,
         pts,
         cols,
         n,
         bi * 31 + fi,
-        tex,
+        scale,
         base,
         lightAt,
         brightness,
+        // one quad for the whole face unless a light falls on it (then ~2.5 m light tiles);
         // (a free-form prism: only its slanted faces, the ones you ride, get lit tiles)
-        !!b.lowDetail || (!!b.hull && fi !== 4 && fi !== 5),
+        !!b.lowDetail || (!!b.hull && fi !== 4 && fi !== 5) || !lit(pts, n),
       );
     });
     if (b.trim !== undefined)
@@ -485,10 +579,18 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
 
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
+  if (!surfGeo.empty) {
+    const geo = surfGeo.build();
+    const mat = surfaceMaterial(opts.richSurfaces ?? true, used);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
   for (const [k, gb] of builders) {
     if (gb.empty) continue;
     const geo = gb.build();
-    const map = k === 'none' ? null : surfaceTexture(k);
+    const map = surfaceTexture(k);
     const mat = new THREE.MeshBasicMaterial({ vertexColors: true, map });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.matrixAutoUpdate = false;
@@ -578,19 +680,60 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   };
 };
 
-/** World-aligned UVs so textures line up across neighboring boxes (crates: one per face). */
-const faceUvs = (pts: Vec3[], n: Vec3, kind: TexKind | null): [number, number][] => {
-  const scale = kind ? TEX_SCALE[kind] : null;
-  if (scale === null) {
-    return [
-      [0, 0],
-      [0, 1],
-      [1, 1],
-      [1, 0],
-    ];
-  }
-  return pts.map((p) => worldUv(p, n, scale));
+/** Materials you can see through: they never hide a neighbour's face. */
+const SEE_THROUGH = new Set<Material>(['skyglass', 'forcefield', 'cloud']);
+
+/**
+ * Faces that can never be seen (box index * 6 + face index): an axis-aligned box face lying flat
+ * against the opposite face of another opaque axis-aligned box that covers it completely (the
+ * sides of stacked wall columns, the bottom of a wall standing on a floor). Turned boxes and
+ * prisms are left alone.
+ */
+export const hiddenFaces = (def: LevelDef, skip: Set<number> = new Set()): Set<number> => {
+  const plain = (b: BoxDef) =>
+    !b.q && !b.hull && b.prism === undefined && !b.noRender && !SEE_THROUGH.has(b.mat ?? 'hull');
+  // every opaque box face, by its plane: axis, which way it faces, where
+  const planes = new Map<string, BoxDef[]>();
+  const key = (axis: number, sign: number, at: number) => `${axis}${sign}${Math.round(at * 500)}`;
+  const AX = ['x', 'y', 'z'] as const;
+  def.boxes.forEach((b, i) => {
+    if (!plain(b) || skip.has(i)) return;
+    for (let axis = 0; axis < 3; axis++)
+      for (const sign of [-1, 1]) {
+        const k = key(axis, sign, b.c[AX[axis]] + sign * b.h[AX[axis]]);
+        const list = planes.get(k);
+        if (list) list.push(b);
+        else planes.set(k, [b]);
+      }
+  });
+  const out = new Set<number>();
+  const eps = 1e-3;
+  def.boxes.forEach((b, i) => {
+    if (!plain(b) || skip.has(i)) return;
+    FACES.forEach((f, fi) => {
+      const axis = f.n.x !== 0 ? 0 : f.n.y !== 0 ? 1 : 2;
+      const sign = f.n.x + f.n.y + f.n.z;
+      const at = b.c[AX[axis]] + sign * b.h[AX[axis]];
+      const others = planes.get(key(axis, -sign, at));
+      if (!others) return;
+      const [a1, a2] = [0, 1, 2].filter((a) => a !== axis).map((a) => AX[a]);
+      const covered = others.some(
+        (o) =>
+          o !== b &&
+          o.c[a1] - o.h[a1] <= b.c[a1] - b.h[a1] + eps &&
+          o.c[a1] + o.h[a1] >= b.c[a1] + b.h[a1] - eps &&
+          o.c[a2] - o.h[a2] <= b.c[a2] - b.h[a2] + eps &&
+          o.c[a2] + o.h[a2] >= b.c[a2] + b.h[a2] - eps,
+      );
+      if (covered) out.add(i * 6 + fi);
+    });
+  });
+  return out;
 };
+
+/** World-aligned UVs so textures line up across neighboring boxes. */
+const faceUvs = (pts: Vec3[], n: Vec3, kind: TexKind): [number, number][] =>
+  pts.map((p) => worldUv(p, n, TEX_SCALE[kind]));
 
 const worldUv = (p: Vec3, n: Vec3, scale: number): [number, number] => {
   const ax = Math.abs(n.x);
@@ -613,7 +756,8 @@ const tiledQuad = (
   cols: THREE.Color[],
   n: Vec3,
   seed: number,
-  kind: TexKind | null,
+  /** metres per texture repeat; null = the texture fits the face (crates) */
+  scale: number | null,
   base: THREE.Color,
   lightAt: (p: Vec3, n: Vec3) => THREE.Color,
   brightness: number,
@@ -625,8 +769,7 @@ const tiledQuad = (
   const l2 = len(sub(p3, p0));
   const nu = flat ? 1 : Math.min(48, Math.max(1, Math.round(l1 / TILE)));
   const nv = flat ? 1 : Math.min(48, Math.max(1, Math.round(l2 / TILE)));
-  const faceUv = kind !== null && TEX_SCALE[kind] === null;
-  const scale = kind ? (TEX_SCALE[kind] ?? 1) : 1;
+  const faceUv = scale === null;
   const at = (u: number, v: number): Vec3 => {
     const a = lerp3(pts[0], pts[1], u);
     const b = lerp3(pts[3], pts[2], u);
@@ -646,7 +789,7 @@ const tiledQuad = (
   const uvAt = (p: Vec3, u: number, v: number): [number, number] =>
     faceUv
       ? [u * Math.max(1, Math.round(l1 / 3)), v * Math.max(1, Math.round(l2 / 3))]
-      : worldUv(p, n, scale);
+      : worldUv(p, n, scale ?? 1);
   for (let i = 0; i < nu; i++)
     for (let j = 0; j < nv; j++) {
       const u0 = i / nu,

@@ -41,7 +41,7 @@ export const EFFECTS: Record<EffectsLevel, EffectsProfile> = {
     mateFx: 0.35,
     trailRange: 40,
     killFeedRows: 4,
-    textureDetail: 0.5,
+    textureDetail: 0.8,
     screenShake: 0.6,
     // light glows/shafts and dust are ~260 extra draws of see-through layers: a big frame-rate
     // cost on laptop graphics, and more to look at
@@ -54,7 +54,7 @@ export const EFFECTS: Record<EffectsLevel, EffectsProfile> = {
     mateFx: 0.15,
     trailRange: 25,
     killFeedRows: 3,
-    textureDetail: 0.25,
+    textureDetail: 0.5,
     screenShake: 0.3,
     decoration: false,
     radarMax: 3,

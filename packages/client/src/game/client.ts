@@ -90,6 +90,7 @@ export class GameClient {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
       dust: q.dust && effects.decoration,
       atmosphere: q.atmosphere && effects.decoration,
+      richSurfaces: q.richSurfaces,
     };
     this.levelMeshes = deps.levelMeshes?.(meshOpts) ?? buildLevelMeshes(def, meshOpts);
     this.scene.add(this.levelMeshes.group);
@@ -97,6 +98,7 @@ export class GameClient {
     this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
     this.moverMeshes = buildMoverMeshes(def, {
       brightness: Math.min(1.2, Math.max(0.8, deps.settings.brightness)),
+      richSurfaces: q.richSurfaces,
     });
     if (this.moverMeshes) this.scene.add(this.moverMeshes.group);
     this.scene.add(this.camera);

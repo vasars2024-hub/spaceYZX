@@ -17,7 +17,7 @@ export interface MoverMeshes {
 /** Meshes for a level's movers (null: nothing moves on this map). */
 export const buildMoverMeshes = (
   def: LevelDef,
-  opts: Pick<LevelMeshOptions, 'brightness'> = {},
+  opts: Pick<LevelMeshOptions, 'brightness' | 'richSurfaces'> = {},
 ): MoverMeshes | null => {
   const movers = def.movers ?? [];
   if (!movers.length) return null;
@@ -40,7 +40,7 @@ export const buildMoverMeshes = (
         outdoor: def.outdoor,
         sideTint: def.sideTint,
       },
-      { brightness: opts.brightness, boxesOnly: true },
+      { brightness: opts.brightness, richSurfaces: opts.richSurfaces, boxesOnly: true },
     );
     group.add(meshes.group);
     return { meshes, timeline: moverTimeline(m.path, m.speed, m.delay) };

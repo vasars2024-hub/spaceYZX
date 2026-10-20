@@ -107,6 +107,12 @@ export interface PlayerState extends CombatPlayerState {
    * its camera with you when it changes (the view you send is the camera's)
    */
   portalYaw: number;
+  /**
+   * suction tubes (LevelDef.liftTubes, sim/devices.ts): the tube you are riding up (-1 = none),
+   * and ticks before any tube can pull you in again (after its throw)
+   */
+  tube: number;
+  tubeCd: number;
 }
 
 export interface ZoneRuntime {

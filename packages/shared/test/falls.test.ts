@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { v3, fallDamage } from '../src/index';
+import { v3, fallDamage, type SimEvent } from '../src/index';
 import { flatLevel, makeSim, run, settle, type Sim } from './helpers';
 
 // Fall damage and leaving the map (combat maps; races handle falls themselves).
@@ -50,6 +50,81 @@ describe('fall damage', () => {
     run(sim, 300); // thrown ~22 m up, lands well away from the pad
     expect(sim.p.alive).toBe(true);
     expect(sim.p.hp).toBe(sim.config.combat.maxHp);
+  });
+});
+
+describe('launch pad flights never hurt', () => {
+  const full = (sim: Sim) => sim.p.alive && sim.p.hp === sim.config.combat.maxHp;
+  /** Run until the player has landed (a 'land' event) at a height below `belowY`. */
+  const runUntilLanded = (sim: Sim, belowY: number, max = 600): SimEvent[] => {
+    const all: SimEvent[] = [];
+    for (let i = 0; i < max; i++) {
+      run(sim, 1);
+      all.push(...sim.world.events);
+      const flown = i > 10 && all.some((e) => e.type === 'launch');
+      if (flown && sim.world.events.some((e) => e.type === 'land') && sim.p.pos.y < belowY) break;
+    }
+    run(sim, 30);
+    return all;
+  };
+
+  it('not after brushing a high ledge on the way and falling off it', () => {
+    // thrown onto a 1.6 m deep ledge 12 m up, you slide off its far side and drop to the floor:
+    // that one-tick touch used to end the flight, so the drop hurt
+    const sim = makeSim(
+      flatLevel([{ c: v3(0, 11.5, -22.8), h: v3(3, 0.5, 0.8) }], [], {
+        launchPads: [{ min: v3(-1, 0, -1), max: v3(1, 2, 1), vel: v3(0, 25, -12) }],
+      }),
+    );
+    const ev = runUntilLanded(sim, 3);
+    const lands = ev.filter((e) => e.type === 'land');
+    expect(lands.length).toBeGreaterThanOrEqual(3); // (spawning,) the ledge, then the floor
+    expect(full(sim)).toBe(true);
+  });
+
+  it('not after hitting a ceiling and falling further than the throw was aimed', () => {
+    const sim = makeSim(
+      flatLevel([{ c: v3(0, 14.5, -6), h: v3(4, 0.5, 8) }], [], {
+        launchPads: [{ min: v3(-1, 0, -1), max: v3(1, 2, 1), vel: v3(0, 30, -3) }],
+      }),
+    );
+    runUntilLanded(sim, 3);
+    expect(full(sim)).toBe(true);
+  });
+
+  it('not from a touch pad, nor when a pad throws you onto another pad', () => {
+    const sim = makeSim(
+      flatLevel([], [], {
+        launchPads: [
+          { min: v3(-1, 0, -1), max: v3(1, 0.2, 1), vel: v3(0, 26, -6), touch: true },
+          // where the first throw comes down: a second, bigger throw
+          { min: v3(-2, 0, -18), max: v3(2, 2, -14), vel: v3(0, 30, -4) },
+        ],
+      }),
+    );
+    const ev: SimEvent[] = [];
+    for (let i = 0; i < 600; i++) {
+      run(sim, 1);
+      ev.push(...sim.world.events);
+    }
+    expect(ev.filter((e) => e.type === 'launch').length).toBeGreaterThanOrEqual(2);
+    expect(full(sim)).toBe(true);
+  });
+
+  it('the flight ends once you have stood on the ground for a moment: later falls hurt again', () => {
+    const sim = makeSim(
+      flatLevel([], [], {
+        launchPads: [{ min: v3(-1, 0, -1), max: v3(1, 2, 1), vel: v3(0, 30, 6) }],
+      }),
+    );
+    run(sim, 300);
+    expect(full(sim)).toBe(true);
+    expect(sim.p.padFlight).toBe(false);
+    sim.p.pos = v3(sim.p.pos.x, sim.p.pos.y + 14, sim.p.pos.z);
+    sim.p.vel = v3();
+    sim.p.grounded = false;
+    run(sim, 180);
+    expect(sim.p.hp).toBeLessThan(sim.config.combat.maxHp);
   });
 });
 

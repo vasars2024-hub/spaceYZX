@@ -517,6 +517,9 @@ describe('Colossus Yard: Brawl', () => {
     const alive = new Map(world.players.map((p) => [p.id, true]));
     const lives: number[] = [];
     const deathSpots: Vec3[] = [];
+    // (attacking ends your spawn protection early: those lives don't count below)
+    const attacked = new Set<number>();
+    const ATTACKS = new Set(['throw', 'slash', 'laserWarn', 'windupStart', 'grenadeThrow']);
     for (let t = 0; t < 60 * 90; t++) {
       applyBrawlBotObjectives(bs, world, ctx, mems);
       const inputs: Record<number, PlayerInput> = {};
@@ -528,21 +531,28 @@ describe('Colossus Yard: Brawl', () => {
           m,
         );
       step(world, inputs, ctx);
-      for (const e of world.events)
+      for (const e of world.events) {
+        if ('player' in e && ATTACKS.has(e.type)) attacked.add(e.player);
         if (e.type === 'kill') {
-          lives.push((world.tick - spawnedAt.get(e.victim)!) * TICK_DT);
+          if (!attacked.has(e.victim))
+            lives.push((world.tick - spawnedAt.get(e.victim)!) * TICK_DT);
           deathSpots.push({ ...world.players.find((p) => p.id === e.victim)!.pos });
         }
+      }
       updateBrawl(bs, world, ctx);
       for (const p of world.players) {
-        if (p.alive && !alive.get(p.id)) spawnedAt.set(p.id, world.tick);
+        if (p.alive && !alive.get(p.id)) {
+          spawnedAt.set(p.id, world.tick);
+          attacked.delete(p.id);
+        }
         alive.set(p.id, p.alive);
       }
     }
     expect(bs.phase).toBe('live');
     const kills = world.players.reduce((n, p) => n + p.kills, 0);
     expect(kills).toBeGreaterThanOrEqual(10);
-    // nobody dies within the spawn protection (and a moment after it)
+    // nobody who keeps their spawn protection (doesn't attack) dies within it (and a moment after)
+    expect(lives.length).toBeGreaterThan(0);
     expect(Math.min(...lives)).toBeGreaterThan(BRAWL_DEFAULTS.protectSec + 0.5);
     // the fights spread out: deaths in both halves and both the north and the south
     expect(deathSpots.some((q) => q.x < 0) && deathSpots.some((q) => q.x > 0)).toBe(true);

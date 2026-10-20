@@ -78,6 +78,15 @@ export const MOVEMENT_DEFAULTS = {
   railJumpUp: 5,
   railCooldownSec: 0.4,
 
+  // Suction tubes (LevelDef.liftTubes, sim/devices.ts): what the maps have instead of ladders.
+  // Step into a tube's mouth and it pulls you up its middle, then throws you onto its landing
+  // spot (that flight never causes fall damage, like a launch pad's).
+  tubeSpeed: 14, // m/s up the tube
+  tubeAccel: 60, // m/s²: how fast you get up to tubeSpeed (from your speed at the mouth)
+  tubeCenterSpeed: 6, // m/s you're pulled sideways onto the tube's middle line
+  tubeArcHeight: 1.5, // m: the throw at the top rises this far above the higher of top / landing
+  tubeCooldownSec: 1, // after a throw, no tube pulls you in again for this long
+
   // Zero-G
   floatDriftAccel: 0.8,
   pushOffSpeed: 9,

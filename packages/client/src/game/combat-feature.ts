@@ -1,7 +1,14 @@
 // Client combat presentation: player models, Boomerangs, lines, preview, viewmodel, HUD,
 // 3D audio and kill feedback. Works for offline and online sessions alike.
 import * as THREE from 'three';
-import type { SimEvent, BoomerangState, PlayerState, Vec3, KillKind } from '@space-yz/shared';
+import type {
+  SimEvent,
+  BoomerangState,
+  PlayerState,
+  Vec3,
+  KillKind,
+  WindupRefusal,
+} from '@space-yz/shared';
 import {
   Phase,
   eyePos,
@@ -34,6 +41,13 @@ import { CombatHud, POWERUP_HUD, type Threat } from '../ui/combat-hud';
 import { projectMarker, screenAngle } from '../ui/markers';
 import type { LoopHandle } from '../audio';
 import type { SoundName } from '../audio';
+
+/** Why a Wind-up Throw didn't start (sim/combat.ts windupBlock), as the HUD says it. */
+const WINDUP_REFUSED: Record<WindupRefusal, string> = {
+  running: 'Stop running to wind up',
+  air: 'In the air: wind up only while jetpacking',
+  crouched: "Can't wind up crouched or sliding",
+};
 
 /** Hearing range (m) of warnings aimed at you: Wind-ups, Laser warnings. */
 const DANGER_RANGE = 55;
@@ -303,6 +317,18 @@ export class CombatFeature implements ClientFeature {
           break;
         case 'launch':
           if (e.player !== me) a.play3d('thruster', posOf(e.player), { volume: 0.9, rate: 0.6 });
+          break;
+        case 'tubeEnter':
+          if (e.player !== me)
+            a.play3d('tubeSuck', posOf(e.player), { volume: 0.8, refDistance: 6 });
+          break;
+        case 'tubeExit':
+          if (e.player !== me)
+            a.play3d('thruster', posOf(e.player), { volume: 0.8, rate: 0.7, refDistance: 6 });
+          break;
+        case 'windupRefused':
+          // RMB didn't start a Wind-up Throw: say why
+          if (e.player === me) this.hud.showCenter(WINDUP_REFUSED[e.reason], 1.4, 'warn');
           break;
         case 'portal':
           // a rift is loud: heard at both ends

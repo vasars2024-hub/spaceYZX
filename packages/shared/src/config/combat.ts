@@ -14,8 +14,20 @@ export const COMBAT_DEFAULTS = {
 
   // Boomerang: Quick Throw
   boomerangRadius: 0.22,
-  quickSpeed: 45,
-  quickOutSec: 0.63, // +50 % range after the first playtest (was 0.42: ~19 m → ~28 m)
+  // Speed falls off with distance — fast near, slower far — so short and medium throws arrive
+  // before the target can move much: full `quickSpeed` for the first `quickFastDist` metres,
+  // then slowing evenly to `quickFarSpeed` at `quickSlowDist` and beyond. The way back uses the
+  // same curve by its distance to the thrower (it speeds up as it comes home).
+  quickSpeed: 67.5, // m/s near (+50 % after a playtest; it was 45 m/s everywhere)
+  quickFastDist: 20,
+  quickFarSpeed: 42,
+  quickSlowDist: 40,
+  quickOutDist: 32, // it turns back after flying this far (was 0.63 s at 45 m/s ≈ 28 m)
+  // In normal gravity a Quick Throw flies dead straight for its first `quickStraightDist`
+  // metres (no drop), and a tilt (below) only bends it once it is `tiltStartDist` metres out:
+  // a quick mouse correction right after letting go fades before it can pull the throw off
+  quickStraightDist: 20,
+  tiltStartDist: 8,
   quickCurveDegPerSec: 140,
   // Tilt: while a Quick Throw flies out, flicking your view left/right tilts it that way. The
   // tilt is how far you've turned from a "centre" that follows your aim at `Recenter` deg/s, so
@@ -29,7 +41,6 @@ export const COMBAT_DEFAULTS = {
   flickFullDegPerSec: 300,
   flickDecay: 0.88,
   returnTurnDegPerSec: 540,
-  returnSpeed: 45,
   boomerangGravityScale: 0.15, // in normal gravity: a slight, readable drop
   boomerangZoneGravityScale: 0.5, // inside special gravity zones: strong bend (the feature)
   catchRadius: 1.3,
@@ -42,6 +53,9 @@ export const COMBAT_DEFAULTS = {
   // (Falling speed tops out at 30 m/s ≈ a 22.5 m drop, so the lethal height must stay below.)
   fallSafeHeight: 8,
   fallLethalHeight: 22,
+  // A launch pad or suction tube flight never hurts: no landing does until you have stood on
+  // the ground this long (so brushing a ledge, a wall or a ceiling on the way doesn't end it)
+  padSettleSec: 0.25,
   // Explosive throw: every `blastEvery`-th Quick Throw explodes on the first wall or player it
   // hits (no bounce), hurting enemies within `blastRadius`. If it hits nothing, the charge
   // stays for the next throw.
@@ -59,6 +73,10 @@ export const COMBAT_DEFAULTS = {
   windupHoldSec: 4,
   windupSpeed: 150,
   windupWalkSpeed: 2.5,
+  // the Wind-up Throw ("sniper" throw): on the ground only when you're not running (planar
+  // speed up to this; you then slow-walk at windupWalkSpeed while it winds), or in the air on a
+  // jetpack flight (the jetpack burned since you left the ground); never crouched or sliding
+  windupMaxRunSpeed: 4,
   windupFov: 70,
   windupRange: 120,
 

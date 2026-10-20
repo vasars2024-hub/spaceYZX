@@ -18,6 +18,7 @@ import {
   normalize,
   qForward,
   qFromBasis,
+  quickFlightTime,
   rayHitbox,
   scale,
   sub,
@@ -447,7 +448,12 @@ export const boomerangDuel = (
   let prevSeen: Hitbox | null = null;
   const move = strafePattern((opts.seed ?? 11) + 1, false);
   const tgtMove = strafePattern(opts.seed ?? 11, false);
-  const speed = variant === 'windup' ? config.combat.windupSpeed : config.combat.quickSpeed;
+  // flight time to a distance: the Wind-up Throw flies at one speed, a Quick Throw is fast near
+  // and slower far
+  const flightTime = (d: number): number =>
+    variant === 'windup'
+      ? d / config.combat.windupSpeed
+      : quickFlightTime(d, config.combat, 1 / 60);
   const d = startDuel(
     opts,
     config,
@@ -459,7 +465,7 @@ export const boomerangDuel = (
       // lead the target by its on-screen velocity times the flight time; aim a little high
       const vel = prevSeen ? scale(sub(chestOf(tgt), chestOf(prevSeen)), 60) : v3();
       prevSeen = tgt;
-      const tFlight = len(sub(chestOf(tgt), eye)) / speed;
+      const tFlight = flightTime(len(sub(chestOf(tgt), eye)));
       const lead = add(madd(chestOf(tgt), vel, tFlight), v3(0, 1.5 * tFlight * tFlight, 0));
       const b = c.core.predWorld?.boomerangs.find((x) => x.owner === c.core.localId);
       const held = b?.phase === Phase.Held;

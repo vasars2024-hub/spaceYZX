@@ -16,6 +16,7 @@ import {
   rotateToward,
   lerp,
   cross,
+  projectOnPlane,
 } from '../math/vec3';
 import { qForward, qRight, qUp } from '../math/quat';
 import { closestSegSeg, closestPointSeg } from '../math/geom';
@@ -25,9 +26,11 @@ import { isEnemy, isTeammate } from './context';
 import type { PlayerInput } from './input';
 import { Btn } from './input';
 import type { PlayerState, WorldState } from './state';
+import { Move } from './state';
 import type { BoomerangState, GrenadeState } from './combat-state';
 import { Phase, Powerup } from './combat-state';
-import type { KillKind } from './events';
+import type { KillKind, WindupRefusal } from './events';
+import type { CombatConfig } from '../config';
 import { eyePos, feetPos } from './movement';
 import { gravityAt, gravityDirAt } from './gravity';
 import { hitboxOf, sweepHitbox, rayHitbox, chestOf, type Hitbox } from './hitbox';
@@ -168,6 +171,24 @@ export const applyDamage = (
   }
 };
 
+/**
+ * Why a Wind-up Throw ("sniper" throw) can't be used right now, or null if it can: on the
+ * ground only when not running (planar speed up to `windupMaxRunSpeed`; while winding, the
+ * slow walk keeps you there), in the air only on a jetpack flight; never crouched or sliding.
+ * `winding`: an already running wind-up (it is never stopped for speed, only started).
+ */
+export const windupBlock = (
+  p: PlayerState,
+  c: CombatConfig,
+  winding = false,
+): WindupRefusal | null => {
+  if (p.crouched || p.move === Move.Slide) return 'crouched';
+  if (!p.grounded) return p.jetOn || p.jetFlight ? null : 'air';
+  if (winding) return null;
+  const planar = len(projectOnPlane(p.vel, p.up));
+  return planar > c.windupMaxRunSpeed ? 'running' : null;
+};
+
 const cancelWindup = (world: WorldState, p: PlayerState): void => {
   p.windup = 0;
   p.windupHeld = 0;
@@ -256,6 +277,53 @@ export const aimPoint = (p: PlayerState, ctx: SimContext, maxDist = 150): Vec3 =
   return hit ? hit.point : madd(eye, fwd, maxDist);
 };
 
+/**
+ * A Quick Throw's speed (m/s) `dist` metres from its thrower: `quickSpeed` near, slowing evenly
+ * from `quickFastDist` to `quickFarSpeed` at `quickSlowDist` (config).
+ */
+export const quickSpeedAt = (dist: number, c: CombatConfig): number => {
+  const near = Math.max(1, c.quickSpeed);
+  const far = Math.max(1, c.quickFarSpeed);
+  if (dist <= c.quickFastDist) return near;
+  if (dist >= c.quickSlowDist) return far;
+  const k = (dist - c.quickFastDist) / Math.max(1e-6, c.quickSlowDist - c.quickFastDist);
+  return near + (far - near) * k;
+};
+
+/** Seconds a Quick Throw takes to fly `dist` metres (tick by tick, exactly like the flight). */
+export const quickFlightTime = (dist: number, c: CombatConfig, dt: number): number => {
+  let d = 0;
+  let t = 0;
+  for (let i = 0; i < 100000; i++) {
+    const v = quickSpeedAt(d, c);
+    if (d + v * dt >= dist) return t + Math.max(0, dist - d) / v;
+    d += v * dt;
+    t += dt;
+  }
+  return t;
+};
+
+/** Ticks a Quick Throw flies out before it turns back (it has flown `quickOutDist` by then). */
+const quickOutTicks = (c: CombatConfig, dt: number): number => {
+  let d = 0;
+  let n = 0;
+  while (d < c.quickOutDist && n < 100000) {
+    d += quickSpeedAt(d, c) * dt;
+    n++;
+  }
+  return Math.max(1, n);
+};
+
+/**
+ * How far (m) a Quick Throw has dropped below its aim line after flying `dist` metres in normal
+ * gravity: nothing over the first `quickStraightDist` metres, then a slight fall.
+ */
+export const quickDropAt = (dist: number, c: CombatConfig, gravity: number, dt: number): number => {
+  if (dist <= c.quickStraightDist) return 0;
+  const t = quickFlightTime(dist, c, dt) - quickFlightTime(c.quickStraightDist, c, dt);
+  return 0.5 * gravity * c.boomerangGravityScale * t * t;
+};
+
 export type FlightOutcome =
   | { kind: 'none' }
   | { kind: 'wall'; point: Vec3; normal: Vec3 }
@@ -293,6 +361,8 @@ export const flightStep = (
 
   if (b.phase === Phase.Out) {
     if (!b.windup) {
+      // fast near, slower far (the Wind-up Throw keeps its own speed)
+      speed = quickSpeedAt(b.dist, c);
       if (env.steerTarget)
         dir = rotateToward(
           dir,
@@ -301,7 +371,9 @@ export const flightStep = (
         );
       if (b.curve !== 0)
         dir = normalize(rotateAxis(dir, b.curveAxis, -b.curve * c.quickCurveDegPerSec * DEG * dt));
-      dir = normalize(madd(scale(dir, speed), g, c.boomerangGravityScale * dt), dir);
+      // dead straight over the first metres (a gravity zone still bends it: the feature)
+      if (special || b.dist >= c.quickStraightDist)
+        dir = normalize(madd(scale(dir, speed), g, c.boomerangGravityScale * dt), dir);
     }
     if (b.t >= b.outTicks) {
       b.phase = Phase.Return;
@@ -309,7 +381,8 @@ export const flightStep = (
       b.hitIds = [];
     }
   } else if (b.phase === Phase.Return) {
-    speed = c.returnSpeed;
+    // the same curve on the way home: faster the closer it gets to the thrower
+    speed = quickSpeedAt(env.ownerChest ? len(sub(env.ownerChest, b.pos)) : Infinity, c);
     if (env.steerTarget)
       dir = rotateToward(
         dir,
@@ -348,6 +421,7 @@ export const flightStep = (
       const point = madd(hit.point, hit.normal, c.boomerangRadius);
       const out = normalize(madd(dir, hit.normal, -2 * dot(dir, hit.normal)), hit.normal);
       b.bounced = true;
+      if (b.phase === Phase.Out) b.dist += len(sub(point, from));
       b.pos = point;
       b.vel = scale(out, speed);
       return { from, to: point, outcome: { kind: 'bounce', point, normal: hit.normal } };
@@ -357,6 +431,7 @@ export const flightStep = (
     return { from, to: point, outcome: { kind: 'wall', point, normal: hit.normal } };
   }
   b.pos = madd(from, dir, step);
+  if (b.phase === Phase.Out) b.dist += step;
   if (b.phase === Phase.Return && env.ownerChest) {
     const cp = closestPointSeg(env.ownerChest, from, b.pos);
     if (cp.distSq <= c.catchRadius * c.catchRadius)
@@ -392,9 +467,10 @@ export const throwState = (
   b.curve = windup ? 0 : curve;
   b.curveAxis = clone(p.up);
   b.tiltRef = flatAim(p.view, p.up);
-  const speed = windup ? c.windupSpeed : c.quickSpeed;
+  const speed = windup ? c.windupSpeed : quickSpeedAt(0, c);
   b.vel = scale(fwd, speed);
-  b.outTicks = windup ? ticks(c.windupRange / c.windupSpeed, ctx.dt) : ticks(c.quickOutSec, ctx.dt);
+  b.dist = 0;
+  b.outTicks = windup ? ticks(c.windupRange / c.windupSpeed, ctx.dt) : quickOutTicks(c, ctx.dt);
   b.steerLeft = windup ? 0 : ticks(c.steerSec, ctx.dt);
   b.hitIds = [];
   b.controller = p.id;
@@ -449,6 +525,7 @@ export const predictThrow = (
         vel: v3(),
         t: 0,
         outTicks: 0,
+        dist: 0,
         curve: 0,
         curveAxis: v3(0, 1, 0),
         tiltRef: v3(0, 0, -1),
@@ -815,6 +892,9 @@ export const updateCombat = (
   // ---- per-player actions ----
   for (const p of world.players) {
     if (only !== undefined && p.id !== only) continue;
+    // a jetpack flight: from the first burn until you land (the Wind-up Throw may be used)
+    if (p.grounded || !p.alive) p.jetFlight = false;
+    else if (p.jetOn) p.jetFlight = true;
     const input = inputs[p.id];
     const buttons = input?.buttons ?? 0;
     const prev = prevButtons[p.id] ?? 0;
@@ -870,13 +950,10 @@ export const updateCombat = (
 
     // --- Wind-up Throw (hold RMB with the Boomerang in hand) ---
     if (p.windup > 0) {
+      // (a jump off the ground ends it: you're in the air without the jetpack; in the air Space
+      // is the jetpack, which is allowed)
       const cancel =
-        !held ||
-        !(buttons & Btn.Alt) ||
-        pressed & (Btn.Jump | Btn.Dash) ||
-        p.crouched ||
-        !p.grounded ||
-        p.move === 2; // sliding
+        !held || !(buttons & Btn.Alt) || pressed & Btn.Dash || windupBlock(p, c, true) !== null;
       if (cancel) cancelWindup(world, p);
       else {
         const full = ticks(c.windupSec, dt);
@@ -896,10 +973,14 @@ export const updateCombat = (
           world.events.push({ type: 'throw', player: p.id, boomerang: b.id, windup: true });
         }
       }
-    } else if (boomerangOut && pressed & Btn.Alt && !p.aiming && p.grounded && !p.crouched) {
-      p.windup = 1;
-      p.speedCap = c.windupWalkSpeed;
-      world.events.push({ type: 'windupStart', player: p.id });
+    } else if (boomerangOut && pressed & Btn.Alt && !p.aiming) {
+      const why = windupBlock(p, c);
+      if (why) world.events.push({ type: 'windupRefused', player: p.id, reason: why });
+      else {
+        p.windup = 1;
+        p.speedCap = c.windupWalkSpeed;
+        world.events.push({ type: 'windupStart', player: p.id });
+      }
     }
 
     // --- Quick Throw: hold LMB to aim, release to throw (straight); turning while it flies
@@ -1184,6 +1265,9 @@ export const updateCombat = (
     if (b.phase === Phase.Out && !b.windup) {
       const tilting = ownerAlive && b.controller === b.owner && !steering && !stunned.has(b.owner);
       b.curve = tilting ? tiltStep(owner!.view, b, c, ctx.dt) : 0;
+      // (the first metres fly where you aimed: the tilt's centre keeps following your aim, so a
+      // quick correction right after letting go has faded by then)
+      if (b.dist < c.tiltStartDist) b.curve = 0;
     }
     const env: FlightEnv = {
       ctx,

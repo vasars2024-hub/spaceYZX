@@ -540,6 +540,11 @@ export const updateMovement = (
     p.prevButtons = rawButtons;
     return;
   }
+  // riding up a suction tube: it moves you (sim/devices.ts) until it throws you out at the top
+  if (p.tube >= 0) {
+    p.prevButtons = rawButtons;
+    return;
+  }
   if (stunned) {
     // frozen solid: no speed of your own left, but gravity still pulls (you fall, you don't
     // hang in mid-air); off any zip-rail. In zero-G you simply stop where you are.

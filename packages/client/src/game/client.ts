@@ -8,6 +8,7 @@ import type { InputManager } from './input';
 import { buildLevelMeshes, type LevelMeshes, type LevelMeshOptions } from '../render/level-mesh';
 import { buildMoverMeshes, type MoverMeshes } from '../render/mover-mesh';
 import { PortalPreviews } from '../render/portal-preview';
+import { buildTubeMeshes, type TubeMeshes } from '../render/tube-mesh';
 import { QUALITY } from '../render/perf';
 import { effects } from '../render/effects';
 import { Hud } from '../ui/hud';
@@ -49,6 +50,8 @@ export class GameClient {
   private portalPreviews: PortalPreviews;
   /** moving blocks (player-made maps), drawn at the local player's predicted tick */
   private moverMeshes: MoverMeshes | null;
+  /** suction tubes (the maps' ladders): glowing tubes with rings flowing up */
+  private tubeMeshes: TubeMeshes | null;
   private wind: LoopHandle | null = null;
   private slide: LoopHandle | null = null;
   /** race tracks and surf maps: lofi music, soft air instead of wind / scrape, calm cues */
@@ -101,6 +104,8 @@ export class GameClient {
       richSurfaces: q.richSurfaces,
     });
     if (this.moverMeshes) this.scene.add(this.moverMeshes.group);
+    this.tubeMeshes = buildTubeMeshes(def);
+    if (this.tubeMeshes) this.scene.add(this.tubeMeshes.group);
     this.scene.add(this.camera);
     const p = session.local();
     this.fps = new FpsCamera(p?.view ?? { x: 0, y: 0, z: 0, w: 1 }, p?.up);
@@ -216,6 +221,7 @@ export class GameClient {
     }
     // moving blocks: where the sim has them between the last two ticks (like your own eye)
     this.moverMeshes?.update(this.session.world().tick - 1 + this.session.alpha);
+    this.tubeMeshes?.update(dt);
     const up = this.session.localUp();
     if (up) this.fps.followUp(up, cameraRotationRate(settings.cameraRotation), dt);
 
@@ -337,6 +343,12 @@ export class GameClient {
           if (race) race.cue('portal');
           else a.play('revealPulse', { volume: 0.8, rate: 1.4 });
           break;
+        case 'tubeEnter':
+          a.play('tubeSuck', { volume: 0.8 });
+          break;
+        case 'tubeExit':
+          a.play('thruster', { volume: 0.8, rate: 0.7 });
+          break;
       }
     }
     // race maps: music + soft air (audio/race-mix.ts); elsewhere speed wind + slide loops
@@ -376,6 +388,7 @@ export class GameClient {
     if (this.deps.levelMeshes) this.scene.remove(this.levelMeshes.group);
     else this.levelMeshes.dispose();
     this.moverMeshes?.dispose();
+    this.tubeMeshes?.dispose();
     this.hud.root.remove();
     this.session.dispose();
   }

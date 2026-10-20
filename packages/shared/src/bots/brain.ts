@@ -36,7 +36,7 @@ import { Move } from '../sim/state';
 import { Phase } from '../sim/combat-state';
 import { eyePos } from '../sim/movement';
 import { hitboxOf, chestOf } from '../sim/hitbox';
-import { isFlying, recallLine } from '../sim/combat';
+import { isFlying, quickDropAt, quickFlightTime, recallLine } from '../sim/combat';
 import { loadoutOf } from '../config/loadout';
 import { type BotGunMemory, botGunSkill, newBotGunMemory, gunAimDir, gunBotButtons } from './guns';
 
@@ -192,6 +192,8 @@ export interface BotMemory {
   lastPos: Vec3;
   slideTick: number;
   windupActive: boolean;
+  /** tick the bot decided on a Wind-up Throw (it stops running first, then holds RMB) */
+  windupTick: number;
   deflecting: number; // ticks left holding a deflect look
   jumpCooldown: number;
   /** optional objective: where the bot wants to go when it has no target */
@@ -227,6 +229,7 @@ export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotM
   lastPos: v3(),
   slideTick: -1000,
   windupActive: false,
+  windupTick: 0,
   deflecting: 0,
   jumpCooldown: 0,
   objective: null,
@@ -678,12 +681,17 @@ export const botThink = (
         : chestOf(hb);
     const dist = len(sub(aimAt, eye));
     const held = myB?.phase === Phase.Held;
-    const speed = held ? (self.windup > 0 ? c.windupSpeed : c.quickSpeed) : 1e6;
-    const t = held ? dist / speed : c.laserWarnSec;
+    // flight time: the Wind-up Throw flies at one speed, a Quick Throw is fast near and slower
+    // far (sim/combat.ts quickSpeedAt)
+    const t = !held
+      ? c.laserWarnSec
+      : self.windup > 0
+        ? dist / c.windupSpeed
+        : quickFlightTime(dist, c, ctx.dt);
     let lead = madd(aimAt, target.vel, t * s.leadAccuracy);
-    // gravity drop compensation for thrown Boomerangs
+    // gravity drop compensation for Quick Throws (none over the first, straight metres)
     if (held && self.windup === 0)
-      lead = madd(lead, up, 0.5 * ctx.config.movement.gravity * c.boomerangGravityScale * t * t);
+      lead = madd(lead, up, quickDropAt(dist, c, ctx.config.movement.gravity, ctx.dt));
     if (tick >= mem.aimErrUntil) {
       const e = (guns ? gs.aimDeg : s.aimErrorDeg) * DEG * dist;
       if (guns) gm.head = rngFloat(rng) < gs.headChance;
@@ -797,9 +805,10 @@ export const botThink = (
       if (dist < 2.6 && self.slashCd === 0) buttons |= Btn.Melee;
       // Wind-up Throw at long range
       if (mem.windupActive) {
-        if (self.windup === 0 && !(self.prevButtons & Btn.Alt)) mem.windupActive = false;
+        // (gave up: it never started, or it was cancelled, e.g. by a hit)
+        if (self.windup === 0 && tick - mem.windupTick > 60) mem.windupActive = false;
         else {
-          buttons |= Btn.Alt;
+          // stand still (a Wind-up can't start while running), then hold RMB
           buttons &= ~(
             Btn.Forward |
             Btn.Back |
@@ -809,6 +818,9 @@ export const botThink = (
             Btn.Jump |
             Btn.Dash
           );
+          if (self.windup > 0) buttons |= Btn.Alt;
+          else if (planarSpeed <= c.windupMaxRunSpeed && !(self.prevButtons & Btn.Alt))
+            buttons |= Btn.Alt;
           const full = Math.round(c.windupSec / ctx.dt);
           if (self.windup >= full && aimErrNow < 1.2 * DEG) {
             buttons |= Btn.Fire;
@@ -817,7 +829,8 @@ export const botThink = (
         }
       } else if (dist > 28 && self.grounded && rngFloat(rng) < s.windupChance) {
         mem.windupActive = true;
-        buttons |= Btn.Alt;
+        mem.windupTick = tick;
+        buttons &= ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right | Btn.Dash);
       } else if (mem.throwPhase > 0) {
         mem.throwPhase++;
         if (mem.throwPhase < 6 || aimErrNow > (s.aimErrorDeg * 0.8 + 0.6) * DEG) {

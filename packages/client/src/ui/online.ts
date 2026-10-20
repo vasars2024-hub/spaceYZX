@@ -46,6 +46,7 @@ import {
   crumbs,
   iconButton,
   mapCard,
+  withComingSoon,
   mapMini,
   mapQueueGrid,
   nextMapSettings,
@@ -256,7 +257,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
             'Click a map to play it. Press + on more maps to queue a playlist: they are played one after another.',
           )
         : null,
-      grid(best),
+      withComingSoon(grid(best)),
       other.length
         ? h('h3', { class: 'step-title' }, 'Other maps (no objective for this mode)')
         : null,

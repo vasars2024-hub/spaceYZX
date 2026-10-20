@@ -35,6 +35,7 @@ import {
   crumbs,
   iconButton,
   mapCard,
+  withComingSoon,
   mapMini,
   mapQueueGrid,
   nextMapSettings,
@@ -171,7 +172,7 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
         g.el,
       );
     }
-    return stepPanel('Pick a map', grid(mapsForMode(s.mode)));
+    return stepPanel('Pick a map', withComingSoon(grid(mapsForMode(s.mode))));
   };
 
   const kitGrid = () =>

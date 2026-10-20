@@ -153,9 +153,8 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
     ['W', 'B', 'drop', true],
     ['R', 'A', 'drop', true],
   ],
-  // forcefield size walls (v2 sizes.mjs): closed at 3v3 and smaller, more at 2v2 and smaller
+  // forcefield size walls: only at 2v2 and smaller (3v3 plays the full map)
   sizes: {
-    3: ['r', 'j', 'g', '0', 'l', 'u', 'b'],
     2: ['r', 'j', 'g', '0', 'l', 'u', 'b', 't', 'T'],
   },
 };

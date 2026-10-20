@@ -321,6 +321,30 @@ export const queueStrip = (ids: string[]): HTMLElement =>
     ),
   );
 
+/**
+ * The "Coming soon" slot at the end of the map pickers (our next own map): a disabled card that
+ * can't be picked.
+ */
+export const comingSoonCard = (): HTMLButtonElement => {
+  const c = card({
+    title: 'Coming soon',
+    desc: 'A new map of our own is on the way.',
+    art: h('span', { class: 'map-art coming-soon-art' }, '?'),
+    selected: false,
+    cls: 'map coming-soon',
+    onClick: () => {},
+  });
+  c.disabled = true;
+  c.setAttribute('aria-disabled', 'true');
+  return c;
+};
+
+/** A map grid with the "Coming soon" slot added at its end. */
+export const withComingSoon = (grid: HTMLElement): HTMLElement => {
+  grid.append(comingSoonCard());
+  return grid;
+};
+
 /** A small map picture (summary bar). */
 export const mapMini = (id: string): HTMLElement => {
   const s = h('span', { class: 'map-mini' });

@@ -203,14 +203,26 @@ export const MAPS: MapInfo[] = [
     retired: true,
     symmetric: true,
   },
-  // the redesigned maps (2026 map rework), built as grayboxes from their checked layouts
-  // (level/graybox.ts). The first competitive map in rotation is the default for matches.
+  // THE MAP LINE-UP (2026-10-20): the CS2 classics rebuilt at about 3× their real size (our
+  // players are much faster than CS players; level/maps/cs/), then our own maps. The first
+  // competitive map in rotation is the default for matches.
+  { id: 'dust2', name: 'Dust 2', build: buildDust2, competitive: true, graybox: true },
+  { id: 'mirage', name: 'Mirage', build: buildMirage, competitive: true, graybox: true },
+  { id: 'inferno', name: 'Inferno', build: buildInferno, competitive: true, graybox: true },
+  { id: 'nuke', name: 'Nuke', build: buildNuke, competitive: true, graybox: true },
+  { id: 'ancient', name: 'Ancient', build: buildAncient, competitive: true, graybox: true },
+  { id: 'anubis', name: 'Anubis', build: buildAnubis, competitive: true, graybox: true },
+  { id: 'cache', name: 'Cache', build: buildCache, competitive: true, graybox: true },
+  { id: 'train', name: 'Train', build: buildTrain, competitive: true, graybox: true },
+  // our own maps: the redesigned layouts (level/graybox.ts). Only Antipode and Canyon Relay stay
+  // in rotation; the others are ARCHIVED (retired) since the CS line-up replaced them.
   {
     id: 'split-deck-graybox',
     name: 'Split Deck',
     build: buildSplitDeckGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'kestrel-graybox',
@@ -218,6 +230,7 @@ export const MAPS: MapInfo[] = [
     build: buildKestrelGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'orbital-ring-graybox',
@@ -225,6 +238,7 @@ export const MAPS: MapInfo[] = [
     build: buildOrbitalRingGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'canyon-relay-graybox',
@@ -239,6 +253,7 @@ export const MAPS: MapInfo[] = [
     build: buildSakuraHoldGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
     // small (1v1–3v3): kept out of Premier's 5v5 map pool
     premier: false,
   },
@@ -255,6 +270,7 @@ export const MAPS: MapInfo[] = [
     build: buildStormglassGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'afterglow-graybox',
@@ -262,6 +278,7 @@ export const MAPS: MapInfo[] = [
     build: buildAfterglowGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'orrery-graybox',
@@ -269,6 +286,7 @@ export const MAPS: MapInfo[] = [
     build: buildOrreryGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
   {
     id: 'leviathan-graybox',
@@ -276,19 +294,8 @@ export const MAPS: MapInfo[] = [
     build: buildLeviathanGraybox,
     competitive: true,
     graybox: true,
+    retired: true,
   },
-  // CS2 classics rebuilt as grayboxes at about 3× their real size (level/maps/cs/)
-  { id: 'dust2', name: 'Dust 2', build: buildDust2, competitive: true, graybox: true },
-  { id: 'mirage', name: 'Mirage', build: buildMirage, competitive: true, graybox: true },
-  // CS2 classics rebuilt at about 3x their real size (level/maps/cs/)
-  { id: 'inferno', name: 'Inferno', build: buildInferno, competitive: true, graybox: true },
-  { id: 'nuke', name: 'Nuke', build: buildNuke, competitive: true, graybox: true },
-  // CS2 classics rebuilt at about 3× their size (level/maps/cs/)
-  { id: 'ancient', name: 'Ancient', build: buildAncient, competitive: true, graybox: true },
-  { id: 'anubis', name: 'Anubis', build: buildAnubis, competitive: true, graybox: true },
-  // CS2 classics rebuilt about 3× their real size (level/maps/cs/)
-  { id: 'cache', name: 'Cache', build: buildCache, competitive: true, graybox: true },
-  { id: 'train', name: 'Train', build: buildTrain, competitive: true, graybox: true },
   // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
   {
     id: 'skyfount-graybox',
@@ -296,6 +303,7 @@ export const MAPS: MapInfo[] = [
     build: buildSkyfountGraybox,
     competitive: false,
     graybox: true,
+    retired: true,
   },
   // the royale mega map (~1 km across): a remodel of Shibuya, Tokyo, for the free-for-all royale
   {

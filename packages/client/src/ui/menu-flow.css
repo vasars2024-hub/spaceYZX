@@ -1250,3 +1250,18 @@ html.mobile .pause-menu {
 .card-grid.toggles.off {
   opacity: 0.5;
 }
+
+/* the "Coming soon" map slot (a disabled card) */
+.card.coming-soon {
+  opacity: 0.55;
+  cursor: default;
+  border-style: dashed;
+}
+.coming-soon-art {
+  display: grid;
+  place-items: center;
+  font-size: 44px;
+  font-weight: 800;
+  color: var(--text);
+  opacity: 0.6;
+}

@@ -624,6 +624,8 @@ export const PLAYER_SCHEMA = defineSchema([
   { name: 'laserCharges', kind: 'uint', bits: 3 },
   { name: 'weapon', kind: 'uint', bits: 1 },
   { name: 'slashTicks', kind: 'uint', bits: 5 },
+  /** teleport slash charge (ticks E held): drawn as the glowing sword */
+  { name: 'meleeCharge', kind: 'uint', bits: 8 },
   { name: 'magOn', kind: 'bool' },
   { name: 'grenadesLeft', kind: 'uint', bits: 2 },
   { name: 'kills', kind: 'uint', bits: 8 },
@@ -679,6 +681,7 @@ export const toNetPlayer = (p: PlayerState): NetPlayer => ({
   laserCharges: clampU(p.laserCharges, 3),
   weapon: clampU(p.weapon, 1),
   slashTicks: clampU(p.slashTicks, 5),
+  meleeCharge: clampU(p.meleeCharge, 8),
   magOn: !!p.mag,
   grenadesLeft: clampU(p.grenadesLeft, 2),
   kills: clampU(p.kills, 8),

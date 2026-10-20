@@ -139,6 +139,8 @@ export const createPlayer = (
     slashCd: 0,
     slashTicks: 0,
     slashHit: false,
+    meleeCharge: 0,
+    teleportCd: 0,
     grenadesLeft: c.grenadesPerRound,
     nadeCharge: 0,
     nadeBounces: c.grenadeBouncesDefault,

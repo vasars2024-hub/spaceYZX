@@ -167,6 +167,7 @@ export class LocalSession implements Session {
         aiming: p.aiming,
         laserWarn: p.laserWarn,
         slashTicks: p.slashTicks,
+        meleeCharge: p.meleeCharge,
         weapon: p.weapon,
         stun: p.stun,
         shield: p.shield,

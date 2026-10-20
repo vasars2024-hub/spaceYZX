@@ -208,7 +208,7 @@ export const controlsHelp = (binds: Keybinds = DEFAULT_KEYBINDS): [string, strin
         'Flick mouse in flight',
         'Tilt your Quick Throw left / right while it flies out (faster flick = sharper curve)',
       ],
-      ['{melee*}', 'Slash / deflect'],
+      ['{melee*}', 'Slash / deflect · hold: teleport slash (not in CS modes)'],
       ['{grenade*}', 'Grenade'],
       ['{nadeBounce*}', 'Grenade bounces: cycle how often the next grenade bounces'],
       ['{minePlace*} / {mineDetonate*}', 'Remote mine: place it where you stand / set it off'],

@@ -92,7 +92,7 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: 'alt', label: 'Wind-up / steer', group: 'Weapons', button: Btn.Alt, keys: ['Mouse2'] },
   {
     id: 'melee',
-    label: 'Slash / deflect / knife',
+    label: 'Slash / deflect / knife · hold: teleport slash',
     group: 'Weapons',
     button: Btn.Melee,
     keys: ['KeyE'],

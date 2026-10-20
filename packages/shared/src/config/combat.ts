@@ -86,14 +86,31 @@ export const COMBAT_DEFAULTS = {
   recallKillRadius: 0.55,
 
   // Slash & deflect
-  slashRange: 2.2,
+  slashRange: 2.7, // melee remodel: +23 % reach (was 2.2)
+  csSlashRange: 2.2, // CS modes keep the old knife reach (csConfig copies it into slashRange)
   slashConeDeg: 40,
   slashDamage: 34, // 3 slashes kill (100 HP)
   slashCooldownSec: 0.8,
   slashHitCooldownSec: 0.4,
   slashActiveSec: 0.12,
   slashLunge: 4,
+  deflectRange: 2.2, // how far a slash reaches incoming Boomerangs / grenades (unchanged)
   deflectConeDeg: 20,
+
+  // Teleport slash (sim/melee.ts; not in CS modes): hold E for teleportChargeSec, then let go
+  // to dash teleportDistance metres straight ahead (along the floor, stopping at walls) with
+  // the sword. Every enemy whose body centre line comes within teleportKillRadius of that
+  // path dies (a round-start shield still soaks it). A tap of E is just the normal slash.
+  teleportChargeSec: 1.0,
+  teleportHoldSec: 2, // fully charged and still held this long: the charge fades (no cooldown)
+  teleportTapSec: 0.15, // shorter holds are a plain slash: no slow-down, no charge glow/sound
+  teleportChargeMoveScale: 0.6, // while charging you move at 60 % of sprint speed
+  teleportDistance: 4,
+  teleportKillRadius: 0.8,
+  teleportDamage: 200, // kills from full health
+  teleportCooldownSec: 7, // from the moment it fires
+  teleportExitSpeed: 4, // forward speed you keep after arriving
+  teleportFriendlyFire: 0, // 1 = it also kills teammates on the line (off: anti-grief)
 
   // Laser
   // Laser: a real weapon you can switch to (keys 1 / 2), with a magazine and a per-round reserve;

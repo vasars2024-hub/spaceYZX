@@ -101,6 +101,7 @@ export class NetSession implements Session {
         aiming: np.aiming,
         laserWarn: np.laserWarn,
         slashTicks: np.slashTicks,
+        meleeCharge: np.meleeCharge,
         weapon: np.weapon,
         stun: np.stun,
         shield: np.shield,

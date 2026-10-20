@@ -242,6 +242,8 @@ const attackerOf = (e: SimEvent): number | null => {
     case 'grenadeThrow':
     case 'gunFire':
     case 'windupStart':
+    case 'meleeCharge': // starting to charge a teleport slash, like a wind-up
+    case 'teleportSlash':
       return e.player;
     case 'recallStart':
       return e.lethal ? e.player : null;

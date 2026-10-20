@@ -38,6 +38,7 @@ import { flatAim, tiltStep } from './flick';
 import { loadoutOf } from '../config/loadout';
 import { updateGuns } from './guns';
 import { grenadeFlightStep, grenadeFuseOut, updateGrenadeInput } from './grenade';
+import { updateTeleportSlash } from './melee';
 
 const DEG = Math.PI / 180;
 const ticks = (sec: number, dt: number): number => Math.max(1, Math.round(sec / dt));
@@ -60,6 +61,7 @@ const SHIELDED_KINDS: ReadonlySet<KillKind> = new Set<KillKind>([
   'recall',
   'deflect',
   'slash',
+  'teleportSlash',
   'laser',
   'grenade',
   'mine',
@@ -902,6 +904,17 @@ export const updateCombat = (
     const b = world.boomerangs.find((bb) => bb.owner === p.id);
     if (p.slashCd > 0) p.slashCd--;
     if (p.slashTicks > 0) p.slashTicks--;
+    // hold E: the teleport slash (sim/melee.ts)
+    updateTeleportSlash(
+      world,
+      ctx,
+      p,
+      buttons,
+      pressed,
+      b,
+      stunned.has(p.id),
+      () => ctx.rewindHitboxes?.(p.id) ?? liveHitboxes,
+    );
     if (p.laserCd > 0) p.laserCd--;
     if (p.laserReload > 0 && --p.laserReload === 0) {
       const take = Math.min(c.laserCharges - p.laserCharges, p.laserReserve);
@@ -1135,7 +1148,7 @@ export const updateCombat = (
       const inCone = (pos: Vec3): boolean => {
         const d = sub(pos, eye);
         const dist = len(d);
-        if (dist > c.slashRange + c.boomerangRadius || dist < 1e-6) return false;
+        if (dist > c.deflectRange + c.boomerangRadius || dist < 1e-6) return false;
         return dot(scale(d, 1 / dist), fwd) >= cosCone;
       };
       const remote = only !== undefined && b.owner !== only;
@@ -1160,7 +1173,7 @@ export const updateCombat = (
       if (g.phase !== 0) continue;
       // like deflects: where the grenade is now, or where the slasher saw it
       const reach = (pos: Vec3): boolean =>
-        len(sub(pos, eye)) <= c.slashRange + c.grenadeHitRadius &&
+        len(sub(pos, eye)) <= c.deflectRange + c.grenadeHitRadius &&
         dot(normalize(sub(pos, eye)), fwd) >= Math.cos(c.slashConeDeg * DEG);
       const foreign = only !== undefined && g.owner !== only;
       const seen = g.owner !== p.id ? ctx.rewindPos?.(p.id, 'grenade', g.id) : null;

@@ -515,6 +515,8 @@ describe('Colossus Yard: Brawl', () => {
     const mems = world.players.map((p) => createBotMemory(p.id, BOT_SKILLS.normal, p.id * 13));
     const spawnedAt = new Map(world.players.map((p) => [p.id, 0]));
     const alive = new Map(world.players.map((p) => [p.id, true]));
+    // players who gave up their spawn protection early by attacking (fair game from then on)
+    const dropped = new Set<number>();
     const lives: number[] = [];
     const deathSpots: Vec3[] = [];
     // (attacking ends your spawn protection early: those lives don't count below)
@@ -534,7 +536,7 @@ describe('Colossus Yard: Brawl', () => {
       for (const e of world.events) {
         if ('player' in e && ATTACKS.has(e.type)) attacked.add(e.player);
         if (e.type === 'kill') {
-          if (!attacked.has(e.victim))
+          if (!attacked.has(e.victim) && !dropped.has(e.victim))
             lives.push((world.tick - spawnedAt.get(e.victim)!) * TICK_DT);
           deathSpots.push({ ...world.players.find((p) => p.id === e.victim)!.pos });
         }
@@ -544,7 +546,11 @@ describe('Colossus Yard: Brawl', () => {
         if (p.alive && !alive.get(p.id)) {
           spawnedAt.set(p.id, world.tick);
           attacked.delete(p.id);
+          dropped.delete(p.id);
         }
+        const protectEnds = spawnedAt.get(p.id)! + BRAWL_DEFAULTS.protectSec / TICK_DT;
+        if (p.alive && world.tick < protectEnds - 1 && bs.protectUntil[p.id] === undefined)
+          dropped.add(p.id);
         alive.set(p.id, p.alive);
       }
     }

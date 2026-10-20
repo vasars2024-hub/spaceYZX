@@ -581,6 +581,92 @@ const defs = {
       0.7,
     );
   },
+  // Teleport slash (hold E): the sword is drawn with a ringing "schwing", then a low hum rises
+  // until the charge is full (as long as the charge after a tap; stopped if it is let go early)
+  swordCharge: (sr) => {
+    const d = COMBAT_DEFAULTS.teleportChargeSec - COMBAT_DEFAULTS.teleportTapSec;
+    const pitch = expSweep(70, 200, d);
+    const rise: Envelope = (t) => 0.25 + 0.75 * (t / d) * (t / d);
+    const hum = lowpass(
+      mix(sr, d, [
+        { sig: osc(sr, d, 'saw', pitch), gain: 0.5 },
+        { sig: osc(sr, d, 'saw', (t) => pitch(t) * 1.01), gain: 0.5 },
+        { sig: osc(sr, d, 'sine', (t) => pitch(t) * 0.5), gain: 0.6 },
+      ]),
+      sr,
+      (t) => 300 + 2500 * (t / d),
+      2,
+    );
+    const air = bandpass(whiteNoise(sr, d, 48), sr, (t) => 900 + 4000 * (t / d), 2);
+    return finish(
+      mix(sr, d, [
+        // the draw: a metal scrape up into a ring
+        { sig: whoosh(sr, d, 49, expSweep(2500, 7000, 0.12), 3, swell(0.02, 0.06)), gain: 0.5 },
+        { sig: bell(sr, d, 2350, 2.76, 2.2, 0.35), gain: 0.35, at: 0.06 },
+        {
+          sig: applyEnv(
+            applyEnv(hum, sr, rise),
+            sr,
+            trem((t) => 6 * t + 9 * t * t, 0.35),
+          ),
+          gain: 0.8,
+        },
+        { sig: applyEnv(air, sr, rise), gain: 0.25 },
+      ]),
+      sr,
+      0.8,
+    );
+  },
+  swordReady: (sr) => {
+    // fully charged: a bright double "ting" on the blade
+    const d = 0.5;
+    return finish(
+      mix(sr, d, [
+        { sig: bell(sr, d, 3135, 2.76, 1.6, 0.22), gain: 0.6 },
+        { sig: bell(sr, d, 4186, 2.76, 1.2, 0.18), gain: 0.45, at: 0.06 },
+        { sig: crack(sr, d, 50, 0.003, 6000), gain: 0.25 },
+      ]),
+      sr,
+      0.8,
+    );
+  },
+  teleportSlash: (sr) => {
+    // the dash: air torn open (a fast falling whoosh), a deep body hit, the blade's long metal
+    // ring and a short echo — big, crisp and satisfying
+    const d = 1.0;
+    const rip = whoosh(sr, d, 51, expSweep(9000, 600, 0.22), 1.3, swell(0.004, 0.09));
+    const shing = mix(sr, d, [
+      { sig: bell(sr, d, 1568, 3.01, 3.5, 0.5), gain: 0.5 },
+      { sig: bell(sr, d, 2093, 2.76, 2.5, 0.42), gain: 0.4, at: 0.012 },
+      { sig: tone(sr, d, 'sine', expSweep(5200, 2600, 0.3), 0.2), gain: 0.25 },
+    ]);
+    const body = softClip(
+      mix(sr, d, [
+        { sig: thump(sr, d, 140, 34, 0.22), gain: 1.3 },
+        {
+          sig: applyEnv(lowpass(whiteNoise(sr, d, 53), sr, 900), sr, percFn(0.08, 0.002)),
+          gain: 0.5,
+        },
+      ]),
+      1.8,
+    );
+    return finish(
+      echo(
+        mix(sr, d, [
+          { sig: crack(sr, d, 54, 0.012, 3500), gain: 0.8 },
+          { sig: rip, gain: 1 },
+          { sig: body, gain: 0.9, at: 0.01 },
+          { sig: shing, gain: 0.7, at: 0.02 },
+        ]),
+        sr,
+        0.13,
+        0.3,
+        0.3,
+      ),
+      sr,
+      0.95,
+    );
+  },
 
   // ---------------------------------------------------------------------------------- laser
   laserWarn: (sr) => {

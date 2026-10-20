@@ -40,6 +40,7 @@ import { CombatView } from '../render/combat-view';
 import { NadeExtras } from './nade-extras';
 import { Viewmodel } from '../render/viewmodel';
 import { CombatHud, POWERUP_HUD, type Threat } from '../ui/combat-hud';
+import { MeleeFx } from './melee-fx';
 import { projectMarker, screenAngle } from '../ui/markers';
 import type { LoopHandle } from '../audio';
 import type { SoundName } from '../audio';
@@ -89,6 +90,8 @@ export class CombatFeature implements ClientFeature {
   hud!: CombatHud;
   /** charged grenade preview + remote mine (game/nade-extras.ts) */
   private nades!: NadeExtras;
+  /** teleport slash: sounds, black flash, charge meter, dash streaks */
+  melee!: MeleeFx;
   private whistles = new Map<number, LoopHandle>();
   /** each player's wind-up charge sound, stopped when the wind-up ends in any way */
   private windupSounds = new Map<number, { h: LoopHandle; at: number }>();
@@ -121,6 +124,7 @@ export class CombatFeature implements ClientFeature {
     this.hud = new CombatHud(c.deps.ui);
     this.nades = new NadeExtras((...args) => this.view.fragments.burst(...args));
     this.nades.init(c, this.hud.root);
+    this.melee = new MeleeFx(c.deps.ui, c.scene);
     c.overlay = { scene: this.viewmodel.scene, camera: this.viewmodel.camera };
     window.addEventListener('resize', this.onResize);
   }
@@ -167,6 +171,7 @@ export class CombatFeature implements ClientFeature {
     // so their sounds are placed out of hearing range instead of (as before) at your own head
     const posOf = (id: number): Vec3 =>
       world.players.find((p) => p.id === id)?.pos ?? (id === me ? c.eye() : UNHEARD);
+    this.melee.events(events, me, a, posOf, (id) => this.teamOf(c, id));
     for (const e of events) {
       switch (e.type) {
         case 'throw':
@@ -512,7 +517,9 @@ export class CombatFeature implements ClientFeature {
                 ? 'DEFLECT KILL'
                 : kind === 'stomp'
                   ? 'STOMPED'
-                  : 'ELIMINATED',
+                  : kind === 'teleportSlash'
+                    ? 'TELEPORT SLASH'
+                    : 'ELIMINATED',
       );
     }
   }
@@ -619,6 +626,7 @@ export class CombatFeature implements ClientFeature {
     else c.fovOverride = null;
 
     this.updatePunch(c, me, dt);
+    this.melee.frame(dt, me, cfg);
 
     // viewmodel
     const vfov = c.camera.fov;
@@ -645,10 +653,16 @@ export class CombatFeature implements ClientFeature {
           gun: this.cs ? currentGun(me) : null,
           gunShots: me.gunShots,
           gunReload01: this.cs ? this.gunReload01(c, me) : 0,
+          swordCharge:
+            me.meleeCharge >= Math.round(cfg.combat.teleportTapSec * 60)
+              ? Math.min(1, me.meleeCharge / Math.round(cfg.combat.teleportChargeSec * 60))
+              : 0,
+          teleportSlash: this.melee.fired,
         },
         dt,
       );
       this.slashed = false;
+      this.melee.fired = false;
       this.viewmodel.scene.visible = me.alive;
     }
 
@@ -880,6 +894,7 @@ export class CombatFeature implements ClientFeature {
     this.nades.dispose(c);
     this.view.dispose();
     this.hud.dispose();
+    this.melee.dispose();
     c.overlay = null;
     window.removeEventListener('resize', this.onResize);
   }

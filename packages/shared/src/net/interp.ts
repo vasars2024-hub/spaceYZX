@@ -68,6 +68,7 @@ export const netToPlayer = (id: number, np: NetPlayer, config: GameConfig): Play
     laserCharges: np.laserCharges,
     weapon: np.weapon as 0 | 1,
     slashTicks: np.slashTicks,
+    meleeCharge: np.meleeCharge,
     mag: np.magOn ? v3(0, 1, 0) : null,
     grenadesLeft: np.grenadesLeft,
     kills: np.kills,

@@ -26,6 +26,8 @@ export const weaponOfKill = (kind: KillKind): string | null => {
     case 'deflect':
     case 'blast':
       return 'boomerang';
+    case 'teleportSlash':
+      return 'slash'; // the sword's charged dash counts as a slash kill
     case 'slash':
     case 'laser':
     case 'grenade':

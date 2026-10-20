@@ -116,6 +116,10 @@ export interface CombatPlayerState {
   slashCd: number;
   slashTicks: number; // remaining active slash window
   slashHit: boolean;
+  /** teleport slash (sim/melee.ts): ticks E has been held toward it (0 = not charging) */
+  meleeCharge: number;
+  /** ticks until the next teleport slash is allowed */
+  teleportCd: number;
   grenadesLeft: number;
   /** holding Q: ticks held so far (0 = not charging); the throw's strength (sim/grenade.ts) */
   nadeCharge: number;

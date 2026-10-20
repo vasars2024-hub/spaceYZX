@@ -184,6 +184,7 @@ export const KILL_KINDS: KillKind[] = [
   'recall',
   'deflect',
   'slash',
+  'teleportSlash',
   'laser',
   'grenade',
   'mine',

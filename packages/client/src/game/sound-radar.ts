@@ -238,6 +238,8 @@ export class SoundRadar implements ClientFeature {
           if (e.player !== me) this.hear('deflect', e.pos, teamOf(e.player), e.player);
           break;
         case 'slash':
+        case 'meleeCharge': // a teleport slash charging (and firing) sounds like a slash
+        case 'teleportSlash':
           from(e.player, 'slash');
           break;
         case 'controllerDrop':

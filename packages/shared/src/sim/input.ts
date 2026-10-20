@@ -19,11 +19,14 @@ export const Btn = {
   Slot1: 1 << 13, // 1: Boomerang
   Slot2: 1 << 14, // 2: Laser
   Use: 1 << 15, // G (hold): plant / defuse the bomb
+  MinePlace: 1 << 16, // place your remote mine where you stand (one per round)
+  MineDetonate: 1 << 17, // set off your remote mine
+  NadeBounce: 1 << 18, // middle mouse: cycle how many times the next grenade bounces
 } as const;
 
-export const ALL_BUTTONS = (1 << 16) - 1;
+export const ALL_BUTTONS = (1 << 19) - 1;
 /** bits per input's buttons on the wire */
-export const BUTTON_BITS = 16;
+export const BUTTON_BITS = 19;
 
 export interface PlayerInput {
   tick: number;

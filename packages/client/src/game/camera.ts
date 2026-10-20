@@ -1,6 +1,8 @@
 // First-person camera that follows the body's up vector (gravity) and turns with the mouse.
 // Mouse yaw rotates around the camera's current up; pitch is clamped relative to it. When the
 // up vector changes, the camera is carried along by the shortest rotation (no roll jumps).
+// The camera never rolls: its image's up always lies in the plane of the view direction and
+// the body's up (the horizon stays flat on the screen, upright or upside down).
 import type { Quat, Vec3 } from '@space-yz/shared';
 import {
   qFromAxisAngle,
@@ -16,23 +18,38 @@ import {
   angleBetween,
   clone,
   projectOnPlane,
+  qFromBasis,
 } from '@space-yz/shared';
 
 const DEG = Math.PI / 180;
 const MAX_PITCH = 88 * DEG;
+
+/**
+ * `view` turned about its own view direction so it stands level on `up` (no roll). A body's
+ * view and up can disagree: a ceiling spawn's view is made upright while the ceiling deck's
+ * gravity is already turning the body over (Antipode), and a camera made from that pair kept
+ * the difference as a tilt for good (the "whole map slanted" screen on the ceiling side).
+ */
+export const levelView = (view: Quat, up: Vec3): Quat => {
+  const q = qNormalize(view);
+  const f = qForward(q);
+  // (looking straight along up: any roll is level; fixPitch tips it back down)
+  if (Math.abs(dot(f, up)) > 0.9999) return q;
+  return qFromBasis(f, up);
+};
 
 export class FpsCamera {
   quat: Quat;
   up: Vec3;
 
   constructor(view: Quat, up: Vec3 = v3(0, 1, 0)) {
-    this.quat = qNormalize(view);
     this.up = normalize(up, v3(0, 1, 0));
+    this.quat = levelView(view, this.up);
   }
 
   reset(view: Quat, up: Vec3): void {
-    this.quat = qNormalize(view);
     this.up = normalize(up, v3(0, 1, 0));
+    this.quat = levelView(view, this.up);
   }
 
   /** Apply mouse movement (in degrees). */

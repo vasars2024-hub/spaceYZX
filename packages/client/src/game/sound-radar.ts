@@ -218,6 +218,9 @@ export class SoundRadar implements ClientFeature {
           this.sounds.delete(`pull:${e.grenade}`);
           this.hear('explosion', e.pos, null, e.grenade);
           break;
+        case 'mineBlast':
+          this.hear('explosion', e.pos, teamOf(e.player), `mine:${e.mine}`);
+          break;
         case 'blast':
           this.hear('explosion', e.pos, teamOf(e.player), `blast:${e.boomerang}`);
           break;

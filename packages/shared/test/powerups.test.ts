@@ -318,7 +318,8 @@ describe('power-ups: Freeze', () => {
     expect(enemy.stun).toBe(0);
     tick(sim, { 2: { buttons: Btn.Forward } }, 20);
     expect(len(sub(enemy.pos, x0))).toBeGreaterThan(0.5);
-    const g = tick(sim, { 2: { buttons: Btn.Forward | Btn.Grenade } }, 1);
+    tick(sim, { 2: { buttons: Btn.Forward | Btn.Grenade } }, 1);
+    const g = tick(sim, { 2: { buttons: Btn.Forward } }, 1); // (let go of Q: thrown)
     expect(g.some((e) => e.type === 'grenadeThrow' && e.player === 2)).toBe(true);
   });
 

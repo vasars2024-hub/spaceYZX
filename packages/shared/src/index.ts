@@ -79,6 +79,8 @@ export * from './sim/world';
 export * from './sim/hash';
 export * from './sim/hitbox';
 export * from './sim/combat';
+export * from './sim/grenade';
+export * from './sim/mine';
 export * from './sim/guns';
 export * from './sim/flick';
 export * from './sim/takeover';

@@ -5,6 +5,7 @@ import { h } from './menus';
 import { edgePoint, type ScreenMarker } from './markers';
 import { effects } from '../render/effects';
 import { storage } from '../settings';
+import { utilityRows, type UtilityStatus } from './nade-hud';
 
 const TIP_KEY = 'lethalrecoil.tiltTips';
 /** the flick tip shows on this many aims, ever (per browser) */
@@ -53,6 +54,8 @@ export interface KitStatus {
   powerup?: { kind: 1 | 2; charges: number; max: number } | null;
   /** frozen by a Freeze hit: 0..1 of the freeze left (0 = not frozen) */
   stun01?: number;
+  /** the charged grenade and the remote mine (ui/nade-hud.ts), both kits */
+  utility?: UtilityStatus | null;
 }
 
 /** HUD names and colours of the power-ups. */
@@ -81,6 +84,7 @@ const KIND_ICON: Record<KillKind, string> = {
   slash: '⚔',
   laser: '⌁',
   grenade: '✺',
+  mine: '⊗',
   blast: '✹',
   bomb: '💥',
   ak: 'AK',
@@ -387,6 +391,7 @@ export class CombatHud {
           { class: 'kit-row' },
           `E KNIFE   DASH ${ready(kit.dashReady01)}   JET ${ready(kit.jetReady01)}`,
         ),
+        ...(kit.utility ? utilityRows(kit.utility) : []),
       );
     else
       this.kit.replaceChildren(
@@ -401,8 +406,11 @@ export class CombatHud {
         h(
           'div',
           { class: 'kit-row' },
-          `GRENADE ${kit.grenades > 0 ? '◆' : '◇'}   DASH ${ready(kit.dashReady01)}   JET ${ready(kit.jetReady01)}`,
+          kit.utility
+            ? `DASH ${ready(kit.dashReady01)}   JET ${ready(kit.jetReady01)}`
+            : `GRENADE ${kit.grenades > 0 ? '◆' : '◇'}   DASH ${ready(kit.dashReady01)}   JET ${ready(kit.jetReady01)}`,
         ),
+        ...(kit.utility ? utilityRows(kit.utility) : []),
         ...(kit.powerup ? [this.powerupRow(kit.powerup)] : []),
       );
     // frozen by a Freeze hit

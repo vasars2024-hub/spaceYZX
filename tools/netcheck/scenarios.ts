@@ -854,6 +854,7 @@ export const grenadeShot = (opts: NetcheckOptions): ScenarioReport => {
   let lagSum = 0;
   const random = rng(opts.seed ?? 31);
   let throwIn = 60;
+  let holdQ = 0; // ticks of holding Q still to go (a full-charge throw)
   let aimOff = 0;
   let firedFor = -1;
   const d = startDuel(
@@ -878,11 +879,15 @@ export const grenadeShot = (opts: NetcheckOptions): ScenarioReport => {
       const me = cl.core.localPredicted();
       if (!me) return IDLE;
       let buttons = 0;
-      if (--throwIn <= 0) {
+      if (holdQ > 0) {
+        holdQ--;
+        buttons = Btn.Grenade; // charging; letting go throws
+      } else if (--throwIn <= 0) {
         d.tp.grenadesLeft = 1; // endless supply (server side)
         const mine = cl.core.localPredicted();
         if (mine) mine.grenadesLeft = 1;
         buttons = Btn.Grenade;
+        holdQ = Math.round(config.combat.grenadeChargeSec * 60);
         throwIn = 100;
       }
       const eye = eyePos(me, config.movement);

@@ -45,7 +45,32 @@ export interface GrenadeState {
   vel: Vec3;
   phase: 0 | 1 | 2; // 0 flying, 1 pulling, 2 finished
   t: number;
+  /** bounces left before it goes off: 0 = the next impact sets it off (sim/grenade.ts) */
+  bounces: number;
 }
+
+/**
+ * A remote mine lying where its owner stood (sim/mine.ts). One per player per round; the owner
+ * sets it off from anywhere. Enemies only see it up close (the server doesn't send it further).
+ */
+export interface MineState {
+  id: number;
+  owner: number;
+  /** on the ground under the owner's feet */
+  pos: Vec3;
+  /** the floor's up (the owner's up when placed): drawn flat on it, blast centre above it */
+  up: Vec3;
+  /** tick it was placed (it arms after combat.mineArmSec) */
+  placedTick: number;
+}
+
+/** Your remote mine this round / life: still to place, lying somewhere, or gone. */
+export const MineSlot = {
+  Ready: 0,
+  Placed: 1,
+  Used: 2,
+} as const;
+export type MineSlotState = (typeof MineSlot)[keyof typeof MineSlot];
 
 /**
  * Power-ups (lethal loadout only; config/loadout.ts `powerups`). The match rules spawn them in
@@ -92,6 +117,12 @@ export interface CombatPlayerState {
   slashTicks: number; // remaining active slash window
   slashHit: boolean;
   grenadesLeft: number;
+  /** holding Q: ticks held so far (0 = not charging); the throw's strength (sim/grenade.ts) */
+  nadeCharge: number;
+  /** bounces the next grenade makes before it goes off (middle mouse cycles it) */
+  nadeBounces: number;
+  /** your remote mine this round / life (MineSlot) */
+  mineSlot: MineSlotState;
   // CS mode guns (sim/guns.ts). `weapon` 0 = AK-47, 1 = Desert Eagle there.
   akMag: number;
   akReserve: number;

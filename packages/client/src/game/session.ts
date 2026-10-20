@@ -10,6 +10,7 @@ import type {
   WorldState,
   BoomerangState,
   GrenadeState,
+  MineState,
   PowerupPickup,
   SimContext,
   MatchView,
@@ -97,6 +98,8 @@ export interface Session {
   twins?(): BoomerangState[];
   /** power-ups waiting to be picked up */
   powerups?(): PowerupPickup[];
+  /** remote mines you know about (online: enemy ones only up close) */
+  mines?(): MineState[];
   /** Latest world (offline: authoritative; online: predicted). */
   world(): WorldState;
   /** Events produced since the last drain. */

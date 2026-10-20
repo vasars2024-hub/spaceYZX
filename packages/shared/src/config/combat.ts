@@ -107,17 +107,43 @@ export const COMBAT_DEFAULTS = {
   laserHeadDamage: 35,
   laserRange: 200,
 
-  // Gravity Grenade
-  grenadeSpeed: 20,
+  // Gravity Grenade (sim/grenade.ts). Hold Q to charge, let go to throw; middle mouse picks how
+  // many times it bounces before it goes off. No randomness anywhere: the same spot, view,
+  // charge and bounce count always land on exactly the same spot (lineups).
+  grenadeSpeed: 20, // throw speed at full charge (m/s)
+  grenadeMinCharge: 0.3, // a quick tap throws this fraction of the full speed (a soft lob)
+  grenadeChargeSec: 1, // holding Q this long reaches full speed
+  grenadeUpTilt: 0.15, // the throw leaves a little above the crosshair (part of "up")
+  grenadeInheritVel: 0.5, // share of your own speed the grenade takes with it
+  grenadeBouncesDefault: 1, // bounce count before you change it with middle mouse
+  grenadeMaxBounces: 3, // middle mouse cycles 0, 1, 2, 3, 0, ...
+  grenadeRestitution: 0.55, // share of the speed into the surface it bounces back with
+  grenadeBounceFriction: 0.75, // share of the speed along the surface kept on a bounce
+  // a touch slower than this (into the surface) is rolling, not a bounce (doesn't count)
+  grenadeBounceMinSpeed: 1.5,
+  grenadeRollFriction: 0.9, // speed kept per tick while rolling / sliding
+  grenadeRestSpeed: 0.8, // a rolling grenade slower than this has stopped: it goes off
+  grenadeMaxFuseSec: 4, // goes off after this long in the air whatever happens
   grenadeRadius: 0.3,
   grenadeHitRadius: 0.45, // shootable hitbox
-  grenadeFuseSec: 1.2,
   grenadePullSec: 1.5,
   grenadePullRadius: 7,
   grenadePullAccel: 28,
   grenadeDamage: 40,
   grenadeDamageRadius: 5,
   grenadesPerRound: 1,
+  // Lineup practice (practice only): 1 = a new grenade as soon as the last one is gone
+  grenadeRefill: 0,
+
+  // Remote mine (sim/mine.ts): one per player per round (per life in respawn modes), dropped
+  // at your feet, set off from anywhere. Rooms switch it per mode (config/mine.ts).
+  mineEnabled: 1,
+  // Tower mode: no mines on the Towers (inside / on top of the touch volume). Set per mode.
+  mineTowerBan: 1,
+  mineRadius: 4, // everyone this close (to their body, in line of sight) is hit
+  mineDamageFrac: 0.5, // of max health, flat inside the radius
+  mineArmSec: 0.5, // can't be set off sooner than this after placing it
+  mineSeeRadius: 6, // enemies are only sent / shown a mine this close (server culling)
 
   // Power-ups (lethal loadout only; the match rules spawn them: rules config `powerup*`)
   powerupPickupRadius: 1.2, // from the power-up to your body (feet-to-head line)

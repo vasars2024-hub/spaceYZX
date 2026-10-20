@@ -227,6 +227,10 @@ export class LocalSession implements Session {
     return this.w.twins;
   }
 
+  mines() {
+    return this.w.mines;
+  }
+
   powerups() {
     return this.w.powerups;
   }

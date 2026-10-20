@@ -1,6 +1,6 @@
 // Match loadouts: what kit players get. 'lethal' is the normal game (Boomerang, Laser, Gravity
-// Grenade); 'cs' is the Counter-Strike style mode (AK-47 + Desert Eagle + knife slash, bomb
-// rules, everything moving at 70 % speed).
+// Grenade); 'cs' is the Counter-Strike style mode (AK-47 + Desert Eagle + knife slash + the
+// Gravity Grenade, bomb rules, everything moving at 70 % speed; no remote mine).
 //
 // The sim reads the loadout from the config (`combat.loadout`), so the client's prediction and
 // the server always agree: a CS room/session simply runs with `csConfig(base)`.
@@ -32,7 +32,7 @@ export const LOADOUTS: Record<LoadoutName, LoadoutDef> = {
   cs: {
     boomerang: false,
     laser: false,
-    grenade: false,
+    grenade: true, // the owner wants the charged throw / bounce count / lineups in CS too
     guns: true,
     powerups: false,
     dimPlayers: true,
@@ -99,6 +99,8 @@ export const csConfig = (base: GameConfig): GameConfig => {
   for (const k of CS_SCALED_MOVEMENT) out.movement[k] = base.movement[k] * CS_MOVE_SCALE;
   out.combat.windupWalkSpeed = base.combat.windupWalkSpeed * CS_MOVE_SCALE;
   out.combat.loadout = LOADOUT_ID.cs;
+  // CS modes have no remote mine (owner); rooms may switch it per mode (config/mine.ts)
+  out.combat.mineEnabled = 0;
   return out;
 };
 

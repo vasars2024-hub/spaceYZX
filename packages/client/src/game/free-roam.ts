@@ -347,7 +347,9 @@ export class FreeRoamSession extends LocalSession {
 export const createFreeRoamSession = (opts: FreeRoamOptions): FreeRoamSession => {
   const def = opts.levelDef ?? officialMapDef(opts.mapId);
   const kit = loadoutName(opts.kit);
-  const config = configForLoadout(opts.config ?? loadTuning(), kit);
+  const base = configForLoadout(opts.config ?? loadTuning(), kit);
+  // lineup practice: free roam hands you a new grenade as soon as the last one is gone
+  const config = { ...base, combat: { ...base.combat, grenadeRefill: 1 } };
   const spots = placeDummies(def, config);
   const start = freeRoamStart(def);
   const stats = new StatsTracker();

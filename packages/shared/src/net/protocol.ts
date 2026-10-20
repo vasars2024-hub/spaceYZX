@@ -16,7 +16,7 @@ export const snapGrenadePos = (v: Vec3): Vec3 => snapVec3(v, GRENADE_POS);
 import type { PlayerInput } from '../sim/input';
 import { ALL_BUTTONS, BUTTON_BITS } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
-import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
+import type { BoomerangState, GrenadeState, MineState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
 import type { NextMapMode } from '../rules/playlist';
@@ -509,7 +509,7 @@ const PLAYER_KEYS = Object.keys(
   createPlayer(0, 0, v3(), 0, defaultConfig()),
 ) as (keyof PlayerState)[];
 const BOOMERANG_KEYS = Object.keys(newBoomerang(0, v3())) as (keyof BoomerangState)[];
-const GRENADE_KEYS: (keyof GrenadeState)[] = ['id', 'owner', 'pos', 'vel', 'phase', 't'];
+const GRENADE_KEYS: (keyof GrenadeState)[] = ['id', 'owner', 'pos', 'vel', 'phase', 't', 'bounces'];
 
 const T_INT = 0,
   T_F64 = 1,
@@ -731,6 +731,13 @@ export interface SnapshotData {
   twins?: NetTwin[];
   /** power-ups waiting to be picked up (always present when decoded) */
   powerups?: PowerupPickup[];
+  /**
+   * remote mines this client may know about (always present when decoded): the server leaves
+   * out enemy mines that aren't close (sim/mine.ts mineVisibleTo)
+   */
+  mines?: MineState[];
+  /** Bomb mode: the planted bomb jammed every remote mine for the rest of the round */
+  minesJammed?: boolean;
   zones: { index: number; dir: Vec3; until: number }[];
   /** private, exact state for the receiving client (every few snapshots): for prediction */
   own: {
@@ -791,6 +798,17 @@ export const encodeSnapshot = (s: SnapshotData, base: SnapshotBaseline | null): 
     writePos(w, u.pos, GRENADE_POS);
     w.writeVarUint(u.spawnTick);
   }
+  const mines = s.mines ?? [];
+  w.writeVarUint(mines.length);
+  for (const m of mines) {
+    w.writeVarUint(m.id);
+    w.writeBits(m.owner, 8);
+    writePos(w, m.pos, GRENADE_POS);
+    // the floor's up, 8 bits per axis (only for drawing it flat on the floor)
+    for (const a of [m.up.x, m.up.y, m.up.z]) w.writeBits(clampU((a + 1) * 127.5, 8), 8);
+    w.writeVarUint(m.placedTick);
+  }
+  w.writeBool(!!s.minesJammed);
   w.writeVarUint(s.zones.length);
   for (const z of s.zones) {
     w.writeVarUint(z.index);
@@ -855,7 +873,7 @@ export const decodeSnapshot = (
     const owner = r.readBits(8);
     const phase = r.readBits(2) as 0 | 1 | 2;
     const pos = readPos(r, GRENADE_POS);
-    grenades.push({ id, owner, pos, vel: v3(), phase, t: 0 });
+    grenades.push({ id, owner, pos, vel: v3(), phase, t: 0, bounces: 0 });
   }
   const nt = r.readVarUint();
   if (nt > 128) throw new CodecError('invalid', 'too many twins');
@@ -875,6 +893,21 @@ export const decodeSnapshot = (
     const pos = readPos(r, GRENADE_POS);
     powerups.push({ id, kind, pos, spawnTick: r.readVarUint() });
   }
+  const nm = r.readVarUint();
+  if (nm > 64) throw new CodecError('invalid', 'too many mines');
+  const mines: MineState[] = [];
+  for (let k = 0; k < nm; k++) {
+    const id = r.readVarUint();
+    const owner = r.readBits(8);
+    const pos = readPos(r, GRENADE_POS);
+    const ux = r.readBits(8) / 127.5 - 1;
+    const uy = r.readBits(8) / 127.5 - 1;
+    const uz = r.readBits(8) / 127.5 - 1;
+    const l = Math.hypot(ux, uy, uz);
+    const up = l > 0.1 ? { x: ux / l, y: uy / l, z: uz / l } : { x: 0, y: 1, z: 0 };
+    mines.push({ id, owner, pos, up, placedTick: r.readVarUint() });
+  }
+  const minesJammed = r.readBool();
   const nz = r.readVarUint();
   if (nz > 64) throw new CodecError('invalid', 'too many zones');
   const zones: SnapshotData['zones'] = [];
@@ -911,6 +944,8 @@ export const decodeSnapshot = (
     grenades,
     twins,
     powerups,
+    mines,
+    minesJammed,
     zones,
     own,
     events,

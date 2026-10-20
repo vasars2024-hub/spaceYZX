@@ -10,6 +10,7 @@ export type KillKind =
   | 'slash'
   | 'laser'
   | 'grenade'
+  | 'mine'
   | 'blast'
   | 'bomb'
   | 'ak'
@@ -121,6 +122,18 @@ export type SimEvent =
   | { type: 'grenadeThrow'; player: number; grenade: number }
   | { type: 'grenadeActivate'; grenade: number; pos: Vec3; shot: boolean }
   | { type: 'grenadePop'; grenade: number; pos: Vec3 }
+  /** a grenade bounced (it had bounces left) */
+  | { type: 'grenadeBounce'; grenade: number; pos: Vec3 }
+  // remote mines (sim/mine.ts)
+  // (no position: events go to everyone, and enemies only learn of a mine up close)
+  | { type: 'minePlace'; player: number; mine: number }
+  /** a placement that wasn't allowed (in the air, on a Tower, jammed by a planted bomb) */
+  | { type: 'mineRefused'; player: number; reason: 'air' | 'tower' | 'jammed' }
+  | { type: 'mineBlast'; player: number; mine: number; pos: Vec3 }
+  /** a mine switched off harmlessly (its owner died, or the bomb's shockwave) */
+  | { type: 'mineFizzle'; player: number; mine: number; pos: Vec3 }
+  /** Bomb mode: the plant's radio shockwave switched every mine off (from the bomb) */
+  | { type: 'mineJam'; pos: Vec3 }
   /** `attacker`'s hit broke `victim`'s round-start shield instead of hurting them */
   | { type: 'shieldBreak'; attacker: number; victim: number; pos: Vec3 }
   /** an explosive Quick Throw went off (`player`: whose blast it is) */

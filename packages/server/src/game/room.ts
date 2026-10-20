@@ -34,6 +34,7 @@ import {
   netView,
   defaultConfig,
   TICK_DT,
+  mineVisibleTo,
 } from '@space-yz/shared';
 import type { Conn } from './conn';
 import { LagHistory } from './lagcomp';
@@ -519,6 +520,15 @@ export class Room {
         boomerangs = new Map([...pub.boomerangs].filter(([owner]) => players.has(owner)));
       }
       const ownB = this.world.boomerangs.find((b) => b.owner === m.id) ?? null;
+      // remote mines: enemies only hear of one up close (sim/mine.ts mineVisibleTo)
+      const mines = this.world.mines.filter((mm) =>
+        mineVisibleTo(
+          this.ctx,
+          mm,
+          this.world.players.find((p) => p.id === mm.owner),
+          own ?? undefined,
+        ),
+      );
       const forced = this.forceOwn.delete(m.id);
       const sendExtra = rulesJson !== '' && (rulesJson !== m.sentExtra || seq % 60 === 0);
       if (sendExtra) m.sentExtra = rulesJson;
@@ -534,6 +544,8 @@ export class Room {
           grenades: this.world.grenades,
           twins: this.world.twins,
           powerups: this.world.powerups,
+          mines,
+          minesJammed: this.world.minesJammed,
           zones,
           own:
             own && (seq % this.privateEvery === 0 || forced)

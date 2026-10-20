@@ -15,6 +15,8 @@ import {
   updateMatch,
   applyBotObjectives,
   csConfig,
+  withRemoteMine,
+  remoteMineMode,
   DEFAULT_MATCH_MAP,
   objectiveMapPool,
   playlistAdvance,
@@ -75,7 +77,19 @@ export const createPracticeSession = (
   const isMatch = opts.kind !== undefined && opts.kind !== 'deathmatch';
   const cs = isCsKind(opts.kind);
   // CS mode runs the sim with its own config (guns, 70 % movement speed)
-  const config = cs ? csConfig(opts.config) : opts.config;
+  // (and the remote mine on / off for this mode: config/mine.ts)
+  const config = withRemoteMine(
+    cs ? csConfig(opts.config) : opts.config,
+    remoteMineMode(
+      isMatch ? 'match' : 'practice',
+      opts.kind === 'elim' || opts.kind === 'elim-cs'
+        ? 'elim'
+        : opts.kind === 'bomb' || cs
+          ? 'bomb'
+          : 'tower',
+      cs,
+    ),
+  );
   // (matches: smaller teams play a smaller map, like online — level/size-walls.ts)
   const levelDef =
     opts.levelDef ??

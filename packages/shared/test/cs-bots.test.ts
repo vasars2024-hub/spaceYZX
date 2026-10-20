@@ -65,7 +65,8 @@ describe('bots in CS mode', () => {
     const types = new Set(events.map((e) => e.type));
     expect(ms.rounds.length).toBeGreaterThanOrEqual(1);
     expect(types.has('gunFire')).toBe(true);
-    for (const t of ['throw', 'laserWarn', 'grenadeThrow', 'recallStart'])
+    // (the charged Gravity Grenade is in the CS kit too)
+    for (const t of ['throw', 'laserWarn', 'recallStart'])
       expect(types.has(t as SimEvent['type']), t).toBe(false);
     const kills = events.filter(
       (e) => e.type === 'kill' && (e.kind === 'ak' || e.kind === 'deagle'),

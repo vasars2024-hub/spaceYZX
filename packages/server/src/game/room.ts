@@ -82,6 +82,11 @@ export interface Rules {
   finished?(room: Room): boolean;
   /** Players everyone may see through walls right now (never culled). */
   revealed?(room: Room): readonly number[];
+  /**
+   * Is this viewer sent everyone, whatever line of sight says? (Royale: a player who is out of
+   * the round spectates everybody still in it.)
+   */
+  seesAll?(room: Room, viewer: number): boolean;
   /** A dead human takes over a bot teammate (both checked to be human / bot); false = no. */
   takeOver?(room: Room, humanId: number, botId: number): boolean;
   /**
@@ -499,7 +504,7 @@ export class Room {
       // line-of-sight culling: leave out enemies this player's team can't see
       let players = pub.players;
       let boomerangs = pub.boomerangs;
-      if (this.vision.enabled) {
+      if (this.vision.enabled && !this.rules?.seesAll?.(this, m.id)) {
         players = new Map();
         for (const [id, np] of pub.players)
           if (this.vision.visibleTo(m, id, np.team as 0 | 1, this.world.tick)) players.set(id, np);

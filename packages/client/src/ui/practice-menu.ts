@@ -63,10 +63,12 @@ const sizeText = (mode: string, n: number): { title: string; desc: string } =>
     ? { title: raceSizeTitle(n), desc: raceSizeDesc(n) }
     : mode === 'brawl-ffa'
       ? { title: `${n} players`, desc: `You + ${n - 1} bots, everyone for themselves` }
-      : {
-          title: sizeTitle(mode === 'arena', n),
-          desc: mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
-        };
+      : mode === 'royale'
+        ? { title: `${n} players`, desc: `You + ${n - 1} bots, last one standing wins the round` }
+        : {
+            title: sizeTitle(mode === 'arena', n),
+            desc: mode === 'arena' ? arenaSizeDesc(n) : sizeDesc(n),
+          };
 
 export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
   let s: PracticeState = { ...hd.state, step: 'mode' };
@@ -181,7 +183,7 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
     isFreeRoam(s.mode)
       ? freeRoamStep()
       : stepPanel(
-          s.mode === 'arena' || s.mode === 'brawl-ffa'
+          s.mode === 'arena' || s.mode === 'brawl-ffa' || s.mode === 'royale'
             ? 'Players'
             : s.mode === 'race'
               ? 'Racers'

@@ -306,58 +306,138 @@ const walkable = (level: SimContext['level'], p: Vec3, q: Vec3, up: Vec3 | null)
   return true;
 };
 
+/**
+ * A min-heap of (key, index) pairs, smallest key first and the lower index on equal keys — the
+ * same order a scan "first smallest wins" picks in, so routes come out exactly as before.
+ * Typed arrays: big royale maps have 5–15k waypoints.
+ */
+class IndexHeap {
+  private keys: Float64Array;
+  private ids: Int32Array;
+  size = 0;
+  constructor(cap: number) {
+    this.keys = new Float64Array(Math.max(4, cap));
+    this.ids = new Int32Array(Math.max(4, cap));
+  }
+  private less(a: number, b: number): boolean {
+    const ka = this.keys[a];
+    const kb = this.keys[b];
+    return ka < kb || (ka === kb && this.ids[a] < this.ids[b]);
+  }
+  private swap(a: number, b: number): void {
+    const k = this.keys[a];
+    this.keys[a] = this.keys[b];
+    this.keys[b] = k;
+    const i = this.ids[a];
+    this.ids[a] = this.ids[b];
+    this.ids[b] = i;
+  }
+  push(key: number, id: number): void {
+    if (this.size === this.keys.length) {
+      const k = new Float64Array(this.size * 2);
+      k.set(this.keys);
+      this.keys = k;
+      const d = new Int32Array(this.size * 2);
+      d.set(this.ids);
+      this.ids = d;
+    }
+    let i = this.size++;
+    this.keys[i] = key;
+    this.ids[i] = id;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (!this.less(i, up)) break;
+      this.swap(i, up);
+      i = up;
+    }
+  }
+  /** The smallest key (call only when size > 0). */
+  topKey(): number {
+    return this.keys[0];
+  }
+  /** Remove the smallest; returns its index (call only when size > 0). */
+  pop(): number {
+    const top = this.ids[0];
+    const last = --this.size;
+    if (last > 0) {
+      this.keys[0] = this.keys[last];
+      this.ids[0] = this.ids[last];
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < last && this.less(l, m)) m = l;
+        if (r < last && this.less(r, m)) m = r;
+        if (m === i) break;
+        this.swap(i, m);
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
+/**
+ * The nearest waypoint a walker at `p` can head straight for (one within 2 m always counts);
+ * none at all: the nearest one. Waypoints are tried nearest first (a heap), so only a few need
+ * the walkability check even on a map with thousands of them; the answer is the same as
+ * checking them all (the nearest that passes, the lower index on a tie).
+ */
 const nearestWaypoint = (
   wps: WaypointDef[],
   p: Vec3,
   level: SimContext['level'],
   up: Vec3 | null,
 ): number => {
-  let best = -1;
-  let bestD = Infinity;
-  for (let i = 0; i < wps.length; i++) {
-    const d = lenSq(sub(wps[i].pos, p));
-    if (d < bestD && (d < 4 || walkable(level, p, wps[i].pos, up))) {
-      bestD = d;
-      best = i;
-    }
+  if (!wps.length) return -1;
+  const heap = new IndexHeap(wps.length);
+  for (let i = 0; i < wps.length; i++) heap.push(lenSq(sub(wps[i].pos, p)), i);
+  let nearest = -1;
+  while (heap.size) {
+    const d = heap.topKey();
+    const i = heap.pop();
+    if (nearest < 0) nearest = i;
+    if (d < 4 || walkable(level, p, wps[i].pos, up)) return i;
   }
-  if (best < 0) {
-    for (let i = 0; i < wps.length; i++) {
-      const d = lenSq(sub(wps[i].pos, p));
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-  }
-  return best;
+  return nearest;
 };
 
-/** Shortest waypoint route (Dijkstra; graphs are small). */
+/**
+ * Shortest waypoint route (Dijkstra with a binary heap: fast on big maps). Nodes come off the
+ * heap in the same order as the old scan for the smallest distance (ties: the lower index), so
+ * every route is exactly the one the old version found.
+ */
 export const waypointRoute = (wps: WaypointDef[], from: number, to: number): number[] => {
   const n = wps.length;
-  const dist = new Array<number>(n).fill(Infinity);
-  const prev = new Array<number>(n).fill(-1);
-  const done = new Array<boolean>(n).fill(false);
+  if (from < 0 || from >= n || to < 0 || to >= n) return [];
+  const dist = new Float64Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const done = new Uint8Array(n);
+  const heap = new IndexHeap(n);
   dist[from] = 0;
-  for (;;) {
-    let u = -1;
-    for (let i = 0; i < n; i++)
-      if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
-    if (u < 0 || u === to) break;
-    done[u] = true;
+  heap.push(0, from);
+  while (heap.size) {
+    const d = heap.topKey();
+    const u = heap.pop();
+    // (a stale entry: this node was already settled, or later found nearer)
+    if (done[u] || d !== dist[u]) continue;
+    if (u === to) break;
+    done[u] = 1;
+    const pu = wps[u].pos;
     for (const v of wps[u].links) {
-      const d = dist[u] + len(sub(wps[u].pos, wps[v].pos));
-      if (d < dist[v]) {
-        dist[v] = d;
+      const nd = dist[u] + len(sub(pu, wps[v].pos));
+      if (nd < dist[v]) {
+        dist[v] = nd;
         prev[v] = u;
+        heap.push(nd, v);
       }
     }
   }
   if (dist[to] === Infinity) return [];
   const out: number[] = [];
-  for (let v = to; v >= 0; v = prev[v]) out.unshift(v);
-  return out;
+  for (let v = to; v >= 0; v = prev[v]) out.push(v);
+  return out.reverse();
 };
 
 /** Next point to walk toward on the way to `goal` (via the map's waypoint graph if any). */

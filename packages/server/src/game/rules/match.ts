@@ -17,8 +17,11 @@ import type { Member, Room, Rules } from '../room';
 import { MatchStats, type PlayerMatchStats } from '../match-stats';
 
 export interface MatchResult {
-  /** the room's team size ('1v1'…'5v5'), or 'brawl' / 'brawl-ffa' (brawl.ts brawlMatchResult) */
-  mode: TeamMode | 'brawl' | 'brawl-ffa';
+  /**
+   * the room's team size ('1v1'…'5v5'), or 'brawl' / 'brawl-ffa' (brawl.ts brawlMatchResult),
+   * or 'royale' (royale.ts matchResult)
+   */
+  mode: TeamMode | 'brawl' | 'brawl-ffa' | 'royale';
   /** 'tower', 'bomb', 'elim'… (profiles count wins per objective) */
   objective?: string;
   winner: 0 | 1 | null;

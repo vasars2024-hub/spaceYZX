@@ -78,6 +78,14 @@ import { setTextureDetail } from './render/textures';
 import { createPracticeSession, isCsKind, type PracticeKind } from './game/practice';
 import { startArenaPractice, arenaOnlineFeatures } from './game/arena-entry';
 import {
+  ROYALE_HINT,
+  RoyaleLocalSession,
+  RoyaleNetSession,
+  isRoyaleLobby,
+  royaleOnlineFeatures,
+  startRoyalePractice,
+} from './game/royale-entry';
+import {
   raceHint,
   RaceNetSession,
   isRaceLobby,
@@ -691,6 +699,12 @@ export class App {
               map: practiceMapId(st),
             });
           else if (st.mode === 'arena') this.startArenaPractice(st);
+          else if (st.mode === 'royale')
+            startRoyalePractice(this, {
+              size: st.size,
+              skill: st.skill,
+              map: practiceMapId(st),
+            });
           else if (st.mode === 'race')
             startRacePractice(this, {
               track: practiceMapId(st),
@@ -1132,6 +1146,7 @@ export class App {
   startOnline(core: NetCore, keepLock = false): void {
     if (core.mode === 'race') return this.startOnlineRace(core);
     if (isBrawlMode(core.mode)) return this.startOnlineBrawl(core, keepLock);
+    if (core.mode === 'royale') return this.startOnlineRoyale(core);
     const session = new NetSession(core);
     const combat = new CombatFeature();
     const ladder = core.ranked ? (core.ladder ?? ladderForMode(core.mode)) : null;
@@ -1198,6 +1213,31 @@ export class App {
       core.isPublic
         ? `${BRAWL_HINT} · ${ChatFeature.hint(this.settings)}`
         : `Room ${core.code} — share the code · ${BRAWL_HINT} · ${ChatFeature.hint(this.settings)}`,
+    );
+  }
+
+  /** A Royale room: the Royale HUD (zone, flashes, round wins), chat. */
+  private startOnlineRoyale(core: NetCore): void {
+    const session = new RoyaleNetSession(core);
+    const combat = new CombatFeature();
+    const chat = new ChatFeature(core, this.settings);
+    const royale = royaleOnlineFeatures(core, combat, () => this.quitToTitle());
+    const client = this.startGame(session, [combat, ...royale, chat], { tuning: false });
+    this.roomPanel = new RoomPanel(this.ui, core);
+    client.addFeature({
+      frame: () => {
+        this.roomPanel?.update();
+        client.hud.netText = this.settings.showNetStats
+          ? `${Math.round(core.rttMs)} ms${core.inputDelay ? ` (+${core.inputDelay} delay)` : ''}`
+          : '';
+      },
+      dispose: () => {
+        this.roomPanel?.dispose();
+        this.roomPanel = null;
+      },
+    });
+    client.hud.setHint(
+      `Room ${core.code} — share the code · ${ROYALE_HINT} · ${ChatFeature.hint(this.settings)}`,
     );
   }
 
@@ -1321,7 +1361,9 @@ export class App {
     const s = this.client.session;
     const match = s.match?.() ?? null;
     // (an offline Brawl respawns you by itself)
-    const brawlOffline = this.client.session instanceof BrawlLocalSession;
+    const brawlOffline =
+      this.client.session instanceof BrawlLocalSession ||
+      this.client.session instanceof RoyaleLocalSession;
     const menu = h(
       'div',
       { class: 'menu pause-menu' },
@@ -1351,7 +1393,7 @@ export class App {
           'btn secondary',
         ),
       ),
-      (match?.phase === 'warmup' || isRaceLobby(s)) && s.canStart?.()
+      (match?.phase === 'warmup' || isRaceLobby(s) || isRoyaleLobby(s)) && s.canStart?.()
         ? iconButton('next', isRaceLobby(s) ? 'Start race now' : 'Start match now', () => {
             s.startMatch?.();
             this.pause(false);

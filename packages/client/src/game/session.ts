@@ -29,6 +29,13 @@ export interface MatchInfo extends MatchView {
   }[];
 }
 
+/** A play zone to draw (Royale): the circle now and the one it closes in to next. */
+export interface ZoneDraw {
+  center: Vec3;
+  radius: number;
+  next: { center: Vec3; radius: number } | null;
+}
+
 export interface TickInput {
   buttons: number;
   view: Quat;
@@ -94,6 +101,8 @@ export interface Session {
   names(): Record<number, string>;
   /** Team of every player, also ones not in `world()` (online: enemies you can't see). */
   teams?(): Record<number, 0 | 1>;
+  /** Royale: the zone the minimap draws (null / absent elsewhere). */
+  zone?(): ZoneDraw | null;
   /** Rounds & objective state (null in practice / playground). */
   match?(): MatchInfo | null;
   /** Current authoritative tick (for timers). */

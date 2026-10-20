@@ -31,6 +31,8 @@ import {
   isBrawlMode,
   isFfaMode,
   type BrawlMode,
+  royaleMaps,
+  DEFAULT_ROYALE_MAP,
   RACE_DEFAULTS,
   defaultConfig,
   configForLoadout,
@@ -48,6 +50,7 @@ import { MatchRules, type MatchResult } from './rules/match';
 import { ArenaRules, type ArenaResult } from './rules/arena';
 import { RaceRules, type RaceRecord } from './rules/race';
 import { BrawlRules, type BrawlResult } from './rules/brawl';
+import { RoyaleRules } from './rules/royale';
 
 export interface HubServices {
   /** Authenticate / create an account from a hello message; returns display name + token. */
@@ -243,6 +246,9 @@ export class GameHub {
             ? DEFAULT_RACE_MAP
             : getMap('').id;
         const bots = Math.max(0, Math.min(9, Math.floor(Number(msg.bots) || 0)));
+        // (Royale needs a map with royale data: none yet, no Royale rooms)
+        if (mode === 'royale' && !DEFAULT_ROYALE_MAP())
+          return conn.sendJson({ t: 'error', msg: 'No Royale map is available yet.' });
         const room = this.createRoom({
           mode,
           map,
@@ -292,7 +298,8 @@ export class GameHub {
         if (
           room.rules instanceof MatchRules ||
           room.rules instanceof ArenaRules ||
-          room.rules instanceof RaceRules
+          room.rules instanceof RaceRules ||
+          room.rules instanceof RoyaleRules
         ) {
           const err = room.rules.requestStart(room);
           if (err) conn.sendJson({ t: 'error', msg: err });
@@ -403,6 +410,7 @@ export class GameHub {
     const arena = opts.mode === 'arena';
     const race = opts.mode === 'race';
     const brawl = isBrawlMode(opts.mode);
+    const royale = opts.mode === 'royale';
     const csRanked = !!opts.ranked && opts.ladder === 'premier-cs';
     const loadout: LoadoutName =
       opts.loadout === 'cs' && (!opts.ranked || csRanked) && opts.mode !== 'practice'
@@ -420,15 +428,17 @@ export class GameHub {
             : DEFAULT_RACE_MAP
           : brawl && !brawlMaps().some((m) => m.id === opts.map)
             ? DEFAULT_BRAWL_MAP()
-            : opts.map;
+            : royale && !royaleMaps().some((m) => m.id === opts.map)
+              ? (DEFAULT_ROYALE_MAP() ?? opts.map)
+              : opts.map;
     const room = new Room({
       code,
       mode: opts.mode,
       map,
       // a custom map, or the official edit of this built-in map (if published)
       custom: opts.custom ?? this.services.mapOverride?.(map) ?? null,
-      // (Brawl is casual only; its maps are the rotation's)
-      ranked: brawl ? false : opts.ranked,
+      // (Brawl and Royale are casual only; Brawl's maps are the rotation's)
+      ranked: brawl || royale ? false : opts.ranked,
       ffa: isFfaMode(opts.mode),
       public: brawl && !!opts.public,
       ...(brawl && opts.public ? { maxPlayers: PUBLIC_BRAWL.maxPlayers } : {}),
@@ -437,7 +447,7 @@ export class GameHub {
       // smaller teams play a smaller map (size walls): the level is built for this team size
       teamSize: roomTeamSize(opts.mode, opts.teamSize),
     });
-    if (opts.ranked && !brawl) room.ladder = opts.ladder ?? null;
+    if (opts.ranked && !brawl && !royale) room.ladder = opts.ladder ?? null;
     const rules: Rules =
       this.services.rulesFor?.(room, { bots: opts.bots ?? 0 }) ??
       (opts.mode === 'practice'
@@ -448,20 +458,22 @@ export class GameHub {
             ? new RaceRules(room.map, opts.ranked ? { lobbySec: RACE_DEFAULTS.rankedLobbySec } : {})
             : isBrawlMode(opts.mode)
               ? new BrawlRules(opts.mode)
-              : new MatchRules(
-                  opts.mode,
-                  // ranked: Tower (Duels) or Bomb (Premier); Premier CS: Bomb or Elimination
-                  opts.ranked
-                    ? csRanked
-                      ? opts.objective === 'elim'
-                        ? 'elim'
-                        : 'bomb'
-                      : opts.objective === 'bomb'
-                        ? 'bomb'
-                        : 'tower'
-                    : (opts.objective ?? 'tower'),
-                  loadout,
-                ));
+              : opts.mode === 'royale'
+                ? new RoyaleRules()
+                : new MatchRules(
+                    opts.mode,
+                    // ranked: Tower (Duels) or Bomb (Premier); Premier CS: Bomb or Elimination
+                    opts.ranked
+                      ? csRanked
+                        ? opts.objective === 'elim'
+                          ? 'elim'
+                          : 'bomb'
+                        : opts.objective === 'bomb'
+                          ? 'bomb'
+                          : 'tower'
+                      : (opts.objective ?? 'tower'),
+                    loadout,
+                  ));
     room.rules = rules;
     if (rules instanceof MatchRules && opts.teamSize && opts.teamSize < rules.ms.rules.teamSize)
       rules.ms.rules.teamSize = Math.max(1, Math.floor(opts.teamSize));
@@ -516,6 +528,13 @@ export class GameHub {
         this.log(`Room ${r.code}: next brawl on ${r.map}`);
       };
     }
+    if (rules instanceof RoyaleRules)
+      rules.onResult = (r, result) => {
+        const top = result.players.find((p) => p.place === 1);
+        const name = top ? (r.members.get(top.id)?.name ?? 'nobody') : 'nobody';
+        this.log(`Room ${r.code}: royale on ${r.map} over — ${name} wins (${result.reason})`);
+        this.services.onMatchEnd?.(r, result);
+      };
     if (rules instanceof ArenaRules) {
       rules.onResult = (r, result) => {
         this.log(

@@ -515,6 +515,8 @@ describe('Colossus Yard: Brawl', () => {
     const mems = world.players.map((p) => createBotMemory(p.id, BOT_SKILLS.normal, p.id * 13));
     const spawnedAt = new Map(world.players.map((p) => [p.id, 0]));
     const alive = new Map(world.players.map((p) => [p.id, true]));
+    // players who gave up their spawn protection early by attacking (fair game from then on)
+    const dropped = new Set<number>();
     const lives: number[] = [];
     const deathSpots: Vec3[] = [];
     for (let t = 0; t < 60 * 90; t++) {
@@ -530,19 +532,26 @@ describe('Colossus Yard: Brawl', () => {
       step(world, inputs, ctx);
       for (const e of world.events)
         if (e.type === 'kill') {
-          lives.push((world.tick - spawnedAt.get(e.victim)!) * TICK_DT);
+          if (!dropped.has(e.victim)) lives.push((world.tick - spawnedAt.get(e.victim)!) * TICK_DT);
           deathSpots.push({ ...world.players.find((p) => p.id === e.victim)!.pos });
         }
       updateBrawl(bs, world, ctx);
       for (const p of world.players) {
-        if (p.alive && !alive.get(p.id)) spawnedAt.set(p.id, world.tick);
+        if (p.alive && !alive.get(p.id)) {
+          spawnedAt.set(p.id, world.tick);
+          dropped.delete(p.id);
+        }
+        const protectEnds = spawnedAt.get(p.id)! + BRAWL_DEFAULTS.protectSec / TICK_DT;
+        if (p.alive && world.tick < protectEnds - 1 && bs.protectUntil[p.id] === undefined)
+          dropped.add(p.id);
         alive.set(p.id, p.alive);
       }
     }
     expect(bs.phase).toBe('live');
     const kills = world.players.reduce((n, p) => n + p.kills, 0);
     expect(kills).toBeGreaterThanOrEqual(10);
-    // nobody dies within the spawn protection (and a moment after it)
+    // nobody dies within the spawn protection (and a moment after it), unless they attacked
+    expect(lives.length).toBeGreaterThanOrEqual(5);
     expect(Math.min(...lives)).toBeGreaterThan(BRAWL_DEFAULTS.protectSec + 0.5);
     // the fights spread out: deaths in both halves and both the north and the south
     expect(deathSpots.some((q) => q.x < 0) && deathSpots.some((q) => q.x > 0)).toBe(true);

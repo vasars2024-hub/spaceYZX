@@ -51,6 +51,8 @@ export interface RenderPlayer {
   aiming: boolean;
   laserWarn: number;
   slashTicks: number;
+  /** teleport slash charge, ticks E held (drawn as a glowing sword); 0 / absent = none */
+  meleeCharge?: number;
   /** 0 / 1: Boomerang / Laser, or in CS mode AK / Deagle */
   weapon?: number;
   /** round-start shield still up (drawn as a blue shell) */

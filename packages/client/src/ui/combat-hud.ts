@@ -79,6 +79,7 @@ const KIND_ICON: Record<KillKind, string> = {
   recall: '↩',
   deflect: '⤺',
   slash: '⚔',
+  teleportSlash: '⚡⚔',
   laser: '⌁',
   grenade: '✺',
   blast: '✹',

@@ -47,6 +47,10 @@ export interface ViewmodelState {
   gunShots?: number;
   /** CS mode: reload progress 0..1 (0 = not reloading) */
   gunReload01?: number;
+  /** teleport slash charge 0..1 (0 = none): the sword is drawn, glowing brighter as it fills */
+  swordCharge?: number;
+  /** the teleport slash fired this frame: one big sword swing */
+  teleportSlash?: boolean;
 }
 
 const M = MOVEMENT_DEFAULTS;
@@ -99,6 +103,40 @@ const L_DEAGLE: Pose6 = [0.065, -0.155, -0.29, 0.1, -0.3, 0.3];
 const GUN_SCALE = 0.8;
 const KICK_SEC = { ak: 0.09, deagle: 0.22 };
 const FLASH_SEC = 0.045;
+// Teleport slash: the sword held back at the right while it charges, then a wide swing
+const R_SWORD: Pose6 = [0.2, -0.12, -0.34, 0.15, 0.75, -0.35];
+const SWING_SEC = 0.4;
+
+/** The sword (teleport slash): grip in the fist, a long thin blade up and forward. */
+const buildSword = (): { group: THREE.Group; glow: THREE.MeshBasicMaterial } => {
+  const group = new THREE.Group();
+  const steel = new THREE.MeshBasicMaterial({ color: 0xdfe6f2 });
+  const dark = new THREE.MeshBasicMaterial({ color: 0x2a2f3a });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.46, 0.006), steel);
+  blade.position.y = 0.28;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.0145, 0.05, 4), steel);
+  tip.position.y = 0.535;
+  tip.rotation.y = Math.PI / 4;
+  tip.scale.z = 0.3;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.016, 0.024), dark);
+  guard.position.y = 0.045;
+  const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.09, 0.022), dark);
+  hilt.position.y = -0.005;
+  const glow = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const aura = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.52, 0.03), glow);
+  aura.position.y = 0.29;
+  group.add(blade, tip, guard, hilt, aura);
+  // leaning forward out of the fist
+  group.rotation.x = -0.55;
+  group.position.set(0, 0.02, -0.02);
+  return { group, glow };
+};
 
 export class Viewmodel {
   scene = new THREE.Scene();
@@ -150,6 +188,9 @@ export class Viewmodel {
   private kickDur = KICK_SEC.ak;
   private flashT = 0;
   private lastShots: number | null = null;
+  // teleport slash sword
+  private sword = buildSword();
+  private swingT = 0;
 
   constructor() {
     this.scene.add(this.camera);
@@ -212,6 +253,9 @@ export class Viewmodel {
       g.visible = false;
       this.rArm.add(g);
     }
+
+    this.sword.group.visible = false;
+    this.rArm.add(this.sword.group);
 
     this.body.add(this.hips);
     this.build(0);
@@ -291,6 +335,9 @@ export class Viewmodel {
     this.wasHeld = s.held;
     this.windupPeak = s.held && s.windup > 0 ? Math.max(this.windupPeak, s.windup) : 0;
     if (s.slashing) this.slashT = SLASH_SEC;
+    if (s.teleportSlash) this.swingT = SWING_SEC;
+    this.swingT = Math.max(0, this.swingT - dt);
+    const swordCharge = s.swordCharge ?? 0;
     // the Laser fires when its warning ends
     if (this.wasWarn && !s.laserWarn && !inHand) this.recoilT = RECOIL_SEC;
     this.wasWarn = s.laserWarn;
@@ -324,6 +371,7 @@ export class Viewmodel {
       rT = R_AIM;
       lT = L_AIM;
     }
+    if (!gun && swordCharge > 0) rT = R_SWORD;
     const k = armed ? 16 : 12;
     for (let i = 0; i < 6; i++) {
       this.r[i] = damp(this.r[i], rT[i], k, dt);
@@ -359,6 +407,17 @@ export class Viewmodel {
       const sweep = smooth((u - 0.15) / 0.4) * (1 - smooth((u - 0.55) / 0.45));
       addPose(r, pre, [0.04, 0.02, 0, 0, 0.4, 0]);
       addPose(r, sweep, [-0.26, -0.02, -0.07, -0.3, -1.5, 0.7]);
+    }
+    if (this.swingT > 0) {
+      // teleport slash: a fast, wide cut from the right across to the far left
+      const u = 1 - this.swingT / SWING_SEC;
+      const cut = smooth(u / 0.25) * (1 - smooth((u - 0.45) / 0.55));
+      addPose(r, cut, [-0.34, 0.03, -0.1, -0.4, -2.0, 1.1]);
+    }
+    if (swordCharge >= 1) {
+      // fully charged: the blade trembles with power
+      r[0] += Math.sin(this.t * 64) * 0.002;
+      r[1] += Math.cos(this.t * 57) * 0.002;
     }
     if (this.recoilT > 0) {
       const e = (this.recoilT / RECOIL_SEC) ** 2;
@@ -396,7 +455,18 @@ export class Viewmodel {
 
     // --- what the right fist holds ---
     const throwing = this.throwT > 0;
-    this.grip.visible = inHand;
+    const swordOut = !gun && (swordCharge > 0 || this.swingT > 0);
+    this.sword.group.visible = swordOut;
+    this.grip.visible = inHand && !swordOut;
+    if (swordOut) {
+      const full = swordCharge >= 1;
+      this.sword.glow.opacity = full
+        ? 0.6 + 0.25 * Math.sin(this.t * 22)
+        : this.swingT > 0
+          ? 0.9 * (this.swingT / SWING_SEC)
+          : 0.1 + 0.45 * swordCharge;
+      this.sword.glow.color.set(full || this.swingT > 0 ? 0xffffff : TEAM_COLORS[s.team]);
+    }
     this.laser.visible = !gun && !inHand && !throwing;
     this.ak.visible = gun === 'ak';
     this.deagle.visible = gun === 'deagle';

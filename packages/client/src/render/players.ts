@@ -105,6 +105,32 @@ const SHOULDER_X = 0.31;
 const SHOULDER_Y = 0.54;
 const ELBOW = 0.27; // shoulder -> elbow
 const WINDUP_FULL = Math.round(COMBAT_DEFAULTS.windupSec * 60);
+// teleport slash: the sword shows once a charge passes a tap, glows as it fills
+const SWORD_SHOW = Math.round(COMBAT_DEFAULTS.teleportTapSec * 60);
+const SWORD_FULL = Math.round(COMBAT_DEFAULTS.teleportChargeSec * 60);
+
+/** A sword in the right fist (teleport slash): the blade sticks forward out of the fist. */
+const buildSword = (): { group: THREE.Group; glow: THREE.MeshBasicMaterial } => {
+  const group = new THREE.Group();
+  const steel = new THREE.MeshBasicMaterial({ color: 0xdfe6f2 });
+  const dark = new THREE.MeshBasicMaterial({ color: 0x2a2f3a });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.85), steel);
+  blade.position.z = -0.5;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.03, 0.04), dark);
+  guard.position.z = -0.07;
+  const glow = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const aura = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.08, 0.95), glow);
+  aura.position.z = -0.5;
+  group.add(blade, guard, aura);
+  group.visible = false;
+  return { group, glow };
+};
 const SLASH_SEC = 0.26;
 const LASER_HOLD_SEC = 0.3; // the arm stays up (with recoil) after the shot
 const THROW_SEC = 0.28;
@@ -252,6 +278,9 @@ interface Model {
   slashT: number;
   wasWarn: boolean;
   laserT: number;
+  /** teleport slash: the sword, and last frame's charge (a full charge dropping = it fired) */
+  sword: { group: THREE.Group; glow: THREE.MeshBasicMaterial };
+  lastCharge: number;
 }
 
 const buildModel = (team: 0 | 1, id: number): Model => {
@@ -334,6 +363,8 @@ const buildModel = (team: 0 | 1, id: number): Model => {
   boomerang.rotation.set(-0.3, 0, Math.PI / 2);
   boomerang.visible = false;
   armR.grip.add(boomerang);
+  const sword = buildSword();
+  armR.grip.add(sword.group);
   // CS mode guns: barrel along the arm (the grip's -Y), gun up = the grip's -Z
   const ak = partsMesh(AK_PARTS, mat);
   const deagle = partsMesh(DEAGLE_PARTS, mat);
@@ -389,6 +420,8 @@ const buildModel = (team: 0 | 1, id: number): Model => {
     slashT: 0,
     wasWarn: false,
     laserT: 0,
+    sword,
+    lastCharge: 0,
   };
 };
 
@@ -658,6 +691,9 @@ export class PlayerModels {
     m.wasAiming = p.aiming;
     m.windupPeak = armed ? Math.max(m.windupPeak, windup01) : 0;
     if (p.slashTicks > 0 && !m.wasSlash) m.slashT = SLASH_SEC;
+    const swordCharge = p.meleeCharge ?? 0;
+    if (m.lastCharge >= SWORD_FULL && swordCharge === 0) m.slashT = SLASH_SEC; // the dash cut
+    m.lastCharge = swordCharge;
     m.wasSlash = p.slashTicks > 0;
     if (m.wasWarn && p.laserWarn === 0) m.laserT = LASER_HOLD_SEC; // fired
     m.wasWarn = p.laserWarn > 0;
@@ -713,6 +749,18 @@ export class PlayerModels {
       t.rro = -0.3;
       t.rb = 0.25;
       k = 34;
+    } else if (swordCharge >= SWORD_SHOW) {
+      // teleport slash charge: sword drawn back low at the side, body turned away
+      const shake = swordCharge >= SWORD_FULL ? Math.sin(time * 40) * 0.03 : 0;
+      t.twist = -0.45 + shake;
+      t.lean += 0.1;
+      t.rs = 0.5;
+      t.rr = 1.0;
+      t.rro = -0.4;
+      t.rb = 0.7;
+      t.ls = 0.9 + pitch * 0.6;
+      t.lr = 0.1;
+      t.lb = 0.3;
     } else if (p.windup > 0) {
       // wind-up: arm cocked far back behind the head, body twisted away, left arm points
       const w = windup01;
@@ -762,7 +810,17 @@ export class PlayerModels {
     m.mat.uniforms.shade.value = this.cs ? SHADE_DIM : 1;
     m.ak.visible = this.cs && p.weapon !== 1;
     m.deagle.visible = this.cs && p.weapon === 1;
-    m.boomerang.visible = this.holding.has(p.id) && m.throwT <= 0;
+    // the sword while charging the teleport slash (and through its cut); glows as it fills
+    const swordOut = !this.cs && (swordCharge >= SWORD_SHOW || (m.slashT > 0 && m.sword.group.visible));
+    m.sword.group.visible = swordOut;
+    if (swordOut) {
+      const fill = Math.min(1, swordCharge / SWORD_FULL);
+      m.sword.glow.opacity =
+        swordCharge >= SWORD_FULL ? 0.65 + 0.3 * Math.sin(time * 22) : 0.15 + 0.45 * fill;
+      m.sword.glow.color.set(TEAM_COLORS[m.team]).lerp(WHITE, fill * 0.7);
+      m.mat.uniforms.rimStrength.value += fill * 1.1;
+    }
+    m.boomerang.visible = this.holding.has(p.id) && m.throwT <= 0 && !swordOut;
     if (m.boomerang.visible) {
       m.boomerang.material.color.set(TEAM_COLORS[m.team]).lerp(WHITE, windup01 * 0.6);
     }
@@ -778,6 +836,9 @@ export class PlayerModels {
     m.mat.dispose();
     m.controller.material.dispose();
     m.boomerang.material.dispose();
+    m.sword.group.traverse((o) => {
+      if (o instanceof THREE.Mesh) (o.material as THREE.Material).dispose();
+    });
     m.shield.material.dispose();
     this.models.delete(id);
   }

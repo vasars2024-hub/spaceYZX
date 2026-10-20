@@ -20,7 +20,7 @@ const ACTIONS: [string, string][] = [
   ['dash', 'Dash'],
   ['fire', 'Throw (hold to aim) / Laser'],
   ['alt', 'Wind-up / steer'],
-  ['melee', 'Slash / deflect'],
+  ['melee', 'Slash / deflect · hold: teleport slash'],
   ['recall', 'Lethal Recall / reload Laser'],
   ['slot1', 'Weapon: Boomerang'],
   ['slot2', 'Weapon: Laser'],

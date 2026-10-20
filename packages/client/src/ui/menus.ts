@@ -200,7 +200,7 @@ export const CONTROLS_HELP: [string, string][] = [
     'Flick mouse in flight',
     'Tilt your Quick Throw left / right while it flies out (faster flick = sharper curve)',
   ],
-  ['E', 'Slash / deflect'],
+  ['E', 'Slash / deflect (hold 1 s, let go: teleport slash)'],
   ['Q', 'Gravity Grenade'],
   ['1 / 2', 'Switch weapon: Boomerang / Laser'],
   ['G (hold)', 'Bomb mode: plant in site A or B (3 s) · defuse next to the bomb (7 s)'],

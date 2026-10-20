@@ -577,7 +577,14 @@ const defs = {
         // the draw: a metal scrape up into a ring
         { sig: whoosh(sr, d, 49, expSweep(2500, 7000, 0.12), 3, swell(0.02, 0.06)), gain: 0.5 },
         { sig: bell(sr, d, 2350, 2.76, 2.2, 0.35), gain: 0.35, at: 0.06 },
-        { sig: applyEnv(applyEnv(hum, sr, rise), sr, trem((t) => 6 * t + 9 * t * t, 0.35)), gain: 0.8 },
+        {
+          sig: applyEnv(
+            applyEnv(hum, sr, rise),
+            sr,
+            trem((t) => 6 * t + 9 * t * t, 0.35),
+          ),
+          gain: 0.8,
+        },
         { sig: applyEnv(air, sr, rise), gain: 0.25 },
       ]),
       sr,
@@ -610,7 +617,10 @@ const defs = {
     const body = softClip(
       mix(sr, d, [
         { sig: thump(sr, d, 140, 34, 0.22), gain: 1.3 },
-        { sig: applyEnv(lowpass(whiteNoise(sr, d, 53), sr, 900), sr, percFn(0.08, 0.002)), gain: 0.5 },
+        {
+          sig: applyEnv(lowpass(whiteNoise(sr, d, 53), sr, 900), sr, percFn(0.08, 0.002)),
+          gain: 0.5,
+        },
       ]),
       1.8,
     );

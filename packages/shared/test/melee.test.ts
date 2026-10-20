@@ -222,7 +222,11 @@ describe('teleport slash (hold E 1 s, let go)', () => {
     const sim = sim0();
     settle(sim);
     const client = cloneWorld(sim.world);
-    const inputs = (b: number): PlayerInput => ({ tick: sim.world.tick + 1, buttons: b, view: view(30) });
+    const inputs = (b: number): PlayerInput => ({
+      tick: sim.world.tick + 1,
+      buttons: b,
+      view: view(30),
+    });
     for (let i = 0; i <= FULL; i++) {
       const input = inputs(i < FULL ? Btn.Melee : 0);
       step(sim.world, { 1: input }, sim.ctx);
@@ -264,9 +268,7 @@ describe('bots and the teleport slash', () => {
     for (let i = 0; i < 60 * 30 && dashes === 0; i++) {
       const input = botThink(sim.world, sim.ctx, sim.p, mem);
       step(sim.world, { 1: input }, sim.ctx);
-      dashes += sim.world.events.filter(
-        (e) => e.type === 'teleportSlash' && e.player === 1,
-      ).length;
+      dashes += sim.world.events.filter((e) => e.type === 'teleportSlash' && e.player === 1).length;
     }
     expect(dashes).toBeGreaterThan(0);
   });

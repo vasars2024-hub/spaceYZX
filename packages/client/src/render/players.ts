@@ -811,7 +811,8 @@ export class PlayerModels {
     m.ak.visible = this.cs && p.weapon !== 1;
     m.deagle.visible = this.cs && p.weapon === 1;
     // the sword while charging the teleport slash (and through its cut); glows as it fills
-    const swordOut = !this.cs && (swordCharge >= SWORD_SHOW || (m.slashT > 0 && m.sword.group.visible));
+    const swordOut =
+      !this.cs && (swordCharge >= SWORD_SHOW || (m.slashT > 0 && m.sword.group.visible));
     m.sword.group.visible = swordOut;
     if (swordOut) {
       const fill = Math.min(1, swordCharge / SWORD_FULL);

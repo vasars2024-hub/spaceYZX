@@ -185,7 +185,10 @@ export const updateTeleportSlash = (
     if (p.meleeCharge === ticks(c.teleportTapSec, ctx.dt))
       world.events.push({ type: 'meleeCharge', player: p.id });
     if (p.meleeCharge === full) world.events.push({ type: 'meleeReady', player: p.id });
-    if (p.meleeCharge >= ticks(c.teleportTapSec, ctx.dt) && (p.speedCap === 0 || p.speedCap > chargeSpeed(ctx)))
+    if (
+      p.meleeCharge >= ticks(c.teleportTapSec, ctx.dt) &&
+      (p.speedCap === 0 || p.speedCap > chargeSpeed(ctx))
+    )
       p.speedCap = chargeSpeed(ctx);
   } else if (can && pressed & Btn.Melee && p.teleportCd === 0) {
     p.meleeCharge = 1;

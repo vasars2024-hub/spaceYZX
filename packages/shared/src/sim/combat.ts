@@ -826,8 +826,15 @@ export const updateCombat = (
     if (p.slashCd > 0) p.slashCd--;
     if (p.slashTicks > 0) p.slashTicks--;
     // hold E: the teleport slash (sim/melee.ts)
-    updateTeleportSlash(world, ctx, p, buttons, pressed, b, stunned.has(p.id), () =>
-      ctx.rewindHitboxes?.(p.id) ?? liveHitboxes,
+    updateTeleportSlash(
+      world,
+      ctx,
+      p,
+      buttons,
+      pressed,
+      b,
+      stunned.has(p.id),
+      () => ctx.rewindHitboxes?.(p.id) ?? liveHitboxes,
     );
     if (p.laserCd > 0) p.laserCd--;
     if (p.laserReload > 0 && --p.laserReload === 0) {

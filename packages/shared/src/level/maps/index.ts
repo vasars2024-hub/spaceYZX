@@ -15,6 +15,8 @@ import { buildAfterglowGraybox } from './graybox/afterglow';
 import { buildOrreryGraybox } from './graybox/orrery';
 import { buildLeviathanGraybox } from './graybox/leviathan';
 import { buildSkyfountGraybox } from './graybox/skyfount';
+import { buildAncient } from './cs/ancient';
+import { buildAnubis } from './cs/anubis';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -262,6 +264,9 @@ export const MAPS: MapInfo[] = [
     competitive: true,
     graybox: true,
   },
+  // CS2 classics rebuilt at about 3× their size (level/maps/cs/)
+  { id: 'ancient', name: 'Ancient', build: buildAncient, competitive: true, graybox: true },
+  { id: 'anubis', name: 'Anubis', build: buildAnubis, competitive: true, graybox: true },
   // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
   {
     id: 'skyfount-graybox',

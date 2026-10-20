@@ -89,10 +89,9 @@ export interface MapInfo {
    */
   graybox?: boolean;
   /**
-   * a royale map (the free-for-all elimination mode for 5–10 players, rules/royale.ts): huge,
-   * with fixed spawn points spread over the whole city and a play zone that shrinks toward its
-   * centre (LevelDef.royale). Meant only for the royale mode; never competitive (no bomb sites,
-   * no team routes to balance)
+   * a Royale map (rules/royale.ts): its LevelDef has `royale` data (spawn points, the zone).
+   * The flag lets menus and rooms list Royale maps without building every map
+   * (royale.test.ts checks that each flagged map really has the data).
    */
   royale?: boolean;
 }

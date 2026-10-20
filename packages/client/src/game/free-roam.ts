@@ -106,6 +106,9 @@ const floorAt = (level: Level, p: Vec3, below = 1.6): Vec3 | null => {
   return v3(hit.point.x, hit.point.y + 0.02, hit.point.z);
 };
 
+/** At most this many candidate points are tried (placeDummies; only the mega maps have more). */
+const MAX_CANDIDATES = 3000;
+
 /** Candidate points: spawns, bot waypoints, power-up points, bomb sites, dev areas, a grid. */
 const candidates = (def: LevelDef): Vec3[] => {
   const out: Vec3[] = [];
@@ -151,7 +154,13 @@ const validSpot = (ctx: SimContext, world: WorldState, feet: Vec3, eyes: Vec3[])
   // seen from somewhere you can stand (a spawn or a bot waypoint): not on a roof outside the
   // play space
   const chest = v3(feet.x, feet.y + 1.2, feet.z);
-  return eyes.some((e) => lineOfSight(ctx.level, e, chest));
+  // (the eyes close by first: on a huge map like Shibuya almost every far eye is blocked, and
+  // trying them all for every candidate took many minutes; the answer is the same)
+  const close = (e: Vec3) => Math.abs(e.x - chest.x) + Math.abs(e.z - chest.z) < 40;
+  return (
+    eyes.some((e) => close(e) && lineOfSight(ctx.level, e, chest)) ||
+    eyes.some((e) => !close(e) && lineOfSight(ctx.level, e, chest))
+  );
 };
 
 /** Room to strafe: open to both sides (along the dummy's right) with a floor under each end. */
@@ -198,7 +207,11 @@ export const placeDummies = (
     (p) => v3(p.x, p.y + 1.6, p.z),
   );
   const ok: Vec3[] = [];
-  for (const c of candidates(def)) {
+  // (huge maps — Shibuya has ~17 000 waypoints — try an even spread of at most MAX_CANDIDATES:
+  // checking them all took minutes, and ten dummies need far fewer; every other map has fewer)
+  const all = candidates(def);
+  const stride = Math.ceil(all.length / MAX_CANDIDATES);
+  for (const c of all.filter((_, i) => i % stride === 0)) {
     const f = floorAt(level, c);
     if (!f || len(sub(f, start)) < FREE_ROAM.minFromStart) continue;
     if (ok.some((o) => len(sub(o, f)) < 1)) continue; // (duplicates)

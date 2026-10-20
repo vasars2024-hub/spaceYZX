@@ -17,6 +17,8 @@ import { buildLeviathanGraybox } from './graybox/leviathan';
 import { buildSkyfountGraybox } from './graybox/skyfount';
 import { buildDust2 } from './cs/dust2';
 import { buildMirage } from './cs/mirage';
+import { buildInferno } from './cs/inferno';
+import { buildNuke } from './cs/nuke';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -273,6 +275,9 @@ export const MAPS: MapInfo[] = [
   // CS2 classics rebuilt as grayboxes at about 3× their real size (level/maps/cs/)
   { id: 'dust2', name: 'Dust 2', build: buildDust2, competitive: true, graybox: true },
   { id: 'mirage', name: 'Mirage', build: buildMirage, competitive: true, graybox: true },
+  // CS2 classics rebuilt at about 3x their real size (level/maps/cs/)
+  { id: 'inferno', name: 'Inferno', build: buildInferno, competitive: true, graybox: true },
+  { id: 'nuke', name: 'Nuke', build: buildNuke, competitive: true, graybox: true },
   // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
   {
     id: 'skyfount-graybox',

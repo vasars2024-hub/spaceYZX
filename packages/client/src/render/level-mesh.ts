@@ -20,13 +20,7 @@ import {
   MATERIAL_COLORS,
 } from '@space-yz/shared';
 import { surfaceTexture, glowTexture, TEX_SCALE, type TexKind } from './textures';
-import {
-  MACRO_SCALE,
-  SURFACE_SPEC,
-  surfaceLayer,
-  surfaceMaterial,
-  type Surface,
-} from './surfaces';
+import { MACRO_SCALE, SURFACE_SPEC, surfaceLayer, surfaceMaterial, type Surface } from './surfaces';
 import { buildOutdoorSky, buildSky } from './sky';
 
 // (one table with the Map Maker: level/materials.ts)
@@ -441,6 +435,29 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
   const sun = def.outdoor?.sunLight !== undefined ? new THREE.Color(def.outdoor.sunLight) : null;
   // moving blocks are drawn on their own (render/mover-mesh.ts), never merged in here
   const moving = new Set((def.movers ?? []).flatMap((m) => m.boxes));
+  const hidden = hiddenFaces(def, moving);
+  // a face only needs its many small light tiles where a point light reaches it
+  const bakeLights = lightDefs.filter((l) => l.intensity > 0 && l.radius > 0);
+  const lit = (pts: Vec3[], n: Vec3): boolean => {
+    const lo = v3(Infinity, Infinity, Infinity);
+    const hi = v3(-Infinity, -Infinity, -Infinity);
+    for (const p of pts) {
+      lo.x = Math.min(lo.x, p.x);
+      lo.y = Math.min(lo.y, p.y);
+      lo.z = Math.min(lo.z, p.z);
+      hi.x = Math.max(hi.x, p.x);
+      hi.y = Math.max(hi.y, p.y);
+      hi.z = Math.max(hi.z, p.z);
+    }
+    return bakeLights.some((l) => {
+      const dx = Math.max(lo.x - l.pos.x, 0, l.pos.x - hi.x);
+      const dy = Math.max(lo.y - l.pos.y, 0, l.pos.y - hi.y);
+      const dz = Math.max(lo.z - l.pos.z, 0, l.pos.z - hi.z);
+      if (dx * dx + dy * dy + dz * dz > l.radius * l.radius) return false;
+      // (a light behind the face's plane never lights it)
+      return dot(sub(l.pos, pts[0]), n) > -0.05 * l.radius;
+    });
+  };
 
   def.boxes.forEach((b, bi) => {
     if (b.noRender || moving.has(bi)) return;
@@ -507,6 +524,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     const isTrim = mat === 'trim';
     const special = SPECIAL[mat] ?? null;
     FACES.forEach((f, fi) => {
+      if (hidden.has(bi * 6 + fi)) return; // pressed flat against a neighbour: never seen
       const n = worldNormal(b, fi);
       if (!n) return;
       const pts = f.corners.map(([x, y, z]) => boxCorner(b, x, y, z));
@@ -550,8 +568,9 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
         base,
         lightAt,
         brightness,
+        // one quad for the whole face unless a light falls on it (then ~2.5 m light tiles);
         // (a free-form prism: only its slanted faces, the ones you ride, get lit tiles)
-        !!b.lowDetail || (!!b.hull && fi !== 4 && fi !== 5),
+        !!b.lowDetail || (!!b.hull && fi !== 4 && fi !== 5) || !lit(pts, n),
       );
     });
     if (b.trim !== undefined)
@@ -659,6 +678,57 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
     group,
     dispose: () => disposables.forEach((d) => d.dispose()),
   };
+};
+
+/** Materials you can see through: they never hide a neighbour's face. */
+const SEE_THROUGH = new Set<Material>(['skyglass', 'forcefield', 'cloud']);
+
+/**
+ * Faces that can never be seen (box index * 6 + face index): an axis-aligned box face lying flat
+ * against the opposite face of another opaque axis-aligned box that covers it completely (the
+ * sides of stacked wall columns, the bottom of a wall standing on a floor). Turned boxes and
+ * prisms are left alone.
+ */
+export const hiddenFaces = (def: LevelDef, skip: Set<number> = new Set()): Set<number> => {
+  const plain = (b: BoxDef) =>
+    !b.q && !b.hull && b.prism === undefined && !b.noRender && !SEE_THROUGH.has(b.mat ?? 'hull');
+  // every opaque box face, by its plane: axis, which way it faces, where
+  const planes = new Map<string, BoxDef[]>();
+  const key = (axis: number, sign: number, at: number) => `${axis}${sign}${Math.round(at * 500)}`;
+  const AX = ['x', 'y', 'z'] as const;
+  def.boxes.forEach((b, i) => {
+    if (!plain(b) || skip.has(i)) return;
+    for (let axis = 0; axis < 3; axis++)
+      for (const sign of [-1, 1]) {
+        const k = key(axis, sign, b.c[AX[axis]] + sign * b.h[AX[axis]]);
+        const list = planes.get(k);
+        if (list) list.push(b);
+        else planes.set(k, [b]);
+      }
+  });
+  const out = new Set<number>();
+  const eps = 1e-3;
+  def.boxes.forEach((b, i) => {
+    if (!plain(b) || skip.has(i)) return;
+    FACES.forEach((f, fi) => {
+      const axis = f.n.x !== 0 ? 0 : f.n.y !== 0 ? 1 : 2;
+      const sign = f.n.x + f.n.y + f.n.z;
+      const at = b.c[AX[axis]] + sign * b.h[AX[axis]];
+      const others = planes.get(key(axis, -sign, at));
+      if (!others) return;
+      const [a1, a2] = [0, 1, 2].filter((a) => a !== axis).map((a) => AX[a]);
+      const covered = others.some(
+        (o) =>
+          o !== b &&
+          o.c[a1] - o.h[a1] <= b.c[a1] - b.h[a1] + eps &&
+          o.c[a1] + o.h[a1] >= b.c[a1] + b.h[a1] - eps &&
+          o.c[a2] - o.h[a2] <= b.c[a2] - b.h[a2] + eps &&
+          o.c[a2] + o.h[a2] >= b.c[a2] + b.h[a2] - eps,
+      );
+      if (covered) out.add(i * 6 + fi);
+    });
+  });
+  return out;
 };
 
 /** World-aligned UVs so textures line up across neighboring boxes. */

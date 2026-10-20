@@ -87,6 +87,12 @@ export interface MapInfo {
    * tile layout (no hand-made art yet)
    */
   graybox?: boolean;
+  /**
+   * a Royale map (rules/royale.ts): its LevelDef has `royale` data (spawn points, the zone).
+   * The flag lets menus and rooms list Royale maps without building every map
+   * (royale.test.ts checks that each flagged map really has the data).
+   */
+  royale?: boolean;
 }
 
 /** A map built from course data (a surf map when it has a `mode`). */

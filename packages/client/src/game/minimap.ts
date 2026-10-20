@@ -10,6 +10,8 @@
 //     voids; off-map objectives sit on the rim pointing the way
 //   - the route to your objective: a red-and-white guide line on the map and chevrons along the
 //     floor in the world, re-planned as you move (X switches the bomb site you're routed to)
+//   - Royale: the zone (the world outside it washed blue, its edge in blue) and the circle it
+//     closes in to next (white); outside the zone the route leads into it
 import * as THREE from 'three';
 import type { MatchInfo, RenderPlayer } from './session';
 import type { Level, SimEvent, Vec3 } from '@space-yz/shared';
@@ -213,6 +215,21 @@ export class Minimap implements ClientFeature {
       raceCp: me.raceCp,
       holding: (me.powerup ?? 0) !== 0,
     });
+    // Royale: outside the zone (or the circle it closes in to), the way in comes first
+    const zone = s.zone?.() ?? null;
+    if (zone && me.alive) {
+      const to = zone.next ?? zone;
+      const off = (c0: { center: Vec3; radius: number }) =>
+        Math.hypot(feet.x - c0.center.x, feet.z - c0.center.z) > c0.radius;
+      if (off(zone) || off(to))
+        this.goal = {
+          key: 'zone',
+          kind: 'zone',
+          label: 'SAFE ZONE',
+          pos: to.center,
+          color: '#ffffff',
+        };
+    }
     const wantRoute = st.routeGuide !== 'off' && !!this.goal;
     if (!wantRoute) this.route = null;
     else if (this.goal!.key !== this.routeKey || this.time - this.routeAt > ROUTE_EVERY) {
@@ -364,6 +381,34 @@ export class Minimap implements ClientFeature {
       ]);
       g.fillStyle = 'rgba(255, 50, 70, 0.10)';
       g.fill();
+    }
+    // Royale: the zone (outside washed blue, the edge blue) and the next circle (white)
+    const zone = s.zone?.() ?? null;
+    if (zone) {
+      const [zx, zy] = this.toScreen(v, zone.center);
+      const zr = Math.max(0, zone.radius * v.k);
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, w, hgt);
+      g.arc(zx, zy, zr, 0, Math.PI * 2, true);
+      g.fillStyle = 'rgba(40, 120, 255, 0.22)';
+      g.fill('evenodd');
+      g.beginPath();
+      g.arc(zx, zy, zr, 0, Math.PI * 2);
+      g.strokeStyle = 'rgba(90, 180, 255, 0.95)';
+      g.lineWidth = 2;
+      g.stroke();
+      if (zone.next) {
+        const [nx, ny] = this.toScreen(v, zone.next.center);
+        g.beginPath();
+        g.arc(nx, ny, Math.max(1.5, zone.next.radius * v.k), 0, Math.PI * 2);
+        g.setLineDash([5, 4]);
+        g.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        g.lineWidth = 1.5;
+        g.stroke();
+        g.setLineDash([]);
+      }
+      g.restore();
     }
     // zip-rails (green), launch pads (amber chevrons), portals (rings)
     g.lineWidth = 2;

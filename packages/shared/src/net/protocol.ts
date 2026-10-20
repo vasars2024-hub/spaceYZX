@@ -56,10 +56,12 @@ export type GameMode = '1v1' | '2v2' | '3v3' | '5v5' | 'practice';
  * What a room plays: a GameMode, or Arena 1v1 ('arena': rotating 1v1 duels in separate pits,
  * rules/arena.ts). Kept apart from GameMode so menus listing the match modes stay unchanged.
  */
-export type RoomMode = GameMode | 'arena' | 'race' | BrawlMode;
+export type RoomMode = GameMode | 'arena' | 'race' | BrawlMode | 'royale';
 /**
  * ('race': a parkour race room on a race track, rules/race.ts; 'brawl' / 'brawl-ffa': Brawl
- * team deathmatch / free-for-all with instant respawns and a map rotation, rules/brawl.ts)
+ * team deathmatch / free-for-all with instant respawns and a map rotation, rules/brawl.ts;
+ * 'royale': free-for-all elimination on a royale map, one life, a shrinking zone, first to 3
+ * round wins, rules/royale.ts)
  */
 export const ROOM_MODES: readonly RoomMode[] = [
   '1v1',
@@ -71,13 +73,14 @@ export const ROOM_MODES: readonly RoomMode[] = [
   'race',
   'brawl',
   'brawl-ffa',
+  'royale',
 ];
 
 /** Brawl rooms: 'brawl' = team deathmatch, 'brawl-ffa' = everyone against everyone. */
 export type BrawlMode = 'brawl' | 'brawl-ffa';
 export const isBrawlMode = (m: string): m is BrawlMode => m === 'brawl' || m === 'brawl-ffa';
 /** A free-for-all room: the sim runs with ctx.ffa (everyone else is an enemy). */
-export const isFfaMode = (m: string): boolean => m === 'brawl-ffa';
+export const isFfaMode = (m: string): boolean => m === 'brawl-ffa' || m === 'royale';
 
 export interface RoomPlayerInfo {
   id: number;

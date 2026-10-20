@@ -4,6 +4,7 @@ import './ui/mobile.css';
 import './ui/menu-flow.css';
 import './ui/race.css';
 import './ui/brawl.css';
+import './ui/royale.css';
 import './ui/cinematic.css';
 import './ui/social.css';
 import type { Vec3 } from '@space-yz/shared';

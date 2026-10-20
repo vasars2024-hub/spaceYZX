@@ -7,6 +7,8 @@ import { icon, botBadge } from './icons';
 import {
   ARENA_ROOM_SIZES,
   BRAWL_FFA_ROOM_SIZES,
+  ROYALE_ROOM_SIZES,
+  roomObjectives,
   RACE_ROOM_SIZES,
   ROOM_OBJECTIVES,
   ROOM_SIZES,
@@ -68,11 +70,13 @@ export interface OnlineMenuHandlers {
 const sizeCard = (o: RoomState['objective'], z: RoomSize): { label: string; desc: string } =>
   o === 'brawl-ffa'
     ? BRAWL_FFA_ROOM_SIZES[z]
-    : isArenaObjective(o)
-      ? ARENA_ROOM_SIZES[z]
-      : isRaceObjective(o)
-        ? RACE_ROOM_SIZES[z]
-        : { label: z, desc: SIZE_DESC[z] };
+    : o === 'royale'
+      ? ROYALE_ROOM_SIZES[z]
+      : isArenaObjective(o)
+        ? ARENA_ROOM_SIZES[z]
+        : isRaceObjective(o)
+          ? RACE_ROOM_SIZES[z]
+          : { label: z, desc: SIZE_DESC[z] };
 
 const SIZE_DESC: Record<RoomSize, string> = {
   '1v1': 'A duel: you and one friend.',
@@ -160,7 +164,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
       'Objective',
       pickGrid(
         'modes',
-        ROOM_OBJECTIVES,
+        roomObjectives(),
         (o) => o.id === s.objective,
         (o, selected, pick) =>
           card({

@@ -21,6 +21,8 @@ import { buildInferno } from './cs/inferno';
 import { buildNuke } from './cs/nuke';
 import { buildAncient } from './cs/ancient';
 import { buildAnubis } from './cs/anubis';
+import { buildCache } from './cs/cache';
+import { buildTrain } from './cs/train';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -283,6 +285,9 @@ export const MAPS: MapInfo[] = [
   // CS2 classics rebuilt at about 3× their size (level/maps/cs/)
   { id: 'ancient', name: 'Ancient', build: buildAncient, competitive: true, graybox: true },
   { id: 'anubis', name: 'Anubis', build: buildAnubis, competitive: true, graybox: true },
+  // CS2 classics rebuilt about 3× their real size (level/maps/cs/)
+  { id: 'cache', name: 'Cache', build: buildCache, competitive: true, graybox: true },
+  { id: 'train', name: 'Train', build: buildTrain, competitive: true, graybox: true },
   // free roam for now: bots cannot cross its jump / jetpack gaps between the islands
   {
     id: 'skyfount-graybox',

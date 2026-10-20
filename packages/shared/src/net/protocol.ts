@@ -19,6 +19,7 @@ import type { PlayerState, WorldState } from '../sim/state';
 import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
+import type { NextMapMode } from '../rules/playlist';
 import type { LadderId, RankedQueueId } from '../rating/ladders';
 import type { TeamMode } from '../rating/global';
 import type { VetoView } from '../rating/veto';
@@ -105,6 +106,15 @@ export type ClientMsg =
       objective?: MatchObjective;
       /** 'cs' = CS kit (AK + Deagle, 70 % movement speed): bomb rules, or Elimination */
       loadout?: 'lethal' | 'cs';
+      /**
+       * a map playlist (rules/playlist.ts; match and Brawl rooms): the maps in play order, the
+       * first one is `map`. Match rooms move straight on to the next one after each match.
+       */
+      maps?: string[];
+      /** playlist: start again from the first map after the last one */
+      loop?: boolean;
+      /** after each match: the next queued map ('playlist', default) or a map vote ('vote') */
+      nextMap?: NextMapMode;
     }
   | { t: 'joinRoom'; code: string }
   /**
@@ -114,6 +124,10 @@ export type ClientMsg =
   | { t: 'quickPlay'; mode?: BrawlMode }
   | { t: 'leaveRoom' }
   | { t: 'startMatch' }
+  /** Results screen of a casual room: your vote for the next map (one of the offered maps). */
+  | { t: 'mapVote'; map: string }
+  /** The host skips the results card / map vote: the next map loads now. */
+  | { t: 'skipNext' }
   | { t: 'profile' }
   | { t: 'ping'; c: number }
   | { t: 'spong'; s: number }

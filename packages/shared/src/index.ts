@@ -88,6 +88,7 @@ export * from './rules/arena';
 export * from './rules/brawl';
 export * from './rules/royale';
 export * from './rules/race';
+export * from './rules/playlist';
 export * from './bots/racer';
 export * from './level/course';
 export * from './rules/powerups';

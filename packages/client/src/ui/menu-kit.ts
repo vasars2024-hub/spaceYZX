@@ -1,10 +1,10 @@
 // Menu building blocks shared by every screen: cards (modes, maps, bots…), a screen header with
 // a back button, step breadcrumbs, a summary bar, and the slide/fade transitions between screens
 // and steps (CSS in ui/menu-flow.css; `prefers-reduced-motion` turns them off).
-import { MAPS, mapDef } from '@space-yz/shared';
+import { MAPS, mapDef, type NextMapMode } from '@space-yz/shared';
 import { h } from './menus';
 import { icon, mapThumbnail, type IconName } from './icons';
-import { MAP_BLURBS, mapTags, surfModeTag, type SurfGroup } from './flow';
+import { MAP_BLURBS, NEXT_MAP_CHOICES, mapTags, surfModeTag, type SurfGroup } from './flow';
 
 /** Transition direction: forward slides in from the right, back from the left. */
 export type Dir = 'forward' | 'back' | 'fade' | 'none';
@@ -202,6 +202,124 @@ export const mapCard = (
     onClick,
   });
 };
+
+/** What a map grid with a playlist queue asks its wizard. */
+export interface MapQueue {
+  /** is this map highlighted (the one map, or queued)? */
+  selected(id: string): boolean;
+  /** its place in the queue (1, 2, 3…), 0 = not queued */
+  order(id: string): number;
+  /** a plain click on the card */
+  click(id: string): void;
+  /** the corner button: add to the queue / take out of it */
+  toggle(id: string): void;
+}
+
+/**
+ * Map cards that can be queued into a playlist: a plain click works as always (the wizard
+ * decides), the corner button adds the map to the queue or, once queued, shows its place
+ * (1, 2, 3…) and takes it out again. `refresh()` redraws the highlights and numbers in place
+ * (keyboard focus stays put).
+ */
+export const mapQueueGrid = (
+  cls: string,
+  ids: string[],
+  q: MapQueue,
+): { el: HTMLDivElement; refresh(): void } => {
+  const items = ids.map((id) => {
+    const c = mapCard(id, q.selected(id), () => q.click(id));
+    const b = h('button', { class: 'queue-btn', type: 'button' });
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      q.toggle(id);
+    });
+    return { id, c, b, wrap: h('div', { class: 'map-pick' }, c, b) };
+  });
+  const refresh = () => {
+    for (const it of items) {
+      const sel = q.selected(it.id);
+      const n = q.order(it.id);
+      it.c.classList.toggle('selected', sel);
+      it.c.setAttribute('aria-pressed', String(sel));
+      it.c.classList.toggle('queued', n > 0);
+      it.b.classList.toggle('on', n > 0);
+      it.b.textContent = n > 0 ? String(n) : '+';
+      const name = mapDef(it.id).name;
+      const label = n > 0 ? `${name}: number ${n} in the playlist, take it out` : `Queue ${name}`;
+      it.b.title = n > 0 ? 'Take out of the playlist' : 'Add to the playlist';
+      it.b.setAttribute('aria-label', label);
+    }
+  };
+  refresh();
+  return {
+    el: cardGrid(
+      cls,
+      items.map((it) => it.wrap),
+    ),
+    refresh,
+  };
+};
+
+/**
+ * The "After each match" settings of a room / practice game: the next queued map or a map vote,
+ * and loop (start the playlist again after the last map; the vote goes on by itself).
+ */
+export const nextMapSettings = (
+  get: () => { nextMap?: NextMapMode; loop?: boolean },
+  set: (next: { nextMap?: NextMapMode; loop?: boolean }) => void,
+): HTMLElement[] => {
+  const loopCard = card({
+    title: 'Loop playlist',
+    desc: 'After the last map, start again from the first one.',
+    art: icon('respawn'),
+    selected: !!get().loop,
+    cls: 'toggle loop-toggle',
+    onClick: () => {
+      set({ loop: !get().loop });
+      sync();
+    },
+  });
+  const loopGrid = h('div', { class: 'card-grid toggles' }, loopCard);
+  const sync = () => {
+    loopCard.classList.toggle('selected', !!get().loop);
+    loopCard.setAttribute('aria-pressed', String(!!get().loop));
+    // (a map vote never runs out of maps: loop only matters for the playlist)
+    loopGrid.classList.toggle('off', get().nextMap === 'vote');
+  };
+  sync();
+  return [
+    h('h3', { class: 'step-title' }, 'After each match'),
+    pickGrid(
+      'compact next-map',
+      NEXT_MAP_CHOICES,
+      (c) => c.id === (get().nextMap ?? 'playlist'),
+      (c, selected, pick) =>
+        card({
+          title: c.name,
+          desc: c.desc,
+          art: icon(c.icon),
+          selected,
+          cls: `size next-${c.id}`,
+          onClick: pick,
+        }),
+      (c) => {
+        set({ nextMap: c.id });
+        sync();
+      },
+    ),
+    loopGrid,
+  ];
+};
+
+/** The playlist in a summary bar: numbered map names in play order. */
+export const queueStrip = (ids: string[]): HTMLElement =>
+  h(
+    'span',
+    { class: 'sum-item sum-queue', 'aria-label': 'Playlist' },
+    ...ids.map((id, i) =>
+      h('span', { class: 'q-chip' }, h('b', {}, String(i + 1)), mapDef(id).name),
+    ),
+  );
 
 /** A small map picture (summary bar). */
 export const mapMini = (id: string): HTMLElement => {

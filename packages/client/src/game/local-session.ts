@@ -10,6 +10,7 @@ import type {
   WorldState,
   SimContext,
   MatchState,
+  PlaylistView,
 } from '@space-yz/shared';
 import {
   buildLevel,
@@ -43,6 +44,12 @@ export interface LocalSessionOptions {
   match?: MatchState;
   /** free-for-all (Brawl FFA): everyone else is an enemy (sim ctx.ffa) */
   ffa?: boolean;
+  /** practice with a map playlist: what the results screen shows, your vote, skip */
+  playlist?: {
+    view(): PlaylistView;
+    vote(map: string): void;
+    skip(): void;
+  };
 }
 
 interface Snap {
@@ -172,9 +179,11 @@ export class LocalSession implements Session {
   match(): MatchInfo | null {
     const ms = this.opts.match;
     if (!ms) return null;
+    const pl = this.opts.playlist?.view();
     return {
       ...matchView(ms),
       startAt: 0,
+      ...(pl ? { playlist: pl } : {}),
       stats: this.w.players.map((p) => ({
         id: p.id,
         team: p.team,
@@ -192,6 +201,18 @@ export class LocalSession implements Session {
 
   restartMatch(): void {
     if (this.opts.match) startMatch(this.opts.match, this.w, this.ctx);
+  }
+
+  voteMap(map: string): void {
+    this.opts.playlist?.vote(map);
+  }
+
+  canSkipNext(): boolean {
+    return !!this.opts.playlist;
+  }
+
+  skipNext(): void {
+    this.opts.playlist?.skip();
   }
 
   boomerangs() {

@@ -5,7 +5,7 @@
 import { firstKey } from '../keybinds';
 import * as THREE from 'three';
 import type { SimEvent } from '@space-yz/shared';
-import { TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
+import { TICK_DT, collapseRadius, getMap, mapExists, yawToView, v3 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, Session } from './session';
 import { h } from '../ui/menus';
@@ -36,6 +36,9 @@ const REASON_TEXT: Record<string, string> = {
   exploded: 'The bomb exploded',
   defused: 'The bomb was defused',
 };
+
+/** A map's name for the results card (a map the game no longer has: its id). */
+const mapLabel = (id: string): string => (mapExists(id) ? getMap(id).name : id);
 
 const fmtTime = (sec: number): string => {
   const s = Math.max(0, Math.ceil(sec));
@@ -101,6 +104,18 @@ export class MatchFeature implements ClientFeature {
   private last: MatchInfo | null = null;
   /** the sky duel overtime's arena, clouds and sky (drawn only while the camera is up there) */
   private sky: SkyArenaView | null = null;
+  private session: Session | null = null;
+  /** results screen of a playlist: 1–4 vote for a map, N skips (the host) */
+  private onKey = (e: KeyboardEvent): void => {
+    const s = this.session;
+    const m = this.last;
+    const pl = m?.phase === 'matchEnd' ? m.playlist : undefined;
+    if (!s || !pl?.endsAt) return;
+    const n = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+    const choice = n && pl.vote ? pl.vote.choices[Number(n[1]) - 1] : undefined;
+    if (choice) s.voteMap?.(choice);
+    else if (e.code === 'KeyN' && s.canSkipNext?.()) s.skipNext?.();
+  };
 
   constructor(
     /** ranked: the ladder's name for the match start card ('Premier', 'Duels') */
@@ -147,6 +162,8 @@ export class MatchFeature implements ClientFeature {
     // transition cards sit above this HUD; the announcer's clips start loading now
     mountTransitions(ui);
     preloadAnnouncer();
+    this.session = c.session;
+    window.addEventListener('keydown', this.onKey);
     this.unsub = c.deps.input.onAction((a) => {
       // Tab: the scoreboard wins over a transition card
       if (a === 'scoreboard') clearTransitions();
@@ -717,8 +734,70 @@ export class MatchFeature implements ClientFeature {
         h('span', { style: `color:${TEAM_COLOR[1]}` }, String(m.scores[1])),
       ),
       h('div', { class: 'mr-reason' }, m.endReason),
+      m.playlist?.endsAt ? this.nextPanel(s, m, tick) : null,
       this.scoreboard(s, m, false),
-      h('div', { class: 'mr-next' }, `Back to warmup in ${left} s · Esc for menu`),
+      m.playlist?.endsAt
+        ? null
+        : h('div', { class: 'mr-next' }, `Back to warmup in ${left} s · Esc for menu`),
+    );
+  }
+
+  /**
+   * A playlist's next map (results screen and pause menu): "Next: <map> in 8 s", or the map
+   * vote — one button per map with its votes (yours highlighted), 1–4 on the keyboard.
+   */
+  nextPanel(s: Session, m: MatchInfo, tick = s.tickNow?.() ?? s.world().tick): HTMLElement | null {
+    const pl = m.playlist;
+    if (!pl?.endsAt) return null;
+    const left = Math.max(0, Math.ceil((pl.endsAt - tick) / 60));
+    const skip = s.canSkipNext?.() ? ' · N: next map now' : '';
+    if (!pl.vote)
+      return h(
+        'div',
+        { class: 'mr-playlist' },
+        h(
+          'div',
+          { class: 'mr-up-next' },
+          'Next: ',
+          h('b', {}, pl.upcoming ? mapLabel(pl.upcoming) : '…'),
+          ` in ${left} s`,
+        ),
+        h('div', { class: 'mr-next' }, `Same teams and bots · Esc for menu${skip}`),
+      );
+    const votes = pl.vote.votes;
+    const mine = votes[s.localId];
+    const counts = pl.vote.choices.map((c) => Object.values(votes).filter((v) => v === c).length);
+    return h(
+      'div',
+      { class: 'mr-playlist' },
+      h('div', { class: 'mr-up-next' }, `Vote for the next map · ${left} s`),
+      h(
+        'div',
+        { class: 'mr-vote' },
+        ...pl.vote.choices.map((c, i) => {
+          const b = h(
+            'button',
+            { class: `mr-vote-map${c === mine ? ' mine' : ''}`, type: 'button' },
+            h('span', { class: 'mr-vote-key' }, String(i + 1)),
+            h('span', { class: 'mr-vote-name' }, mapLabel(c)),
+            h(
+              'span',
+              { class: 'mr-vote-count' },
+              counts[i] === 1 ? '1 vote' : `${counts[i]} votes`,
+            ),
+          );
+          b.addEventListener('click', () => {
+            s.voteMap?.(c);
+            for (const o of b.parentElement?.children ?? []) o.classList.toggle('mine', o === b);
+          });
+          return b;
+        }),
+      ),
+      h(
+        'div',
+        { class: 'mr-next' },
+        `Press 1–${pl.vote.choices.length} to vote · most votes wins${skip}`,
+      ),
     );
   }
 
@@ -729,6 +808,8 @@ export class MatchFeature implements ClientFeature {
 
   dispose(c: GameClient): void {
     this.unsub?.();
+    window.removeEventListener('keydown', this.onKey);
+    this.session = null;
     clearTransitions();
     setSidesSwapped(false);
     this.sky?.dispose(c.scene);

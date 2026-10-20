@@ -12,6 +12,7 @@ import type { PlayerInput } from '../sim/input';
 import type { PlayerState, WorldState } from '../sim/state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
+import type { PlaylistSettings } from '../rules/playlist';
 import type { Hitbox } from '../sim/hitbox';
 import { interpNetPlayer, interpObjectPos, netHitbox, netToBoomerang, netToPlayer } from './interp';
 import { createWorld, stepPredict } from '../sim/world';
@@ -371,7 +372,11 @@ export class NetCore {
     this.sendJson(id === undefined ? { t: 'party', op } : { t: 'party', op, id });
   }
 
-  /** Create a room ('arena': an Arena 1v1 room — `map` is ignored, bots fill it up to 8). */
+  /**
+   * Create a room ('arena': an Arena 1v1 room — `map` is ignored, bots fill it up to 8).
+   * `playlist`: several maps played one after another (match and Brawl rooms), loop, or a map
+   * vote after each match (rules/playlist.ts).
+   */
   createRoom(
     mode: RoomMode,
     map?: string,
@@ -379,8 +384,34 @@ export class NetCore {
     botSkill: string = DEFAULT_BOT_SKILL,
     objective: MatchObjective = 'tower',
     loadout: LoadoutName = 'lethal',
+    playlist?: PlaylistSettings,
   ): void {
-    this.sendJson({ t: 'createRoom', mode, map, bots, botSkill, objective, loadout });
+    this.sendJson({
+      t: 'createRoom',
+      mode,
+      map,
+      bots,
+      botSkill,
+      objective,
+      loadout,
+      ...(playlist && (playlist.maps.length > 1 || playlist.loop || playlist.next === 'vote')
+        ? {
+            maps: playlist.maps,
+            loop: !!playlist.loop,
+            nextMap: playlist.next ?? 'playlist',
+          }
+        : {}),
+    });
+  }
+
+  /** Results screen: vote for the next map (one of the maps on offer). */
+  voteMap(map: string): void {
+    this.sendJson({ t: 'mapVote', map });
+  }
+
+  /** Host: skip the results card / map vote (the next map loads now). */
+  skipNext(): void {
+    this.sendJson({ t: 'skipNext' });
   }
 
   /**

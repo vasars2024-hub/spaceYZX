@@ -23,6 +23,9 @@ import {
   type RankedQueueId,
   LADDER_IDS,
   LADDERS,
+  PLAYLIST_RULES,
+  type NextMapMode,
+  type PlaylistSettings,
 } from '@space-yz/shared';
 import type { IconName } from './icons';
 
@@ -419,6 +422,12 @@ export interface PracticeState {
   kit?: ArenaKit;
   /** free roam: target dummies on the map (default on) */
   dummies?: boolean;
+  /** match modes: several maps played one after another (the first is `map`; see queuedMaps) */
+  maps?: string[];
+  /** playlist: start again from the first map after the last one */
+  loop?: boolean;
+  /** after each match: the next queued map, or pick the next map on the results screen */
+  nextMap?: NextMapMode;
 }
 
 export const PRACTICE_STEP_LABELS: Record<PracticeStep, string> = {
@@ -459,20 +468,44 @@ export const pickPracticeMode = (
 ): PracticeState => {
   const valid = mapsForMode(mode, maps, defOf);
   const sizes = sizesFor(mode);
+  const map = valid.some((m) => m.id === s.map) ? s.map : (valid[0]?.id ?? s.map);
   return {
     ...s,
     mode,
-    map: valid.some((m) => m.id === s.map) ? s.map : (valid[0]?.id ?? s.map),
+    map,
+    // (queued maps that suit the new mode stay; none for modes without playlists)
+    maps: practiceHasPlaylist(mode)
+      ? keepQueue(
+          s,
+          map,
+          valid.map((m) => m.id),
+        )
+      : [],
     size: sizes.includes(s.size) ? s.size : defaultSize(mode),
     step: stepAfter(practiceSteps(mode, maps, defOf), 'mode'),
   };
 };
 
+/** Pick one map and move on (a queue of several maps is replaced by this one map). */
 export const pickPracticeMap = (s: PracticeState, map: string): PracticeState => ({
   ...s,
   map,
+  maps: [],
   step: 'setup',
 });
+
+/** Practice modes that can queue several maps (the round-based matches). */
+export const practiceHasPlaylist = (mode: PracticeMode): boolean =>
+  mode === 'match' || mode === 'bomb' || mode === 'elim' || mode === 'cs';
+
+/** A practice game's playlist (null: one map, as before). */
+export const practicePlaylist = (s: PracticeState): PlaylistSettings | null => {
+  if (!practiceHasPlaylist(s.mode)) return null;
+  const maps = queuedMaps(s);
+  return maps.length > 1 || s.loop || s.nextMap === 'vote'
+    ? { maps, loop: !!s.loop, next: s.nextMap ?? 'playlist' }
+    : null;
+};
 
 /** One step back, or null when back should leave the practice menu. */
 export const practiceBack = (
@@ -487,6 +520,82 @@ export const practiceBack = (
 /** The map a practice game will actually load (free fight is always the big Brawl map). */
 export const practiceMapId = (s: PracticeState): string =>
   s.mode === 'deathmatch' ? DEFAULT_BRAWL_MAP() : s.map;
+
+// ---------------------------------------------------------------- map playlists
+
+// Both wizards can queue several maps (rules/playlist.ts): a plain click on a map card picks it
+// and moves on, as always; the corner button on a card adds it to the queue (numbered 1, 2,
+// 3…), and while several maps are queued a click adds / removes maps instead.
+
+/** What the queue helpers need from a wizard's state. */
+interface QueueState {
+  map: string;
+  maps?: string[];
+}
+
+/** The maps a wizard will play, in order: the queue, or just its one map. */
+export const queuedMaps = (s: QueueState): string[] =>
+  s.maps && s.maps.length > 1 && s.maps[0] === s.map ? s.maps : [s.map];
+
+/** A map's place in the queue (1, 2, 3…), or 0 when it isn't queued / no queue. */
+export const queuePosition = (s: QueueState, id: string): number => {
+  const q = queuedMaps(s);
+  return q.length > 1 ? q.indexOf(id) + 1 : 0;
+};
+
+/**
+ * Add a map to the end of the queue, or take it out again (the wizard's map is always the
+ * queue's first one; the last map can't be taken out). At most PLAYLIST_RULES.maxMaps.
+ */
+export const toggleQueuedMap = <S extends QueueState>(s: S, id: string): S => {
+  const q = queuedMaps(s);
+  const next = q.includes(id)
+    ? q.filter((m) => m !== id)
+    : q.length >= PLAYLIST_RULES.maxMaps
+      ? q
+      : [...q, id];
+  if (!next.length) return s;
+  return { ...s, map: next[0], maps: next.length > 1 ? next : [] };
+};
+
+/**
+ * A click on a map card: with one map it picks that map and the wizard moves on (advance);
+ * while several maps are queued it adds / removes the map and stays on the map step.
+ */
+export const clickQueuedMap = <S extends QueueState>(
+  s: S,
+  id: string,
+): { s: S; advance: boolean } =>
+  queuedMaps(s).length > 1
+    ? { s: toggleQueuedMap(s, id), advance: false }
+    : { s: { ...s, map: id, maps: [] }, advance: true };
+
+/** The queue after the mode changed: the maps still allowed, led by `map`. */
+const keepQueue = (s: QueueState, map: string, allowed: readonly string[]): string[] => {
+  const q = queuedMaps(s).filter((m) => allowed.includes(m));
+  const list = [map, ...q.filter((m) => m !== map)];
+  return list.length > 1 ? list : [];
+};
+
+/** "Next map" choices of the room / practice settings. */
+export const NEXT_MAP_CHOICES: Choice<NextMapMode>[] = [
+  {
+    id: 'playlist',
+    name: 'Playlist',
+    desc: 'The next queued map loads right after each match.',
+    icon: 'next',
+  },
+  {
+    id: 'vote',
+    name: 'Map vote',
+    desc: 'After each match, vote for the next map (15 s).',
+    icon: 'team',
+  },
+];
+
+/** A playlist's settings in a few words (summary bars): "Playlist · loop", "Map vote". */
+export const playlistLabel = (p: PlaylistSettings): string =>
+  p.next === 'vote' ? 'Map vote' : p.loop ? 'Playlist · loop' : 'Playlist';
 
 // ---------------------------------------------------------------- online room wizard
 
@@ -634,6 +743,12 @@ export interface RoomState {
   size: RoomSize;
   bots: boolean;
   skill: BotSkillName;
+  /** match and Brawl rooms: several maps played one after another (the first is `map`) */
+  maps?: string[];
+  /** match rooms: start the playlist again after the last map */
+  loop?: boolean;
+  /** match rooms: after each match the next queued map, or a map vote */
+  nextMap?: NextMapMode;
 }
 
 export const initialRoom = (): RoomState => ({
@@ -690,10 +805,41 @@ export const pickRoomObjective = (
   // rotation — only surf maps while the parkour tracks are retired)
   const ok = isRaceObjective(objective) ? [...best, ...other] : best;
   const map = ok.some((m) => m.id === s.map) ? s.map : (ok[0]?.id ?? s.map);
-  return { ...s, objective, map, step: 'map' };
+  // (queued maps the new objective can use stay queued)
+  const queue = roomHasPlaylist(objective)
+    ? keepQueue(
+        s,
+        map,
+        [...best, ...other].map((m) => m.id),
+      )
+    : [];
+  return { ...s, objective, map, maps: queue, step: 'map' };
 };
 
-export const pickRoomMap = (s: RoomState, map: string): RoomState => ({ ...s, map, step: 'room' });
+/** Pick one map and move on (a queue of several maps is replaced by this one map). */
+export const pickRoomMap = (s: RoomState, map: string): RoomState => ({
+  ...s,
+  map,
+  maps: [],
+  step: 'room',
+});
+
+/** Rooms that can queue several maps: match rooms and Brawl (not Arena or races). */
+export const roomHasPlaylist = (o: RoomObjective): boolean =>
+  !isArenaObjective(o) && !isRaceObjective(o);
+/** Rooms with the loop / map vote settings: the round-based match rooms (Brawl always rotates). */
+export const roomHasNextChoice = (o: RoomObjective): boolean =>
+  roomHasPlaylist(o) && !isBrawlObjective(o);
+
+/** A room's playlist for createRoom (null: one map, as before). */
+export const roomPlaylist = (s: RoomState): PlaylistSettings | null => {
+  if (!roomHasPlaylist(s.objective)) return null;
+  const maps = queuedMaps(s);
+  if (!roomHasNextChoice(s.objective)) return maps.length > 1 ? { maps } : null;
+  return maps.length > 1 || s.loop || s.nextMap === 'vote'
+    ? { maps, loop: !!s.loop, next: s.nextMap ?? 'playlist' }
+    : null;
+};
 
 export const roomBack = (s: RoomState): RoomState | null => {
   const prev = stepBefore(ROOM_STEPS, s.step);

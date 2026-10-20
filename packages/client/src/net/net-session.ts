@@ -138,6 +138,19 @@ export class NetSession implements Session {
     this.core.sendJson({ t: 'startMatch' });
   }
 
+  voteMap(map: string): void {
+    this.core.voteMap(map);
+  }
+
+  /** (only the room's host skips the results card / map vote) */
+  canSkipNext(): boolean {
+    return !this.core.ranked && this.core.hostId === this.localId;
+  }
+
+  skipNext(): void {
+    this.core.skipNext();
+  }
+
   report(playerId: number, reason: string): void {
     this.core.sendJson({ t: 'report', player: playerId, reason });
   }

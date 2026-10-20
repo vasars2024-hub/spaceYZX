@@ -1,8 +1,22 @@
 // Match rules for 1v1 / 2v2 / 3v3 / 5v5 rooms: warmup until both teams are full (or the host
 // starts early), then rounds with the room's objective: Controller & Tower, bomb or Elimination
 // (shared/rules/match).
-import type { LoadoutName, MatchObjective, MatchState, TeamMode } from '@space-yz/shared';
+import type {
+  LoadoutName,
+  MatchObjective,
+  MatchState,
+  PlaylistState,
+  TeamMode,
+} from '@space-yz/shared';
 import {
+  PLAYLIST_RULES,
+  objectiveMapPool,
+  playlistAdvance,
+  playlistMatchEnded,
+  playlistSkip,
+  playlistView,
+  playlistVote,
+  voteSeed,
   createMatch,
   startMatch,
   updateMatch,
@@ -74,6 +88,20 @@ export class MatchRules implements Rules {
   onGrief: ((room: Room, m: Member, action: GriefAction, reason: string) => void) | null = null;
   /** ranked rooms: the results screen is over (the room should close) */
   onFinished: ((room: Room) => void) | null = null;
+  /**
+   * Casual rooms with a map playlist (rules/playlist.ts): the queued maps, loop, or a map vote
+   * after each match. Null: one map, back to warm-up after each match (as before).
+   */
+  playlist: PlaylistState | null = null;
+  /**
+   * The results card / vote is over: move the room to `map` and call `nextMatch` (the hub does
+   * it and tells the clients). Without a handler the next match is played on the same map.
+   */
+  onNextMap: ((room: Room, map: string) => void) | null = null;
+  /** matches finished in this room (seeds the map vote) */
+  matchesPlayed = 0;
+  /** the current match end was handled (playlist) */
+  private endSeen = false;
   private grief = new Map<number, { teamKills: number; warned: Set<string> }>();
   /** shooting stats of the match being played (profiles) */
   readonly stats = new MatchStats();
@@ -122,9 +150,40 @@ export class MatchRules implements Rules {
         startMatch(ms, world, ctx);
       }
     }
+    // a playlist's next map: when the results card / vote is over, the room moves on
+    const pl = this.playlist;
+    if (pl && ms.phase === 'matchEnd' && pl.endsAt) {
+      ms.phaseEnds = pl.endsAt; // (the results screen counts down to the next map)
+      const next = playlistAdvance(pl, world.tick);
+      if (next !== null) {
+        if (this.onNextMap) this.onNextMap(room, next);
+        else this.nextMatch(room);
+        return;
+      }
+    }
     const wasEnd = ms.phase === 'matchEnd';
     updateMatch(ms, world, ctx);
     if (!wasEnd && ms.phase === 'matchEnd') this.onResult?.(room, this.result(room));
+    // (checked apart from the result: a forfeit ends the match outside this step)
+    if (ms.phase !== 'matchEnd') this.endSeen = false;
+    else if (!this.endSeen) {
+      this.endSeen = true;
+      this.matchesPlayed++;
+      // casual playlist: the next queued map (or a vote) instead of going back to warm-up
+      if (pl && !room.ranked) {
+        const pool = [...new Set([...objectiveMapPool(ms.objective), ...pl.maps])];
+        if (
+          playlistMatchEnded(
+            pl,
+            room.map,
+            pool,
+            world.tick,
+            voteSeed(room.code, this.matchesPlayed),
+          )
+        )
+          ms.phaseEnds = pl.endsAt;
+      }
+    }
     if (wasEnd && ms.phase === 'warmup' && room.ranked) this.onFinished?.(room);
     if (ms.phase !== 'warmup' && ms.phase !== 'matchEnd') this.checkGrief(room);
     // bots pursue the objective
@@ -134,6 +193,42 @@ export class MatchRules implements Rules {
       ctx,
       [...room.members.values()].flatMap((m) => (m.bot ? [m.bot] : [])),
     );
+  }
+
+  /**
+   * The next match of a playlist, after the room moved to its next map: a fresh match (same
+   * mode, objective, kit and team size) that starts after a short warm-up countdown.
+   */
+  nextMatch(room: Room): void {
+    const old = this.ms;
+    this.ms = createMatch(old.mode, old.objective, old.loadout);
+    this.ms.rules = old.rules;
+    this.leavers = [];
+    this.grief.clear();
+    this.stats.reset();
+    this.startAt = room.world.tick + Math.round(PLAYLIST_RULES.startDelaySec * 60);
+  }
+
+  /** A player's map vote on the results screen (humans only). False: not counted. */
+  vote(room: Room, playerId: number, map: string): boolean {
+    const pl = this.playlist;
+    if (!pl || this.ms.phase !== 'matchEnd' || !room.members.get(playerId)?.conn) return false;
+    const ok = playlistVote(
+      pl,
+      playerId,
+      map,
+      room.humans.map((m) => m.id),
+      room.world.tick,
+    );
+    if (ok) this.ms.phaseEnds = pl.endsAt;
+    return ok;
+  }
+
+  /** The host skips the results card / vote. False: nothing to skip. */
+  skip(room: Room): boolean {
+    const pl = this.playlist;
+    if (!pl || this.ms.phase !== 'matchEnd') return false;
+    return playlistSkip(pl, room.world.tick);
   }
 
   private checkGrief(room: Room): void {
@@ -216,6 +311,7 @@ export class MatchRules implements Rules {
       rules: 'match',
       ...matchView(this.ms),
       startAt: this.startAt,
+      ...(this.playlist ? { playlist: playlistView(this.playlist) } : {}),
       stats: room.world.players.map((p) => ({
         id: p.id,
         team: p.team,

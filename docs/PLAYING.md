@@ -128,7 +128,7 @@ your own grenade), you're back after 1.5 s at the nearest spawn point.
 - **Bomb** (Practice, or pick it when you create an online room): one team attacks, one
   defends, like Counter-Strike. An attacker carries the bomb — **hold G for 3 s** inside
   site **A** or **B** to plant. It goes off **35 s** later unless a defender **holds G next to
-  it for 7 s** (you can't move while planting/defusing; letting go starts over). Attackers
+  it for 4 s** (you can't move while planting/defusing; letting go starts over). Attackers
   win if it explodes or all defenders die; defenders win by defusing, by time running out
   before a plant, or by killing all attackers before the plant.
   Attackers are the **T side (orange)**, defenders the **CT side (cyan)**. Teams swap sides at

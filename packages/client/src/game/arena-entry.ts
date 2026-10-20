@@ -140,8 +140,8 @@ export const startArenaPractice = (app: App, opts: ArenaPracticeOptions): void =
   const client = app.startGame(session, [combat, hud], { tuning: false });
   client.hud.setHint(
     arena.loadout === 'cs'
-      ? 'Arena 1v1 · Tab standings · Esc menu · LMB fire · 1 AK · 2 Deagle · R reload · E knife'
-      : 'Arena 1v1 · Tab standings · Esc menu · LMB throw · RMB wind-up · E slash · R recall · Q grenade',
+      ? 'Arena 1v1 · {scoreboard} standings · Esc menu · {fire} fire · {slot1} AK · {slot2} Deagle · {recall} reload · {melee} knife'
+      : 'Arena 1v1 · {scoreboard} standings · Esc menu · {fire} throw · {alt} wind-up · {melee} slash · {recall} recall · {grenade} grenade',
   );
 };
 

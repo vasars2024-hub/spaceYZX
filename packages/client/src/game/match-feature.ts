@@ -2,6 +2,7 @@
 // START, ROUND n, HALF TIME, ROUND WON/LOST, VICTORY/DEFEAT: game/transitions.ts), Tower beams
 // and dropped Controllers (3D), scoreboard (Tab) and the match results overlay. On-screen markers (Towers,
 // Controllers, name tags, reveals) are drawn by WorldMarkers.
+import { firstKey } from '../keybinds';
 import * as THREE from 'three';
 import type { SimEvent } from '@space-yz/shared';
 import { TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
@@ -80,7 +81,7 @@ export class MatchFeature implements ClientFeature {
     }),
   );
   private zoneWarn!: HTMLDivElement;
-  /** bomb mode: plant / defuse progress while you hold G */
+  /** bomb mode: plant / defuse progress while you hold Use (G by default) */
   private bombBar!: HTMLDivElement;
   private bombBarFill!: HTMLDivElement;
   private bombBarText!: HTMLDivElement;
@@ -273,7 +274,9 @@ export class MatchFeature implements ClientFeature {
         case 'bombPlanted':
           this.showBanner(
             `BOMB PLANTED AT ${e.site}`,
-            this.myTeam(s) === this.last?.attackers ? 'Protect it' : 'Defuse it: hold G next to it',
+            this.myTeam(s) === this.last?.attackers
+              ? 'Protect it'
+              : `Defuse it: hold ${firstKey(c.deps.settings.keybinds, 'use')} next to it`,
             3,
             '#ff5a6a',
           );
@@ -440,7 +443,7 @@ export class MatchFeature implements ClientFeature {
           const b = m.bomb;
           subText = iAttack
             ? b?.carrier === s.localId
-              ? 'T SIDE · YOU HAVE THE BOMB · hold G in site A or B to plant'
+              ? `T SIDE · YOU HAVE THE BOMB · hold ${firstKey(c.deps.settings.keybinds, 'use')} in site A or B to plant`
               : 'T SIDE (orange) · ATTACK · plant the bomb at A or B'
             : 'CT SIDE (cyan) · DEFEND · stop the plant at A and B';
           if (b?.planted) {
@@ -449,7 +452,7 @@ export class MatchFeature implements ClientFeature {
             urgent = true;
             subText = iAttack
               ? `BOMB PLANTED AT ${b.planted.site} · protect it`
-              : `BOMB PLANTED AT ${b.planted.site} · hold G next to it to defuse`;
+              : `BOMB PLANTED AT ${b.planted.site} · hold ${firstKey(c.deps.settings.keybinds, 'use')} next to it to defuse`;
           }
         }
         if (m.overtime) {

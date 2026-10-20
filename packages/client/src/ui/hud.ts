@@ -1,4 +1,5 @@
 // In-game HUD (DOM overlay). Text updates are throttled; the speed graph is a tiny canvas.
+import { keyHint } from '../keybinds';
 import type { PlayerState, MovementConfig, Vec3 } from '@space-yz/shared';
 import { MOVE_NAMES, len, projectOnPlane, lenSq, normalize, dot, cross } from '@space-yz/shared';
 import type { Settings } from '../settings';
@@ -74,7 +75,7 @@ export class Hud {
     this.countersEl = el('div', 'hud-counters', tl);
     this.fpsEl = el('div', 'hud-fps', this.root);
     this.hintEl = el('div', 'hud-hint', this.root);
-    this.hintEl.textContent = '` tuning panel · Esc menu';
+    this.hintEl.textContent = keyHint(settings.keybinds, '{tuning} tuning panel · Esc menu');
     this.applyCrosshair();
   }
 
@@ -89,8 +90,9 @@ export class Hud {
     this.crosshair.classList.toggle('outlined', c.outline);
   }
 
+  /** The hint line; `{action}` shows that action's current key (keybinds.ts keyHint). */
   setHint(text: string, seconds = 12): void {
-    this.hintEl.textContent = text;
+    this.hintEl.textContent = keyHint(this.settings.keybinds, text);
     this.hintEl.classList.remove('faded');
     window.setTimeout(() => this.hintEl.classList.add('faded'), seconds * 1000);
   }

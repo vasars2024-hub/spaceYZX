@@ -1,5 +1,6 @@
 // Client combat presentation: player models, Boomerangs, lines, preview, viewmodel, HUD,
 // 3D audio and kill feedback. Works for offline and online sessions alike.
+import { keyHint } from '../keybinds';
 import * as THREE from 'three';
 import type { SimEvent, BoomerangState, PlayerState, Vec3, KillKind } from '@space-yz/shared';
 import {
@@ -770,7 +771,11 @@ export class CombatFeature implements ClientFeature {
       c.spectating !== null && c.spectating >= 0 && !c.panelOpen
         ? `SPECTATING ${this.name(c, c.spectating)}${
             this.teamOf(c, c.spectating) === me?.team ? '' : ' (enemy)'
-          } · LMB / RMB switch${c.takeOverTarget() !== null ? ' · E take control' : ''}`
+          } · ${keyHint(c.deps.settings.keybinds, '{fire} / {alt} switch')}${
+            c.takeOverTarget() !== null
+              ? ` · ${keyHint(c.deps.settings.keybinds, '{melee} take control')}`
+              : ''
+          }`
         : null,
     );
   }

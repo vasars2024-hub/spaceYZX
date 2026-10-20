@@ -447,7 +447,7 @@ export class QuickTester {
     const again = run.race ? 'last checkpoint' : 'test start';
     client.hud.setHint(
       start.note ||
-        `Testing ${ed.doc.name} · ${QUICK_TEST_LABEL}: back to building · hold R: ${again} · Backspace: again · Esc menu`,
+        `Testing ${ed.doc.name} · ${QUICK_TEST_LABEL}: back to building · hold {recall}: ${again} · Backspace: again · Esc menu`,
       8,
     );
     return true;

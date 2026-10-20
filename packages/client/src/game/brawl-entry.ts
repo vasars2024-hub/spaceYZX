@@ -55,8 +55,9 @@ export interface BrawlPracticeOptions {
   config?: GameConfig;
 }
 
+/** (the HUD fills `{action}` with your keys) */
 export const BRAWL_HINT =
-  'Brawl · Tab scoreboard · Esc menu · LMB throw · RMB wind-up · E slash · R recall · Q grenade';
+  'Brawl · {scoreboard} scoreboard · Esc menu · {fire} throw · {alt} wind-up · {melee} slash · {recall} recall · {grenade} grenade';
 
 /** The offline Brawl session: the local sim with the Brawl rules. */
 export class BrawlLocalSession extends LocalSession {

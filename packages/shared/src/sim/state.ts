@@ -84,6 +84,10 @@ export interface PlayerState extends CombatPlayerState {
   prevButtons: number;
   frozen: boolean; // spawn lock: can look, can't move/act
   speedCap: number; // >0 caps planar speed this tick (wind-up slow walk)
+  // head landing (sim/stomp.ts): who you last landed on, and ticks before that same pair counts
+  // again (another player's head works right away)
+  stompOn: number;
+  stompCd: number;
   // races (sim/race.ts; unused elsewhere)
   surgeLeft: number; // SURGE charges left this race
   surgeTicks: number; // ticks of the running surge

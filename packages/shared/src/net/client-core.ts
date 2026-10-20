@@ -135,6 +135,8 @@ const echoKey = (e: SimEvent): string | null => {
       return `blast:${e.boomerang}`;
     case 'shieldBreak':
       return `shieldBreak:${e.attacker}:${e.victim}`;
+    case 'stomp':
+      return `stomp:${e.player}:${e.target}`;
     case 'twinBounce':
     case 'twinEnd':
       return `${e.type}:${e.twin}`;

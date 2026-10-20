@@ -14,6 +14,7 @@ export type KillKind =
   | 'bomb'
   | 'ak'
   | 'deagle'
+  | 'stomp'
   | 'world';
 
 export type SimEvent =
@@ -52,6 +53,10 @@ export type SimEvent =
       turn?: number;
     }
   | { type: 'dash'; player: number }
+  // head landing (sim/stomp.ts): `player` came down on `target`'s head at `pos`. 'boost' = a
+  // teammate threw you forward (Boomerang modes), 'up' = thrown straight up (CS modes),
+  // 'kill' = the enemy died (its kill event has kind 'stomp')
+  | { type: 'stomp'; player: number; target: number; kind: 'boost' | 'up' | 'kill'; pos: Vec3 }
   // races (sim/race.ts): a SURGE, a gate passed (`cp` = gates passed now), back to a
   // checkpoint or recovery anchor (a fall, a red zone or the respawn key; `penalty`: frozen for
   // a moment; `anchor`: the anchor's index), a fuel cell used, a recovery anchor passed

@@ -312,6 +312,19 @@ const defs = {
       0.8,
     );
   },
+  stomp: (sr) => {
+    // landing on someone's head: a soft thud with a rising cartoon "boing"
+    const d = 0.38;
+    return finish(
+      mix(sr, d, [
+        { sig: thump(sr, d, 140, 50, 0.05), gain: 1 },
+        { sig: applyEnv(lowpass(whiteNoise(sr, d, 401), sr, 1000), sr, percFn(0.02)), gain: 0.5 },
+        { sig: tone(sr, d, 'sine', expSweep(200, 640, 0.2), 0.13, 0.004), gain: 0.55, at: 0.01 },
+      ]),
+      sr,
+      0.75,
+    );
+  },
   mantle: (sr) => {
     const d = 0.25;
     return finish(

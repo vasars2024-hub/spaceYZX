@@ -1168,3 +1168,78 @@ html.mobile .pause-menu {
     align-items: center;
   }
 }
+
+/* ---------- map playlists (several queued maps) ---------- */
+.map-pick {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+.map-pick > .card {
+  height: 100%;
+}
+.fx-enter .card-grid > .map-pick {
+  animation: fx-card-in 320ms var(--ease-out) both;
+  animation-delay: calc(60ms + var(--i, 0) * 35ms);
+}
+/* the corner button: + to queue the map, its number once queued (press again to take it out) */
+.queue-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  background: rgba(5, 9, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 15px;
+  cursor: pointer;
+}
+.queue-btn:hover,
+.queue-btn:focus-visible {
+  border-color: var(--team-a);
+}
+.queue-btn.on {
+  color: #04121c;
+  background: var(--team-a);
+  border-color: var(--team-a);
+  box-shadow: 0 0 14px rgba(25, 227, 255, 0.45);
+}
+.queue-hint {
+  margin: 0 0 10px;
+}
+.sum-queue {
+  flex-wrap: wrap;
+  white-space: normal;
+  gap: 6px;
+}
+.q-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 4px;
+  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.q-chip b {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  font-size: 11px;
+  color: #04121c;
+  background: var(--team-a);
+  border-radius: 9px;
+}
+.card-grid.toggles.off {
+  opacity: 0.5;
+}

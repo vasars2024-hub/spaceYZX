@@ -13,11 +13,14 @@ import type {
   PowerupPickup,
   SimContext,
   MatchView,
+  PlaylistView,
 } from '@space-yz/shared';
 
 /** Match state as the client sees it (rules view + per-player stats). */
 export interface MatchInfo extends MatchView {
   startAt: number;
+  /** casual rooms / practice with a map playlist: the queue, the next map, the map vote */
+  playlist?: PlaylistView;
   /** every player in the match (also ones you can't currently see) */
   stats: {
     id: number;
@@ -103,6 +106,12 @@ export interface Session {
   startMatch?(): void;
   /** Offline: play again after the results screen. */
   restartMatch?(): void;
+  /** Results screen with a map vote: your vote for the next map. */
+  voteMap?(map: string): void;
+  /** May you skip the results card / map vote? (online: the room's host; offline: you) */
+  canSkipNext?(): boolean;
+  /** Skip the results card / map vote: the next map loads now. */
+  skipNext?(): void;
   report?(playerId: number, reason: string): void;
   /** Round-trip ping per player id (online). */
   pings?(): Record<number, number>;

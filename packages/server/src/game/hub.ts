@@ -7,6 +7,7 @@ import type {
   LadderId,
   LoadoutName,
   MatchObjective,
+  PlaylistSettings,
   RoomCustomMap,
   RoomMode,
 } from '@space-yz/shared';
@@ -37,6 +38,8 @@ import {
   loadoutName,
   botSkillName,
   CUSTOM_MAP_LIMITS,
+  PLAYLIST_RULES,
+  createPlaylist,
 } from '@space-yz/shared';
 import { Limiter } from '../services/limiter';
 import { Conn } from './conn';
@@ -235,13 +238,14 @@ export class GameHub {
         // (arena maps only for the Arena, which picks its own; race tracks only for races;
         // retired maps for nobody)
         const race = mode === 'race';
-        const map = MAPS.some(
-          (m) => m.id === msg.map && !m.arena && !m.retired && !!m.race === race,
-        )
-          ? (msg.map as string)
-          : race
-            ? DEFAULT_RACE_MAP
-            : getMap('').id;
+        const okMap = (id: unknown): id is string =>
+          MAPS.some((m) => m.id === id && !m.arena && !m.retired && !!m.race === race);
+        // a playlist (match and Brawl rooms): the valid maps of the list, in order
+        const listed = Array.isArray(msg.maps)
+          ? msg.maps.slice(0, PLAYLIST_RULES.maxMaps * 2).filter(okMap)
+          : [];
+        const first = listed[0] ?? msg.map;
+        const map = okMap(first) ? first : race ? DEFAULT_RACE_MAP : getMap('').id;
         const bots = Math.max(0, Math.min(9, Math.floor(Number(msg.bots) || 0)));
         const room = this.createRoom({
           mode,
@@ -250,6 +254,15 @@ export class GameHub {
           botSkill: botSkillName(msg.botSkill),
           objective: MATCH_OBJECTIVES.find((o) => o === msg.objective) ?? 'tower',
           loadout: loadoutName(msg.loadout),
+          ...(listed.length || msg.loop || msg.nextMap === 'vote'
+            ? {
+                playlist: {
+                  maps: listed.length ? listed : [map],
+                  loop: msg.loop === true,
+                  next: msg.nextMap === 'vote' ? 'vote' : 'playlist',
+                },
+              }
+            : {}),
         });
         if (!room) return conn.sendJson({ t: 'error', msg: 'The server is full right now.' });
         this.joinRoom(conn, room);
@@ -297,6 +310,21 @@ export class GameHub {
           const err = room.rules.requestStart(room);
           if (err) conn.sendJson({ t: 'error', msg: err });
         }
+        return;
+      }
+      case 'mapVote': {
+        // results screen of a casual room: a vote for the next map
+        const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
+        if (room && conn.playerId !== null && typeof msg.map === 'string')
+          if (room.rules instanceof MatchRules)
+            room.rules.vote(room, conn.playerId, msg.map.slice(0, 64));
+        return;
+      }
+      case 'skipNext': {
+        // the host skips the results card / vote: the next map loads now
+        const room = conn.roomCode ? this.rooms.get(conn.roomCode) : undefined;
+        if (!room || room.hostId !== conn.playerId || room.ranked) return;
+        if (room.rules instanceof MatchRules) room.rules.skip(room);
         return;
       }
       case 'queue':
@@ -398,6 +426,12 @@ export class GameHub {
      * as given). Absent: the map's official edit if one is published, else the plain map.
      */
     custom?: RoomCustomMap;
+    /**
+     * casual match / Brawl rooms: a map playlist (rules/playlist.ts). Match rooms move on to the
+     * next queued map after each match (or hold a map vote); a Brawl rotates through these maps
+     * instead of the whole rotation. Ignored by ranked, Arena, race and custom-map rooms.
+     */
+    playlist?: PlaylistSettings;
   }): Room | null {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const arena = opts.mode === 'arena';
@@ -478,6 +512,22 @@ export class GameHub {
         for (const m of r.humans) if (m.conn) this.removeFromRoom(m.conn, 'Match over');
         if (this.rooms.has(r.code)) this.closeRoom(r);
       };
+      // casual rooms: the map playlist (the first map is the room's map)
+      if (opts.playlist && !opts.ranked && !opts.custom) {
+        const pl = createPlaylist(
+          { ...opts.playlist, maps: [map, ...opts.playlist.maps.filter((m) => m !== map)] },
+          (id) => MAPS.some((m) => m.id === id && !m.arena && !m.race && !m.retired),
+        );
+        rules.playlist = pl;
+        // the next match: every client loads the next map (a new 'roomJoined', same code and id)
+        rules.onNextMap = (r, next) => {
+          r.changeMap(next, this.services.mapOverride?.(next) ?? null);
+          rules.nextMatch(r);
+          for (const m of r.humans) if (m.conn) this.sendRoomJoined(m.conn, r, m.id);
+          this.broadcastRoom(r);
+          this.log(`Room ${r.code}: next match on ${r.map}`);
+        };
+      }
     }
     if (rules instanceof MatchRules)
       rules.onResult = (r, result) => {
@@ -507,8 +557,16 @@ export class GameHub {
         this.services.onBrawlEnd?.(r, result, rules);
       };
       // the next Brawl: every client loads the next map (a new 'roomJoined', same code and id)
+      // (a Brawl room with a playlist rotates through its own maps)
+      const rotation =
+        opts.playlist && !opts.custom
+          ? createPlaylist({ maps: [map, ...opts.playlist.maps.filter((m) => m !== map)] }, (id) =>
+              brawlMaps().some((m) => m.id === id),
+            )
+          : null;
       rules.onNextMap = (r) => {
-        const next = nextBrawlMap(r.map);
+        const own = rotation && rotation.maps.length > 1 ? rotation.maps : null;
+        const next = own ? own[(own.indexOf(r.map) + 1) % own.length] : nextBrawlMap(r.map);
         r.changeMap(next, this.services.mapOverride?.(next) ?? null);
         rules.restart(r);
         for (const m of r.humans) if (m.conn) this.sendRoomJoined(m.conn, r, m.id);

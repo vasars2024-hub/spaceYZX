@@ -1,6 +1,12 @@
 // Online menus: nickname and connection on top, then tabs: Create room (in steps: objective →
 // map → room size + bots) or Join by code. Also the in-game room panel and network panel.
-import type { BotSkillName, MatchObjective, NetCore, RoomMode } from '@space-yz/shared';
+import type {
+  BotSkillName,
+  MatchObjective,
+  NetCore,
+  PlaylistSettings,
+  RoomMode,
+} from '@space-yz/shared';
 import { BOT_SKILL_LABELS, getMap } from '@space-yz/shared';
 import { h, slider } from './menus';
 import { icon, botBadge } from './icons';
@@ -16,12 +22,20 @@ import {
   initialRoom,
   isArenaObjective,
   isRaceObjective,
+  clickQueuedMap,
   pickRoomMap,
   pickRoomObjective,
+  playlistLabel,
+  queuedMaps,
+  queuePosition,
   roomBack,
   roomCreateArgs,
+  roomHasNextChoice,
+  roomHasPlaylist,
   roomMaps,
+  roomPlaylist,
   surfModeGroups,
+  toggleQueuedMap,
   type RoomSize,
   type RoomState,
 } from './flow';
@@ -31,7 +45,10 @@ import {
   iconButton,
   mapCard,
   mapMini,
+  mapQueueGrid,
+  nextMapSettings,
   pickGrid,
+  queueStrip,
   screenHead,
   segTabs,
   stepPanel,
@@ -39,6 +56,7 @@ import {
   surfGroupTitle,
   swapStage,
   type Dir,
+  type MapQueue,
 } from './menu-kit';
 
 export interface OnlineMenuHandlers {
@@ -53,6 +71,8 @@ export interface OnlineMenuHandlers {
     objective: MatchObjective,
     /** 'cs': the CS kit (AK + Deagle, 70 % movement speed): bomb rules, or Elimination */
     loadout: 'lethal' | 'cs',
+    /** several maps one after another / loop / map vote (null: one map) */
+    playlist: PlaylistSettings | null,
   ): void;
   join(code: string): void;
   back(): void;
@@ -152,7 +172,7 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
   const create = () => {
     hd.setName(nameInput.value);
     const a = roomCreateArgs(s);
-    hd.create(a.mode, a.map, a.bots, a.skill, a.objective, a.loadout);
+    hd.create(a.mode, a.map, a.bots, a.skill, a.objective, a.loadout, roomPlaylist(s));
   };
 
   const objectiveStep = () =>
@@ -178,14 +198,44 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
   const mapStep = () => {
     const { best, other } = roomMaps(s.objective);
     const pick = (id: string) => go(pickRoomMap(s, id), 'forward');
-    const grid = (maps: typeof best, cls = 'maps') =>
-      pickGrid(
+    // match and Brawl rooms: several maps can be queued (a plain click still picks one map)
+    const grids: { refresh(): void }[] = [];
+    const queue: MapQueue = {
+      selected: (id) => queuedMaps(s).includes(id),
+      order: (id) => queuePosition(s, id),
+      click: (id) => {
+        const r = clickQueuedMap(s, id);
+        if (r.advance) return go({ ...r.s, step: 'room' }, 'forward');
+        s = r.s;
+        keep();
+        for (const g of grids) g.refresh();
+        renderSummary();
+      },
+      toggle: (id) => {
+        s = toggleQueuedMap(s, id);
+        keep();
+        for (const g of grids) g.refresh();
+        renderSummary();
+      },
+    };
+    const grid = (maps: typeof best, cls = 'maps') => {
+      if (roomHasPlaylist(s.objective)) {
+        const g = mapQueueGrid(
+          cls,
+          maps.map((m) => m.id),
+          queue,
+        );
+        grids.push(g);
+        return g.el;
+      }
+      return pickGrid(
         cls,
         maps,
         (m) => m.id === s.map,
         (m, selected, p) => mapCard(m.id, selected, p),
         (m) => pick(m.id),
       );
+    };
     // races: the race tracks, then the surf maps by mode (Beginner, then Intermediate)
     if (isRaceObjective(s.objective))
       return stepPanel(
@@ -195,6 +245,13 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
       );
     return stepPanel(
       'Map',
+      roomHasPlaylist(s.objective)
+        ? h(
+            'p',
+            { class: 'hint queue-hint' },
+            'Click a map to play it. Press + on more maps to queue a playlist: they are played one after another.',
+          )
+        : null,
       grid(best),
       other.length
         ? h('h3', { class: 'step-title' }, 'Other maps (no objective for this mode)')
@@ -242,6 +299,17 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
       botsCard.setAttribute('aria-pressed', String(s.bots));
       skillGrid.classList.toggle('off', !s.bots);
     };
+    // match rooms: what happens after each match (playlist order or a map vote, loop)
+    const nextSettings = roomHasNextChoice(s.objective)
+      ? nextMapSettings(
+          () => s,
+          (next) => {
+            s = { ...s, ...next };
+            keep();
+            renderSummary();
+          },
+        )
+      : [];
     return stepPanel(
       'Room size',
       pickGrid(
@@ -267,14 +335,20 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
       h('h3', { class: 'step-title' }, 'Bots'),
       h('div', { class: 'card-grid toggles' }, botsCard),
       skillGrid,
+      ...nextSettings,
     );
   };
 
   const renderSummary = () => {
     const o = ROOM_OBJECTIVES.find((x) => x.id === s.objective) ?? ROOM_OBJECTIVES[0];
+    const queue = roomHasPlaylist(s.objective) ? queuedMaps(s) : [s.map];
+    const pl = roomPlaylist(s);
     summary.replaceChildren(
       sumItem(icon(o.icon), o.name),
-      sumItem(mapMini(s.map), getMap(s.map).name, 'sum-map'),
+      queue.length > 1 ? queueStrip(queue) : sumItem(mapMini(s.map), getMap(s.map).name, 'sum-map'),
+      ...(pl && roomHasNextChoice(s.objective)
+        ? [sumItem(icon(pl.next === 'vote' ? 'team' : 'next'), playlistLabel(pl))]
+        : []),
       sumItem(icon(s.size === '1v1' ? 'profile' : 'team'), sizeCard(s.objective, s.size).label),
       sumItem(
         s.bots ? botBadge(s.skill) : icon('bot'),
@@ -288,7 +362,10 @@ export const onlineMenu = (hd: OnlineMenuHandlers, prefillCode = ''): HTMLElemen
             'Next',
             () =>
               go(
-                s.step === 'objective' ? pickRoomObjective(s, s.objective) : pickRoomMap(s, s.map),
+                s.step === 'objective'
+                  ? pickRoomObjective(s, s.objective)
+                  : // (the map step: keep the queued playlist)
+                    { ...s, step: 'room' },
                 'forward',
               ),
             'btn next-btn',

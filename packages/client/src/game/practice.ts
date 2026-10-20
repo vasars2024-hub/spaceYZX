@@ -16,7 +16,15 @@ import {
   applyBotObjectives,
   csConfig,
   DEFAULT_MATCH_MAP,
+  objectiveMapPool,
+  playlistAdvance,
+  playlistMatchEnded,
+  playlistSkip,
+  playlistView,
+  playlistVote,
+  voteSeed,
   type MatchState,
+  type PlaylistState,
 } from '@space-yz/shared';
 import { LocalSession } from './local-session';
 import { officialMapDef } from '../net/official-maps';
@@ -46,6 +54,13 @@ export interface PracticeOptions {
   kind?: PracticeKind;
   /** map of a 'match' (default: the default match map, Split Deck) */
   mapId?: string;
+  /**
+   * matches: a map playlist (rules/playlist.ts; the same state goes from map to map). After a
+   * match the results card shows the next map (or a vote: you pick it) and `onNextMap` is
+   * called: the caller starts the next practice game on that map.
+   */
+  playlist?: PlaylistState;
+  onNextMap?: (map: string) => void;
 }
 
 export type PracticeKind = 'match' | 'bomb' | 'elim' | 'elim-cs' | 'cs' | 'deathmatch';
@@ -80,15 +95,37 @@ export const createPracticeSession = (
       )
     : undefined;
   let restartAt = 0;
+  const pl = match ? (opts.playlist ?? null) : null;
+  const mapId = opts.mapId ?? DEFAULT_MATCH_MAP();
+  /** the next map is chosen: this game only waits to be replaced */
+  let moving = false;
+  let matchNo = 0;
+  let endSeen = false;
+  let tickNow = 0;
   const stats = new StatsTracker();
+  const seed = 1 + Math.floor(Math.random() * 1e6);
   const practice = createPractice(2.5);
   const names: Record<number, string> = {};
   const session = new LocalSession({
     levelDef,
     config,
-    seed: 1 + Math.floor(Math.random() * 1e6),
+    seed,
     names,
     match,
+    ...(pl
+      ? {
+          playlist: {
+            view: () => playlistView(pl),
+            vote: (map: string) => {
+              if (match?.phase === 'matchEnd' && playlistVote(pl, 1, map, [1], tickNow))
+                match.phaseEnds = pl.endsAt;
+            },
+            skip: () => {
+              if (match?.phase === 'matchEnd') playlistSkip(pl, tickNow);
+            },
+          },
+        }
+      : {}),
     setup: (world, ctx) => {
       let id = 2;
       let n = 0;
@@ -120,7 +157,29 @@ export const createPracticeSession = (
     afterStep: (world, ctx) => {
       stats.observe(world);
       if (match) {
+        tickNow = world.tick;
+        if (moving) return;
+        // a playlist's next map: when the results card / vote is over, the next game starts
+        if (pl && match.phase === 'matchEnd' && pl.endsAt) {
+          match.phaseEnds = pl.endsAt;
+          const next = playlistAdvance(pl, world.tick);
+          if (next !== null) {
+            moving = true;
+            opts.onNextMap?.(next);
+            return;
+          }
+        }
         updateMatch(match, world, ctx);
+        // (a match end seen once, also one that happened outside this step)
+        if (match.phase !== 'matchEnd') endSeen = false;
+        else if (pl && !endSeen) {
+          endSeen = true;
+          const pool = [...new Set([...objectiveMapPool(match.objective), ...pl.maps])];
+          if (
+            playlistMatchEnded(pl, mapId, pool, world.tick, voteSeed(`${mapId}`, seed + ++matchNo))
+          )
+            match.phaseEnds = pl.endsAt;
+        }
         applyBotObjectives(match, world, ctx, mems);
         // offline: the next match starts a few seconds after the results
         if (match.phase === 'warmup') {

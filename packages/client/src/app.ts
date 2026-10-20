@@ -6,8 +6,12 @@ import {
   buildTestShip,
   isBrawlMode,
   ladderForMode,
+  createPlaylist,
+  mapInRotation,
   type MatchObjective,
   type LoadoutName,
+  type PlaylistSettings,
+  type PlaylistState,
 } from '@space-yz/shared';
 import { loadSettings, saveSettings, hasSavedSettings, type Settings } from './settings';
 import {
@@ -49,6 +53,7 @@ import {
   initialRoom,
   isBrawlPractice,
   practiceMapId,
+  practicePlaylist,
   quickPlayMode,
   type PracticeState,
 } from './ui/flow';
@@ -697,13 +702,17 @@ export class App {
               bots: Math.max(0, st.size - 1),
               skill: st.skill,
             });
-          else
+          else {
+            // (several queued maps / loop / pick the next map: a playlist)
+            const pl = practicePlaylist(st);
             this.startPractice(
               st.size,
               st.skill,
               st.mode === 'elim' && st.kit === 'cs' ? 'elim-cs' : st.mode,
               practiceMapId(st),
+              pl ? (createPlaylist(pl, mapInRotation) ?? undefined) : undefined,
             );
+          }
         },
       }),
       dir,
@@ -728,6 +737,9 @@ export class App {
     skill: BotSkill['name'],
     kind: PracticeKind = 'deathmatch',
     mapId?: string,
+    playlist?: PlaylistState,
+    /** the next map of a playlist: the pointer stays locked */
+    keepLock = false,
   ): void {
     const { session, stats } = createPracticeSession({
       size,
@@ -735,12 +747,21 @@ export class App {
       kind,
       mapId,
       config: loadTuning(),
+      playlist,
+      // the playlist's next map: this game goes, the next one starts on that map (outside the
+      // game's frame, which is still running)
+      onNextMap: (next) =>
+        window.setTimeout(() => {
+          if (this.client?.session === session)
+            this.startPractice(size, skill, kind, next, playlist, true);
+        }, 0),
     });
     const combat = new CombatFeature();
     const match = kind !== 'deathmatch' ? new MatchFeature() : null;
     // (no tuning panel in CS mode: its config is a CS copy that must not be saved as tuning)
     const client = this.startGame(session, match ? [combat, match] : [combat], {
       tuning: !isCsKind(kind),
+      keepLock,
     });
     this.matchFeature = match;
     combat.statsText = () => {
@@ -1100,9 +1121,10 @@ export class App {
             skill: string,
             objective: MatchObjective,
             loadout: LoadoutName = 'lethal',
+            playlist: PlaylistSettings | null = null,
           ) => {
             this.reHello(core);
-            core.createRoom(mode, map, bots, skill, objective, loadout);
+            core.createRoom(mode, map, bots, skill, objective, loadout, playlist ?? undefined);
           },
           join: (code: string) => {
             this.reHello(core);
@@ -1357,6 +1379,13 @@ export class App {
             this.pause(false);
           })
         : null,
+      // a playlist's results card / map vote: the host (offline: you) can load the next map now
+      match?.phase === 'matchEnd' && match.playlist?.endsAt && s.canSkipNext?.()
+        ? iconButton('next', 'Next map now', () => {
+            s.skipNext?.();
+            this.pause(false);
+          })
+        : null,
       iconButton(
         'settings',
         'Settings',
@@ -1386,7 +1415,13 @@ export class App {
     );
     const board =
       match && this.matchFeature
-        ? h('div', { class: 'pause-board' }, this.matchFeature.scoreboard(s, match, true))
+        ? h(
+            'div',
+            { class: 'pause-board' },
+            // (the map vote can be clicked here too, with the mouse free)
+            match.phase === 'matchEnd' ? this.matchFeature.nextPanel(s, match) : null,
+            this.matchFeature.scoreboard(s, match, true),
+          )
         : null;
     this.setScreen(
       h(

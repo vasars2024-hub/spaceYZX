@@ -7,6 +7,13 @@ import {
   ARENA_KITS,
   PRACTICE_STEP_LABELS,
   botSkillChoices,
+  clickQueuedMap,
+  playlistLabel,
+  practiceHasPlaylist,
+  practicePlaylist,
+  queuedMaps,
+  queuePosition,
+  toggleQueuedMap,
   hasKitChoice,
   isFreeRoam,
   mapsForMode,
@@ -29,7 +36,10 @@ import {
   iconButton,
   mapCard,
   mapMini,
+  mapQueueGrid,
+  nextMapSettings,
   pickGrid,
+  queueStrip,
   screenHead,
   stepPanel,
   sumItem,
@@ -123,6 +133,40 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
         tracks.length ? 'Pick a track' : 'Pick a map',
         tracks.length ? grid(tracks) : null,
         ...surfModeGroups().flatMap((g) => [surfGroupTitle(g), grid(g.maps)]),
+      );
+    }
+    // match modes: several maps can be queued (a plain click still picks one map)
+    if (practiceHasPlaylist(s.mode)) {
+      const g = mapQueueGrid(
+        'maps',
+        mapsForMode(s.mode).map((m) => m.id),
+        {
+          selected: (id) => queuedMaps(s).includes(id),
+          order: (id) => queuePosition(s, id),
+          click: (id) => {
+            const r = clickQueuedMap(s, id);
+            if (r.advance) return go({ ...r.s, step: 'setup' }, 'forward');
+            s = r.s;
+            save();
+            g.refresh();
+            renderSummary();
+          },
+          toggle: (id) => {
+            s = toggleQueuedMap(s, id);
+            save();
+            g.refresh();
+            renderSummary();
+          },
+        },
+      );
+      return stepPanel(
+        'Pick a map',
+        h(
+          'p',
+          { class: 'hint queue-hint' },
+          'Click a map to play it. Press + on more maps to queue a playlist: they are played one after another.',
+        ),
+        g.el,
       );
     }
     return stepPanel('Pick a map', grid(mapsForMode(s.mode)));
@@ -226,17 +270,32 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
               renderSummary();
             },
           ),
+          // match modes: the next queued map or pick the next map after each match, loop
+          ...(practiceHasPlaylist(s.mode)
+            ? nextMapSettings(
+                () => s,
+                (next) => {
+                  s = { ...s, ...next };
+                  save();
+                  renderSummary();
+                },
+              )
+            : []),
         );
 
   const renderSummary = () => {
     const m = modeChoice(s.mode);
     const last = s.step === 'setup';
     const showMap = s.mode !== 'arena' || mapsForMode('arena').length > 0;
+    const pl = practicePlaylist(s);
     summary.replaceChildren(
       sumItem(icon(m.icon), m.name),
-      ...(showMap
-        ? [sumItem(mapMini(practiceMapId(s)), getMap(practiceMapId(s)).name, 'sum-map')]
-        : []),
+      ...(pl && pl.maps.length > 1
+        ? [queueStrip(pl.maps)]
+        : showMap
+          ? [sumItem(mapMini(practiceMapId(s)), getMap(practiceMapId(s)).name, 'sum-map')]
+          : []),
+      ...(pl ? [sumItem(icon(pl.next === 'vote' ? 'team' : 'next'), playlistLabel(pl))] : []),
       ...(isFreeRoam(s.mode)
         ? []
         : [sumItem(icon(s.size === 1 ? 'profile' : 'team'), sizeText(s.mode, s.size).title)]),
@@ -262,7 +321,10 @@ export const practiceMenu = (hd: PracticeMenuHandlers): HTMLElement => {
             'Next',
             () =>
               go(
-                s.step === 'mode' ? pickPracticeMode(s, s.mode) : pickPracticeMap(s, s.map),
+                s.step === 'mode'
+                  ? pickPracticeMode(s, s.mode)
+                  : // (the map step: keep the queued playlist)
+                    { ...s, step: 'setup' },
                 'forward',
               ),
             'btn next-btn',

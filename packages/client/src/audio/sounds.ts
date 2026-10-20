@@ -981,6 +981,84 @@ const defs = {
       0.9,
     );
   },
+  // ------------------------------------------------- the opening face-off (game/intro.ts)
+  // a squad jetpacks past: a swept roar of air over a low rumble, rising then fading
+  introWhoosh: (sr) => {
+    const d = 1.1;
+    const env = swell(0.32, 0.45);
+    return finish(
+      softClip(
+        mix(sr, d, [
+          {
+            sig: whoosh(
+              sr,
+              d,
+              401,
+              (t) => 500 + 2600 * Math.sin(Math.min(1, t / d) * Math.PI),
+              1.4,
+              env,
+            ),
+            gain: 1,
+          },
+          { sig: applyEnv(lowpass(brownNoise(sr, d, 402), sr, 260), sr, env), gain: 0.9 },
+          { sig: applyEnv(lowpass(osc(sr, d, 'saw', 58), sr, 400), sr, env), gain: 0.15 },
+        ]),
+        1.3,
+      ),
+      sr,
+      0.75,
+    );
+  },
+  // portals open: a shimmering upward sweep with a hollow hum underneath
+  introPortal: (sr) => {
+    const d = 1.0;
+    const env = swell(0.18, 0.5);
+    return finish(
+      mix(sr, d, [
+        {
+          sig: applyEnv(
+            fm(sr, d, expSweep(260, 900, 0.8), 1.5, () => 2.2),
+            sr,
+            env,
+          ),
+          gain: 0.45,
+        },
+        { sig: whoosh(sr, d, 403, expSweep(900, 5200, 0.7), 2.5, env), gain: 0.5 },
+        { sig: applyEnv(osc(sr, d, 'sine', expSweep(80, 160, 0.6)), sr, env), gain: 0.6 },
+        { sig: bell(sr, d, 1320, 2.01, 1.5, 0.35), gain: 0.18, at: 0.12 },
+      ]),
+      sr,
+      0.7,
+    );
+  },
+  // the face-off lands: a heavy hit with a bright chord on top (the "sting")
+  introSting: (sr) => {
+    const d = 1.2;
+    const chord = mix(
+      sr,
+      d,
+      [110, 165, 220, 277.18, 330].map((f) => ({ sig: osc(sr, d, 'saw', f), gain: 0.2 })),
+    );
+    return finish(
+      softClip(
+        mix(sr, d, [
+          { sig: thump(sr, d, 140, 32, 0.35), gain: 1.2 },
+          { sig: crack(sr, d, 404, 0.05, 1800), gain: 0.6 },
+          {
+            sig: applyEnv(
+              lowpass(chord, sr, (t) => 400 + 3200 * Math.exp(-t / 0.25), 1.2),
+              sr,
+              percFn(0.45, 0.004),
+            ),
+            gain: 0.8,
+          },
+        ]),
+        1.6,
+      ),
+      sr,
+      0.9,
+    );
+  },
   countdownTick: (sr) => {
     const d = 0.12;
     return finish(

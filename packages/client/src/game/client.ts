@@ -74,6 +74,12 @@ export class GameClient {
    * new body).
    */
   muteButtons = 0;
+  /**
+   * A cinematic owns the camera this frame (the opening face-off, game/intro-feature.ts): called
+   * after the first-person camera is placed and before anything projects into the view, it
+   * moves the camera (position, rotation, fov). The viewmodel is not drawn meanwhile.
+   */
+  cinematic: ((camera: THREE.PerspectiveCamera, dt: number) => void) | null = null;
   /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
   overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
@@ -246,6 +252,7 @@ export class GameClient {
       this.camera.fov = vfov;
       this.camera.updateProjectionMatrix();
     }
+    this.cinematic?.(this.camera, dt);
     // this frame's view for features that project into it (markers, threat arcs); otherwise
     // they'd use last frame's and lag behind the world while you turn
     this.camera.updateMatrixWorld();
@@ -271,7 +278,7 @@ export class GameClient {
     r.info.reset();
     if (eye) this.portalPreviews.update(r, this.scene, eye);
     r.render(this.scene, this.camera);
-    if (this.overlay) {
+    if (this.overlay && !this.cinematic) {
       r.autoClear = false;
       r.clearDepth();
       r.render(this.overlay.scene, this.overlay.camera);

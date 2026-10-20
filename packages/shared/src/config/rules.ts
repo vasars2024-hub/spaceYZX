@@ -19,6 +19,10 @@ export const MODE_RULES: Record<'1v1' | '2v2' | '3v3' | '5v5', ModeRules> = {
 
 export const RULES_DEFAULTS = {
   spawnLockSec: 5,
+  // the first round of a match locks this much longer: the clients play the opening face-off
+  // (players jetpack onto a stage, then drop through portals to their spawns) before the usual
+  // countdown (client game/intro.ts; purely visual, the sim only waits). 0 = no intro.
+  matchIntroSec: 5,
   resultsSec: 5,
   matchResultsSec: 12,
   carrierRevealSec: 1,

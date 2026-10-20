@@ -24,6 +24,8 @@ export interface Settings {
   dynamicResolution: boolean;
   brightness: number; // 0.8..1.2 (capped for fairness)
   screenShake: boolean;
+  /** the opening face-off when a match starts (game/intro.ts); any key skips it */
+  matchIntro: boolean;
   /** how busy the screen gets (see render/effects.ts) */
   effects: 'full' | 'reduced' | 'minimal';
   /** show sounds as on-screen direction indicators (play without sound / headphones) */
@@ -119,6 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dynamicResolution: true,
   brightness: 1,
   screenShake: true,
+  matchIntro: true,
   effects: 'reduced',
   soundVisualizer: false,
   minimap: true,

@@ -164,8 +164,18 @@ const homeOf = (ms: MatchState, ctx: SimContext, team: 0 | 1): Vec3 => {
 const teamPlayers = (world: WorldState, team: 0 | 1): PlayerState[] =>
   world.players.filter((p) => p.team === team).sort((a, b) => a.id - b.id);
 
-/** Start (or restart) a match from round 1. */
-export const startMatch = (ms: MatchState, world: WorldState, ctx: SimContext): void => {
+/**
+ * Start (or restart) a match from round 1. `intro`: round 1's spawn lock lasts
+ * config matchIntroSec longer, while the clients play the opening face-off (client
+ * game/intro.ts; purely visual, the sim only waits). Real matches (server rooms, offline
+ * practice) ask for it; tests and tools usually don't.
+ */
+export const startMatch = (
+  ms: MatchState,
+  world: WorldState,
+  ctx: SimContext,
+  opts: { intro?: boolean } = {},
+): void => {
   ms.scores = [0, 0];
   ms.round = 0;
   ms.rounds = [];
@@ -183,6 +193,7 @@ export const startMatch = (ms: MatchState, world: WorldState, ctx: SimContext): 
     p.damageDealt = 0;
   }
   beginRound(ms, world, ctx);
+  if (opts.intro) ms.phaseEnds += secTicks(ctx.config.rules.matchIntroSec, ctx.dt);
 };
 
 /**

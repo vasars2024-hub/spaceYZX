@@ -19,7 +19,7 @@ import type { PlayerState, WorldState } from '../sim/state';
 import type { BoomerangState, GrenadeState, PowerupPickup } from '../sim/combat-state';
 import type { SimEvent } from '../sim/events';
 import type { MatchObjective } from '../rules/match';
-import type { LadderId, RankedQueueId } from '../rating/ladders';
+import type { LadderId, RankDisplay, RankedQueueId } from '../rating/ladders';
 import type { TeamMode } from '../rating/global';
 import type { VetoView } from '../rating/veto';
 import type { VersusInfo } from '../rating/versus';
@@ -88,6 +88,14 @@ export interface RoomPlayerInfo {
   ready: boolean;
   /** the player's account (for their profile / a friend request); absent for bots */
   accountId?: number | null;
+  /**
+   * the player's rank on this room's ladder (ranked: the room's ladder; casual: the ladder this
+   * mode is ranked on), shown on the opening face-off and the scoreboard. Absent / null: none
+   * (bots, guests on no ladder, a rating still hidden while placing)
+   */
+  rank?: RankDisplay | null;
+  /** that ladder's rating (null while hidden): the face-off's win chance */
+  rating?: number | null;
 }
 
 export type ClientMsg =

@@ -7,6 +7,7 @@ import type {
   LadderId,
   LoadoutName,
   MatchObjective,
+  RankDisplay,
   RoomCustomMap,
   RoomMode,
 } from '@space-yz/shared';
@@ -37,6 +38,7 @@ import {
   loadoutName,
   botSkillName,
   CUSTOM_MAP_LIMITS,
+  ladderForMode,
 } from '@space-yz/shared';
 import { Limiter } from '../services/limiter';
 import { Conn } from './conn';
@@ -89,6 +91,14 @@ export interface HubServices {
   onGrief?(conn: Conn, action: 'warn' | 'kick', reason: string, room: Room): void;
   /** The player's profile (ratings, ranks) for the client. */
   profile?(conn: Conn): unknown;
+  /**
+   * A player's rank + rating on a ladder for the room roster (opening face-off, scoreboard);
+   * null fields: no rank (still placing).
+   */
+  playerRank?(
+    accountId: number,
+    ladder: LadderId,
+  ): { rank: RankDisplay | null; rating: number | null } | null;
   /** A player reported another player. */
   onReport?(conn: Conn, player: number, reason: string, room: Room): void;
   /**
@@ -652,11 +662,27 @@ export class GameHub {
     this.log(`Room ${room.code} closed`);
   }
 
+  /** The ladder a room's ranks are shown for: ranked = its own; casual = the mode's ladder. */
+  private roomLadder(room: Room): LadderId | null {
+    if (room.ladder) return room.ladder;
+    const l = ladderForMode(room.mode);
+    if (l === 'premier' && room.rules instanceof MatchRules && room.rules.ms.loadout === 'cs')
+      return 'premier-cs';
+    return l === 'race' ? null : l;
+  }
+
   broadcastRoom(room: Room): void {
+    // (each player's rank on the room's ladder: the face-off and the scoreboard show it)
+    const ladder = this.roomLadder(room);
+    const players = room.info().map((p) => {
+      const r =
+        ladder && p.accountId != null ? this.services.playerRank?.(p.accountId, ladder) : null;
+      return r ? { ...p, rank: r.rank, rating: r.rating } : p;
+    });
     const msg = {
       t: 'room' as const,
       code: room.code,
-      players: room.info(),
+      players,
       hostId: room.hostId,
       state: room.rules?.name ?? 'practice',
     };

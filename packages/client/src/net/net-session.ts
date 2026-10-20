@@ -23,7 +23,7 @@ import {
   Phase,
   canTakeOver as canTakeOverInSim,
 } from '@space-yz/shared';
-import type { MatchInfo, RenderPlayer, Session, TickInput } from '../game/session';
+import type { MatchInfo, PlayerRank, RenderPlayer, Session, TickInput } from '../game/session';
 
 export class NetSession implements Session {
   alpha = 0;
@@ -155,6 +155,14 @@ export class NetSession implements Session {
   pings(): Record<number, number> {
     const out: Record<number, number> = {};
     for (const p of this.core.roster) out[p.id] = p.ping;
+    return out;
+  }
+
+  ranks(): Record<number, PlayerRank> {
+    const out: Record<number, PlayerRank> = {};
+    for (const p of this.core.roster)
+      if (!p.bot && (p.rank || typeof p.rating === 'number'))
+        out[p.id] = { rank: p.rank ?? null, rating: p.rating ?? null };
     return out;
   }
 

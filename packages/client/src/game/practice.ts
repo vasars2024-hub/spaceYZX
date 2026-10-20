@@ -107,7 +107,7 @@ export const createPracticeSession = (
       const me = world.players.find((p) => p.id === 1)!;
       const s0 = levelDef.spawns.find((s) => s.team === 0) ?? levelDef.spawns[0];
       Object.assign(me, createPlayer(1, 0, s0.pos, s0.yawDeg, ctx.config));
-      if (match) startMatch(match, world, ctx);
+      if (match) startMatch(match, world, ctx, { intro: true });
     },
     extraInputs: (world, ctx) => {
       const inputs: Record<number, PlayerInput> = {};
@@ -127,7 +127,7 @@ export const createPracticeSession = (
           if (!restartAt) restartAt = world.tick + 180;
           else if (world.tick >= restartAt) {
             restartAt = 0;
-            startMatch(match, world, ctx);
+            startMatch(match, world, ctx, { intro: true });
           }
         }
         return;

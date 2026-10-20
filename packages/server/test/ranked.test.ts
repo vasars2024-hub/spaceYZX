@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { RULES_DEFAULTS } from '@space-yz/shared';
 import { createServices, type Services } from '../src/services';
 import { hashToken } from '../src/services/accounts';
 import { BAN_STEPS_MS } from '../src/services/ranked';
@@ -311,7 +312,8 @@ describe('anti-grief in matches', () => {
       actions.push(`${m.name}:${action}`);
       if (action === 'kick') room.removeMember(m.id);
     };
-    for (let i = 0; i < 60 * 9; i++) room.tick();
+    // (round 1 also plays the opening face-off: matchIntroSec)
+    for (let i = 0; i < 60 * (9 + RULES_DEFAULTS.matchIntroSec); i++) room.tick();
     expect(rules.ms.phase).toBe('live');
     const tk = () => {
       room.world.events = [];

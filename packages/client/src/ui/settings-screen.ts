@@ -191,6 +191,10 @@ export const settingsScreen = (
       s.screenShake = v;
       apply();
     }),
+    toggle('Match intro (the opening face-off; any key skips it)', s.matchIntro, (v) => {
+      s.matchIntro = v;
+      apply();
+    }),
     toggle('Show FPS', s.showFps, (v) => {
       s.showFps = v;
       apply();

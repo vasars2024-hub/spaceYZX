@@ -116,7 +116,7 @@ export class MatchRules implements Rules {
         this.leavers = [];
         this.grief.clear();
         this.stats.reset();
-        startMatch(ms, world, ctx);
+        startMatch(ms, world, ctx, { intro: true });
       }
     }
     const wasEnd = ms.phase === 'matchEnd';

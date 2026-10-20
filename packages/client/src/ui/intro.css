@@ -1,0 +1,175 @@
+/* ---------- the opening face-off (game/intro-feature.ts) ---------- */
+/* while it plays, the game HUD steps aside (menus still show) */
+#ui.intro-on > :not(.intro-layer):not(.screen) {
+  visibility: hidden !important;
+}
+.intro-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', 'Arial Black', sans-serif;
+  text-transform: uppercase;
+  color: #fff;
+}
+/* letterbox bars */
+.intro-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  background: #000;
+  animation: intro-bar-in 0.35s ease-out both;
+}
+.intro-bar.top {
+  top: 0;
+}
+.intro-bar.bottom {
+  bottom: 0;
+}
+@keyframes intro-bar-in {
+  from {
+    transform: scaleY(0);
+  }
+}
+/* name tags: rank (in its colour) over the name (in the team colour) */
+.intro-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  text-align: center;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  opacity: 0;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 1px 2px #000;
+}
+.intro-rank {
+  min-height: 1.1em;
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.intro-name {
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  color: var(--team);
+  border-bottom: 2px solid var(--team);
+  padding: 0 4px 1px;
+}
+.intro-tag.me .intro-name {
+  font-size: 20px;
+}
+.intro-you {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  vertical-align: middle;
+  color: #000;
+  background: var(--team);
+}
+/* each team's header over its line: name and chance to win */
+.intro-head {
+  position: absolute;
+  left: 0;
+  top: 0;
+  text-align: center;
+  white-space: nowrap;
+  transition: opacity 0.3s;
+  opacity: 0;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+}
+.intro-head-name {
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  color: var(--team);
+}
+.intro-head-pct {
+  font-size: 54px;
+  line-height: 1;
+  color: #fff;
+  -webkit-text-stroke: 2px var(--team);
+}
+.intro-head-sub {
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  opacity: 0.85;
+}
+/* the VS title: slams in, then holds */
+.intro-title {
+  position: absolute;
+  left: 50%;
+  top: 14vh;
+  transform: translateX(-50%) scale(2.2);
+  text-align: center;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    transform 0.22s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.intro-title.show {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+.intro-vs {
+  font-size: 84px;
+  line-height: 0.95;
+  font-style: italic;
+  background: linear-gradient(90deg, #19e3ff, #fff 50%, #ff8a1f);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgba(0, 0, 0, 0.8));
+}
+.intro-map {
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 10px #000;
+}
+.intro-mode {
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  opacity: 0.85;
+  text-shadow: 0 0 8px #000;
+}
+.intro-skip {
+  position: absolute;
+  right: 24px;
+  bottom: calc(9vh + 12px);
+  font-family: system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+}
+/* the scoreboard's rank next to a name (game/match-feature.ts) */
+.sb-rank {
+  margin-left: 8px;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .intro-vs {
+    font-size: 56px;
+  }
+  .intro-head-pct {
+    font-size: 36px;
+  }
+  .intro-name {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-title {
+    transition: opacity 0.2s;
+    transform: translateX(-50%);
+  }
+}

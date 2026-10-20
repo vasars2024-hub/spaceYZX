@@ -20,6 +20,7 @@ import { TICK_DT } from '../sim/constants';
 import {
   decodeSnapshot,
   encodeInput,
+  filterInputTicks,
   netView,
   parseJson,
   MSG_SNAPSHOT,
@@ -222,10 +223,11 @@ export class NetCore {
   private offsets: { t: number; off: number }[] = [];
   clientTick = 0; // fractional: next tick to simulate is floor(clientTick)+1
   private lastSentTick = 0;
+  private tickFloor = 0; // latest authoritative/acknowledged tick in this room
   dilation = 1;
   targetLead = 2;
   private lastJump = -1e9;
-  private lastUpdateAt = 0;
+  private lastUpdateAt: number | null = null;
   /** Ping equalization: sampled inputs are applied this many ticks later (server-assigned). */
   inputDelay = 0;
   private delayQueue: {
@@ -441,6 +443,11 @@ export class NetCore {
     this.latest = null;
     this.pending = [];
     this.lastAck = 0;
+    this.tickFloor = 0;
+    this.offsets = [];
+    this.lastUpdateAt = null;
+    this.lastJump = -1e9;
+    this.dilation = 1;
     this.inputDelay = 0;
     this.delayQueue = [];
     this.shownTick = null;
@@ -509,6 +516,7 @@ export class NetCore {
         // free-for-all: everyone else is an enemy (the sim), drawn in the enemy colour (below)
         if (isFfaMode(msg.mode)) this.ctx.ffa = true;
         const rttTicks = this.rttMs / (TICK_DT * 1000);
+        this.tickFloor = Math.max(0, msg.tick);
         this.clientTick = msg.tick + rttTicks + 6;
         this.lastSentTick = Math.floor(this.clientTick);
         this.state = 'room';
@@ -623,6 +631,9 @@ export class NetCore {
     }
     // lead feedback -> time dilation
     this.lastLead = snap.lead;
+    this.tickFloor = Math.max(this.tickFloor, snap.tick, snap.ackInput);
+    this.clientTick = Math.max(this.tickFloor, this.clientTick);
+    this.lastSentTick = Math.max(this.tickFloor, this.lastSentTick);
     const err = this.targetLead + Math.ceil(this.jitterMs / (TICK_DT * 1000)) - snap.lead;
     if (err > 8 && now - this.lastJump > 500) {
       // far behind (inputs arriving late): jump ahead once, then fine-tune with dilation
@@ -630,8 +641,16 @@ export class NetCore {
       this.lastJump = now;
       this.dilation = 1;
     } else if (err < -60 && now - this.lastJump > 500) {
-      // hugely ahead (e.g. after a stall): step back; drop inputs we will re-issue
-      this.clientTick += err + 2;
+      // Lead describes past arrivals, and can repeat across many snapshots after a stall.
+      // Rebase against the server clock instead of repeatedly subtracting stale feedback.
+      const target =
+        this.serverNow() +
+        // The snapshot clock is one inbound trip behind; allow the outbound trip too.
+        this.rttMs / (TICK_DT * 1000) +
+        this.targetLead +
+        Math.ceil(this.jitterMs / (TICK_DT * 1000)) +
+        2;
+      this.clientTick = Math.max(this.tickFloor, Math.min(this.clientTick, target));
       this.lastSentTick = Math.floor(this.clientTick);
       this.pending = this.pending.filter((i) => i.tick <= this.lastSentTick);
       this.lastJump = now;
@@ -740,8 +759,13 @@ export class NetCore {
     if (this.state !== 'room' || !this.ctx) return 0;
     // use the real clock, not the (possibly capped) frame time: slow PCs must not fall behind
     const now = this.opts.now();
-    const realDt = this.lastUpdateAt ? Math.min(1, (now - this.lastUpdateAt) / 1000) : frameDtSec;
+    const realDt = Math.max(
+      0,
+      Math.min(1, this.lastUpdateAt === null ? frameDtSec : (now - this.lastUpdateAt) / 1000),
+    );
     this.lastUpdateAt = now;
+    // Keep corrupt historical inputs out of both resends and prediction replays.
+    this.pending = filterInputTicks(this.pending);
     this.clientTick += realDt * 60 * this.dilation;
     let steps = 0;
     while (Math.floor(this.clientTick) > this.lastSentTick && steps < 30) {

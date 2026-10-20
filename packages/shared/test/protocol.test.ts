@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildTestShip,
   buildTrainingBay,
@@ -30,6 +30,32 @@ import {
 } from '../src/index';
 
 describe('input messages', () => {
+  it.each([-963, NaN, Infinity, -Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'drops invalid tick %s with a warning while retaining valid inputs',
+    (tick) => {
+      const out = (globalThis as unknown as { console: { warn(msg: string): void } }).console;
+      const warn = vi.spyOn(out, 'warn').mockImplementation(() => {});
+      const input = { buttons: 0, view: netView(yawToView(0, 0)) };
+      try {
+        const packet = decodeInput(
+          encodeInput({
+            ack: 1,
+            inputs: [
+              { ...input, tick },
+              { ...input, tick: 42 },
+            ],
+          }),
+        );
+        expect(packet.inputs.map((i) => i.tick)).toEqual([42]);
+        expect(warn).toHaveBeenCalledOnce();
+        expect(decodeInput(encodeInput({ ack: 1, inputs: [{ ...input, tick }] })).inputs).toEqual(
+          [],
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
   it('round-trip ticks, buttons and a float32 view', () => {
     const view = netView(yawToView(33, -12));
     const bytes = encodeInput({ ack: 1234, inputs: [{ tick: 99, buttons: 0b1010101, view }] });

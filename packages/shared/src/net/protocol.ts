@@ -433,12 +433,25 @@ export const netView = (q: Quat): Quat => {
   return { x: Math.fround(n.x), y: Math.fround(n.y), z: Math.fround(n.z), w: Math.fround(n.w) };
 };
 
+/** Drop corrupt clock ticks from prediction/resends without relabeling their actions. */
+export const filterInputTicks = (inputs: PlayerInput[]): PlayerInput[] =>
+  inputs.filter((i) => {
+    if (Number.isSafeInteger(i.tick) && i.tick >= 0) return true;
+    // Shared has no DOM/Node types; consoles exist in both supported client runtimes.
+    const out = (globalThis as unknown as { console?: { warn(msg: string, tick: number): void } })
+      .console;
+    out?.warn('Dropping input with invalid tick', i.tick);
+    return false;
+  });
+
 export const encodeInput = (p: InputPacket): Uint8Array => {
+  // A bad client clock must not throw out of the frame/send loop.
+  const inputs = filterInputTicks(p.inputs);
   const w = new BitWriter(64);
   w.writeBits(MSG_INPUT, 8);
   w.writeVarUint(p.ack);
-  w.writeBits(Math.min(8, p.inputs.length), 4);
-  for (const i of p.inputs.slice(0, 8)) {
+  w.writeBits(Math.min(8, inputs.length), 4);
+  for (const i of inputs.slice(0, 8)) {
     w.writeVarUint(i.tick);
     w.writeBits(i.buttons & ALL_BUTTONS, BUTTON_BITS);
     w.writeFloat32(i.view.x);

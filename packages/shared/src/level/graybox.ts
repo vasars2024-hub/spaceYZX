@@ -94,7 +94,8 @@ export interface GrayboxArea {
  *   jump / jet — a gap you jump or jetpack across: nothing extra (the layout leaves the gap)
  *   tube   — a suction tube (instead of a ladder): sucks you up at the from-area's cell nearest the
  *            target and throws you onto the target (LevelDef.liftTubes); one way
- * Bots never ride pads, rails, portals or tubes (bots/brain.ts): their routes must not need them.
+ * Bots ride tubes (a one-way waypoint link from the tube's mouth to its landing), but never pads,
+ * rails or portals (bots/brain.ts): their routes must not need those.
  */
 export type GrayboxLinkKind =
   'drop' | 'pad' | 'rail' | 'portal' | 'tunnel' | 'jump' | 'jet' | 'tube';
@@ -705,10 +706,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     }
   }
   const isRamp = (p: Cell) => !!p.corners || !!p.rise;
-  const lowY = (p: Cell) =>
-    p.corners ? Math.min(...p.corners) : p.h - Math.abs(p.rise ?? 0) / 2;
-  const highY = (p: Cell) =>
-    p.corners ? Math.max(...p.corners) : p.h + Math.abs(p.rise ?? 0) / 2;
+  const lowY = (p: Cell) => (p.corners ? Math.min(...p.corners) : p.h - Math.abs(p.rise ?? 0) / 2);
+  const highY = (p: Cell) => (p.corners ? Math.max(...p.corners) : p.h + Math.abs(p.rise ?? 0) / 2);
   /** a smooth ramp cell's shape: one slope along x or z, flat, or anything else (null) */
   const axisOf = (p: Cell): 'x' | 'z' | 'flat' | null => {
     const [nw, ne, sw, se] = p.corners!;
@@ -819,7 +818,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   const padPlans: { a: Cell; b: Cell; px: number; pz: number; half: number }[] = [];
   const portals: PortalDef[] = [];
   const liftTubes: LiftTubeDef[] = [];
-  const tubeBoxes: BoxDef[] = [];
+  const tubeEnds: { a: Cell; b: Cell; base: Vec3; land: Vec3 }[] = []; // (bots ride tubes)
   const slots = new Map<number, [number, number][]>(); // rails and tubes cut a slot through walls
   const addSlot = (x: number, y: number, y0: number, y1: number) => {
     if (x < 0 || y < 0 || x >= W || y >= H) return;
@@ -900,6 +899,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       land: v3(cx(b.x), standY(b), cz(b.y)),
       radius: TUBE_R,
     });
+    tubeEnds.push({ a, b, base: v3(px, y0, pz), land: v3(cx(b.x), standY(b), cz(b.y)) });
     // open air up the tube and along the throw
     addSlot(a.x, a.y, y0, y1 + 1.5);
     addFlight(a.x, a.y);
@@ -912,29 +912,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       addSlot(x, y, yy - 1.5, yy + 1.5);
       addFlight(x, y);
     }
-    // the look: four glass walls (open at the bottom, so you walk into its mouth) and a glowing
-    // ring on the floor; none of it collides
-    const r = TUBE_R;
-    const t = 0.04;
-    const g0 = y0 + 2.3;
-    const panel = (ox: number, oz: number, hx: number, hz: number) =>
-      tubeBoxes.push({
-        c: v3(px + ox, (g0 + y1) / 2, pz + oz),
-        h: v3(hx, (y1 - g0) / 2, hz),
-        mat: 'skyglass',
-        noCollide: true,
-      });
-    panel(r - t, 0, t, r);
-    panel(-r + t, 0, t, r);
-    panel(0, r - t, r - 2 * t, t);
-    panel(0, -r + t, r - 2 * t, t);
-    tubeBoxes.push({
-      c: v3(px, y0 + 0.02, pz),
-      h: v3(r, 0.01, r),
-      mat: 'glow',
-      color: 0x7fe0ff,
-      noCollide: true,
-    });
+    // (the client draws the tube itself: render/tube-mesh.ts)
   };
   for (const [from, to, kind, oneWay] of lay.links ?? []) {
     if (kind === 'jump' || kind === 'jet') continue;
@@ -1039,7 +1017,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     const lower = pick(pal.wall.lower, key);
     if (!ref) return [{ ...g, mat: wallMat, color: lower }];
     const band = refY + DOOR_H;
-    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3) return [{ ...g, mat: wallMat, color: lower }];
+    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3)
+      return [{ ...g, mat: wallMat, color: lower }];
     return [
       { y0: g.y0, y1: band, mat: wallMat, color: lower },
       { y0: band, y1: band + 0.25, mat: pal.trim.mat, color: pick(pal.trim.colors, key) },
@@ -1095,7 +1074,10 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
             // (under a wall, a tunnel: its ceiling follows the slope too, CLEAR over the ramp —
             // a stepped ceiling would stop anyone who jumps down the tunnel dead)
             const ceil = highY(p) + CLEAR;
-            if (ceil < nextY - 0.3 && solid.some(([s0, s1]) => s0 <= ceil + 0.01 && s1 >= ceil + 0.3))
+            if (
+              ceil < nextY - 0.3 &&
+              solid.some(([s0, s1]) => s0 <= ceil + 0.01 && s1 >= ceil + 0.3)
+            )
               rampCeilings.push(p);
             p.airTop = Math.min(nextY, p.h + 4);
             smooth.push(p);
@@ -1736,6 +1718,13 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       const from = standY(b) + 0.3;
       const to = standY(a) + 1.7;
       if (segsAt[b.y * W + b.x].some((g) => g.y0 > from && g.y0 < to)) return false;
+      // (nor through a ramp or stair flight over it: those are not in the column's segments)
+      if (
+        cellsAt[b.y * W + b.x].some(
+          (r) => r !== b && r.o === 'up' && !r.zg && highY(r) > from && lowY(r) < to,
+        )
+      )
+        return false;
     }
     return true;
   };
@@ -1961,6 +1950,35 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         }
       }
     }
+  }
+
+  // suction tubes: a waypoint in the tube's mouth, linked both ways with its cell's waypoint, and
+  // one way on to the landing cell's waypoint (the tube pulls the bot up and throws it there)
+  const nearestWp = (cell: Cell, pos: Vec3) => {
+    const own = wpOf.get(cell);
+    if (own !== undefined) return own;
+    let best = -1;
+    let bestD = Infinity;
+    waypoints.forEach((w, i) => {
+      const d = Math.hypot(w.pos.x - pos.x, (w.pos.y - pos.y) * 2, w.pos.z - pos.z);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return bestD <= s * (N + 1) ? best : -1;
+  };
+  for (const { a, b, base, land } of tubeEnds) {
+    const from = nearestWp(a, v3(base.x, base.y + 1, base.z));
+    const to = nearestWp(b, v3(land.x, land.y + 1, land.z));
+    if (from < 0 || to < 0) {
+      say(`tube ${a.c} → ${b.c}: no waypoint at its ${from < 0 ? 'mouth' : 'landing'}`);
+      continue;
+    }
+    const mouth = addWp(v3(base.x, base.y + 1, base.z), `tube:${wpName(a)}`);
+    link(from, mouth);
+    link(mouth, from);
+    link(mouth, to);
   }
 
   // ---- door frames, painted signs ----------------------------------------------------------
@@ -2234,8 +2252,9 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       let T = T0;
       while (!clearAt(T) && T < 2.4) T += 0.1;
       if (!clearAt(T)) {
-        say(`pad ${a.c} → ${b.c}: its arc hits a wall or ceiling (cell ${a.x},${a.y})`);
-        T = T0;
+        // (no pad whose arc hits something: use a tube there, it cuts its own way)
+        say(`pad ${a.c} → ${b.c}: its arc hits a wall or ceiling (cell ${a.x},${a.y}): left out`);
+        continue;
       }
       launchPads.push({
         min: v3(px - half, y0, pz - half),
@@ -2293,8 +2312,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
           .map(({ r, p }) => ({
             x: cx(p.x),
             y:
-              standY(p) +
-              Math.min(3, Math.max(1.5, (p.airTop ?? standY(p) + 4) - standY(p) - 0.6)),
+              standY(p) + Math.min(3, Math.max(1.5, (p.airTop ?? standY(p) + 4) - standY(p) - 0.6)),
             z: cz(p.y),
             size: Math.sqrt(r.length) * s,
           })),
@@ -2307,7 +2325,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     boundsMin: v3(-m, bottom - (sky ? 20 : 1), -m),
     boundsMax: v3(W * s + m, wallTop + (sky ? 20 : 1), H * s + m),
     defaultGravity: v3(0, -1, 0),
-    boxes: [...boxes, ...cover, ...propBoxes, ...tubeBoxes, ...decor],
+    boxes: [...boxes, ...cover, ...propBoxes, ...decor],
     zones,
     rails,
     pads: [],

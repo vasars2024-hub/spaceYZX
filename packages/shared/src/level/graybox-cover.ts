@@ -442,11 +442,11 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   const points = cells
     .filter((p) => stride === 1 || (p.x % stride === 0 && p.y % stride === 0))
     .map((p) => ({
-    x: (p.x + 0.5) * s,
-    z: (p.y + 0.5) * s,
-    g: groupOf(p.l),
-    c: p.c,
-  }));
+      x: (p.x + 0.5) * s,
+      z: (p.y + 0.5) * s,
+      g: groupOf(p.l),
+      c: p.c,
+    }));
   const pairTarget: number[] = [];
   const pairSector: number[] = [];
   /** the pair is a shot from outside a spawn area into it */

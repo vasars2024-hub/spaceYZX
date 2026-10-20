@@ -6,6 +6,7 @@ import type { SimEvent } from './events';
 import type {
   BoomerangState,
   GrenadeState,
+  MineState,
   CombatPlayerState,
   PowerupPickup,
 } from './combat-state';
@@ -124,6 +125,13 @@ export interface WorldState {
   twins: BoomerangState[];
   /** power-ups waiting to be picked up */
   powerups: PowerupPickup[];
+  /** remote mines lying around (sim/mine.ts) */
+  mines: MineState[];
+  /**
+   * Bomb mode: the plant's radio shockwave switched every remote mine off for the rest of the
+   * round (nobody can place one either). Cleared at the next round.
+   */
+  minesJammed: boolean;
   zones: ZoneRuntime[];
   padReadyAt: number[];
   events: SimEvent[];

@@ -106,6 +106,7 @@ describe('snapshots', () => {
       vel: { x: 7.1, y: 3.3, z: -0.25 },
       phase: 0 as const,
       t: 41,
+      bounces: 2,
     };
     const snap = {
       seq: 1,
@@ -140,7 +141,8 @@ describe('snapshots', () => {
     let held = 0;
     for (let t = 1; t <= 400; t++) {
       yaw += (rngFloat(rng) - 0.5) * 10;
-      if (t % 15 === 0) held = rngNextU32(rng) & ALL_BUTTONS & ~(1 << 12);
+      // (not the mine's detonate key: blowing yourself up is damage, which only the server deals)
+      if (t % 15 === 0) held = rngNextU32(rng) & ALL_BUTTONS & ~(1 << 12) & ~(1 << 17);
       inputs.push({
         tick: t,
         buttons: held,

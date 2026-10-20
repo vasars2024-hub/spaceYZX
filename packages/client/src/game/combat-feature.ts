@@ -29,6 +29,7 @@ import {
 import type { ClientFeature, GameClient } from './client';
 import { PlayerModels } from '../render/players';
 import { CombatView } from '../render/combat-view';
+import { NadeExtras } from './nade-extras';
 import { Viewmodel } from '../render/viewmodel';
 import { CombatHud, POWERUP_HUD, type Threat } from '../ui/combat-hud';
 import { projectMarker, screenAngle } from '../ui/markers';
@@ -71,6 +72,8 @@ export class CombatFeature implements ClientFeature {
   view!: CombatView;
   viewmodel = new Viewmodel();
   hud!: CombatHud;
+  /** charged grenade preview + remote mine (game/nade-extras.ts) */
+  private nades!: NadeExtras;
   private whistles = new Map<number, LoopHandle>();
   /** each player's wind-up charge sound, stopped when the wind-up ends in any way */
   private windupSounds = new Map<number, { h: LoopHandle; at: number }>();
@@ -101,6 +104,8 @@ export class CombatFeature implements ClientFeature {
     this.view = new CombatView(c.session.level);
     c.scene.add(this.models.group, this.view.group);
     this.hud = new CombatHud(c.deps.ui);
+    this.nades = new NadeExtras((...args) => this.view.fragments.burst(...args));
+    this.nades.init(c, this.hud.root);
     c.overlay = { scene: this.viewmodel.scene, camera: this.viewmodel.camera };
     window.addEventListener('resize', this.onResize);
   }
@@ -142,6 +147,7 @@ export class CombatFeature implements ClientFeature {
       scale(normalize(gravity, v3(0, -1, 0)), 9),
       (id) => this.muzzleOf(c, id),
     );
+    this.nades.events(c, events);
     // where a player's sound comes from; an enemy you can't see isn't sent to you (anti-wallhack),
     // so their sounds are placed out of hearing range instead of (as before) at your own head
     const posOf = (id: number): Vec3 =>
@@ -491,6 +497,7 @@ export class CombatFeature implements ClientFeature {
     );
     const settings = c.deps.settings;
     const cfg = s.config;
+    const utility = this.nades.frame(c, dt);
     const booms = s.boomerangs();
     const myB = booms.find((b) => b.owner === s.localId);
 
@@ -738,6 +745,7 @@ export class CombatFeature implements ClientFeature {
                 }
               : null,
           stun01: me.stun / Math.max(1, Math.round(cfg.combat.freezeSec * 60)),
+          utility,
           guns: this.cs
             ? {
                 active: currentGun(me),
@@ -816,6 +824,7 @@ export class CombatFeature implements ClientFeature {
     for (const h of this.whistles.values()) h.stop(0.05);
     for (const h of this.pullLoops.values()) h.stop(0.05);
     this.models.dispose();
+    this.nades.dispose(c);
     this.view.dispose();
     this.hud.dispose();
     c.overlay = null;

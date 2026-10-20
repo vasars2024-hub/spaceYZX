@@ -11,13 +11,14 @@ import type { SimContext } from './context';
 import type { PlayerInput } from './input';
 import type { PlayerState, WorldState } from './state';
 import { Move } from './state';
-import { Phase } from './combat-state';
+import { Phase, MineSlot } from './combat-state';
 import type { BoomerangState } from './combat-state';
 import { updateMovement } from './movement';
 import { updateGravityPads } from './gravity';
 import { updateDevices } from './devices';
 import { applyDamage, updateCombat } from './combat';
 import { updatePowerupPickups } from './powerups';
+import { updateMines } from './mine';
 import { updateRaceBody, updateRaceInput } from './race';
 import { moverHazards, updateMovers } from './movers';
 
@@ -35,6 +36,8 @@ export const createWorld = (level: Level, seed = 1): WorldState => ({
   grenades: [],
   twins: [],
   powerups: [],
+  mines: [],
+  minesJammed: false,
   zones: level.zones.map(() => ({ override: null, until: 0 })),
   padReadyAt: level.def.pads.map(() => 0),
   events: [],
@@ -133,6 +136,9 @@ export const createPlayer = (
     slashTicks: 0,
     slashHit: false,
     grenadesLeft: c.grenadesPerRound,
+    nadeCharge: 0,
+    nadeBounces: c.grenadeBouncesDefault,
+    mineSlot: MineSlot.Ready,
     akMag: c.akMag,
     akReserve: c.akReserve,
     deagleMag: c.deagleMag,
@@ -178,6 +184,7 @@ export const removePlayer = (world: WorldState, id: number): void => {
   world.players = world.players.filter((p) => p.id !== id);
   world.boomerangs = world.boomerangs.filter((b) => b.owner !== id);
   world.twins = world.twins.filter((b) => b.owner !== id);
+  world.mines = world.mines.filter((m) => m.owner !== id);
   for (const b of world.boomerangs) if (b.controller === id) b.controller = b.owner;
 };
 
@@ -195,8 +202,12 @@ export const respawnPlayer = (
     deaths: p.deaths,
     teamKills: p.teamKills,
     damageDealt: p.damageDealt,
+    // your chosen grenade bounce count stays with you
+    nadeBounces: p.nadeBounces,
   };
   Object.assign(p, fresh, keep);
+  // a new life (or round) brings a new remote mine: the old one is gone
+  world.mines = world.mines.filter((m) => m.owner !== p.id);
   const b = world.boomerangs.find((bb) => bb.owner === p.id);
   if (b) Object.assign(b, newBoomerang(p.id, p.pos));
 };
@@ -287,6 +298,7 @@ export const step = (
   // races: no weapons, no damage, no power-ups
   if (ctx.level.def.race) return;
   updateCombat(world, ctx, inputs, prevButtons);
+  updateMines(world, ctx, inputs, prevButtons);
   updatePowerupPickups(world, ctx);
 };
 
@@ -319,5 +331,6 @@ export const stepPredict = (
   }
   if (race) return;
   updateCombat(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, { only: localId });
+  updateMines(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, localId);
   updatePowerupPickups(world, ctx, localId);
 };

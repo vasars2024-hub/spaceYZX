@@ -92,6 +92,9 @@ const PREDICTED_EVENTS = new Set([
   'slash',
   'laserWarn',
   'grenadeThrow',
+  'minePlace',
+  'mineRefused',
+  'mineBlast',
   'catch',
   'pickup',
   'twinThrow',
@@ -694,6 +697,9 @@ export class NetCore {
     w.twins = (snap.own?.twins ?? []).map((t) => JSON.parse(JSON.stringify(t)) as typeof t);
     // power-ups lying around (your own pick-up is predicted)
     w.powerups = (snap.powerups ?? []).map((u) => ({ ...u, pos: { ...u.pos } }));
+    // remote mines this client knows about (yours always: placing / setting it off is predicted)
+    w.mines = (snap.mines ?? []).map((m) => ({ ...m, pos: { ...m.pos }, up: { ...m.up } }));
+    w.minesJammed = !!snap.minesJammed;
     for (const z of snap.zones)
       if (w.zones[z.index]) w.zones[z.index] = { override: z.dir, until: z.until };
     return w;

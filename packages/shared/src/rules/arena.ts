@@ -22,6 +22,7 @@ import type { SimContext } from '../sim/context';
 import type { WorldState, PlayerState } from '../sim/state';
 import type { ArenaPitDef } from '../level/types';
 import { respawnPlayer } from '../sim/world';
+import { resetMines } from '../sim/mine';
 import type { LoadoutName } from '../config/loadout';
 import { type ArenaSettings, arenaSettings } from '../config/arena';
 import type { BotMemory } from '../bots/brain';
@@ -421,6 +422,7 @@ export const beginArenaRound = (st: ArenaState, world: WorldState, ctx: SimConte
     } else bench(p);
   }
   world.grenades = [];
+  resetMines(world);
   st.phase = 'break';
   st.phaseEnds = world.tick + secTicks(s.breakSec, ctx.dt);
   st.duelEnds = 0;

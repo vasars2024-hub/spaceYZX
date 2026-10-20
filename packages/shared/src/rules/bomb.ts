@@ -13,6 +13,7 @@ import type { WorldState, PlayerState } from '../sim/state';
 import type { BombSiteDef } from '../level/types';
 import { Btn } from '../sim/input';
 import { applyDamage } from '../sim/combat';
+import { jamMines } from '../sim/mine';
 import { gravityDirAt, isZeroG } from '../sim/gravity';
 import { raycast } from '../level/collision';
 
@@ -157,6 +158,8 @@ export const updateBomb = (
             by: c.id,
           };
           world.events.push({ type: 'bombPlanted', player: c.id, site, pos: clone(bomb.pos) });
+          // its radio shockwave switches every remote mine off for the rest of the round
+          jamMines(world, bomb.pos);
         }
       } else if (bomb.plant) {
         root(c, false);

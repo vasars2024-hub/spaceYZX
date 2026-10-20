@@ -84,7 +84,10 @@ export const DEFAULT_KEYBINDS: Record<string, string[]> = {
   fire: ['Mouse0'],
   alt: ['Mouse2'],
   melee: ['KeyE'],
-  grenade: ['KeyQ'],
+  grenade: ['KeyQ'], // hold to charge, let go to throw
+  nadeBounce: ['Mouse1'], // middle mouse: how many times the next grenade bounces
+  minePlace: ['KeyT'], // remote mine: drop it where you stand
+  mineDetonate: ['KeyZ'], // remote mine: set it off
   recall: ['KeyR'],
   magboots: ['KeyF'],
   slot1: ['Digit1'],

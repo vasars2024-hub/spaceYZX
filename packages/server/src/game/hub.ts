@@ -34,6 +34,8 @@ import {
   RACE_DEFAULTS,
   defaultConfig,
   configForLoadout,
+  withRemoteMine,
+  remoteMineMode,
   loadoutName,
   botSkillName,
   CUSTOM_MAP_LIMITS,
@@ -463,6 +465,15 @@ export class GameHub {
                   loadout,
                 ));
     room.rules = rules;
+    // remote mine on / off for this mode (config/mine.ts REMOTE_MINE_MODES; before anyone joins)
+    room.ctx.config = withRemoteMine(
+      room.ctx.config,
+      remoteMineMode(
+        opts.mode,
+        rules instanceof MatchRules ? rules.ms.objective : null,
+        loadout === 'cs',
+      ),
+    );
     if (rules instanceof MatchRules && opts.teamSize && opts.teamSize < rules.ms.rules.teamSize)
       rules.ms.rules.teamSize = Math.max(1, Math.floor(opts.teamSize));
     if (rules instanceof MatchRules) {

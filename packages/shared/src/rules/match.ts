@@ -24,6 +24,7 @@ import type { LoadoutName } from '../config/loadout';
 import type { TeamMode } from '../rating/global';
 import type { BotMemory } from '../bots/brain';
 import { clearPowerups } from '../sim/powerups';
+import { resetMines } from '../sim/mine';
 import { updateRoundPowerups, botPowerupGoal } from './powerups';
 
 export type MatchPhase = 'warmup' | 'spawnLock' | 'live' | 'roundEnd' | 'matchEnd';
@@ -227,6 +228,7 @@ export const beginRound = (ms: MatchState, world: WorldState, ctx: SimContext): 
   }
   // grenades/boomerang flight from the last round are gone (and power-ups, twins, freezes)
   world.grenades = [];
+  resetMines(world); // (and remote mines, and a planted bomb's mine jam)
   clearPowerups(world);
   ms.powerupsSpawned = 0;
   // carriers: 1v1 each player carries their own; teams rotate the carrier each round

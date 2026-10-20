@@ -10,6 +10,7 @@ import type {
   WorldState,
   BoomerangState,
   GrenadeState,
+  MineState,
   PowerupPickup,
 } from '@space-yz/shared';
 import {
@@ -206,6 +207,14 @@ export class NetSession implements Session {
       if (!pos) continue;
       out.push({ ...newBoomerang(t.owner, pos), id: t.id, phase: Phase.Out });
     }
+    return out;
+  }
+
+  /** Remote mines: yours as predicted (placed / set off at once), the others as last sent. */
+  mines(): MineState[] {
+    const me = this.localId;
+    const out = (this.core.predWorld?.mines ?? []).filter((m) => m.owner === me);
+    for (const m of this.core.latest?.mines ?? []) if (m.owner !== me) out.push(m);
     return out;
   }
 

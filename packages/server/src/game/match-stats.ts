@@ -32,6 +32,8 @@ export const weaponOfKill = (kind: KillKind): string | null => {
     case 'ak':
     case 'deagle':
       return kind;
+    case 'mine':
+      return 'grenade'; // the remote mine counts with the grenade (utility) in the stats
     default:
       return null;
   }

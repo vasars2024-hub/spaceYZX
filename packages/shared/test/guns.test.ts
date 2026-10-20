@@ -150,20 +150,18 @@ describe('CS mode config', () => {
     expect(loadoutOf(csConfig(defaultConfig()))).toMatchObject({
       boomerang: false,
       laser: false,
-      grenade: false,
+      grenade: true, // the charged Gravity Grenade is in the CS kit too (owner)
       guns: true,
       powerups: false,
     });
     expect(loadoutOf(defaultConfig()).powerups).toBe(true);
   });
 
-  it('no Boomerang throws, Laser or Gravity Grenade; LMB fires the AK, 2 the Deagle, E slashes', () => {
+  it('no Boomerang throws or Laser; LMB fires the AK, 2 the Deagle, E slashes', () => {
     const sim = csSim(30);
     const ev = [
       ...tick(sim, { 1: { buttons: Btn.Fire } }, 20),
       ...tick(sim, { 1: { buttons: Btn.Alt } }, 120),
-      ...tick(sim, { 1: { buttons: Btn.Grenade } }, 2),
-      ...tick(sim, {}, 30),
       ...tick(sim, { 1: { buttons: Btn.Recall } }, 2),
     ];
     const types = new Set(ev.map((e) => e.type));
@@ -172,7 +170,6 @@ describe('CS mode config', () => {
       'windupStart',
       'laserWarn',
       'laserFire',
-      'grenadeThrow',
       'recallStart',
     ])
       expect(types.has(t as SimEvent['type']), t).toBe(false);

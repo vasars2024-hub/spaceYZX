@@ -16,6 +16,9 @@ const ACTION_BUTTON: Record<string, number> = {
   alt: Btn.Alt,
   melee: Btn.Melee,
   grenade: Btn.Grenade,
+  nadeBounce: Btn.NadeBounce,
+  minePlace: Btn.MinePlace,
+  mineDetonate: Btn.MineDetonate,
   recall: Btn.Recall,
   magboots: Btn.MagBoots,
   slot1: Btn.Slot1,
@@ -183,6 +186,7 @@ export class InputManager {
 
   private onMouseDown = (e: MouseEvent): void => {
     if (!this.capture || !this.locked || this.typing) return;
+    if (e.button === 1) e.preventDefault(); // middle mouse (grenade bounces): no auto-scroll
     this.press(`Mouse${e.button}`);
   };
 

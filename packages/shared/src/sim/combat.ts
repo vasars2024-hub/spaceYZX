@@ -34,6 +34,7 @@ import { hitboxOf, sweepHitbox, rayHitbox, chestOf, type Hitbox } from './hitbox
 import { flatAim, tiltStep } from './flick';
 import { loadoutOf } from '../config/loadout';
 import { updateGuns } from './guns';
+import { grenadeFlightStep, grenadeFuseOut, updateGrenadeInput } from './grenade';
 
 const DEG = Math.PI / 180;
 const ticks = (sec: number, dt: number): number => Math.max(1, Math.round(sec / dt));
@@ -636,26 +637,23 @@ const updateGrenades = (world: WorldState, ctx: SimContext, hbs: Hitbox[], only?
     if (foreign && g.phase !== 1) continue;
     if (!foreign) g.t++;
     if (g.phase === 0) {
-      g.vel = madd(g.vel, gravityAt(ctx, world, g.pos), dt);
-      const speed = len(g.vel);
-      const dir = normalize(g.vel);
-      const hit = speed > 1e-6 ? raycast(ctx.level, g.pos, dir, speed * dt, c.grenadeRadius) : null;
-      if (hit) {
-        g.pos = madd(hit.point, hit.normal, 0.02);
-        const vn = dot(g.vel, hit.normal);
-        g.vel = scale(madd(g.vel, hit.normal, -2 * vn), 0.4); // bounce, lose energy
-      } else g.pos = madd(g.pos, g.vel, dt);
+      // flight, walls and the bounce count (sim/grenade.ts, shared with the lineup preview)
+      const r = grenadeFlightStep(ctx, world, g);
+      if (r === 'bounce')
+        world.events.push({ type: 'grenadeBounce', grenade: g.id, pos: clone(g.pos) });
+      if (r === 'impact' || r === 'rest') activateGrenade(world, g, false);
       // touching a player (not the thrower) sets it off. (Judged where players are now, so a
       // predicting client only knows about touching itself.)
       for (const hb of hbs) {
         if (only !== undefined && hb.id !== only) continue;
+        if (g.phase !== 0) break; // already went off this tick
         if (hb.id === g.owner && g.t < ticks(0.4, dt)) continue;
         if (sweepHitbox(g.pos, g.pos, c.grenadeRadius, hb)) {
           activateGrenade(world, g, false);
           break;
         }
       }
-      if (g.phase === 0 && g.t >= ticks(c.grenadeFuseSec, dt)) activateGrenade(world, g, false);
+      if (g.phase === 0 && grenadeFuseOut(ctx, g)) activateGrenade(world, g, false);
     } else if (g.phase === 1) {
       // pull players toward the center
       for (const p of world.players) {
@@ -840,6 +838,7 @@ export const updateCombat = (
     if (stunned.has(p.id)) {
       // frozen by a Freeze hit: no throws, shots, slashes, grenades or weapon switches
       p.aiming = false;
+      p.nadeCharge = 0; // a charging grenade is dropped (not thrown)
       p.aimTicks = 0;
       p.laserWarn = 0;
       if (p.windup > 0) cancelWindup(world, p);
@@ -1003,22 +1002,8 @@ export const updateCombat = (
       world.events.push({ type: 'pickup', player: p.id, boomerang: b.id });
     }
 
-    // --- Gravity Grenade ---
-    if (lo.grenade && pressed & Btn.Grenade && p.grenadesLeft > 0) {
-      p.grenadesLeft--;
-      const eye = eyePos(p, ctx.config.movement);
-      const fwd = qForward(p.view);
-      const g: GrenadeState = {
-        id: world.nextId++,
-        owner: p.id,
-        pos: madd(eye, fwd, 0.5),
-        vel: add(scale(normalize(madd(fwd, p.up, 0.15)), c.grenadeSpeed), scale(p.vel, 0.5)),
-        phase: 0,
-        t: 0,
-      };
-      world.grenades.push(g);
-      world.events.push({ type: 'grenadeThrow', player: p.id, grenade: g.id });
-    }
+    // --- Gravity Grenade: hold Q to charge, let go to throw; middle mouse = bounces ---
+    updateGrenadeInput(world, ctx, p, buttons, pressed);
 
     // --- Slash (E) with the Boomerang in hand ---
     if (pressed & Btn.Melee && p.slashCd === 0 && held && p.windup === 0) {

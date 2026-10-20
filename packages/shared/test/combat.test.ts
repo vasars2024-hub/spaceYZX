@@ -464,7 +464,9 @@ describe('Clashes, Laser, Grenade', () => {
     settle(sim);
     const thrower = addOther(sim, 2, 1, v3(0, 0, -12));
     settle(sim);
-    tick(sim, { 2: { buttons: Btn.Grenade, view: view(180, 10) } }, 1);
+    // a full-charge throw (hold Q, let go)
+    tick(sim, { 2: { buttons: Btn.Grenade, view: view(180, 10) } }, 61);
+    tick(sim, { 2: { view: view(180, 10) } }, 1);
     const g = sim.world.grenades[0];
     expect(g).toBeDefined();
     const b = boomerangOf(sim, 1);
@@ -497,7 +499,7 @@ describe('Clashes, Laser, Grenade', () => {
     const mate = addOther(sim, 2, 0, v3(0, 0, -4));
     settle(sim);
     tick(sim, { 1: { buttons: Btn.Grenade, view: view(0, -30) } }, 1);
-    const ev = tick(sim, {}, 200);
+    const ev = tick(sim, {}, 300);
     expect(ev.some((e) => e.type === 'grenadePop')).toBe(true);
     expect(mate.hp).toBeLessThan(100);
   });
@@ -516,7 +518,7 @@ describe('prediction of other players’ grenades', () => {
     const sim = makeSim(flatLevel(), vec(0, 0, 0));
     addPlayer(sim.world, createPlayer(2, 1, vec(20, 0, 0), 0, sim.config));
     settle(sim);
-    sim.world.grenades.push({ id: 999, owner: 2, pos: vec(4, 1, 0), vel: vec(), phase: 1, t: 10 });
+    sim.world.grenades.push({ id: 999, owner: 2, pos: vec(4, 1, 0), vel: vec(), phase: 1, t: 10, bounces: 0 });
     const server = cloneWorld(sim.world);
     const client = cloneWorld(sim.world);
     for (let i = 0; i < 20; i++) {

@@ -15,6 +15,7 @@ import { buildAfterglowGraybox } from './graybox/afterglow';
 import { buildOrreryGraybox } from './graybox/orrery';
 import { buildLeviathanGraybox } from './graybox/leviathan';
 import { buildSkyfountGraybox } from './graybox/skyfount';
+import { buildShibuya } from './graybox/shibuya';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -87,6 +88,13 @@ export interface MapInfo {
    * tile layout (no hand-made art yet)
    */
   graybox?: boolean;
+  /**
+   * a royale map (the free-for-all elimination mode for 5–10 players, rules/royale.ts): huge,
+   * with fixed spawn points spread over the whole city and a play zone that shrinks toward its
+   * centre (LevelDef.royale). Meant only for the royale mode; never competitive (no bomb sites,
+   * no team routes to balance)
+   */
+  royale?: boolean;
 }
 
 /** A map built from course data (a surf map when it has a `mode`). */
@@ -269,6 +277,15 @@ export const MAPS: MapInfo[] = [
     build: buildSkyfountGraybox,
     competitive: false,
     graybox: true,
+  },
+  // the royale mega map (~1 km across): a remodel of Shibuya, Tokyo, for the free-for-all royale
+  {
+    id: 'shibuya',
+    name: 'Shibuya',
+    build: buildShibuya,
+    competitive: false,
+    graybox: true,
+    royale: true,
   },
   // the big Brawl map (TDM / FFA / Deathmatch practice)
   {

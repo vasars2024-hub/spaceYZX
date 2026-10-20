@@ -79,7 +79,7 @@ describe('opening face-off staging', () => {
         // mirror images across the middle line
         expect(right[i].x).toBeCloseTo(left[i].x);
         expect(right[i].z).toBeCloseTo(-left[i].z);
-        expect(left[i].z).toBeGreaterThan(2.5);
+        expect(left[i].z).toBeGreaterThan(2);
       }
       // centred on the stage
       expect(left.reduce((s, p) => s + p.x, 0)).toBeCloseTo(0);
@@ -87,6 +87,8 @@ describe('opening face-off staging', () => {
         const d = Math.hypot(left[i].x - left[i - 1].x, left[i].z - left[i - 1].z);
         expect(d).toBeGreaterThanOrEqual(LINE_SPACING - 1e-9);
         expect(d).toBeLessThan(LINE_SPACING * 1.2);
+        // seen from the side (screen = z): each next player stands further out, never behind
+        expect(left[i].z - left[i - 1].z).toBeGreaterThan(1);
       }
     });
   }
@@ -109,8 +111,8 @@ describe('opening face-off staging', () => {
     expect(late).toBeLessThan(early);
   });
 
-  it('puts you in the middle of your line', () => {
-    expect(lineOrder([4, 2, 9, 7, 5], 2)).toEqual([4, 5, 2, 7, 9]);
+  it('puts you at the front of your line', () => {
+    expect(lineOrder([4, 2, 9, 7, 5], 7)).toEqual([7, 2, 4, 5, 9]);
     expect(lineOrder([3, 1], null)).toEqual([1, 3]);
     expect(lineOrder([8], 8)).toEqual([8]);
   });

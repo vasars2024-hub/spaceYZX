@@ -63,7 +63,9 @@
   font-size: 20px;
 }
 .intro-you {
+  display: inline-block;
   margin-left: 6px;
+  line-height: 1.3;
   padding: 0 4px;
   font-size: 11px;
   vertical-align: middle;

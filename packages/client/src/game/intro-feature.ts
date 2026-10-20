@@ -13,6 +13,7 @@ import { Move, qFromBasis, v3, type RankDisplay } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, RenderPlayer } from './session';
 import {
+  ECHELON_STEP,
   beatAt,
   dropDepth,
   flight,
@@ -24,6 +25,7 @@ import {
   portalOpen,
   shouldStartIntro,
   teamGap,
+  teamReach,
   winPercents,
   type IntroPhase,
 } from './intro';
@@ -251,7 +253,8 @@ export class IntroFeature implements ClientFeature {
           flames: this.flame(team),
           portal: this.portal(team),
           tag: this.tag(
-            names[id] ?? (id === s.localId ? 'You' : `Player ${id}`),
+            // (practice bots' "(ally)" is plain from the team colour here)
+            (names[id] ?? (id === s.localId ? 'You' : `Player ${id}`)).replace(/ \(ally\)$/, ''),
             team,
             r,
             id === s.localId,
@@ -439,8 +442,9 @@ export class IntroFeature implements ClientFeature {
     if (this.heads) {
       for (const team of [0, 1] as const) {
         const side = sh.actors.find((x) => x.team === team)?.side ?? 1;
-        const gap = teamGap(sh.n);
-        this.v.set(o.x, o.y + 3.6, o.z + side * (gap / 2 + 1)).project(camera);
+        // over the middle of the team's line
+        const mid = (teamGap(sh.n) / 2 + teamReach(sh.n)) / 2;
+        this.v.set(o.x, o.y + 3.4, o.z + side * mid).project(camera);
         const el = this.heads[team];
         el.style.opacity = faceOff ? '1' : '0';
         el.style.transform = `translate(${((this.v.x + 1) / 2) * W}px, ${((1 - this.v.y) / 2) * H}px) translate(-50%, -100%)`;
@@ -483,8 +487,8 @@ export class IntroFeature implements ClientFeature {
 
   /** The floating deck: dark plates, a glowing edge in each team's colour and a centre line. */
   private buildStage(origin: THREE.Vector3, n: number, gap: number, mine: 0 | 1): void {
-    const len = (n - 1) * 1.8 + 3;
-    const wide = gap + 0.45 * ((n - 1) / 2) * 1.8 * 2 + 3;
+    const len = (n - 1) * ECHELON_STEP + 3.5;
+    const wide = 2 * teamReach(n, gap) + 3;
     // (lighter top, darker sides: reads as a floating slab)
     const side = this.keep(new THREE.MeshBasicMaterial({ color: 0x0d121b }));
     const top = this.keep(new THREE.MeshBasicMaterial({ color: 0x223047 }));
@@ -605,7 +609,12 @@ export class IntroFeature implements ClientFeature {
         { class: 'intro-rank', style: rank ? `color:${rank.color}` : '' },
         rank?.label ?? '',
       ),
-      h('div', { class: 'intro-name' }, name, me ? h('span', { class: 'intro-you' }, 'YOU') : null),
+      h(
+        'div',
+        { class: 'intro-name' },
+        name,
+        me && name !== 'You' ? h('span', { class: 'intro-you' }, 'YOU') : null,
+      ),
     );
   }
 

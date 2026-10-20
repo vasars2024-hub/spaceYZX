@@ -104,32 +104,38 @@ export const shouldStartIntro = (g: IntroGate): boolean =>
 // left team stands at +z and faces -z, the right team at -z and faces +z. Your team is on the
 // left.
 
-/** Metres between neighbours in a line (along x, toward / away from the camera). */
+/** Metres between neighbours in a line. */
 export const LINE_SPACING = 1.8;
-/** How much further back each step out from the middle stands (a shallow wedge). */
-export const WEDGE = 0.45;
+/**
+ * Each team stands in an echelon: every next player one step further out to the side and one
+ * step further back (away from the camera), so seen from the side nobody hides behind anybody.
+ */
+export const ECHELON_STEP = LINE_SPACING / Math.SQRT2;
 
-/** Distance between the two lines' middle players: a little wider for bigger teams. */
-export const teamGap = (n: number): number => 6 + 0.5 * Math.max(1, Math.min(5, n));
+/** Distance between the two front players (the leaders, face to face). */
+export const teamGap = (n: number): number => 4 + 0.3 * Math.max(1, Math.min(5, n));
 
-/** Where the players of one team land: `n` spots, `side` +1 = left (+z), -1 = right (-z). */
-export const lineLayout = (n: number, side: 1 | -1, gap = teamGap(n)): { x: number; z: number }[] =>
-  Array.from({ length: n }, (_, i) => {
-    const x = (i - (n - 1) / 2) * LINE_SPACING;
-    return { x, z: side * (gap / 2 + WEDGE * Math.abs(x)) };
-  });
+/** How far out a team reaches from the middle (to its last player). */
+export const teamReach = (n: number, gap = teamGap(n)): number =>
+  gap / 2 + (Math.max(1, n) - 1) * ECHELON_STEP;
 
 /**
- * The order a team stands in: by id, but you in the middle of your line (the camera's
- * focus), with the others around you.
+ * Where the players of one team land: `n` spots, `side` +1 = left (+z), -1 = right (-z). Spot
+ * 0 is the front (nearest the other team and the camera).
  */
+export const lineLayout = (n: number, side: 1 | -1, gap = teamGap(n)): { x: number; z: number }[] =>
+  Array.from({ length: n }, (_, i) => ({
+    x: ((n - 1) / 2 - i) * ECHELON_STEP,
+    z: side * (gap / 2 + i * ECHELON_STEP),
+  }));
+
+/** The order a team stands in: you at the front of your line, then the others by id. */
 export const lineOrder = (ids: readonly number[], localId: number | null): number[] => {
   const sorted = [...ids].sort((a, b) => a - b);
   const i = localId === null ? -1 : sorted.indexOf(localId);
   if (i < 0) return sorted;
   sorted.splice(i, 1);
-  sorted.splice(Math.floor(sorted.length / 2), 0, localId!);
-  return sorted;
+  return [localId!, ...sorted];
 };
 
 /** Seconds one player's flight takes, and the gap between neighbours' take-offs. */
@@ -211,8 +217,7 @@ export const introShot = (
   total: number,
   n: number,
 ): { pos: Vec3; target: Vec3; hfov: number } => {
-  const gap = teamGap(n);
-  const half = gap / 2 + WEDGE * ((Math.max(1, n) - 1) / 2) * LINE_SPACING + 1.6;
+  const half = teamReach(n) + 1.4;
   const base = half / Math.tan(((INTRO_HFOV / 2) * Math.PI) / 180);
   const fo = beatAt('faceOff', total);
   const po = beatAt('portal', total);

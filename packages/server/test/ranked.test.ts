@@ -96,6 +96,11 @@ describe('accounts & ranked store', () => {
     expect(p.ladders.duels.rank!.label).toMatch(/Asteroid|Moon|Planet|Gas Giant|Star|Supergiant/);
     expect(p.ladders.premier.games).toBe(0); // 1v1 never touches Premier
     expect(p.recent[0]).toMatchObject({ mode: '1v1', ladder: 'duels', ranked: true });
+    // room rosters (face-off, scoreboard): the rank and rating once placed, nothing before
+    const line = s.ranked.rankLine(w, 'duels');
+    expect(line.rank!.label).toBe(p.ladders.duels.rank!.label);
+    expect(line.rating).toBe(p.ladders.duels.rating);
+    expect(s.ranked.rankLine(w, 'premier')).toEqual({ rank: null, rating: null });
   });
 
   it('Duels: 1v1 and 2v2 share one rating', () => {

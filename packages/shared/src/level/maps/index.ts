@@ -23,6 +23,7 @@ import { buildAncient } from './cs/ancient';
 import { buildAnubis } from './cs/anubis';
 import { buildCache } from './cs/cache';
 import { buildTrain } from './cs/train';
+import { buildShibuya } from './graybox/shibuya';
 import { buildArena } from './arena';
 import { buildOrbitalRing } from './orbital-ring';
 import { buildCanyonRelay } from './canyon-relay';
@@ -295,6 +296,15 @@ export const MAPS: MapInfo[] = [
     build: buildSkyfountGraybox,
     competitive: false,
     graybox: true,
+  },
+  // the royale mega map (~1 km across): a remodel of Shibuya, Tokyo, for the free-for-all royale
+  {
+    id: 'shibuya',
+    name: 'Shibuya',
+    build: buildShibuya,
+    competitive: false,
+    graybox: true,
+    royale: true,
   },
   // the big Brawl map (TDM / FFA / Deathmatch practice)
   {

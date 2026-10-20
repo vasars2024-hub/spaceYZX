@@ -43,6 +43,7 @@ export * from './level/maps/cs/ancient';
 export * from './level/maps/cs/anubis';
 export * from './level/maps/cs/cache';
 export * from './level/maps/cs/train';
+export * from './level/maps/graybox/shibuya';
 export * from './level/maps/arena';
 export * from './level/maps/orbital-ring';
 export * from './level/maps/canyon-relay';

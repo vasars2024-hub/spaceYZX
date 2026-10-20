@@ -124,7 +124,7 @@ export const updateMines = (
         };
         world.mines.push(m);
         p.mineSlot = MineSlot.Placed;
-        world.events.push({ type: 'minePlace', player: p.id, mine: m.id, pos: clone(m.pos) });
+        world.events.push({ type: 'minePlace', player: p.id, mine: m.id });
       }
     }
     if (pressed & Btn.MineDetonate && p.mineSlot === MineSlot.Placed) {

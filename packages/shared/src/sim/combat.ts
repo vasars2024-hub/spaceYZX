@@ -59,6 +59,7 @@ const SHIELDED_KINDS: ReadonlySet<KillKind> = new Set<KillKind>([
   'slash',
   'laser',
   'grenade',
+  'mine',
   'blast',
   'ak',
   'deagle',

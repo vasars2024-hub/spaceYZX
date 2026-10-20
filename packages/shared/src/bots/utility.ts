@@ -7,7 +7,6 @@
 //   is in it.
 import type { Vec3 } from '../math/vec3';
 import { len, sub, madd } from '../math/vec3';
-import { rngFloat } from '../math/rng';
 import { lineOfSight } from '../level/collision';
 import { pointInAabb } from '../level/level';
 import { loadoutOf } from '../config/loadout';
@@ -27,7 +26,21 @@ const UTILITY_KEYS = Btn.Grenade | Btn.NadeBounce | Btn.MinePlace | Btn.MineDeto
 export interface BotUtilityMemory {
   /** ticks of holding Q still to go (0 = not throwing) */
   nadeHold: number;
+  /** the Boomerang-kit brain rolled for a grenade this tick (brain.ts keeps its old dice roll) */
+  wantNade: boolean;
 }
+
+/**
+ * A repeatable 0..1 "dice roll" from the bot, the tick and a salt. Used instead of the bot's
+ * own random stream so the grenade / mine choices don't shift every other decision it makes.
+ */
+const roll = (id: number, tick: number, salt: number): number => {
+  let h = (Math.imul(id + 1, 0x9e3779b1) ^ Math.imul(tick + salt * 7919, 0x85ebca6b)) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x2c1b3c6d) >>> 0;
+  h ^= h >>> 12;
+  return (h >>> 0) / 4294967296;
+};
 
 const planar = (a: Vec3, b: Vec3): number => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -76,9 +89,12 @@ export const botUtilityButtons = (
   fighting: boolean,
 ): number => {
   const c = ctx.config.combat;
-  const rng = mem.rng;
-  const u = (mem.util ??= { nadeHold: 0 });
+  const u = (mem.util ??= { nadeHold: 0, wantNade: false });
+  const wantNade = u.wantNade;
+  u.wantNade = false;
+  const t = world.tick;
   let b = buttons & ~UTILITY_KEYS;
+  const guns = loadoutOf(ctx.config).guns;
 
   // ---- grenade ----
   if (u.nadeHold > 0) {
@@ -97,7 +113,11 @@ export const botUtilityButtons = (
     !(self.prevButtons & Btn.Grenade)
   ) {
     const dist = len(sub(target.pos, self.pos));
-    if (dist > 8 && dist < 30 && rngFloat(rng) < mem.skill.grenadeChance) {
+    // (Boomerang kit: brain.ts rolled; CS kit: no Boomerang brain, so roll here)
+    const go = guns
+      ? dist > 8 && dist < 30 && roll(self.id, t, 1) < mem.skill.grenadeChance
+      : wantNade;
+    if (go) {
       const charge = pickCharge(world, ctx, self, target.pos);
       if (charge !== null) {
         b |= Btn.Grenade; // this press counts as the first tick held
@@ -111,8 +131,8 @@ export const botUtilityButtons = (
   if (self.mineSlot === MineSlot.Ready && !mineRefusal(world, ctx, self)) {
     const nearSpawn = ctx.level.def.spawns.some((s) => len(sub(s.pos, self.pos)) < 14);
     const want = onSite(ctx, self.pos)
-      ? !fighting && rngFloat(rng) < 0.02
-      : !fighting && !nearSpawn && rngFloat(rng) < 0.0015;
+      ? !fighting && roll(self.id, t, 2) < 0.02
+      : !fighting && !nearSpawn && roll(self.id, t, 3) < 0.0015;
     if (want) b |= Btn.MinePlace;
   } else if (self.mineSlot === MineSlot.Placed && !(self.prevButtons & Btn.MineDetonate)) {
     const m = world.mines.find((x) => x.owner === self.id);
@@ -128,7 +148,7 @@ export const botUtilityButtons = (
       const friendIn = world.players.some(
         (p) => (p.id === self.id || isTeammate(ctx, p, self)) && inBlast(p, c.mineRadius + 0.5),
       );
-      if (enemyIn && !friendIn && rngFloat(rng) < 0.5) b |= Btn.MineDetonate;
+      if (enemyIn && !friendIn && roll(self.id, t, 4) < 0.5) b |= Btn.MineDetonate;
     }
   }
   return b;

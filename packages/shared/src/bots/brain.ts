@@ -821,6 +821,9 @@ export const botThink = (
         } else if (rngFloat(rng) < 0.04) buttons |= Btn.Recall;
       }
     }
+    // grenade at mid range: bots/utility.ts picks the charge and throws it
+    if (self.grenadesLeft > 0 && dist > 8 && dist < 20 && rngFloat(rng) < s.grenadeChance)
+      (mem.util ??= { nadeHold: 0, wantNade: false }).wantNade = true;
     // (a Quick Throw leaves straight; flicking the view in flight tilts it)
     if (releaseTick) buttons &= ~(Btn.Left | Btn.Right);
   } else if (myB) {

@@ -109,7 +109,8 @@ export type SimEvent =
   /** a grenade bounced (it had bounces left) */
   | { type: 'grenadeBounce'; grenade: number; pos: Vec3 }
   // remote mines (sim/mine.ts)
-  | { type: 'minePlace'; player: number; mine: number; pos: Vec3 }
+  // (no position: events go to everyone, and enemies only learn of a mine up close)
+  | { type: 'minePlace'; player: number; mine: number }
   /** a placement that wasn't allowed (in the air, on a Tower, jammed by a planted bomb) */
   | { type: 'mineRefused'; player: number; reason: 'air' | 'tower' | 'jammed' }
   | { type: 'mineBlast'; player: number; mine: number; pos: Vec3 }

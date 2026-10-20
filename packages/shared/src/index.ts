@@ -39,6 +39,8 @@ export * from './level/maps/cs/dust2';
 export * from './level/maps/cs/mirage';
 export * from './level/maps/cs/inferno';
 export * from './level/maps/cs/nuke';
+export * from './level/maps/cs/ancient';
+export * from './level/maps/cs/anubis';
 export * from './level/maps/arena';
 export * from './level/maps/orbital-ring';
 export * from './level/maps/canyon-relay';

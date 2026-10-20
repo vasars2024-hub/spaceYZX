@@ -1,7 +1,7 @@
 // Combat HUD: health, kit status, threat arcs, own-Boomerang marker, Wind-up ring, hit
 // markers, damage direction, kill feed, multi-kill banners, death screen.
 import type { Vec3, KillKind } from '@space-yz/shared';
-import { h } from './menus';
+import { h, setStyle, setText } from './menus';
 import { edgePoint, type ScreenMarker } from './markers';
 import { effects } from '../render/effects';
 import { storage } from '../settings';
@@ -119,6 +119,10 @@ export class CombatHud {
   private tipsLeft = Number(storage.get(TIP_KEY) ?? FLICK_TIPS);
   /** where recent damage came from (world); drawn relative to the current view */
   private damageDirs: { src: Vec3; life: number }[] = [];
+  /** what the kit rows last showed (rebuilt only on a change) */
+  private kitKey = '';
+  /** the overlay canvas is empty (cleared, nothing drawn since) */
+  private canvasBlank = true;
   /** pixelated red edges: grow as you lose health, flash when you're hit */
   private hurt: HTMLCanvasElement;
   private hurtCtx: CanvasRenderingContext2D | null;
@@ -249,7 +253,7 @@ export class CombatHud {
     this.hurtFlash = Math.max(0, this.hurtFlash - dt * 2.2);
     // how far in from the edges the red reaches (0..1 of the half-screen)
     const reach = alive ? Math.min(0.85, missing * 0.55 + this.hurtFlash * 0.35) : 0;
-    this.hurt.style.display = reach > 0.01 ? '' : 'none';
+    setStyle(this.hurt, 'display', reach > 0.01 ? '' : 'none');
     if (reach <= 0.01) return;
     // low health pulses like a heartbeat
     const beat = missing > 0.6 ? 0.12 * Math.max(0, Math.sin(this.hurtTime * 7)) : 0;
@@ -341,9 +345,9 @@ export class CombatHud {
     // health
     const f = Math.max(0, kit.hp / kit.maxHp);
     this.drawHurt(dt, 1 - f, kit.alive);
-    this.hpFill.style.width = `${f * 100}%`;
+    setStyle(this.hpFill, 'width', `${f * 100}%`);
     this.hpFill.classList.toggle('low', f <= 0.5);
-    this.hpText.textContent = kit.shield ? `🛡 ${Math.ceil(kit.hp)}` : `${Math.ceil(kit.hp)}`;
+    setText(this.hpText, kit.shield ? `🛡 ${Math.ceil(kit.hp)}` : `${Math.ceil(kit.hp)}`);
     this.hpFill.parentElement?.classList.toggle('shielded', !!kit.shield);
     // kit
     const blast =
@@ -377,7 +381,14 @@ export class CombatHud {
           : `${label} ${a.mag} / ${a.reserve}${a.mag === 0 && a.reserve === 0 ? ' · EMPTY' : ''}`;
       return h('div', { class: `kit-row ${active ? 'active' : ''}` }, `${key} ${text}`);
     };
-    if (g)
+    // (the rows are rebuilt only when what they say changes: new DOM every frame makes the
+    // browser redo style and layout every frame)
+    const kitKey = g
+      ? `${g.active}|${g.reload01 > 0 ? Math.round(g.reload01 * 100) : -1}|${g.ak.mag}/${g.ak.reserve}|${g.deagle.mag}/${g.deagle.reserve}|${ready(kit.dashReady01)}|${ready(kit.jetReady01)}`
+      : `${kit.boomerang}|${kit.weapon}|${bText}|${laserText}|${kit.grenades > 0}|${ready(kit.dashReady01)}|${ready(kit.jetReady01)}|${kit.powerup ? JSON.stringify(kit.powerup) : ''}`;
+    if (kitKey === this.kitKey) {
+      // unchanged
+    } else if (g)
       this.kit.replaceChildren(
         gunRow(1, 'ak', 'AK'),
         gunRow(2, 'deagle', 'DEAGLE'),
@@ -404,10 +415,11 @@ export class CombatHud {
         ),
         ...(kit.powerup ? [this.powerupRow(kit.powerup)] : []),
       );
+    this.kitKey = kitKey;
     // frozen by a Freeze hit
     const frozen = kit.alive && (kit.stun01 ?? 0) > 0;
-    this.frost.style.display = frozen ? '' : 'none';
-    this.frostText.style.display = frozen ? '' : 'none';
+    setStyle(this.frost, 'display', frozen ? '' : 'none');
+    setStyle(this.frostText, 'display', frozen ? '' : 'none');
     if (frozen) this.frost.style.opacity = String(0.45 + 0.55 * Math.min(1, kit.stun01! * 2.5));
     // timers
     if (this.bannerTimer > 0 && (this.bannerTimer -= dt) <= 0) this.banner.className = 'banner';
@@ -418,7 +430,20 @@ export class CombatHud {
     if (!ctx) return;
     const w = this.canvas.width;
     const hgt = this.canvas.height;
+    // nothing to draw now and nothing left from last frame: leave the (full-screen) canvas
+    // alone, so the browser has nothing to re-rasterise
+    const empty =
+      threats.length === 0 &&
+      this.damageDirs.length === 0 &&
+      !(g && kit.alive) &&
+      !(kit.windup01 > 0) &&
+      !kit.onTarget &&
+      kit.aimCurve === null &&
+      !(kit.steer01 > 0 && kit.boomerang !== 'held') &&
+      !(ownMarker && kit.boomerang !== 'held');
+    if (empty && this.canvasBlank) return;
     ctx.clearRect(0, 0, w, hgt);
+    this.canvasBlank = empty;
     const cx = w / 2;
     const cy = hgt / 2;
 

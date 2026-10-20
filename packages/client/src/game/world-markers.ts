@@ -154,8 +154,8 @@ export class WorldMarkers implements ClientFeature {
       return;
     }
     const myTeam = me.team;
-    const w = c.deps.renderer.domElement.clientWidth;
-    const hgt = c.deps.renderer.domElement.clientHeight;
+    const w = c.viewW;
+    const hgt = c.viewH;
     const items: Item[] = [];
     const m = s.match?.() ?? null;
     if (m) this.objectives(c, m, myTeam, w, hgt, items);

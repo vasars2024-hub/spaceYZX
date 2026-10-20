@@ -27,7 +27,7 @@ import {
 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { Settings } from '../settings';
-import { h } from '../ui/menus';
+import { h, setStyle } from '../ui/menus';
 import { keyLabel } from '../ui/settings-screen';
 import { TEAM_COLOR, towerRole } from './objectives';
 import { fogSightRange } from './world-markers';
@@ -55,6 +55,10 @@ const GHOST_SEC = 3;
 const MARK_SEC = 5;
 const CHEVRONS = 36;
 const CHEVRON_STEP = 1.7;
+/** the minimap redraws at most this often (s) */
+const DRAW_EVERY = 1 / 62;
+/** the map is cut this much (m) wider than the frame, so it can be re-used as you move */
+const SLICE_MARGIN = 6;
 
 interface View {
   cx: number;
@@ -96,6 +100,18 @@ export class Minimap implements ClientFeature {
   private marks: { pos: Vec3; team: 0 | 1; at: number }[] = [];
   private level: Level | null = null;
   private chevrons: THREE.InstancedMesh | null = null;
+  private drawnAt = -Infinity;
+  private labelKey = '';
+  private sliceCache: {
+    level: Level;
+    sign: 1 | -1;
+    x: number;
+    y: number;
+    z: number;
+    radius: number;
+    slices: Slice[];
+  } | null = null;
+  private widths = new Map<string, number>();
   private red = new THREE.Color(0xff3b4e);
   private white = new THREE.Color(0xf6f8ff);
 
@@ -156,9 +172,9 @@ export class Minimap implements ClientFeature {
     const s = c.session;
     const me = s.local();
     const show = st.minimap && !c.panelOpen && !!me;
-    this.root.style.display = show ? '' : 'none';
+    setStyle(this.root, 'display', show ? '' : 'none');
     const big = !!me && this.bigHeld && !c.panelOpen;
-    this.big.style.display = big ? '' : 'none';
+    setStyle(this.big, 'display', big ? '' : 'none');
     if (this.level !== s.level) {
       // a new map (a Brawl rotation, a Map Maker test): nothing of the old one carries over
       this.level = s.level;
@@ -250,7 +266,11 @@ export class Minimap implements ClientFeature {
       RADIUS_MIN + Math.min(1, Math.max(0, (speed - 8) / 14)) * (RADIUS_MAX - RADIUS_MIN);
     this.radius += (want - this.radius) * Math.min(1, dt * 2);
 
-    if (show) {
+    // (redrawn at most ~60 times a second: on a fast screen the rest of the frames would draw
+    // the same picture again)
+    const due = this.time - this.drawnAt >= DRAW_EVERY || this.time < this.drawnAt;
+    if (show && due) {
+      this.drawnAt = this.time;
       const size = SIZES[st.minimapSize] ?? SIZES.medium;
       const fwd3 = qForward(me.view);
       const view = this.viewFor(
@@ -270,13 +290,19 @@ export class Minimap implements ClientFeature {
       const hints: string[] = [];
       if (m?.objective === 'bomb') hints.push(`${keyLabel(st.keybinds.routeSite?.[0])} site`);
       hints.push(`${keyLabel(st.keybinds.bigMap?.[0])} map`);
-      this.label.innerHTML = '';
-      if (g) {
-        const t = h('span', { class: 'minimap-goal' }, `${g.label} · ${Math.round(dist)} m`);
-        t.style.color = g.color;
-        this.label.append(t);
+      const goalText = g ? `${g.label} · ${Math.round(dist)} m` : '';
+      const keys = hints.join('  ·  ');
+      const labelKey = `${goalText}|${g?.color ?? ''}|${keys}`;
+      if (labelKey !== this.labelKey) {
+        this.labelKey = labelKey;
+        this.label.innerHTML = '';
+        if (g) {
+          const t = h('span', { class: 'minimap-goal' }, goalText);
+          t.style.color = g.color;
+          this.label.append(t);
+        }
+        this.label.append(h('span', { class: 'minimap-keys' }, keys));
       }
-      this.label.append(h('span', { class: 'minimap-keys' }, hints.join('  ·  ')));
     }
     if (big) this.drawBig(c, center, m, others, seen);
   }
@@ -349,7 +375,7 @@ export class Minimap implements ClientFeature {
 
     // ---- the level, sliced at your height ----
     const reach = (Math.hypot(w, hgt) / 2 / v.k) * 1.05;
-    const slices = sliceMap(s.level, v.me, v.sign, reach);
+    const slices = this.slicesAround(s.level, v.me, v.sign, reach);
     for (const sl of slices) this.fillSlice(g, v, sl);
     // deadly volumes near your level (the void you fall into): red wash
     for (const k of def.killVolumes ?? []) {
@@ -451,7 +477,7 @@ export class Minimap implements ClientFeature {
         width: w,
         height: hgt,
         overview: isBig,
-        measureText: (text) => g.measureText(text).width,
+        measureText: (text) => this.textWidth(g, text),
       });
       for (const label of labels) {
         g.strokeText(label.text, label.x, label.y);
@@ -601,8 +627,8 @@ export class Minimap implements ClientFeature {
     seen: Set<number>,
   ): void {
     const def = c.session.level.def;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vw = c.viewW;
+    const vh = c.viewH;
     const w = Math.min(vw - 60, 900);
     const hgt = Math.min(vh - 120, 640);
     // fit the level's floor (its bounds, less the empty margin) into the box, north up
@@ -624,15 +650,48 @@ export class Minimap implements ClientFeature {
       false,
     );
     this.draw(c, this.bigCanvas, w, hgt, view, m, others, seen, true);
-    this.bigLegend.innerHTML =
-      `<span><b style="color:#fff">▲</b> you</span>` +
-      `<span><b style="color:${TEAM_COLOR[0]}">◆</b> carrier</span>` +
-      `<span><b style="color:#ff8b98">A B</b> sites</span>` +
-      `<span><b style="color:#ff3b4e">━</b><b style="color:#fff">━</b> route</span>` +
-      `<span><b style="color:#ffc44d">★</b> power-up</span>` +
-      `<span><b style="color:#3dff9a">━</b> zip-rail</span>` +
-      `<span><b style="color:#ffb347">⌃</b> launch pad</span>` +
-      `<span>brighter = your level · faded = below</span>`;
+    if (!this.bigLegend.firstChild)
+      this.bigLegend.innerHTML =
+        `<span><b style="color:#fff">▲</b> you</span>` +
+        `<span><b style="color:${TEAM_COLOR[0]}">◆</b> carrier</span>` +
+        `<span><b style="color:#ff8b98">A B</b> sites</span>` +
+        `<span><b style="color:#ff3b4e">━</b><b style="color:#fff">━</b> route</span>` +
+        `<span><b style="color:#ffc44d">★</b> power-up</span>` +
+        `<span><b style="color:#3dff9a">━</b> zip-rail</span>` +
+        `<span><b style="color:#ffb347">⌃</b> launch pad</span>` +
+        `<span>brighter = your level · faded = below</span>`;
+  }
+
+  /**
+   * sliceMap around `me`, re-used while you stay on the same height and near where it was cut:
+   * it is cut a few metres wider than asked, so every box within `reach` of you is in it (the
+   * extra ones lie outside the frame). Maps with moving blocks are cut every time.
+   */
+  private slicesAround(level: Level, me: Vec3, sign: 1 | -1, reach: number): Slice[] {
+    if (level.movers.length) return sliceMap(level, me, sign, reach);
+    const k = this.sliceCache;
+    if (
+      k &&
+      k.level === level &&
+      k.sign === sign &&
+      k.y === me.y &&
+      Math.hypot(me.x - k.x, me.z - k.z) + reach <= k.radius
+    )
+      return k.slices;
+    const radius = reach + SLICE_MARGIN;
+    const slices = sliceMap(level, me, sign, radius);
+    this.sliceCache = { level, sign, x: me.x, y: me.y, z: me.z, radius, slices };
+    return slices;
+  }
+
+  /** Callout text widths (one font): measured once per text. */
+  private textWidth(g: CanvasRenderingContext2D, text: string): number {
+    let w = this.widths.get(text);
+    if (w === undefined) {
+      w = g.measureText(text).width;
+      this.widths.set(text, w);
+    }
+    return w;
   }
 
   // ------------------------------------------------------------------------------------------

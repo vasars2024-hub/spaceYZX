@@ -2,6 +2,30 @@
 import type { Settings, CameraRotation } from '../settings';
 import { saveSettings } from '../settings';
 
+/**
+ * Per-frame HUD text: writes only when it changed (setting textContent always replaces the
+ * text node, which makes the browser redo style and layout that frame).
+ */
+export const setText = (el: HTMLElement, text: string): void => {
+  if (el.textContent !== text) el.textContent = text;
+};
+
+/** Last value written by setStyle per element (the browser rewrites colours as rgb()). */
+const written = new WeakMap<HTMLElement, Record<string, string>>();
+
+/** Per-frame inline style: writes only when it changed since the last setStyle. */
+export const setStyle = (
+  el: HTMLElement,
+  prop: 'display' | 'color' | 'opacity' | 'width' | 'transform',
+  value: string,
+): void => {
+  let w = written.get(el);
+  if (!w) written.set(el, (w = {}));
+  if (w[prop] === value) return;
+  w[prop] = value;
+  el.style[prop] = value;
+};
+
 export const h = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},

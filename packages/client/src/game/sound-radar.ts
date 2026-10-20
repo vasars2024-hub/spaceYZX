@@ -322,8 +322,8 @@ export class SoundRadar implements ClientFeature {
       else if (clusters.length < Math.min(MAX_SHOWN, effects.radarMax)) clusters.push([x]);
     }
     const keep = new Set<string>();
-    const w = c.deps.renderer.domElement.clientWidth;
-    const hgt = c.deps.renderer.domElement.clientHeight;
+    const w = c.viewW;
+    const hgt = c.viewH;
     const rx = w * 0.42;
     const ry = hgt * 0.36;
     for (const cl of clusters) {

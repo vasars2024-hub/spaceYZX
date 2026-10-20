@@ -674,8 +674,8 @@ export class RaceFeature implements ClientFeature {
     }
     const g = gates[next];
     const p = gateCenter(g);
-    const w = window.innerWidth;
-    const hgt = window.innerHeight;
+    const w = c.viewW;
+    const hgt = c.viewH;
     const pm = projectMarker(v3(p.x, g.min.y + 3, p.z), c.camera, w, hgt);
     const label = next === gates.length - 1 ? 'FINISH' : String(next + 1);
     this.arrowEl.style.display = '';

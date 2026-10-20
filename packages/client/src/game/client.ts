@@ -74,6 +74,13 @@ export class GameClient {
    * new body).
    */
   muteButtons = 0;
+  /**
+   * The view size in CSS pixels (kept from resize). Features read this instead of the
+   * canvas or window size: those reads force the browser to redo layout mid-frame after
+   * other HUD elements changed (about 0.7 ms a frame).
+   */
+  viewW = typeof window === 'undefined' ? 1280 : window.innerWidth || 1280;
+  viewH = typeof window === 'undefined' ? 720 : window.innerHeight || 720;
   /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
   overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
@@ -353,6 +360,8 @@ export class GameClient {
   }
 
   resize(w: number, h: number): void {
+    this.viewW = Math.max(1, w);
+    this.viewH = Math.max(1, h);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.fov = 0; // force FOV recompute
     this.camera.updateProjectionMatrix();

@@ -1,7 +1,7 @@
 // Procedural level surfaces (render/surfaces.ts): drawn in code, the same on every PC, tiling
 // without seams, and tinted by each box's own colour.
 import { describe, expect, it } from 'vitest';
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import { mapDef, v3, type LevelDef } from '@space-yz/shared';
 import { SURFACES, SURFACE_SPEC, drawSurface, type Surface } from '../src/render/surfaces';
 import { baseColorOf, buildLevelMeshes, hiddenFaces, surfaceOf } from '../src/render/level-mesh';

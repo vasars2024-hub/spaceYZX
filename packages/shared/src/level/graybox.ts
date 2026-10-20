@@ -118,6 +118,8 @@ export interface GrayboxLayout {
   signs?: GrayboxSign[];
   /** automatic direction signs toward the bomb sites at junctions: default on */
   autoSigns?: boolean;
+  /** bot waypoints on every Nth cell only (huge maps: keeps the bots' route search fast); default 1 */
+  waypointEvery?: number;
 }
 
 /** A map's look (palettes in level/graybox-theme.ts). */

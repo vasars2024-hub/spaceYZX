@@ -53,7 +53,7 @@ const CONNECTIONS: Record<string, string[]> = {
     'B CT | CT Spawn',
     'B CT | Camera',
     'B Connector | B Site',
-    'B Connector | Canal',
+    'B Connector | Water',
     'B Heaven Stairs | Ruins',
     'B Heaven | B Heaven Stairs',
     'B Heaven | B Site',

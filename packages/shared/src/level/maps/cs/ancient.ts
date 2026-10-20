@@ -1,13 +1,12 @@
 // Ancient (CS2's de_ancient), rebuilt as a graybox at about 3× its horizontal size (our players
 // sprint 9 m/s and have a dash and a jetpack, so a CS-sized map would be over in seconds).
 //
-// SCALE: every position below is written in CS units (1 unit = 1 inch = 0.0254 m) as read off the
-// CS radar, then multiplied by SCALE. Change SCALE (one number) and the whole map grows or shrinks;
-// (test/cs-maps-3.test.ts checks no wall rounds away after a change.)
-// CELL_M is the grid cell size. At SCALE 3 and 6 m cells: 4350 × 4150 units → 331 × 316 m,
-// 55 × 53 cells (6 m cells keep the bots' waypoint graph small enough to search fast; walls
-// between rooms are at least one cell). Heights are in metres (CS height differences × about
-// 1.5), every slope is a smooth ramp (straight run, gentle: the steepest is 14°).
+// SCALE: the layout is drawn on a grid of 64 × 64 CS units per cell (1 unit = 1 inch = 0.0254 m),
+// laid out as on the CS radar, with corridors and sites about as many cells wide as in CS. SCALE
+// (one number) turns a cell into metres: at SCALE 3 a cell is 4.88 m, so the 62 × 56 cell grid is
+// 302 × 273 m. Change SCALE and the whole map grows or shrinks (the grid stays the same). Heights
+// are in metres (CS height differences × about 1.5); every slope is a smooth ramp (straight run,
+// gentle: the steepest is 9°).
 //
 // Orientation as on the CS radar: north (row 0) = CT side, south = T side, A in the west, B east.
 // Callouts (legend names):
@@ -31,29 +30,28 @@ import {
 
 /** our map = SCALE × the CS map's horizontal size */
 const SCALE = 3;
-/** metres per grid cell */
-const CELL_M = 6;
-const M_PER_UNIT = 0.0254 * SCALE;
-/** the map's size in CS units (x: west → east, z: north → south) */
-const MAP_W = 4350;
-const MAP_H = 4150;
+/** CS units per grid cell (the layout below is drawn in these cells) */
+const CELL_UNITS = 64;
+/** metres per grid cell: 64 CS units (inches) × SCALE */
+const CELL_M = CELL_UNITS * 0.0254 * SCALE;
+/** the grid: 62 × 56 cells (west → east, north → south) */
+const GRID_W = 62;
+const GRID_H = 56;
 
-// ---- a small painter: rectangles in CS units → the tile grid ---------------------------------
-const cellOf = (u: number) => Math.round((u * M_PER_UNIT) / CELL_M);
-const cellF = (u: number) => (u * M_PER_UNIT) / CELL_M;
+// ---- a small painter: rectangles of cells → the tile grid ------------------------------------
+/** an area's rectangle: cells x0 ≤ x < x1, z0 ≤ z < z1 (z: rows, north → south) */
 type Rect = [c: string, x0: number, z0: number, x1: number, z1: number];
 /** paints the rectangles in order (later ones over earlier ones) onto solid wall ('.') */
 const paint = (rects: Rect[]): string[] => {
-  const g = Array.from({ length: cellOf(MAP_H) }, () => Array<string>(cellOf(MAP_W)).fill('.'));
+  const g = Array.from({ length: GRID_H }, () => Array<string>(GRID_W).fill('.'));
   for (const [c, x0, z0, x1, z1] of rects)
-    for (let y = cellOf(z0); y < cellOf(z1); y++)
-      for (let x = cellOf(x0); x < cellOf(x1); x++) g[y][x] = c;
+    for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) g[y][x] = c;
   return g.map((r) => r.join(''));
 };
 type Face = 'n' | 'e' | 's' | 'w';
 const COMPASS: Face[] = ['n', 'e', 's', 'w'];
 const STEP: Record<Face, [number, number]> = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] };
-/** a prop by its corners in CS units, h metres tall */
+/** a prop by its corners in cells (fractions allowed), h metres tall */
 const prop = (
   x0: number,
   z0: number,
@@ -61,23 +59,16 @@ const prop = (
   z1: number,
   h: number,
   kind: GrayboxProp['kind'],
-): GrayboxProp => ({
-  x: cellF(x0),
-  y: cellF(z0),
-  w: cellF(x1 - x0),
-  d: cellF(z1 - z0),
-  h,
-  kind,
-});
+): GrayboxProp => ({ x: x0, y: z0, w: x1 - x0, d: z1 - z0, h, kind });
 /**
- * A painted sign: standing at (x, z) (CS units) and looking `wall`-ward, on the first wall there.
+ * A painted sign: standing at cell (x, z) and looking `wall`-ward, on the first wall there.
  * `toward`: the compass way the sign points; the arrow is worked out from the way you look.
  */
 const signOn =
   (rows: string[]) =>
   (x: number, z: number, wall: Face, label: string, toward?: Face): GrayboxSign => {
-    let cx = Math.floor(cellF(x));
-    let cy = Math.floor(cellF(z));
+    let cx = Math.floor(x);
+    let cy = Math.floor(z);
     const [dx, dy] = STEP[wall];
     for (;;) {
       const c = rows[cy + dy]?.[cx + dx];
@@ -100,47 +91,47 @@ const signOn =
     return { x: cx + dx, y: cy + dy, face: COMPASS[(COMPASS.indexOf(wall) + 2) % 4], text };
   };
 
-// ---- the layout (CS units) ---------------------------------------------------------------------
+// ---- the layout (cells of 64 CS units) ---------------------------------------------------------
 const GROUND: Rect[] = [
   // CT side
-  ['C', 2300, 200, 3100, 800], // CT Spawn
-  ['p', 1500, 380, 2200, 800], // Temple
-  ['p', 2200, 500, 2300, 680], // (Temple ↔ CT door)
-  ['p', 1420, 500, 1500, 650], // (Temple ↔ A door)
-  ['k', 2350, 800, 2650, 1050], // CT Mid
-  ['u', 3150, 250, 3750, 750], // Ruins
-  ['u', 3100, 350, 3150, 600], // (Ruins ↔ CT door)
+  ['C', 36, 4, 46, 10], // CT Spawn
+  ['p', 25, 5, 34, 10], // Temple
+  ['p', 34, 6, 36, 8], // (Temple ↔ CT door)
+  ['p', 21, 8, 25, 10], // (Temple ↔ A door)
+  ['k', 37, 10, 41, 15], // CT Mid
+  ['u', 48, 4, 57, 9], // Ruins
+  ['u', 46, 5, 48, 7], // (Ruins ↔ CT door)
   // A
-  ['A', 400, 450, 1420, 1550], // A Site
-  ['e', 450, 1650, 1250, 2000], // Elbow
-  ['e', 850, 1550, 1250, 1650], // (Elbow ↔ A Site opening)
-  ['R', 500, 2000, 850, 2450], // A Main Ramp
-  ['a', 500, 2450, 850, 3500], // A Main
-  ['a', 500, 3500, 1420, 3850], // A Main (leg from T)
-  ['a', 1420, 3550, 1500, 3800], // (A Main ↔ T door)
+  ['A', 8, 8, 21, 20], // A Site
+  ['e', 9, 21, 19, 25], // Elbow
+  ['e', 14, 20, 19, 21], // (Elbow ↔ A Site opening)
+  ['R', 9, 25, 13, 30], // A Main Ramp
+  ['a', 9, 30, 13, 48], // A Main
+  ['a', 9, 48, 23, 52], // A Main (leg from T)
+  ['a', 23, 49, 25, 51], // (A Main ↔ T door)
   // Donut
-  ['E', 1420, 1200, 1580, 1450], // Donut Ramp (A side)
-  ['d', 1580, 1100, 1850, 1550], // Donut
-  ['D', 1850, 1200, 1950, 1450], // Donut Entrance (mid side)
+  ['E', 21, 15, 23, 18], // Donut Ramp (A side)
+  ['d', 23, 13, 27, 19], // Donut
+  ['D', 27, 15, 31, 18], // Donut Entrance (mid side)
   // Mid
-  ['o', 1950, 1050, 2650, 1650], // Top Mid
-  ['m', 2000, 1650, 2600, 1950], // Mid
-  ['w', 1950, 1950, 2650, 2650], // Water
-  ['t', 2050, 2650, 2350, 3000], // T Ramp
-  ['r', 1950, 3000, 2450, 3380], // Red Room
-  ['r', 2100, 3380, 2300, 3450], // (Red Room ↔ T door)
+  ['o', 31, 15, 41, 22], // Top Mid
+  ['m', 32, 22, 40, 26], // Mid
+  ['w', 31, 26, 40, 34], // Water
+  ['t', 33, 34, 37, 40], // T Ramp
+  ['r', 31, 40, 37, 45], // Red Room
+  ['r', 33, 45, 35, 47], // (Red Room ↔ T door)
   // T
-  ['T', 1500, 3450, 2700, 4050], // T Spawn
+  ['T', 25, 47, 38, 54], // T Spawn
   // B
-  ['l', 2780, 3350, 3950, 3750], // Lane
-  ['l', 2700, 3500, 2780, 3700], // (Lane ↔ T door)
-  ['g', 3550, 2900, 3950, 3350], // B Ramp
-  ['b', 3550, 2300, 3950, 2900], // B Main
-  ['L', 3550, 1850, 3950, 2300], // B Long
-  ['v', 2650, 2150, 3400, 2450], // Cave
-  ['S', 3150, 1850, 3400, 2150], // B Short
-  ['B', 3150, 850, 4200, 1850], // B Site
-  ['P', 3350, 750, 3650, 850], // B Pillar
+  ['l', 40, 48, 57, 52], // Lane
+  ['l', 38, 49, 40, 51], // (Lane ↔ T door)
+  ['g', 53, 37, 57, 48], // B Ramp
+  ['b', 53, 27, 57, 37], // B Main
+  ['L', 53, 22, 57, 27], // B Long
+  ['v', 40, 28, 51, 32], // Cave
+  ['S', 48, 22, 51, 28], // B Short
+  ['B', 47, 11, 60, 22], // B Site
+  ['P', 51, 9, 55, 11], // B Pillar
 ];
 
 const rows = paint(GROUND);
@@ -181,70 +172,70 @@ export const ANCIENT_LAYOUT: GrayboxLayout = {
   // the hand-placed cover below is the map's cover (no automatic crates)
   cover: false,
   props: [
-    // A Site: Triple (three boxes in a row), the default box, a broken wall by Donut
-    prop(600, 1150, 740, 1260, 1.4, 'crate'),
-    prop(740, 1150, 880, 1260, 2.4, 'crate'),
-    prop(880, 1150, 1020, 1260, 1.4, 'crate'),
-    prop(1000, 750, 1150, 880, 2.4, 'crate'),
-    prop(1200, 1300, 1260, 1480, 1.6, 'wall'),
-    prop(500, 600, 580, 680, 6, 'pillar'),
+    // A Site: Triple (three boxes in a row), the default box, a broken wall, a statue
+    prop(11, 13, 12.5, 14.5, 1.4, 'crate'),
+    prop(12.5, 13, 14, 14.5, 2.4, 'crate'),
+    prop(14, 13, 15.5, 14.5, 1.4, 'crate'),
+    prop(17, 10, 18.8, 11.8, 2.4, 'crate'),
+    prop(18, 15, 18.8, 17.5, 1.6, 'wall'),
+    prop(9, 9, 10, 10, 6, 'pillar'),
     // Elbow: a statue at the turn
-    prop(520, 1720, 600, 1800, 4, 'pillar'),
+    prop(9.2, 21.2, 10.2, 22.2, 4, 'pillar'),
     // Temple: two rows of columns
-    prop(1650, 470, 1720, 540, 6, 'pillar'),
-    prop(1900, 470, 1970, 540, 6, 'pillar'),
-    prop(1650, 640, 1720, 710, 6, 'pillar'),
-    prop(1900, 640, 1970, 710, 6, 'pillar'),
+    prop(27, 5.4, 27.8, 6.2, 6, 'pillar'),
+    prop(31, 5.4, 31.8, 6.2, 6, 'pillar'),
+    prop(27, 8.6, 27.8, 9.4, 6, 'pillar'),
+    prop(31, 8.6, 31.8, 9.4, 6, 'pillar'),
     // Donut: the pillar in the middle of the round room
-    prop(1660, 1260, 1770, 1390, 6, 'pillar'),
+    prop(24.2, 15.2, 25.8, 16.8, 6, 'pillar'),
     // Top Mid: the low wall and a box
-    prop(2150, 1250, 2350, 1310, 1.4, 'wall'),
-    prop(2480, 1450, 2580, 1550, 1.6, 'crate'),
+    prop(33, 18, 36, 18.6, 1.4, 'wall'),
+    prop(38.5, 19.5, 39.8, 20.8, 1.6, 'crate'),
     // Water: rocks in the shallow water
-    prop(2050, 2100, 2160, 2200, 1.2, 'crate'),
-    prop(2450, 2400, 2560, 2500, 1.6, 'crate'),
+    prop(32, 27.5, 33.3, 28.7, 1.2, 'crate'),
+    prop(37, 31, 38.3, 32.2, 1.6, 'crate'),
     // Cave: a fallen block
-    prop(2850, 2180, 2950, 2260, 1.4, 'crate'),
+    prop(44, 28.2, 45.3, 29.2, 1.4, 'crate'),
     // B Site: the big pillar, boxes
-    prop(3700, 1150, 3850, 1300, 6, 'pillar'),
-    prop(3300, 1400, 3440, 1520, 1.6, 'crate'),
-    prop(3950, 1000, 4090, 1120, 2.4, 'crate'),
-    prop(3900, 1600, 4040, 1720, 1.4, 'crate'),
+    prop(54, 14, 56, 16, 6, 'pillar'),
+    prop(48.3, 17.5, 49.8, 19, 1.6, 'crate'),
+    prop(57, 12, 58.5, 13.5, 2.4, 'crate'),
+    prop(57.5, 19, 59, 20.3, 1.4, 'crate'),
     // B Main: a box half way up
-    prop(3830, 2450, 3930, 2550, 1.6, 'crate'),
-    // Lane: low walls
-    prop(3150, 3400, 3250, 3480, 1.4, 'wall'),
+    prop(55.7, 30, 56.9, 31.2, 1.6, 'crate'),
+    // Lane: a low wall
+    prop(45, 48.2, 46.5, 49, 1.4, 'wall'),
     // CT Spawn: statues; Ruins: broken columns
-    prop(2500, 300, 2580, 380, 5, 'pillar'),
-    prop(2850, 300, 2930, 380, 5, 'pillar'),
-    prop(3350, 400, 3450, 500, 2.4, 'pillar'),
-    prop(3550, 550, 3640, 640, 1.4, 'wall'),
+    prop(37, 4.4, 38, 5.4, 5, 'pillar'),
+    prop(44, 4.4, 45, 5.4, 5, 'pillar'),
+    prop(50, 5, 51.2, 6.2, 2.4, 'pillar'),
+    prop(55.5, 5, 56.6, 6.4, 1.4, 'wall'),
     // T Spawn: the statue, a few boxes
-    prop(2050, 3850, 2150, 3950, 5, 'pillar'),
-    prop(1650, 3550, 1780, 3660, 1.6, 'crate'),
-    prop(2500, 3850, 2630, 3960, 1.6, 'crate'),
+    prop(30.5, 51, 31.7, 52.2, 5, 'pillar'),
+    prop(26, 52.2, 27.5, 53.6, 1.6, 'crate'),
+    prop(35, 51.5, 36.5, 52.8, 1.6, 'crate'),
   ],
   signs: [
-    sign(1700, 3700, 'w', 'A', 'w'),
-    sign(2200, 3500, 'n', 'MID'),
-    sign(2550, 3600, 'e', 'B', 'e'),
-    sign(900, 3700, 'w', 'A', 'n'),
-    sign(700, 2600, 'w', 'A', 'n'),
-    sign(900, 1800, 's', 'A SITE', 'n'),
-    sign(2200, 3200, 'n', 'MID', 'n'),
-    sign(2300, 2300, 'e', 'CAVE', 'e'),
-    sign(2000, 1350, 'w', 'DONUT', 'w'),
-    sign(2300, 1100, 'n', 'CT', 'n'),
-    sign(1700, 1150, 'n', 'A', 'w'),
-    sign(3000, 2300, 's', 'B', 'e'),
-    sign(3300, 3550, 's', 'B', 'e'),
-    sign(3750, 3100, 'e', 'B', 'n'),
-    sign(3750, 2000, 'e', 'B SITE', 'n'),
-    sign(2700, 600, 'w', 'A', 'w'),
-    sign(2700, 600, 'e', 'B', 'e'),
-    sign(2500, 750, 's', 'MID', 's'),
-    sign(1850, 600, 'n', 'TEMPLE'),
-    sign(3450, 300, 'n', 'RUINS'),
+    sign(26, 52, 'w', 'A', 'w'),
+    sign(31, 47.5, 'n', 'MID', 'e'),
+    sign(37, 52, 'e', 'B', 'e'),
+    sign(12, 50, 'w', 'A', 'n'),
+    sign(10, 38, 'w', 'A', 'n'),
+    sign(16, 23, 's', 'A SITE', 'n'),
+    sign(32, 42, 'n', 'MID', 'e'),
+    sign(38, 33, 'e', 'CAVE', 'n'),
+    sign(33, 15.5, 'n', 'DONUT', 'w'),
+    sign(36, 15.5, 'n', 'CT', 'e'),
+    sign(24, 13.5, 'n', 'A', 'w'),
+    sign(46, 30, 's', 'B', 'e'),
+    sign(50, 50, 's', 'B', 'e'),
+    sign(55, 42, 'e', 'B', 'n'),
+    sign(55, 24, 'e', 'B SITE', 'n'),
+    sign(38, 4.5, 'n', 'A', 'w'),
+    sign(43, 4.5, 'n', 'B', 'e'),
+    sign(41, 9.5, 's', 'MID', 'w'),
+    sign(29, 5.5, 'n', 'TEMPLE'),
+    sign(52, 4.5, 'n', 'RUINS'),
   ],
 };
 

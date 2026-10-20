@@ -1,13 +1,12 @@
 // Anubis (CS2's de_anubis), rebuilt as a graybox at about 3× its horizontal size (our players
 // sprint 9 m/s and have a dash and a jetpack, so a CS-sized map would be over in seconds).
 //
-// SCALE: every position below is written in CS units (1 unit = 1 inch = 0.0254 m) as read off the
-// CS radar, then multiplied by SCALE. Change SCALE (one number) and the whole map grows or shrinks;
-// (test/cs-maps-3.test.ts checks no wall rounds away after a change.)
-// CELL_M is the grid cell size. At SCALE 3 and 6 m cells: 4150 × 4400 units → 316 × 335 m,
-// 53 × 56 cells (6 m cells keep the bots' waypoint graph small enough to search fast; walls
-// between rooms are at least one cell). Heights are in metres (CS height differences × about
-// 1.5), every slope is a smooth ramp (straight run, gentle: the steepest is 23°, B Heaven).
+// SCALE: the layout is drawn on a grid of 64 × 64 CS units per cell (1 unit = 1 inch = 0.0254 m),
+// laid out as on the CS radar, with corridors and sites about as many cells wide as in CS. SCALE
+// (one number) turns a cell into metres: at SCALE 3 a cell is 4.88 m, so the 61 × 58 cell grid is
+// 297 × 283 m. Change SCALE and the whole map grows or shrinks (the grid stays the same). Heights
+// are in metres (CS height differences × about 1.5); every slope is a smooth ramp (straight run,
+// gentle: the steepest is 15°, the B Heaven stairs).
 //
 // Orientation: north (row 0) = CT side, south = T side, B in the west, A in the east.
 // Callouts (legend names):
@@ -19,7 +18,7 @@
 //   Street → Palace Stairs → Palace (indoor, raised) → A Site
 //   CT Spawn → A CT → A Site; A CT → Heaven Ramp → A Heaven (overlooks A) → Heaven Stairs → A Site
 //   T Spawn → B Main (west, then north) → B Site (the big Pillar in the middle)
-//   Canal → B Connector (up) → B Site
+//   Water → B Connector (up) → B Site
 //   CT Spawn → B CT → Camera → Camera Steps → B Site
 //   CT Spawn → Ruins → Ruins Steps → B Site; Ruins → B Heaven Stairs → B Heaven (overlooks B)
 //   CT Spawn (cyan, defenders) — north middle
@@ -34,29 +33,28 @@ import {
 
 /** our map = SCALE × the CS map's horizontal size */
 const SCALE = 3;
-/** metres per grid cell */
-const CELL_M = 6;
-const M_PER_UNIT = 0.0254 * SCALE;
-/** the map's size in CS units (x: west → east, z: north → south) */
-const MAP_W = 4150;
-const MAP_H = 4400;
+/** CS units per grid cell (the layout below is drawn in these cells) */
+const CELL_UNITS = 64;
+/** metres per grid cell: 64 CS units (inches) × SCALE */
+const CELL_M = CELL_UNITS * 0.0254 * SCALE;
+/** the grid: 61 × 58 cells (west → east, north → south) */
+const GRID_W = 61;
+const GRID_H = 58;
 
-// ---- a small painter: rectangles in CS units → the tile grid ---------------------------------
-const cellOf = (u: number) => Math.round((u * M_PER_UNIT) / CELL_M);
-const cellF = (u: number) => (u * M_PER_UNIT) / CELL_M;
+// ---- a small painter: rectangles of cells → the tile grid ------------------------------------
+/** an area's rectangle: cells x0 ≤ x < x1, z0 ≤ z < z1 (z: rows, north → south) */
 type Rect = [c: string, x0: number, z0: number, x1: number, z1: number];
 /** paints the rectangles in order (later ones over earlier ones) onto `fill` (wall or nothing) */
 const paint = (rects: Rect[], fill = '.'): string[] => {
-  const g = Array.from({ length: cellOf(MAP_H) }, () => Array<string>(cellOf(MAP_W)).fill(fill));
+  const g = Array.from({ length: GRID_H }, () => Array<string>(GRID_W).fill(fill));
   for (const [c, x0, z0, x1, z1] of rects)
-    for (let y = cellOf(z0); y < cellOf(z1); y++)
-      for (let x = cellOf(x0); x < cellOf(x1); x++) g[y][x] = c;
+    for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) g[y][x] = c;
   return g.map((r) => r.join(''));
 };
 type Face = 'n' | 'e' | 's' | 'w';
 const COMPASS: Face[] = ['n', 'e', 's', 'w'];
 const STEP: Record<Face, [number, number]> = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] };
-/** a prop by its corners in CS units, h metres tall */
+/** a prop by its corners in cells (fractions allowed), h metres tall */
 const prop = (
   x0: number,
   z0: number,
@@ -64,23 +62,16 @@ const prop = (
   z1: number,
   h: number,
   kind: GrayboxProp['kind'],
-): GrayboxProp => ({
-  x: cellF(x0),
-  y: cellF(z0),
-  w: cellF(x1 - x0),
-  d: cellF(z1 - z0),
-  h,
-  kind,
-});
+): GrayboxProp => ({ x: x0, y: z0, w: x1 - x0, d: z1 - z0, h, kind });
 /**
- * A painted sign: standing at (x, z) (CS units) and looking `wall`-ward, on the first wall there.
+ * A painted sign: standing at cell (x, z) and looking `wall`-ward, on the first wall there.
  * `toward`: the compass way the sign points; the arrow is worked out from the way you look.
  */
 const signOn =
   (rows: string[]) =>
   (x: number, z: number, wall: Face, label: string, toward?: Face): GrayboxSign => {
-    let cx = Math.floor(cellF(x));
-    let cy = Math.floor(cellF(z));
+    let cx = Math.floor(x);
+    let cy = Math.floor(z);
     const [dx, dy] = STEP[wall];
     for (;;) {
       const c = rows[cy + dy]?.[cx + dx];
@@ -103,54 +94,54 @@ const signOn =
     return { x: cx + dx, y: cy + dy, face: COMPASS[(COMPASS.indexOf(wall) + 2) % 4], text };
   };
 
-// ---- the layout (CS units) ---------------------------------------------------------------------
+// ---- the layout (cells of 64 CS units) ---------------------------------------------------------
 const GROUND: Rect[] = [
   // CT side
-  ['C', 1700, 200, 2500, 750], // CT Spawn
-  ['Q', 1950, 750, 2250, 1000], // Water Stairs
-  ['x', 1700, 750, 1900, 1150], // B CT
-  ['X', 2500, 300, 3250, 550], // A CT
-  ['X', 3050, 550, 3250, 1100], // A CT (down to the site)
-  ['J', 3250, 300, 3650, 550], // Heaven Ramp
-  ['h', 3650, 300, 3950, 1100], // A Heaven
-  ['u', 300, 300, 1000, 800], // Ruins
-  ['u', 1000, 350, 1700, 600], // Ruins (path to CT)
-  ['v', 500, 800, 800, 1050], // Ruins Steps
-  ['k', 1180, 600, 1400, 700], // B Heaven Stairs
-  ['H', 1130, 700, 1400, 1050], // B Heaven
+  ['C', 27, 4, 38, 9], // CT Spawn
+  ['Q', 31, 9, 35, 13], // Water Stairs
+  ['x', 27, 9, 30, 17], // B CT
+  ['X', 38, 5, 50, 8], // A CT
+  ['X', 48, 8, 51, 16], // A CT (down to the site)
+  ['J', 50, 5, 55, 8], // Heaven Ramp
+  ['h', 55, 5, 59, 16], // A Heaven
+  ['u', 5, 5, 15, 10], // Ruins
+  ['u', 15, 5, 27, 8], // Ruins (path to CT)
+  ['v', 9, 10, 13, 16], // Ruins Steps
+  ['k', 17, 8, 21, 10], // B Heaven Stairs
+  ['H', 16, 10, 21, 16], // B Heaven
   // mid
-  ['W', 1950, 1000, 2250, 1900], // Water
-  ['w', 1950, 1900, 2250, 3100], // Canal
-  ['q', 1950, 3100, 2250, 3350], // Canal Stairs
-  ['m', 1750, 3350, 2450, 3680], // Mid
-  ['m', 1950, 3680, 2250, 3750], // (Mid ↔ T door)
-  ['c', 1550, 1150, 1950, 1600], // Camera
-  ['j', 1400, 1250, 1550, 1500], // Camera Steps
-  ['o', 2250, 1300, 2650, 1500], // Connector
-  ['K', 2650, 1300, 2850, 1500], // Walkway Steps
+  ['W', 31, 13, 35, 28], // Water
+  ['w', 31, 28, 35, 40], // Canal
+  ['q', 31, 40, 35, 44], // Canal Stairs
+  ['m', 29, 44, 37, 48], // Mid
+  ['m', 32, 48, 34, 49], // (Mid ↔ T door)
+  ['c', 25, 17, 31, 23], // Camera
+  ['j', 21, 19, 25, 22], // Camera Steps
+  ['o', 35, 19, 41, 22], // Connector
+  ['K', 41, 19, 44, 22], // Walkway Steps
   // B
-  ['B', 400, 1050, 1400, 2500], // B Site
-  ['n', 1400, 2250, 1950, 2500], // B Connector
-  ['b', 600, 2500, 1000, 3700], // B Main
-  ['b', 600, 3700, 1520, 4050], // B Main (leg from T)
-  ['b', 1520, 3800, 1600, 4000], // (B Main ↔ T door)
+  ['B', 8, 16, 21, 27], // B Site
+  ['n', 21, 24, 31, 27], // B Connector
+  ['b', 10, 27, 13, 48], // B Main
+  ['b', 10, 48, 26, 52], // B Main (leg from T)
+  ['b', 26, 49, 27, 51], // (B Main ↔ T door)
   // A
-  ['A', 2850, 1100, 3900, 2200], // A Site
-  ['I', 3700, 1100, 3950, 1300], // Heaven Stairs
-  ['L', 2850, 1150, 3050, 1900], // Walkway
-  ['r', 3200, 2200, 3600, 2450], // A Main Stairs
-  ['a', 3200, 2450, 3600, 3750], // A Main
-  ['p', 2700, 2250, 3100, 3500], // Palace
-  ['p', 2900, 2200, 3050, 2250], // (Palace ↔ A door)
-  ['z', 2750, 3500, 3050, 3750], // Palace Stairs
-  ['s', 2680, 3750, 3500, 4100], // Street
-  ['s', 2600, 3800, 2680, 4000], // (Street ↔ T door)
+  ['A', 44, 16, 58, 27], // A Site
+  ['I', 56, 16, 58, 20], // Heaven Stairs
+  ['L', 44, 17, 47, 26], // Walkway
+  ['r', 52, 27, 55, 31], // A Main Stairs
+  ['a', 52, 31, 55, 52], // A Main
+  ['p', 43, 30, 47, 47], // Palace
+  ['p', 44, 27, 46, 30], // (Palace ↔ A door)
+  ['z', 43, 47, 47, 52], // Palace Stairs
+  ['s', 40, 52, 55, 55], // Street
+  ['s', 39, 53, 40, 55], // (Street ↔ T door)
   // T
-  ['T', 1600, 3750, 2600, 4300], // T Spawn
+  ['T', 27, 49, 39, 56], // T Spawn
 ];
 
 const rows = paint(GROUND);
-const bridgeRows = paint([['g', 1950, 1300, 2250, 1500]], '.');
+const bridgeRows = paint([['g', 31, 19, 35, 22]]);
 const sign = signOn(rows);
 
 export const ANUBIS_LAYOUT: GrayboxLayout = {
@@ -199,71 +190,71 @@ export const ANUBIS_LAYOUT: GrayboxLayout = {
   cover: false,
   props: [
     // A Site: the Pillars (two rows of columns), boxes
-    prop(3250, 1350, 3330, 1430, 6, 'pillar'),
-    prop(3500, 1350, 3580, 1430, 6, 'pillar'),
-    prop(3250, 1700, 3330, 1780, 6, 'pillar'),
-    prop(3500, 1700, 3580, 1780, 6, 'pillar'),
-    prop(3650, 1900, 3790, 2020, 1.6, 'crate'),
-    prop(3150, 2000, 3290, 2120, 2.4, 'crate'),
-    // A Heaven: a low wall at its edge
-    prop(3700, 950, 3900, 1010, 1.2, 'wall'),
+    prop(49, 18, 49.8, 18.8, 6, 'pillar'),
+    prop(53, 18, 53.8, 18.8, 6, 'pillar'),
+    prop(49, 22.5, 49.8, 23.3, 6, 'pillar'),
+    prop(53, 22.5, 53.8, 23.3, 6, 'pillar'),
+    prop(55.5, 24, 57, 25.3, 1.6, 'crate'),
+    prop(48, 24.5, 49.4, 25.8, 2.4, 'crate'),
+    // A Heaven: a box
+    prop(57.8, 10, 58.9, 11.2, 1.2, 'crate'),
     // B Site: the big Pillar, boxes, a low wall
-    prop(800, 1600, 1000, 1800, 6, 'pillar'),
-    prop(500, 2200, 640, 2320, 1.6, 'crate'),
-    prop(1150, 1900, 1290, 2020, 2.4, 'crate'),
-    prop(550, 1200, 750, 1260, 1.4, 'wall'),
-    // B Heaven: its low wall
-    prop(1180, 950, 1380, 1010, 1.2, 'wall'),
+    prop(13, 20, 15, 22, 6, 'pillar'),
+    prop(9, 24.5, 10.4, 25.8, 1.6, 'crate'),
+    prop(18, 21, 19.4, 22.3, 2.4, 'crate'),
+    prop(14, 24.8, 16, 25.4, 1.4, 'wall'),
+    // B Heaven: its low wall over the site
+    prop(16.5, 15.2, 19.5, 15.8, 1.2, 'wall'),
     // Camera: a box
-    prop(1600, 1250, 1700, 1350, 1.6, 'crate'),
+    prop(25.3, 17.3, 26.5, 18.5, 1.6, 'crate'),
     // Mid: blocks by the canal stairs
-    prop(1800, 3400, 1920, 3500, 1.6, 'crate'),
-    prop(2300, 3550, 2420, 3650, 1.4, 'crate'),
+    prop(29.3, 44.3, 30.6, 45.5, 1.6, 'crate'),
+    prop(35.2, 45.8, 36.5, 46.9, 1.4, 'crate'),
     // Canal: stones in the shallow water
-    prop(2000, 2500, 2100, 2580, 1.2, 'crate'),
-    prop(2120, 2100, 2220, 2180, 1.2, 'crate'),
+    prop(31.3, 33, 32.3, 34, 1.2, 'crate'),
+    prop(33.5, 30, 34.5, 31, 1.2, 'crate'),
     // Palace: columns inside
-    prop(2780, 2600, 2850, 2670, 6, 'pillar'),
-    prop(2950, 2600, 3020, 2670, 6, 'pillar'),
-    prop(2780, 3100, 2850, 3170, 6, 'pillar'),
-    prop(2950, 3100, 3020, 3170, 6, 'pillar'),
+    prop(43.4, 33, 44.1, 33.7, 6, 'pillar'),
+    prop(45.9, 33, 46.6, 33.7, 6, 'pillar'),
+    prop(43.4, 41, 44.1, 41.7, 6, 'pillar'),
+    prop(45.9, 41, 46.6, 41.7, 6, 'pillar'),
     // A Main and Street: boxes
-    prop(3450, 2900, 3570, 3010, 1.6, 'crate'),
-    prop(3200, 3850, 3340, 3970, 1.6, 'crate'),
+    prop(53.8, 40, 54.9, 41.2, 1.6, 'crate'),
+    prop(47, 52.2, 48.4, 53.4, 1.6, 'crate'),
     // B Main: a box
-    prop(850, 3000, 970, 3110, 1.6, 'crate'),
+    prop(11.8, 36, 12.9, 37.2, 1.6, 'crate'),
     // CT Spawn: the Anubis statues
-    prop(1850, 300, 1940, 390, 6, 'pillar'),
-    prop(2260, 300, 2350, 390, 6, 'pillar'),
+    prop(28, 4.4, 29, 5.4, 6, 'pillar'),
+    prop(35.5, 4.4, 36.5, 5.4, 6, 'pillar'),
     // Ruins: broken columns
-    prop(450, 450, 540, 540, 2.4, 'pillar'),
-    prop(800, 600, 880, 680, 1.4, 'wall'),
-    // T Spawn: the statue, boxes
-    prop(2050, 4100, 2150, 4200, 5, 'pillar'),
-    prop(1700, 3850, 1830, 3960, 1.6, 'crate'),
+    prop(6, 6, 7.2, 7.2, 2.4, 'pillar'),
+    prop(5.5, 8.3, 7, 8.9, 1.4, 'wall'),
+    // T Spawn: the statue, a box
+    prop(32.4, 53, 33.6, 54.2, 5, 'pillar'),
+    prop(28, 54.2, 29.4, 55.4, 1.6, 'crate'),
   ],
   signs: [
-    sign(2100, 3850, 'n', 'MID', 'n'),
-    sign(1800, 3950, 'w', 'B', 'w'),
-    sign(2450, 3950, 'e', 'A', 'e'),
-    sign(2100, 3500, 'n', 'CANAL', 'n'),
-    sign(1850, 3500, 'w', 'B', 'w'),
-    sign(800, 3850, 'w', 'B', 'n'),
-    sign(800, 2700, 'w', 'B SITE', 'n'),
-    sign(3000, 3900, 's', 'PALACE', 'n'),
-    sign(3350, 3900, 'e', 'A', 'n'),
-    sign(3400, 2600, 'e', 'A SITE', 'n'),
-    sign(2100, 2300, 'w', 'B', 'w'),
-    sign(2100, 2300, 'e', 'A', 'n'),
-    sign(2100, 1700, 'e', 'BRIDGE', 'n'),
-    sign(2450, 1400, 'n', 'A', 'e'),
-    sign(1750, 1400, 'n', 'B', 'w'),
-    sign(2100, 500, 'w', 'B', 'w'),
-    sign(2100, 500, 'e', 'A', 'e'),
-    sign(2100, 650, 's', 'MID', 's'),
-    sign(1750, 900, 'w', 'CAMERA', 's'),
-    sign(3150, 800, 'w', 'A', 's'),
-    sign(3800, 500, 'n', 'HEAVEN'),
+    sign(35, 49.5, 'n', 'MID', 'w'),
+    sign(28, 52, 'w', 'B', 'w'),
+    sign(38, 51, 'e', 'A', 'e'),
+    sign(30, 44.5, 'n', 'CANAL', 'e'),
+    sign(29.5, 46, 'w', 'B', 'w'),
+    sign(12, 50, 'w', 'B', 'n'),
+    sign(11, 35, 'w', 'B SITE', 'n'),
+    sign(48, 52.5, 'n', 'PALACE', 'w'),
+    sign(53, 53, 'e', 'A', 'n'),
+    sign(52.5, 35, 'e', 'A SITE', 'n'),
+    sign(32, 30, 'w', 'B', 'n'),
+    sign(33, 30, 'e', 'A', 'n'),
+    sign(33, 16, 'e', 'BRIDGE', 's'),
+    sign(37, 19.5, 'n', 'A', 'e'),
+    sign(30, 17.5, 'n', 'B', 'w'),
+    sign(30, 4.5, 'n', 'B', 'w'),
+    sign(34, 4.5, 'n', 'A', 'e'),
+    sign(36, 8.5, 's', 'MID', 'w'),
+    sign(28, 12, 'w', 'CAMERA', 's'),
+    sign(49.5, 10, 'w', 'A', 's'),
+    sign(57, 5.5, 'n', 'HEAVEN'),
   ],
 };
 

@@ -1,4 +1,6 @@
 // Menu screens built from small DOM helpers. All user-provided text goes through textContent.
+import { RULES_DEFAULTS as RULES } from '@space-yz/shared';
+import { DEFAULT_KEYBINDS, keyHint, type Keybinds } from '../keybinds';
 import type { Settings, CameraRotation } from '../settings';
 import { saveSettings } from '../settings';
 
@@ -182,38 +184,57 @@ export const quickSettings = (s: Settings, onChange: () => void): HTMLElement =>
   );
 };
 
-export const CONTROLS_HELP: [string, string][] = [
-  ['W A S D', 'Move (you sprint automatically)'],
-  [
-    'Space',
-    'Jump · wall-jump · in the air: hold for a jetpack burst · push off / thruster in zero-G',
-  ],
-  ['Ctrl / C', 'Crouch · slide when sprinting'],
-  ['Shift', 'Dash · in races: SURGE (a burst of speed, 3 per race)'],
-  [
-    'F',
-    'Gravity shift: walk on the nearest wall or ceiling within 2.5 m (F again or jump to let go)',
-  ],
-  ['Left mouse', 'Hold to aim a Quick Throw, release to throw · fire the Laser when it is out'],
-  ['Right mouse', 'Hold: Wind-up Throw · while your Boomerang flies: steer it'],
-  [
-    'Flick mouse in flight',
-    'Tilt your Quick Throw left / right while it flies out (faster flick = sharper curve)',
-  ],
-  ['E', 'Slash / deflect'],
-  ['Q', 'Gravity Grenade'],
-  ['1 / 2', 'Switch weapon: Boomerang / Laser'],
-  ['G (hold)', 'Bomb mode: plant in site A or B (3 s) · defuse next to the bomb (7 s)'],
-  [
-    'R',
-    'Lethal Recall (Boomerang) · reload (Laser) · in races: hold to go back to your checkpoint',
-  ],
-  ['Tab', 'Scoreboard'],
-  ['Enter / Y', 'Online: chat to your team / to everyone (Enter sends, Esc cancels)'],
-  ['Hold V / B', 'Online: talk to your team / to everyone (voice chat)'],
-  ['`', 'Tuning panel (dev)'],
-  ['Esc', 'Menu'],
-];
+/**
+ * The Controls help rows with the player's own keys (Settings → Controls changes them).
+ * `{action}` is the first key of an action, `{action*}` all its keys (keybinds.ts keyHint).
+ */
+export const controlsHelp = (binds: Keybinds = DEFAULT_KEYBINDS): [string, string][] =>
+  (
+    [
+      ['{forward} {left} {back} {right}', 'Move (you sprint automatically)'],
+      [
+        '{jump*}',
+        'Jump · wall-jump · in the air: hold for a jetpack burst · push off / thruster in zero-G',
+      ],
+      ['{crouch*}', 'Crouch · slide when sprinting'],
+      ['{dash*}', 'Dash · in races: SURGE (a burst of speed, 3 per race)'],
+      [
+        '{magboots*}',
+        'Gravity shift: walk on the nearest wall or ceiling within 2.5 m (again or jump to let go)',
+      ],
+      ['{fire*}', 'Hold to aim a Quick Throw, release to throw · fire the Laser when it is out'],
+      ['{alt*}', 'Hold: Wind-up Throw · while your Boomerang flies: steer it'],
+      [
+        'Flick mouse in flight',
+        'Tilt your Quick Throw left / right while it flies out (faster flick = sharper curve)',
+      ],
+      ['{melee*}', 'Slash / deflect'],
+      ['{grenade*}', 'Grenade'],
+      ['{nadeBounce*}', 'Grenade bounces: cycle how often the next grenade bounces'],
+      ['{minePlace*} / {mineDetonate*}', 'Remote mine: place it where you stand / set it off'],
+      ['{slot1} / {slot2}', 'Switch weapon: Boomerang / Laser (CS kit: AK / Deagle)'],
+      [
+        '{use*} (hold)',
+        `Bomb mode: plant in site A or B (${RULES.bombPlantSec} s) · defuse next to the bomb (${RULES.bombDefuseSec} s)`,
+      ],
+      [
+        '{recall*}',
+        'Lethal Recall (Boomerang) · reload (Laser) · in races: hold to go back to your checkpoint',
+      ],
+      ['{scoreboard*}', 'Scoreboard'],
+      ['{bigMap*}', 'Big map (hold)'],
+      [
+        '{chatTeam} / {chatAll}',
+        'Online: chat to your team / to everyone (Enter sends, Esc cancels)',
+      ],
+      ['Hold {voiceTeam} / {voiceAll}', 'Online: talk to your team / to everyone (voice chat)'],
+      ['{tuning*}', 'Tuning panel (dev)'],
+      ['Esc', 'Menu'],
+    ] as [string, string][]
+  ).map(([k, d]) => [keyHint(binds, k), d]);
+
+/** The help rows with the default keys. */
+export const CONTROLS_HELP: [string, string][] = controlsHelp();
 
 /** Controls help table: the keyboard + mouse rows, or other rows (the touch controls). */
 export const controlsTable = (rows: [string, string][] = CONTROLS_HELP): HTMLElement =>

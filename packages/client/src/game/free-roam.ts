@@ -457,7 +457,7 @@ export const startFreeRoam = (app: App, opts: FreeRoamOptions): void => {
     race
       ? 'Free roam · no dummies on race tracks: practise the route · Esc menu (Respawn)'
       : cs
-        ? 'Free roam · Esc menu (Respawn, Reset dummies) · LMB fire · 1 AK · 2 Deagle · R reload · E knife'
-        : 'Free roam · Esc menu (Respawn, Reset dummies) · LMB throw · RMB wind-up · E slash · R recall · Q grenade',
+        ? 'Free roam · Esc menu (Respawn, Reset dummies) · {fire} fire · {slot1} AK · {slot2} Deagle · {recall} reload · {melee} knife'
+        : 'Free roam · Esc menu (Respawn, Reset dummies) · {fire} throw · {alt} wind-up · {melee} slash · {recall} recall · {grenade} grenade',
   );
 };

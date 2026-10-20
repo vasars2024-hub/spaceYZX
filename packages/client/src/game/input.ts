@@ -1,29 +1,13 @@
 // Keyboard + mouse input: held keys, latched presses (so sub-tick taps count), mouse deltas,
 // pointer lock (raw input), fullscreen + Keyboard Lock (so Ctrl+W can't close the tab).
-import { Btn } from '@space-yz/shared';
 import type { Settings } from '../settings';
+import { actionButton, mouseCode, wheelCode } from '../keybinds';
 import { VirtualButtons, degreesToCounts } from './touch-input';
 
-const ACTION_BUTTON: Record<string, number> = {
-  forward: Btn.Forward,
-  back: Btn.Back,
-  left: Btn.Left,
-  right: Btn.Right,
-  jump: Btn.Jump,
-  crouch: Btn.Crouch,
-  dash: Btn.Dash,
-  fire: Btn.Fire,
-  alt: Btn.Alt,
-  melee: Btn.Melee,
-  grenade: Btn.Grenade,
-  recall: Btn.Recall,
-  magboots: Btn.MagBoots,
-  slot1: Btn.Slot1,
-  slot2: Btn.Slot2,
-  use: Btn.Use,
-};
-
 type ActionListener = (action: string) => void;
+
+/** Actions whose keys still work while a menu is open. */
+const MENU_ACTIONS = new Set(['tuning', 'scoreboard']);
 
 export class InputManager {
   private held = new Set<string>();
@@ -47,7 +31,7 @@ export class InputManager {
    * They feed the same buttons and action listeners as keys.
    */
   readonly virtual = new VirtualButtons(
-    (a) => ACTION_BUTTON[a] ?? 0,
+    (a) => actionButton(a),
     (a) => {
       for (const l of this.listeners) l(a);
     },
@@ -98,7 +82,7 @@ export class InputManager {
     const actions = this.codeToActions.get(code);
     if (!this.held.has(code)) {
       for (const a of actions ?? []) {
-        const b = ACTION_BUTTON[a];
+        const b = actionButton(a);
         if (b) this.latched |= b;
         for (const l of this.listeners) l(a);
       }
@@ -145,7 +129,7 @@ export class InputManager {
     this.latched = 0;
     if (!this.capture || this.typing) return this.debugButtons;
     for (const code of this.held) {
-      for (const a of this.codeToActions.get(code) ?? []) b |= ACTION_BUTTON[a] ?? 0;
+      for (const a of this.codeToActions.get(code) ?? []) b |= actionButton(a);
     }
     return b;
   }
@@ -160,8 +144,12 @@ export class InputManager {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (this.typing) return; // the chat box handles its own keys
     if (!this.capture) {
-      if (e.code === 'Backquote' || e.code === 'Tab')
-        for (const a of this.codeToActions.get(e.code) ?? []) for (const l of this.listeners) l(a);
+      // menus open: only the tuning panel and scoreboard keys still work (not while typing in a
+      // text field, so a letter bound to them still types)
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      for (const a of this.codeToActions.get(e.code) ?? [])
+        if (MENU_ACTIONS.has(a)) for (const l of this.listeners) l(a);
       return;
     }
     // Block browser shortcuts (Ctrl+R/S/D/…, Space scrolling, Tab focus). Ctrl+W/T/N are only
@@ -183,11 +171,14 @@ export class InputManager {
 
   private onMouseDown = (e: MouseEvent): void => {
     if (!this.capture || !this.locked || this.typing) return;
-    this.press(`Mouse${e.button}`);
+    // middle click would start auto-scroll, the side buttons go back / forward a page
+    if (e.button !== 0) e.preventDefault();
+    this.press(mouseCode(e.button));
   };
 
   private onMouseUp = (e: MouseEvent): void => {
-    this.release(`Mouse${e.button}`);
+    if (this.capture && e.button !== 0) e.preventDefault();
+    this.release(mouseCode(e.button));
   };
 
   private onMouseMove = (e: MouseEvent): void => {
@@ -199,11 +190,14 @@ export class InputManager {
   private onWheel = (e: WheelEvent): void => {
     if (!this.capture || this.typing) return;
     e.preventDefault();
-    const code = e.deltaY > 0 ? 'WheelDown' : 'WheelUp';
-    // a wheel notch is an instant tap
+    if (e.deltaY === 0) return; // sideways scrolling
+    const code = wheelCode(e.deltaY);
+    // a wheel notch is an instant tap: down and up at once
     for (const a of this.codeToActions.get(code) ?? []) {
-      const b = ACTION_BUTTON[a];
+      const b = actionButton(a);
       if (b) this.latched |= b;
+      for (const l of this.listeners) l(a);
+      for (const l of this.listeners) l(a + ':up');
     }
   };
 

@@ -1168,3 +1168,11 @@ html.mobile .pause-menu {
     align-items: center;
   }
 }
+
+/* Training → Any map: a long list of maps, so Start stays in view at the bottom */
+.training-maps .summary-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: rgba(8, 12, 22, 0.95);
+}

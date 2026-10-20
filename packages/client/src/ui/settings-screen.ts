@@ -1,7 +1,21 @@
 // Full settings screen: Game, Video, Audio, Controls (rebinding, incl. mouse buttons and the
 // wheel) and Crosshair (editor with live preview). Everything saves immediately.
 import type { Settings, CameraRotation, CrosshairSettings } from '../settings';
-import { saveSettings, DEFAULT_KEYBINDS, DEFAULT_SETTINGS } from '../settings';
+import { saveSettings, DEFAULT_SETTINGS } from '../settings';
+import {
+  ACTIONS,
+  ACTION_GROUPS,
+  RESERVED_CODES,
+  actionDef,
+  bindKey,
+  defaultKeybinds,
+  duplicateCodes,
+  findConflict,
+  keyLabel,
+  mouseCode,
+  wheelCode,
+  type BindConflict,
+} from '../keybinds';
 import { h, button, slider, select, toggle } from './menus';
 import { isTouchDevice, readDeviceEnv } from '../mobile';
 import { screenHead } from './menu-kit';
@@ -10,66 +24,30 @@ import { screenHead } from './menu-kit';
 export const BRIGHTNESS_MIN = 0.8;
 export const BRIGHTNESS_MAX = 1.2;
 
-const ACTIONS: [string, string][] = [
-  ['forward', 'Move forward'],
-  ['back', 'Move back'],
-  ['left', 'Strafe left'],
-  ['right', 'Strafe right'],
-  ['jump', 'Jump / jetpack (hold in the air) / thruster'],
-  ['crouch', 'Crouch / slide'],
-  ['dash', 'Dash'],
-  ['fire', 'Throw (hold to aim) / Laser'],
-  ['alt', 'Wind-up / steer'],
-  ['melee', 'Slash / deflect'],
-  ['recall', 'Lethal Recall / reload Laser'],
-  ['slot1', 'Weapon: Boomerang'],
-  ['slot2', 'Weapon: Laser'],
-  ['use', 'Plant / defuse the bomb (hold)'],
-  ['grenade', 'Gravity Grenade'],
-  ['magboots', 'Gravity shift (walk on walls)'],
-  ['scoreboard', 'Scoreboard'],
-  ['chatTeam', 'Team chat (online)'],
-  ['chatAll', 'All chat (online)'],
-  ['voiceTeam', 'Push to talk: team (online)'],
-  ['voiceAll', 'Push to talk: everyone (online)'],
-  ['bigMap', 'Big map (hold)'],
-  ['routeSite', 'Route: switch bomb site (A / B)'],
-];
+// (the binding model — actions, key names, conflicts — lives in keybinds.ts)
+export { bindKey, keyLabel };
 
-/** Friendly names for key codes. */
-export const keyLabel = (code: string | undefined): string => {
-  if (!code) return '—';
-  const mouse: Record<string, string> = {
-    Mouse0: 'Left mouse',
-    Mouse1: 'Middle mouse',
-    Mouse2: 'Right mouse',
-    Mouse3: 'Mouse 4',
-    Mouse4: 'Mouse 5',
-    WheelUp: 'Wheel up',
-    WheelDown: 'Wheel down',
+/** Swallow the click that follows a mouse button you just bound (it must not press anything). */
+const swallowNextClick = (): void => {
+  const eat = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
-  if (mouse[code]) return mouse[code];
-  if (code.startsWith('Key')) return code.slice(3);
-  if (code.startsWith('Digit')) return code.slice(5);
-  if (code.startsWith('Arrow')) return `${code.slice(5)} arrow`;
-  return code.replace(/Left$/, ' (left)').replace(/Right$/, ' (right)');
-};
-
-/** Assign `code` to `action` slot `slot`, removing it from any other action first. */
-export const bindKey = (
-  binds: Record<string, string[]>,
-  action: string,
-  slot: number,
-  code: string | null,
-): Record<string, string[]> => {
-  const out: Record<string, string[]> = {};
-  for (const [a, codes] of Object.entries(binds)) out[a] = codes.filter((c) => c !== code);
-  const list = [...(out[action] ?? [])];
-  if (code === null) list.splice(slot, 1);
-  else if (slot < list.length) list[slot] = code;
-  else list.push(code);
-  out[action] = list.slice(0, 2);
-  return out;
+  const off = () => {
+    window.removeEventListener('click', eat, { capture: true });
+    window.removeEventListener('auxclick', eat, { capture: true });
+  };
+  window.addEventListener('click', eat, { capture: true });
+  window.addEventListener('auxclick', eat, { capture: true });
+  // the click comes right after the button is let go: stop eating clicks just after that
+  window.addEventListener(
+    'mouseup',
+    (e) => {
+      eat(e);
+      setTimeout(off, 0);
+    },
+    { capture: true, once: true },
+  );
 };
 
 type Tab = 'game' | 'touch' | 'video' | 'audio' | 'chat' | 'controls' | 'crosshair';
@@ -372,73 +350,153 @@ export const settingsScreen = (
   ];
 
   let listening: { action: string; slot: number; stop: () => void } | null = null;
+  /** a key you pressed that another action already has: swap, move it, or cancel */
+  let pending: { action: string; slot: number; code: string; clash: BindConflict } | null = null;
+  const labelOf = (id: string) => actionDef(id)?.label ?? id;
+
   const controlsTab = (): HTMLElement[] => {
+    const dups = duplicateCodes(s.keybinds);
     const table = h('table', { class: 'binds' });
-    for (const [action, label] of ACTIONS) {
-      const codes = s.keybinds[action] ?? [];
-      const slotBtn = (slot: number) => {
-        const active = listening?.action === action && listening.slot === slot;
-        const b = h(
-          'button',
-          { class: `btn tiny ${active ? 'listening' : 'secondary'}`, type: 'button' },
-          active ? 'Press a key…' : keyLabel(codes[slot]),
+    for (const group of ACTION_GROUPS) {
+      table.append(h('tr', { class: 'bind-group' }, h('th', { colspan: '3' }, group)));
+      for (const def of ACTIONS.filter((a) => a.group === group)) {
+        const action = def.id;
+        const codes = s.keybinds[action] ?? [];
+        const slotBtn = (slot: number) => {
+          const active = listening?.action === action && listening.slot === slot;
+          const code = codes[slot];
+          const shared = code ? (dups.get(code) ?? []).filter((a) => a !== action) : [];
+          const b = h(
+            'button',
+            {
+              class: `btn tiny ${active ? 'listening' : 'secondary'}${shared.length ? ' bind-clash' : ''}`,
+              type: 'button',
+              'data-action': action,
+              'data-slot': String(slot),
+              ...(shared.length
+                ? { title: `Also used by: ${shared.map(labelOf).join(', ')}` }
+                : {}),
+            },
+            active ? 'Press a key or button…' : keyLabel(code),
+          );
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            listen(action, slot);
+          });
+          return b;
+        };
+        table.append(
+          h('tr', {}, h('td', {}, def.label), h('td', {}, slotBtn(0)), h('td', {}, slotBtn(1))),
         );
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          listen(action, slot);
-        });
-        return b;
-      };
-      table.append(
-        h('tr', {}, h('td', {}, label), h('td', {}, slotBtn(0)), h('td', {}, slotBtn(1))),
-      );
+        if (pending?.action === action) table.append(conflictRow(pending));
+      }
     }
-    return [
+    const parts: (HTMLElement | null)[] = [
       h(
         'div',
         { class: 'label' },
-        'Click a slot, then press a key, mouse button or turn the wheel. Esc cancels, Delete clears.',
+        'Click a slot, then press a key or a mouse button (left, right, middle, the side buttons) or turn the wheel. Esc cancels, Delete or Backspace clears the slot. Esc itself always opens the menu.',
       ),
+      dups.size
+        ? h(
+            'div',
+            { class: 'label bind-warn' },
+            `Some keys do two things: ${[...dups]
+              .map(([c, list]) => `${keyLabel(c)} (${list.map(labelOf).join(' + ')})`)
+              .join(', ')}. Click a red slot to change it.`,
+          )
+        : null,
       table,
       button(
-        'Reset controls',
+        'Reset controls to defaults',
         () => {
-          s.keybinds = structuredClone(DEFAULT_KEYBINDS);
+          listening?.stop();
+          pending = null;
+          s.keybinds = defaultKeybinds();
           apply();
           render();
         },
         'btn small secondary',
       ),
     ];
+    return parts.filter((x): x is HTMLElement => x !== null);
+  };
+
+  /** The row under a binding whose new key is taken: Swap / Use it here / Cancel. */
+  const conflictRow = (p: NonNullable<typeof pending>): HTMLElement => {
+    const old = s.keybinds[p.action]?.[p.slot];
+    const finish = (resolve: 'clear' | 'swap' | null) => {
+      if (resolve) {
+        s.keybinds = bindKey(s.keybinds, p.action, p.slot, p.code, resolve);
+        apply();
+      }
+      pending = null;
+      render();
+    };
+    const other = labelOf(p.clash.action);
+    return h(
+      'tr',
+      { class: 'bind-conflict' },
+      h(
+        'td',
+        { colspan: '3' },
+        h('span', {}, `${keyLabel(p.code)} is already used for “${other}”. `),
+        old && old !== p.code
+          ? button(
+              `Swap (${other} gets ${keyLabel(old)})`,
+              () => finish('swap'),
+              'btn tiny bind-swap',
+            )
+          : null,
+        button(
+          `Use it here (${other} loses it)`,
+          () => finish('clear'),
+          'btn tiny secondary bind-move',
+        ),
+        button('Cancel', () => finish(null), 'btn tiny secondary bind-cancel'),
+      ),
+    );
   };
 
   const listen = (action: string, slot: number) => {
     listening?.stop();
+    pending = null;
     const done = (code: string | null | undefined) => {
       stop();
-      if (code !== undefined) {
-        s.keybinds = bindKey(s.keybinds, action, slot, code);
+      if (code === null) {
+        s.keybinds = bindKey(s.keybinds, action, slot, null);
         apply();
+      } else if (code !== undefined && code !== s.keybinds[action]?.[slot]) {
+        const clash = findConflict(s.keybinds, action, code);
+        if (clash) pending = { action, slot, code, clash };
+        else {
+          s.keybinds = bindKey(s.keybinds, action, slot, code);
+          apply();
+        }
       }
       render();
     };
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (e.repeat || !e.code) return;
       if (e.code === 'Escape') done(undefined);
       else if (e.code === 'Delete' || e.code === 'Backspace') done(null);
-      else done(e.code);
+      else if (!RESERVED_CODES.includes(e.code)) done(e.code);
     };
     const onMouse = (e: MouseEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.('button.listening') && e.button === 0) return;
       e.preventDefault();
-      done(`Mouse${e.button}`);
+      e.stopPropagation();
+      done(mouseCode(e.button));
+      // the click (or the side buttons' back / forward) that follows must not do anything
+      swallowNextClick();
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      done(e.deltaY > 0 ? 'WheelDown' : 'WheelUp');
+      if (e.deltaY !== 0) done(wheelCode(e.deltaY));
     };
     const noMenu = (e: Event) => e.preventDefault();
+    // listening starts on a click, so the mouse button that clicked is already up
     window.addEventListener('keydown', onKey, { capture: true });
     window.addEventListener('mousedown', onMouse, { capture: true });
     window.addEventListener('wheel', onWheel, { capture: true, passive: false });
@@ -545,6 +603,7 @@ export const settingsScreen = (
           label,
           () => {
             listening?.stop();
+            pending = null;
             tab = t;
             render();
           },

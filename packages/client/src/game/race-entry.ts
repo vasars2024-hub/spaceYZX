@@ -129,16 +129,19 @@ export const createRacePractice = (
   return { session, race };
 };
 
-/** The race controls line: the jetpack and SURGE only on tracks that have them. */
+/**
+ * The race controls line: the jetpack and SURGE only on tracks that have them (the HUD fills
+ * `{action}` with your keys).
+ */
 export const raceHint = (race: RaceDef | undefined): string => {
   const parts = [
-    'Race · W run',
-    'Space jump (tap it as you land: bunny hop)',
-    'A/D + turn the mouse the same way: air-strafe',
+    'Race · {forward} run',
+    '{jump} jump (tap it as you land: bunny hop)',
+    '{left}/{right} + turn the mouse the same way: air-strafe',
   ];
-  if (race && !race.surf && !race.noJetpack) parts.push('hold Space in the air: jetpack');
-  if (race && !race.surf && !race.noSurge) parts.push('Shift SURGE');
-  parts.push('Ctrl slide', 'hold R: back to checkpoint', 'Esc menu');
+  if (race && !race.surf && !race.noJetpack) parts.push('hold {jump} in the air: jetpack');
+  if (race && !race.surf && !race.noSurge) parts.push('{dash} SURGE');
+  parts.push('{crouch} slide', 'hold {recall}: back to checkpoint', 'Esc menu');
   return parts.join(' · ');
 };
 

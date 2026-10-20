@@ -302,6 +302,31 @@ export const raceMapSections = (
     (g) => g.maps.length,
   );
 
+/** One titled group of maps in the Training map picker. */
+export interface TrainingMapGroup {
+  title: string;
+  /** surf maps: their mode (Beginner / Intermediate…) and its colour */
+  surf?: SurfGroup;
+  maps: MapInfo[];
+}
+
+/**
+ * Training → Free roam on any map: every map in rotation, grouped — the competitive maps first,
+ * then every other map (Brawl, Arena, mega maps…), the race tracks, and the surf maps by mode.
+ * Retired maps are left out; a new map shows up here as soon as it is in MAPS.
+ */
+export const trainingMapGroups = (maps: readonly MapInfo[] = MAPS): TrainingMapGroup[] => {
+  const all = offered(maps);
+  const comp = all.filter((m) => m.competitive && !isArenaMap(m) && !isRaceMap(m));
+  const other = all.filter((m) => !comp.includes(m) && !isRaceMap(m) && !m.race);
+  return [
+    { title: 'Competitive maps', maps: comp },
+    { title: 'Other maps', maps: other },
+    { title: 'Race tracks', maps: raceMapGroups(all).best },
+    ...surfModeGroups(all).map((g) => ({ title: 'Surf maps', surf: g, maps: g.maps })),
+  ].filter((g) => g.maps.length);
+};
+
 /** A map's name; a map the game no longer has (old history, drafts) is not Training Bay. */
 export const mapName = (id: string): string => (mapExists(id) ? getMap(id).name : 'Removed map');
 

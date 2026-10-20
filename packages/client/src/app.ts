@@ -1,6 +1,7 @@
 // App shell: title screen, starting/stopping games, pause menu, settings.
 import * as THREE from 'three';
 import {
+  DEFAULT_MATCH_MAP,
   GAME_NAME,
   LADDERS,
   buildTestShip,
@@ -27,7 +28,7 @@ import { LocalSession } from './game/local-session';
 import { AudioEngine, Announcer } from './audio';
 import { configureTransitions } from './ui/transitions';
 import { TuningPanel, loadTuning } from './ui/tuning';
-import { h, controlsTable } from './ui/menus';
+import { h, controlsTable, controlsHelp } from './ui/menus';
 import { icon, type IconName } from './ui/icons';
 import {
   card,
@@ -59,6 +60,7 @@ import {
   startBrawlPractice,
 } from './game/brawl-entry';
 import { practiceMenu } from './ui/practice-menu';
+import { trainingMapMenu, type TrainingMapState } from './ui/training-menu';
 import { ServerLink } from './net/server-link';
 import { CombatFeature } from './game/combat-feature';
 import { MatchFeature } from './game/match-feature';
@@ -438,7 +440,7 @@ export class App {
       [
         'training',
         'Training',
-        'Practice range and movement playground.',
+        'Practice range, movement playground, or free roam on any map.',
         () => this.showTraining(),
         'training',
       ],
@@ -457,7 +459,7 @@ export class App {
     void import('./editor').then((m) => m.openMapMaker(this, dir));
   }
 
-  /** Training: the practice range and the movement playground. */
+  /** Training: the practice range, the movement playground and free roam on any map. */
   showTraining(dir: Dir = 'forward'): void {
     this.setScreen(
       h(
@@ -479,8 +481,30 @@ export class App {
             cls: 'mode',
             onClick: () => this.startPlayground(),
           }),
+          card({
+            title: 'Any map',
+            desc: 'Free roam on any map in rotation: competitive, mega, race and surf maps. Dummies optional.',
+            art: icon('map'),
+            cls: 'mode training-any-map',
+            onClick: () => this.showTrainingMaps(),
+          }),
         ]),
       ),
+      dir,
+    );
+  }
+
+  /** Training choices for "Any map", kept while the page is open. */
+  trainingMapState: TrainingMapState = { map: DEFAULT_MATCH_MAP(), kit: 'lethal', dummies: true };
+
+  /** Training → Any map: pick a map, a kit and dummies, then free roam on it. */
+  showTrainingMaps(dir: Dir = 'forward'): void {
+    this.setScreen(
+      trainingMapMenu({
+        state: this.trainingMapState,
+        back: () => this.showTraining('back'),
+        start: (st) => startFreeRoam(this, { mapId: st.map, kit: st.kit, dummies: st.dummies }),
+      }),
       dir,
     );
   }
@@ -501,7 +525,9 @@ export class App {
         h(
           'div',
           { class: 'panel' },
-          this.mobile ? controlsTable(TOUCH_CONTROLS_HELP) : controlsTable(),
+          this.mobile
+            ? controlsTable(TOUCH_CONTROLS_HELP)
+            : controlsTable(controlsHelp(this.settings.keybinds)),
         ),
       ),
       dir,
@@ -775,8 +801,8 @@ export class App {
     this.tuning?.gui.add(combat.hud, 'showStats').name('Show combat stats');
     client.hud.setHint(
       isCsKind(kind)
-        ? `Esc menu · LMB fire · 1 AK · 2 Deagle · R reload · E knife${kind === 'cs' ? ' · G plant/defuse' : ''} · stop moving to shoot straight`
-        : '` tuning panel (stats) · Esc menu · LMB throw · RMB wind-up/steer · E slash · R recall · Q grenade',
+        ? `Esc menu · {fire} fire · {slot1} AK · {slot2} Deagle · {recall} reload · {melee} knife${kind === 'cs' ? ' · {use} plant/defuse' : ''} · stop moving to shoot straight`
+        : '{tuning} tuning panel (stats) · Esc menu · {fire} throw · {alt} wind-up/steer · {melee} slash · {recall} recall · {grenade} grenade',
     );
   }
 
@@ -1332,7 +1358,7 @@ export class App {
       ].join('\n');
     };
     client.hud.setHint(
-      'Practice range · LMB throw (hold to aim, flick the mouse while it flies to tilt it) · RMB wind-up · R recall · Q grenade · Esc menu',
+      'Practice range · {fire} throw (hold to aim, flick the mouse while it flies to tilt it) · {alt} wind-up · {recall} recall · {grenade} grenade · Esc menu',
     );
   }
 
@@ -1346,7 +1372,7 @@ export class App {
     const combat = new CombatFeature();
     const client = this.startGame(session, [combat]);
     client.hud.setHint(
-      '` tuning panel · Esc menu · try the ramp, rail, zero-G bay (right) and wall corridor (left)',
+      '{tuning} tuning panel · Esc menu · try the ramp, rail, zero-G bay (right) and wall corridor (left)',
     );
   }
 

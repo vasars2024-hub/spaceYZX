@@ -1,5 +1,6 @@
 // Player settings, persisted in localStorage.
 import { MUSIC_DEFAULT_VOLUME } from './audio/race-mix';
+import { defaultKeybinds, normalizeKeybinds } from './keybinds';
 
 export type CameraRotation = 'body' | 'fast' | 'medium' | 'slow';
 
@@ -73,32 +74,8 @@ export interface CrosshairSettings {
   outline: boolean;
 }
 
-export const DEFAULT_KEYBINDS: Record<string, string[]> = {
-  forward: ['KeyW', 'ArrowUp'],
-  back: ['KeyS', 'ArrowDown'],
-  left: ['KeyA', 'ArrowLeft'],
-  right: ['KeyD', 'ArrowRight'],
-  jump: ['Space', 'WheelDown'],
-  crouch: ['ControlLeft', 'KeyC'],
-  dash: ['ShiftLeft'],
-  fire: ['Mouse0'],
-  alt: ['Mouse2'],
-  melee: ['KeyE'],
-  grenade: ['KeyQ'],
-  recall: ['KeyR'],
-  magboots: ['KeyF'],
-  slot1: ['Digit1'],
-  slot2: ['Digit2'],
-  use: ['KeyG'],
-  scoreboard: ['Tab'],
-  tuning: ['Backquote'],
-  chatTeam: ['Enter'],
-  chatAll: ['KeyY'],
-  voiceTeam: ['KeyV'],
-  voiceAll: ['KeyB'],
-  bigMap: ['KeyM'],
-  routeSite: ['KeyX'],
-};
+/** The default keys of every action (the list and the binding rules: keybinds.ts). */
+export const DEFAULT_KEYBINDS: Record<string, string[]> = defaultKeybinds();
 
 export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 0.07,
@@ -128,7 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   throwPreview: true,
   throwPreviewOpacity: 0.8,
   crosshair: { style: 'cross', color: '#e8fbff', size: 7, gap: 4, thickness: 2, outline: true },
-  keybinds: DEFAULT_KEYBINDS,
+  keybinds: defaultKeybinds(),
   nickname: '',
   brawlMode: 'tdm',
   chatShowEnemyAll: true,
@@ -169,7 +146,8 @@ export const loadSettings = (): Settings => {
       ...structuredClone(DEFAULT_SETTINGS),
       ...parsed,
       crosshair: { ...DEFAULT_SETTINGS.crosshair, ...(parsed.crosshair ?? {}) },
-      keybinds: { ...DEFAULT_KEYBINDS, ...(parsed.keybinds ?? {}) },
+      // every action present (new ones get their default keys unless the player uses them)
+      keybinds: normalizeKeybinds(parsed.keybinds),
     };
     // saved before the Effects option existed: the sound visualizer was on by default then,
     // and in a 5v5 it's a lot; switch it off once (players can turn it back on)

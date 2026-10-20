@@ -8,6 +8,7 @@ export type KillKind =
   | 'recall'
   | 'deflect'
   | 'slash'
+  | 'teleportSlash'
   | 'laser'
   | 'grenade'
   | 'blast'
@@ -86,6 +87,12 @@ export type SimEvent =
   | { type: 'windupReady'; player: number }
   | { type: 'windupCancel'; player: number }
   | { type: 'slash'; player: number }
+  // teleport slash (sim/melee.ts): a real charge began (held past a tap), it is fully charged,
+  // it faded / was cancelled, and it fired: `from` / `to` = body centre before / after the dash
+  | { type: 'meleeCharge'; player: number }
+  | { type: 'meleeReady'; player: number }
+  | { type: 'meleeCancel'; player: number }
+  | { type: 'teleportSlash'; player: number; from: Vec3; to: Vec3 }
   | { type: 'laserWarn'; player: number }
   | { type: 'laserFire'; player: number; from: Vec3; to: Vec3; hit: number }
   // CS mode guns: `to` = where the bullet stopped, `hit` = player id or -1, `normal` = the wall's

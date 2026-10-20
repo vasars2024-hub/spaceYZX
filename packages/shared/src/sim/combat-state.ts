@@ -90,6 +90,10 @@ export interface CombatPlayerState {
   slashCd: number;
   slashTicks: number; // remaining active slash window
   slashHit: boolean;
+  /** teleport slash (sim/melee.ts): ticks E has been held toward it (0 = not charging) */
+  meleeCharge: number;
+  /** ticks until the next teleport slash is allowed */
+  teleportCd: number;
   grenadesLeft: number;
   // CS mode guns (sim/guns.ts). `weapon` 0 = AK-47, 1 = Desert Eagle there.
   akMag: number;

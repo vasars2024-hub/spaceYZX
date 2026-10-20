@@ -71,6 +71,7 @@ export * from './sim/hash';
 export * from './sim/hitbox';
 export * from './sim/combat';
 export * from './sim/guns';
+export * from './sim/melee';
 export * from './sim/flick';
 export * from './sim/takeover';
 export * from './sim/powerups';

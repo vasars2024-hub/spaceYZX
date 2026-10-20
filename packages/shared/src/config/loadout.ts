@@ -14,6 +14,8 @@ export interface LoadoutDef {
   laser: boolean;
   grenade: boolean;
   guns: boolean; // key 1 = AK-47, key 2 = Desert Eagle, R = reload
+  /** hold E for the teleport slash (sim/melee.ts); off in CS modes (their knife is unchanged) */
+  teleportSlash: boolean;
   /** power-ups in the middle of the map (Freeze, Double boomerang: rules/powerups.ts) */
   powerups: boolean;
   /** client: players are drawn dim (no glowing rim), hard to spot like in CS */
@@ -26,6 +28,7 @@ export const LOADOUTS: Record<LoadoutName, LoadoutDef> = {
     laser: true,
     grenade: true,
     guns: false,
+    teleportSlash: true,
     powerups: true,
     dimPlayers: false,
   },
@@ -34,6 +37,7 @@ export const LOADOUTS: Record<LoadoutName, LoadoutDef> = {
     laser: false,
     grenade: false,
     guns: true,
+    teleportSlash: false,
     powerups: false,
     dimPlayers: true,
   },
@@ -98,6 +102,7 @@ export const csConfig = (base: GameConfig): GameConfig => {
   if (base.combat.loadout === LOADOUT_ID.cs) return out;
   for (const k of CS_SCALED_MOVEMENT) out.movement[k] = base.movement[k] * CS_MOVE_SCALE;
   out.combat.windupWalkSpeed = base.combat.windupWalkSpeed * CS_MOVE_SCALE;
+  out.combat.slashRange = base.combat.csSlashRange; // the CS knife keeps its old reach
   out.combat.loadout = LOADOUT_ID.cs;
   return out;
 };

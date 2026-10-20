@@ -751,7 +751,7 @@ export const deflectDuel = (opts: NetcheckOptions): ScenarioReport => {
         const dist = len(sub(bp, eye));
         const closing = dist < len(sub(chestOf(tgt), eye)) - 0.5;
         if (closing && dist < 12) view = lookAt(eye, bp); // watch it come in
-        if (closing && cooldown <= 0 && dist <= c.slashRange + c.boomerangRadius + early) {
+        if (closing && cooldown <= 0 && dist <= c.deflectRange + c.boomerangRadius + early) {
           buttons = Btn.Melee;
           cooldown = 60;
           early = random() < 0.3 ? 2.5 + random() * 3 : random() * 0.6;
@@ -812,7 +812,7 @@ export const deflectDuel = (opts: NetcheckOptions): ScenarioReport => {
         const dist = len(to);
         if (
           dist > 1e-6 &&
-          dist <= c.slashRange + c.boomerangRadius &&
+          dist <= c.deflectRange + c.boomerangRadius &&
           dot(scale(to, 1 / dist), qForward(d.sp.view)) >= Math.cos(c.deflectConeDeg * DEG)
         )
           swing.onScreen = true;

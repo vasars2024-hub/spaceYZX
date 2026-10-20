@@ -132,6 +132,8 @@ export const createPlayer = (
     slashCd: 0,
     slashTicks: 0,
     slashHit: false,
+    meleeCharge: 0,
+    teleportCd: 0,
     grenadesLeft: c.grenadesPerRound,
     akMag: c.akMag,
     akReserve: c.akReserve,

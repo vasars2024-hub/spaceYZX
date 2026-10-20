@@ -38,6 +38,7 @@ import { eyePos } from '../sim/movement';
 import { hitboxOf, chestOf } from '../sim/hitbox';
 import { isFlying, recallLine } from '../sim/combat';
 import { loadoutOf } from '../config/loadout';
+import { teleportSlashButtons, type BotTeleportMemory } from './melee';
 import { type BotGunMemory, botGunSkill, newBotGunMemory, gunAimDir, gunBotButtons } from './guns';
 
 const DEG = Math.PI / 180;
@@ -206,6 +207,8 @@ export interface BotMemory {
   pathUntil: number;
   /** CS mode guns (bots/guns.ts), created on first use */
   gun?: BotGunMemory;
+  /** teleport slash charge (bots/melee.ts) */
+  teleport?: BotTeleportMemory['teleport'];
 }
 
 export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotMemory => ({
@@ -836,6 +839,12 @@ export const botThink = (
           moveButtons(view, up, moveDir);
       } else if (rngFloat(rng) < 0.05) buttons |= Btn.Recall;
     }
+  }
+
+  // teleport slash up close, now and then (bots/melee.ts)
+  if (!guns) {
+    const foe = target && engaged && targetVisible ? target : null;
+    buttons = teleportSlashButtons(ctx, self, mem, s.deflectChance, rng, buttons, myB, foe);
   }
 
   // bomb mode: at the spot, stand still and hold Use (plant / defuse)

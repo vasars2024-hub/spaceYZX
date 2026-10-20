@@ -18,7 +18,6 @@ import {
   step,
   TICK_DT,
   v3,
-  waypointRoute,
   type LevelDef,
   type SimContext,
   type Vec3,
@@ -62,9 +61,16 @@ describe('graybox maps', () => {
     const wps = d.waypoints!;
     for (const team of [0, 1] as const) {
       const from = nearestWp(d, d.spawns.find((s) => s.team === team)!.pos);
-      const lost = wps
-        .filter((_, i) => waypointRoute(wps, from, i).length === 0)
-        .map((w) => w.name);
+      // (one sweep over the waypoint graph: which waypoints can be reached from the spawn)
+      const seen = new Set([from]);
+      const queue = [from];
+      while (queue.length)
+        for (const j of wps[queue.pop()!].links)
+          if (!seen.has(j)) {
+            seen.add(j);
+            queue.push(j);
+          }
+      const lost = wps.filter((_, i) => !seen.has(i)).map((w) => w.name);
       expect(lost, `team ${team}`).toEqual([]);
     }
   });

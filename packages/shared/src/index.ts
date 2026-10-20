@@ -35,6 +35,8 @@ export * from './level/maps/graybox/afterglow';
 export * from './level/maps/graybox/orrery';
 export * from './level/maps/graybox/leviathan';
 export * from './level/maps/graybox/skyfount';
+export * from './level/maps/cs/dust2';
+export * from './level/maps/cs/mirage';
 export * from './level/maps/arena';
 export * from './level/maps/orbital-ring';
 export * from './level/maps/canyon-relay';

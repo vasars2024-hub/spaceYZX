@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RULES_DEFAULTS } from '@space-yz/shared';
 import { Room } from '../src/game/room';
 import { MatchRules, type MatchResult } from '../src/game/rules/match';
 
@@ -43,7 +44,8 @@ describe('server match rules', () => {
 
   it('a player joining mid-round sits out until the next round', () => {
     const { room, rules } = botRoom('2v2', 4);
-    for (let i = 0; i < 60 * 9; i++) room.tick();
+    // (round 1 also plays the opening face-off: matchIntroSec)
+    for (let i = 0; i < 60 * (9 + RULES_DEFAULTS.matchIntroSec); i++) room.tick();
     expect(rules.ms.phase).toBe('live');
     room.removeMember(4);
     const m = room.addMember('Late', null);

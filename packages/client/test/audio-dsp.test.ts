@@ -15,6 +15,10 @@ import type { SoundName } from '../src/audio/sounds';
 const SR = 44100;
 
 const REQUIRED: SoundName[] = [
+  // the opening face-off
+  'introWhoosh',
+  'introPortal',
+  'introSting',
   // movement
   'jump',
   'land',

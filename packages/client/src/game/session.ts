@@ -15,6 +15,7 @@ import type {
   SimContext,
   MatchView,
   PlaylistView,
+  RankDisplay,
 } from '@space-yz/shared';
 
 /** Match state as the client sees it (rules view + per-player stats). */
@@ -43,6 +44,13 @@ export interface ZoneDraw {
 export interface TickInput {
   buttons: number;
   view: Quat;
+}
+
+/** A player's ladder standing as the room roster gives it (null fields: unranked). */
+export interface PlayerRank {
+  rank: RankDisplay | null;
+  /** the ladder rating (the face-off's win chance); null while hidden */
+  rating: number | null;
 }
 
 /** What the renderer needs for one other player. */
@@ -129,6 +137,8 @@ export interface Session {
   report?(playerId: number, reason: string): void;
   /** Round-trip ping per player id (online). */
   pings?(): Record<number, number>;
+  /** Ranks of the players who have one (online; bots and unranked players are left out). */
+  ranks?(): Record<number, PlayerRank>;
   /** While you're dead: may you take over this player (a living bot teammate, round live)? */
   canTakeOver?(id: number): boolean;
   /** Take over that bot's body (offline: right away; online: the server decides). */

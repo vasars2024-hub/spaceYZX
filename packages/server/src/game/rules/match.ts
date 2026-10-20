@@ -147,7 +147,7 @@ export class MatchRules implements Rules {
         this.leavers = [];
         this.grief.clear();
         this.stats.reset();
-        startMatch(ms, world, ctx);
+        startMatch(ms, world, ctx, { intro: true });
       }
     }
     // a playlist's next map: when the results card / vote is over, the room moves on

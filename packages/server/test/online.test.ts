@@ -80,7 +80,7 @@ describe('online 1v1 over WebSocket', () => {
       onReady: (core) => core.joinRoom(a.core.code),
     });
     bots.push(b);
-    // 3 s start delay, then the 5 s spawn lock
+    // 3 s start delay, then the 5 s spawn lock (+ the opening face-off in round 1)
     await until(
       () => phase(a.core.extra) === 'spawnLock' && phase(b.core.extra) === 'spawnLock',
       6000,
@@ -90,8 +90,8 @@ describe('online 1v1 over WebSocket', () => {
     expect(view.carriers.sort()).toEqual([a.core.localId, b.core.localId].sort());
     // players are frozen during the spawn lock (the exact private state says so)
     await until(() => !!a.core.localPredicted()?.frozen);
-    await until(() => phase(a.core.extra) === 'live', 7000);
-  }, 20000);
+    await until(() => phase(a.core.extra) === 'live', 12000);
+  }, 25000);
 
   it('creates a 3v3 Elimination room with the CS kit from the menu message', async () => {
     const url = `ws://127.0.0.1:${server.port}/ws`;

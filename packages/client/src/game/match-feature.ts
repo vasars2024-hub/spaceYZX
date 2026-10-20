@@ -14,7 +14,9 @@ import { TEAM_COLOR, TEAM_HEX, towerRole, controllerAtHome } from './objectives'
 import { setSidesSwapped } from '../render/team-palette';
 import { SkyArenaView } from '../render/sky-arena';
 import { effects } from '../render/effects';
-import { planMatchEnd, planRoundEnd, planRoundStart } from './transitions';
+import { planMatchEnd, planRoundEnd, planRoundStart, type TransitionCard } from './transitions';
+import { INTRO_JOIN_GRACE_SEC, introClock } from './intro';
+import { introPlaying } from './intro-feature';
 import {
   announce,
   clearTransitions,
@@ -102,6 +104,11 @@ export class MatchFeature implements ClientFeature {
   private lastCountdown = -1;
   private lastBoard = -1;
   private last: MatchInfo | null = null;
+  /**
+   * Round 1 of a match with the opening face-off (game/intro-feature.ts): the round cards wait
+   * until it is over (its VS title replaces the MATCH START card).
+   */
+  private afterIntro: TransitionCard[] | null = null;
   /** the sky duel overtime's arena, clouds and sky (drawn only while the camera is up there) */
   private sky: SkyArenaView | null = null;
   private session: Session | null = null;
@@ -259,15 +266,21 @@ export class MatchFeature implements ClientFeature {
           const now = s.match?.() ?? null;
           const swapped = !!now?.sideSwapped && this.last?.sideSwapped === false;
           // the cards (MATCH START / HALF TIME / ROUND n…) play through the spawn lock
-          const cardsMs = now
-            ? playTransitions(
-                planRoundStart(this.last, now, {
-                  myTeam: mine,
-                  map: s.level.def.name,
-                  ladder: this.opts.ladder,
-                }),
-              )
-            : 0;
+          const cards = now
+            ? planRoundStart(this.last, now, {
+                myTeam: mine,
+                map: s.level.def.name,
+                ladder: this.opts.ladder,
+              })
+            : [];
+          // (round 1 with the opening face-off: the round card after it, no MATCH START card)
+          const intro =
+            !!now &&
+            now.round === 1 &&
+            c.deps.settings.matchIntro &&
+            (Number((s.config.rules as { matchIntroSec?: number }).matchIntroSec) || 0) > 0;
+          this.afterIntro = intro ? cards.filter((x) => x.kind !== 'matchStart') : null;
+          const cardsMs = intro ? 0 : playTransitions(cards);
           // after a side swap the reminder stays up a little after the cards
           if (swapped || !now)
             this.showBanner(
@@ -422,6 +435,16 @@ export class MatchFeature implements ClientFeature {
     const tick = s.tickNow?.() ?? s.world().tick;
     const mine = this.myTeam(s);
     const rules = s.config.rules;
+    // the round cards held back for the opening face-off: once it's over (or skipped / off)
+    if (this.afterIntro && !introPlaying()) {
+      const introSec = Number((rules as { matchIntroSec?: number }).matchIntroSec) || 0;
+      const t = introClock(tick, m.phaseEnds, rules.spawnLockSec, introSec);
+      if (m.phase !== 'spawnLock') this.afterIntro = null;
+      else if (t >= Math.min(INTRO_JOIN_GRACE_SEC, introSec)) {
+        playTransitions(this.afterIntro);
+        this.afterIntro = null;
+      }
+    }
 
     // ---- score bar ----
     this.scoreA.textContent = String(m.scores[0]);
@@ -625,6 +648,8 @@ export class MatchFeature implements ClientFeature {
   scoreboard(s: Session, m: MatchInfo, interactive: boolean): HTMLElement {
     const names = s.names();
     const pings = s.pings?.() ?? {};
+    // ranked players' rank next to their name (blank: unranked players and bots)
+    const ranks = s.ranks?.() ?? {};
     const stats = new Map(m.stats.map((x) => [x.id, x]));
     const cols = (team: 0 | 1) => {
       // from the server's match stats: includes players hidden by line-of-sight culling
@@ -640,6 +665,13 @@ export class MatchFeature implements ClientFeature {
               'td',
               {},
               `${m.carriers.includes(p.id) ? '◆ ' : ''}${me ? 'You' : (names[p.id] ?? `Player ${p.id}`)}${mutes.has(p.id) ? ' 🔇' : ''}`,
+              ranks[p.id]?.rank
+                ? h(
+                    'span',
+                    { class: 'sb-rank', style: `color:${ranks[p.id].rank!.color}` },
+                    ranks[p.id].rank!.label,
+                  )
+                : null,
             ),
             h('td', {}, String(st?.kills ?? 0)),
             h('td', {}, String(st?.deaths ?? 0)),

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { RULES_DEFAULTS } from '@space-yz/shared';
 import { createServices, type Services } from '../src/services';
 import { hashToken } from '../src/services/accounts';
 import { BAN_STEPS_MS } from '../src/services/ranked';
@@ -95,6 +96,11 @@ describe('accounts & ranked store', () => {
     expect(p.ladders.duels.rank!.label).toMatch(/Asteroid|Moon|Planet|Gas Giant|Star|Supergiant/);
     expect(p.ladders.premier.games).toBe(0); // 1v1 never touches Premier
     expect(p.recent[0]).toMatchObject({ mode: '1v1', ladder: 'duels', ranked: true });
+    // room rosters (face-off, scoreboard): the rank and rating once placed, nothing before
+    const line = s.ranked.rankLine(w, 'duels');
+    expect(line.rank!.label).toBe(p.ladders.duels.rank!.label);
+    expect(line.rating).toBe(p.ladders.duels.rating);
+    expect(s.ranked.rankLine(w, 'premier')).toEqual({ rank: null, rating: null });
   });
 
   it('Duels: 1v1 and 2v2 share one rating', () => {
@@ -311,7 +317,8 @@ describe('anti-grief in matches', () => {
       actions.push(`${m.name}:${action}`);
       if (action === 'kick') room.removeMember(m.id);
     };
-    for (let i = 0; i < 60 * 9; i++) room.tick();
+    // (round 1 also plays the opening face-off: matchIntroSec)
+    for (let i = 0; i < 60 * (9 + RULES_DEFAULTS.matchIntroSec); i++) room.tick();
     expect(rules.ms.phase).toBe('live');
     const tk = () => {
       room.world.events = [];

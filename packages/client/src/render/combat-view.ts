@@ -313,7 +313,7 @@ interface Fragment {
 }
 
 /** Instanced fragments for kill shatters and hit sparks. */
-class Fragments {
+export class Fragments {
   mesh: THREE.InstancedMesh;
   private list: Fragment[] = [];
   private dummy = new THREE.Object3D();

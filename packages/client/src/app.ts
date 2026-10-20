@@ -103,6 +103,7 @@ import { createRangeSession } from './game/range';
 import { FreeRoamSession, startFreeRoam } from './game/free-roam';
 import { raceFromExtra } from './game/race-feature';
 import { VersusFeature } from './ui/versus';
+import { IntroFeature } from './game/intro-feature';
 import {
   createPractice,
   updatePractice,
@@ -799,7 +800,8 @@ export class App {
     const combat = new CombatFeature();
     const match = kind !== 'deathmatch' ? new MatchFeature() : null;
     // (no tuning panel in CS mode: its config is a CS copy that must not be saved as tuning)
-    const client = this.startGame(session, match ? [combat, match] : [combat], {
+    // the opening face-off when the match starts (game/intro-feature.ts)
+    const client = this.startGame(session, match ? [combat, match, new IntroFeature()] : [combat], {
       tuning: !isCsKind(kind),
       keepLock,
     });
@@ -1215,7 +1217,12 @@ export class App {
           }),
         ]
       : [];
-    const client = this.startGame(session, [combat, match, chat, ...arena, ...versus], {
+    // the opening face-off when a team match starts (not in Arena rooms)
+    const intro =
+      core.mode === 'arena'
+        ? []
+        : [new IntroFeature({ ladder: ladder ? LADDERS[ladder].name : undefined })];
+    const client = this.startGame(session, [combat, match, chat, ...arena, ...versus, ...intro], {
       tuning: false,
     });
     this.matchFeature = match;

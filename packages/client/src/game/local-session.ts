@@ -201,7 +201,7 @@ export class LocalSession implements Session {
   }
 
   restartMatch(): void {
-    if (this.opts.match) startMatch(this.opts.match, this.w, this.ctx);
+    if (this.opts.match) startMatch(this.opts.match, this.w, this.ctx, { intro: true });
   }
 
   voteMap(map: string): void {

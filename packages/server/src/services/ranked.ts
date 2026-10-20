@@ -636,6 +636,18 @@ export class RankedStore {
     return { rating, standing, form };
   }
 
+  /**
+   * Read-only: a player's rank and rating on a ladder for room rosters (the opening face-off
+   * and the scoreboard). Only once placed: a player still placing shows no rank.
+   */
+  rankLine(
+    playerId: number,
+    ladder: LadderId,
+  ): { rank: RankDisplay | null; rating: number | null } {
+    const s = this.standing(playerId, ladder);
+    return s.placed ? { rank: s.rank, rating: s.rating } : { rank: null, rating: null };
+  }
+
   private standing(playerId: number, ladder: LadderId): LadderStanding {
     const def = LADDERS[ladder];
     const s = this.rating(playerId, ladder);

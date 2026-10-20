@@ -36,6 +36,9 @@ export interface Services {
   close(): void;
 }
 
+/** How long a roster's rank lookup is reused (ranks change only after matches). */
+const RANK_CACHE_MS = 30_000;
+
 const json = (res: http.ServerResponse, status: number, body: unknown): true => {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -69,6 +72,7 @@ export const createServices = (opts: {
   const maps = new CustomMapStore(db, now);
   const mapMsgs = customMapHandler({ accounts, store: maps, queue, log, now });
 
+  const rankCache = new Map<string, { at: number; v: ReturnType<RankedStore['rankLine']> }>();
   const hub: HubServices = {
     login: (conn, name, token) => {
       // (a hello again: renamed, or switched account) — friends see the new state
@@ -84,6 +88,16 @@ export const createServices = (opts: {
       };
     },
     profile: (conn) => (conn.accountId !== null ? ranked.profile(conn.accountId) : null),
+    playerRank: (accountId, ladder) => {
+      // room rosters go out every second: look each player up at most every 30 s
+      const key = `${accountId}:${ladder}`;
+      const hit = rankCache.get(key);
+      if (hit && now() - hit.at < RANK_CACHE_MS) return hit.v;
+      const v = ranked.rankLine(accountId, ladder);
+      if (rankCache.size > 2000) rankCache.clear();
+      rankCache.set(key, { at: now(), v });
+      return v;
+    },
     queue: (h, conn, id) => {
       queue.start(h);
       queue.set(conn, id);

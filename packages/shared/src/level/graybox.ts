@@ -105,8 +105,53 @@ export interface GrayboxLayout {
   sky?: boolean;
   /** the boosted sky-duel jetpack everywhere on the map (LevelDef.skyJetpack) */
   skyJetpack?: boolean;
-  /** automatic cover (level/graybox-cover.ts): default on */
+  /** automatic cover (level/graybox-cover.ts): default on; off for maps with hand-placed props */
   cover?: boolean;
+  /**
+   * the look: wall / floor materials and colours, sky and light (level/graybox-theme.ts).
+   * Absent: the plain graybox look.
+   */
+  theme?: GrayboxTheme;
+  /** hand-placed props: crates, low walls, pillars, cars… (CS-style cover where the map has it) */
+  props?: GrayboxProp[];
+  /** painted wall signs ("A →", "B SITE", "MID") like CS maps; plus automatic ones unless off */
+  signs?: GrayboxSign[];
+  /** automatic direction signs toward the bomb sites at junctions: default on */
+  autoSigns?: boolean;
+}
+
+/** A map's look (palettes in level/graybox-theme.ts). */
+export type GrayboxTheme =
+  | 'desert' // sandstone and plaster, blue doors, bright sun (Dust 2, Mirage)
+  | 'italian' // terracotta, ochre plaster, cobbles (Inferno)
+  | 'industrial' // concrete, painted steel, warehouse light (Nuke, Train, Cache)
+  | 'jungle' // mossy stone ruins, green light (Ancient)
+  | 'egypt' // limestone, blue water, gold accents (Anubis)
+  | 'canyon' // red rock and sand under open sky (Canyon Relay)
+  | 'station' // light hull panels, signage stripes (Antipode)
+  | 'city'; // neon street, asphalt, shop fronts (the Shibuya mega map)
+
+/**
+ * A hand-placed prop. Position and size in CELLS (fractions allowed): its corner at (x, y) of
+ * the grid, w × d cells big, h metres tall, standing on the floor of layer l (default 0) there.
+ */
+export interface GrayboxProp {
+  x: number;
+  y: number;
+  w: number;
+  d: number;
+  h: number;
+  l?: number;
+  kind?: 'crate' | 'wall' | 'pillar' | 'car' | 'barrel' | 'stairs';
+}
+
+/** A painted sign on the wall face of cell (x, y) (layer l) facing n/s/e/w: e.g. "A →". */
+export interface GrayboxSign {
+  x: number;
+  y: number;
+  l?: number;
+  face: 'n' | 's' | 'e' | 'w';
+  text: string;
 }
 
 const WALL = '.';

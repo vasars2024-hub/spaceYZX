@@ -330,6 +330,12 @@ export interface LevelDef {
    * up at the sky arena: sky-island maps where every crossing is a jetpack hop (Skyfount).
    */
   skyJetpack?: boolean;
+  /**
+   * Royale data (the big free-for-all elimination maps, rules/royale.ts): fixed spawn points
+   * spread evenly over the map (the round uses as many as there are players, as far apart as
+   * possible) and the play zone that shrinks toward `center` from `radius` (metres).
+   */
+  royale?: { spawns: SpawnDef[]; center: Vec3; radius: number };
   /** Sky duel overtime arena high above the ship (competitive maps; level/sky-arena.ts). */
   skyArena?: SkyArenaDef;
   /** Arena 1v1 maps: the duel pits, top pit first (rules/arena.ts). */

@@ -518,7 +518,15 @@ describe('prediction of other players’ grenades', () => {
     const sim = makeSim(flatLevel(), vec(0, 0, 0));
     addPlayer(sim.world, createPlayer(2, 1, vec(20, 0, 0), 0, sim.config));
     settle(sim);
-    sim.world.grenades.push({ id: 999, owner: 2, pos: vec(4, 1, 0), vel: vec(), phase: 1, t: 10, bounces: 0 });
+    sim.world.grenades.push({
+      id: 999,
+      owner: 2,
+      pos: vec(4, 1, 0),
+      vel: vec(),
+      phase: 1,
+      t: 10,
+      bounces: 0,
+    });
     const server = cloneWorld(sim.world);
     const client = cloneWorld(sim.world);
     for (let i = 0; i < 20; i++) {

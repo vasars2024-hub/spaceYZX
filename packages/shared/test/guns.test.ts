@@ -165,13 +165,7 @@ describe('CS mode config', () => {
       ...tick(sim, { 1: { buttons: Btn.Recall } }, 2),
     ];
     const types = new Set(ev.map((e) => e.type));
-    for (const t of [
-      'throw',
-      'windupStart',
-      'laserWarn',
-      'laserFire',
-      'recallStart',
-    ])
+    for (const t of ['throw', 'windupStart', 'laserWarn', 'laserFire', 'recallStart'])
       expect(types.has(t as SimEvent['type']), t).toBe(false);
     expect(ev.filter((e) => e.type === 'gunFire' && e.gun === 'ak').length).toBeGreaterThan(0);
     expect(sim.world.boomerangs.find((b) => b.owner === 1)!.phase).toBe(Phase.Held);

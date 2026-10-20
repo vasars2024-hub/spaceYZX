@@ -186,11 +186,13 @@ export class InputManager {
 
   private onMouseDown = (e: MouseEvent): void => {
     if (!this.capture || !this.locked || this.typing) return;
-    if (e.button === 1) e.preventDefault(); // middle mouse (grenade bounces): no auto-scroll
+    // middle mouse (grenade bounces): no auto-scroll; mouse 4 / 5 (mine): no "back" / "forward"
+    if (e.button === 1 || e.button === 3 || e.button === 4) e.preventDefault();
     this.press(`Mouse${e.button}`);
   };
 
   private onMouseUp = (e: MouseEvent): void => {
+    if (this.capture && (e.button === 3 || e.button === 4)) e.preventDefault();
     this.release(`Mouse${e.button}`);
   };
 

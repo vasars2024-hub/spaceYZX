@@ -20,6 +20,10 @@ import {
   updateBomb,
   createMatch,
   beginRound,
+  botThink,
+  createBotMemory,
+  BOT_SKILLS,
+  type BotMemory,
   type PlayerState,
   type PlayerInput,
   type SimEvent,
@@ -310,7 +314,7 @@ describe('remote mine', () => {
     expect(ok.some((e) => e.type === 'minePlace')).toBe(true);
   });
 
-  it("needs a moment to arm: an instant detonate does nothing", () => {
+  it('needs a moment to arm: an instant detonate does nothing', () => {
     const sim = simWith(flatLevel());
     tick(sim, { 1: { buttons: Btn.MinePlace } }, 1);
     const ev = tick(sim, { 1: { buttons: Btn.MineDetonate } }, 1);
@@ -448,5 +452,96 @@ describe('remote mine', () => {
     expect(mineVisibleTo(sim.ctx, m, sim.p, enemyFar)).toBe(false);
     expect(mineVisibleTo(sim.ctx, m, sim.p, enemyNear)).toBe(true);
     expect(len(sub(enemyNear.pos, m.pos))).toBeLessThan(6);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+/** Step the world with bots `ids` thinking (everyone else stands still). */
+const runBots = (sim: Sim, mems: Map<number, BotMemory>, n: number): SimEvent[] => {
+  const events: SimEvent[] = [];
+  for (let i = 0; i < n; i++) {
+    const inputs: Record<number, PlayerInput> = {};
+    for (const p of sim.world.players) {
+      const mem = mems.get(p.id);
+      inputs[p.id] = mem
+        ? botThink(sim.world, sim.ctx, p, mem)
+        : { tick: sim.world.tick + 1, buttons: 0, view: p.view };
+    }
+    step(sim.world, inputs, sim.ctx);
+    events.push(...sim.world.events);
+  }
+  return events;
+};
+
+describe('bots: charged grenade and remote mine', () => {
+  it('a bot charges its grenade to land near its target', () => {
+    for (const kit of ['lethal', 'cs'] as const) {
+      const sim = simWith(flatLevel(), kit === 'cs' ? csConfig : undefined);
+      const enemy = add(sim, 2, 1, v3(0, 0, -16));
+      settle(sim);
+      // a bot that always reaches for the grenade (and never wanders off)
+      const mem = createBotMemory(1, { ...BOT_SKILLS.hard, grenadeChance: 1 }, 3);
+      const events: SimEvent[] = [];
+      for (let i = 0; i < 400 && !events.some((e) => e.type === 'grenadeActivate'); i++) {
+        events.push(...runBots(sim, new Map([[1, mem]]), 1));
+        enemy.pos = { ...enemy.pos, x: 0, z: -16 };
+        enemy.hp = 100;
+        enemy.alive = true;
+      }
+      const thrown = events.find((e) => e.type === 'grenadeThrow');
+      expect(thrown, kit).toBeDefined();
+      const act = events.find((e) => e.type === 'grenadeActivate');
+      expect(act, kit).toBeDefined();
+      if (act?.type === 'grenadeActivate') expect(planar(act.pos, enemy.pos), kit).toBeLessThan(6);
+    }
+  });
+
+  it('a bot drops its mine on a bomb site', () => {
+    const def = flatLevel();
+    def.bombSites = [
+      { name: 'A', min: v3(-60, -1, -60), max: v3(60, 4, 60) },
+      { name: 'B', min: v3(70, -1, 70), max: v3(80, 4, 80) },
+    ];
+    def.spawns = [{ pos: v3(90, 0, 90), yawDeg: 0 }];
+    const sim = simWith(def, (c) => withRemoteMine(c, 'bomb'));
+    const mem = createBotMemory(1, BOT_SKILLS.normal, 7);
+    const ev = runBots(sim, new Map([[1, mem]]), 600);
+    expect(ev.some((e) => e.type === 'minePlace' && e.player === 1)).toBe(true);
+    expect(sim.world.mines.length).toBe(1);
+  });
+
+  it('a bot sets its mine off when an enemy walks into it (not with itself or a mate in it)', () => {
+    const sim = simWith(flatLevel());
+    tick(sim, { 1: { buttons: Btn.MinePlace } }, 1);
+    expect(sim.world.mines.length).toBe(1);
+    sim.p.pos = { ...sim.p.pos, x: -25 };
+    const mate = add(sim, 3, 0, v3(-40, 0, 20));
+    const enemy = add(sim, 2, 1, v3(30, 0, 0));
+    settle(sim);
+    const mem = createBotMemory(1, BOT_SKILLS.normal, 11);
+    // nobody near: it waits
+    let ev = runBots(sim, new Map([[1, mem]]), 60);
+    expect(ev.some((e) => e.type === 'mineBlast')).toBe(false);
+    // a teammate standing on it: still waits, even with the enemy there too
+    mate.pos = { ...mate.pos, x: 1, z: 0 };
+    enemy.pos = { ...enemy.pos, x: 2, z: 0 };
+    ev = runBots(sim, new Map([[1, mem]]), 30);
+    expect(ev.some((e) => e.type === 'mineBlast')).toBe(false);
+    // the enemy alone: boom
+    mate.pos = { ...mate.pos, x: -40, z: 20 };
+    ev = runBots(sim, new Map([[1, mem]]), 30);
+    expect(ev.some((e) => e.type === 'mineBlast' && e.player === 1)).toBe(true);
+    expect(enemy.hp).toBe(50);
+  });
+});
+
+describe('lineup practice', () => {
+  it('grenadeRefill hands out a new grenade once the last one is gone', () => {
+    const sim = simWith(flatLevel(), (c) => ({ ...c, combat: { ...c.combat, grenadeRefill: 1 } }));
+    throwNade(sim, 30, view(0, 10));
+    tick(sim, {}, 200);
+    expect(sim.world.grenades.length).toBe(0);
+    expect(sim.p.grenadesLeft).toBe(1);
   });
 });

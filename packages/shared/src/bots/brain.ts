@@ -39,6 +39,7 @@ import { hitboxOf, chestOf } from '../sim/hitbox';
 import { isFlying, recallLine } from '../sim/combat';
 import { loadoutOf } from '../config/loadout';
 import { type BotGunMemory, botGunSkill, newBotGunMemory, gunAimDir, gunBotButtons } from './guns';
+import { type BotUtilityMemory, botUtilityButtons } from './utility';
 
 const DEG = Math.PI / 180;
 
@@ -206,6 +207,8 @@ export interface BotMemory {
   pathUntil: number;
   /** CS mode guns (bots/guns.ts), created on first use */
   gun?: BotGunMemory;
+  /** charged grenade / remote mine (bots/utility.ts), created on first use */
+  util?: BotUtilityMemory;
 }
 
 export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotMemory => ({
@@ -818,9 +821,6 @@ export const botThink = (
         } else if (rngFloat(rng) < 0.04) buttons |= Btn.Recall;
       }
     }
-    // grenade at mid range
-    if (self.grenadesLeft > 0 && dist > 8 && dist < 20 && rngFloat(rng) < s.grenadeChance)
-      buttons |= Btn.Grenade;
     // (a Quick Throw leaves straight; flicking the view in flight tilts it)
     if (releaseTick) buttons &= ~(Btn.Left | Btn.Right);
   } else if (myB) {
@@ -843,5 +843,7 @@ export const botThink = (
     buttons &= ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right | Btn.Jump | Btn.Crouch | Btn.Dash);
     buttons |= Btn.Use;
   }
+  // charged grenade (both kits) and the remote mine (bots/utility.ts)
+  buttons = botUtilityButtons(world, ctx, self, mem, buttons, target, engaged && targetVisible);
   return { tick, buttons, view };
 };

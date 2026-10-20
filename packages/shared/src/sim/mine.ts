@@ -169,7 +169,5 @@ export const mineVisibleTo = (
   if (!viewer.alive) return false;
   const eye = eyePos(viewer, ctx.config.movement);
   const top = madd(m.pos, m.up, 0.15);
-  return (
-    len(sub(top, eye)) <= ctx.config.combat.mineSeeRadius && lineOfSight(ctx.level, eye, top)
-  );
+  return len(sub(top, eye)) <= ctx.config.combat.mineSeeRadius && lineOfSight(ctx.level, eye, top);
 };

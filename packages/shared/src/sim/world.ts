@@ -20,6 +20,7 @@ import { applyDamage, updateCombat } from './combat';
 import { updatePowerupPickups } from './powerups';
 import { updateRaceBody, updateRaceInput } from './race';
 import { moverHazards, updateMovers } from './movers';
+import { stompStart, updateStomps } from './stomp';
 
 export const DEG = Math.PI / 180;
 
@@ -118,6 +119,8 @@ export const createPlayer = (
     prevButtons: 0,
     frozen: false,
     speedCap: 0,
+    stompOn: -1,
+    stompCd: 0,
     aiming: false,
     aimTicks: 0,
     blastCount: 0,
@@ -239,6 +242,8 @@ export const step = (
   updateGravityPads(ctx, world);
   const prevButtons: Record<number, number> = {};
   for (const p of world.players) prevButtons[p.id] = p.prevButtons;
+  // where everyone's feet and heads were before moving (head landings: sim/stomp.ts)
+  const stomp0 = stompStart(world, ctx);
   for (const p of world.players) {
     const input = inputs[p.id] ?? { tick: world.tick, buttons: 0, view: p.view };
     if (!p.alive) {
@@ -292,6 +297,8 @@ export const step = (
   }
   // races: no weapons, no damage, no power-ups
   if (ctx.level.def.race) return;
+  // landing on someone's head: a boost, or a stomp kill
+  updateStomps(world, ctx, stomp0);
   updateCombat(world, ctx, inputs, prevButtons);
   updatePowerupPickups(world, ctx);
 };
@@ -313,6 +320,7 @@ export const stepPredict = (
   if (!p) return;
   const prev = { [localId]: p.prevButtons };
   const race = !!ctx.level.def.race;
+  const stomp0 = stompStart(world, ctx);
   if (p.alive) {
     if (race) updateRaceInput(world, ctx, p, input);
     updateMovement(world, ctx, p, input);
@@ -324,6 +332,8 @@ export const stepPredict = (
     p.view = input.view;
   }
   if (race) return;
+  // your own head landings (the server decides kills)
+  updateStomps(world, { ...ctx, noDamage: true }, stomp0, localId);
   updateCombat(world, { ...ctx, noDamage: true }, { [localId]: input }, prev, { only: localId });
   updatePowerupPickups(world, ctx, localId);
 };

@@ -330,6 +330,24 @@ export class CombatFeature implements ClientFeature {
           // RMB didn't start a Wind-up Throw: say why
           if (e.player === me) this.hud.showCenter(WINDUP_REFUSED[e.reason], 1.4, 'warn');
           break;
+        case 'stomp': {
+          // landing on a head: a thud + boing (lower for a stomp kill), a puff at their head
+          const rate = e.kind === 'kill' ? 0.8 : e.kind === 'up' ? 1.1 : 1;
+          if (e.player === me || e.target === me) a.play('stomp', { volume: 0.9, rate });
+          else a.play3d('stomp', e.pos, { volume: 0.9, rate, refDistance: 6 });
+          const color = e.kind === 'kill' ? 0xff5a5a : e.kind === 'up' ? 0xc8d6e8 : 0x7fffb0;
+          this.view.fragments.burst(
+            e.pos,
+            color,
+            14,
+            4,
+            0.3,
+            0.45,
+            scale(normalize(gravity, v3(0, -1, 0)), 9),
+          );
+          if (e.player === me) c.shake = Math.max(c.shake, 0.2);
+          break;
+        }
         case 'portal':
           // a rift is loud: heard at both ends
           if (e.player !== me) {
@@ -423,7 +441,9 @@ export class CombatFeature implements ClientFeature {
                 ? 'Caught outside the zone'
                 : e.attacker === me
                   ? 'You eliminated yourself'
-                  : `Eliminated by ${this.name(c, e.attacker)}`,
+                  : e.kind === 'stomp'
+                    ? `Stomped by ${this.name(c, e.attacker)}`
+                    : `Eliminated by ${this.name(c, e.attacker)}`,
               2.5,
               'warn',
             );
@@ -483,7 +503,9 @@ export class CombatFeature implements ClientFeature {
               ? 'LETHAL RECALL'
               : kind === 'deflect'
                 ? 'DEFLECT KILL'
-                : 'ELIMINATED',
+                : kind === 'stomp'
+                  ? 'STOMPED'
+                  : 'ELIMINATED',
       );
     }
   }

@@ -76,6 +76,7 @@ export * from './sim/takeover';
 export * from './sim/powerups';
 export * from './sim/devices';
 export * from './sim/race';
+export * from './sim/stomp';
 export * from './net/codec';
 export * from './bots/brain';
 export * from './stats/tracker';

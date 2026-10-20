@@ -85,6 +85,7 @@ const KIND_ICON: Record<KillKind, string> = {
   bomb: '💥',
   ak: 'AK',
   deagle: 'DE',
+  stomp: '⤓',
   world: '☠',
 };
 

@@ -128,6 +128,21 @@ export const MOVEMENT_DEFAULTS = {
   dashCooldownSec: 3,
   dashDurationSec: 0.15,
 
+  // Head landing ("stomp", sim/stomp.ts): falling with your feet onto another living player's
+  // head. Boomerang modes: a teammate's head launches you forward the way you look (at least
+  // stompTeamForward m/s, plus stompTeamUp m/s up: about 11 m from head height), an enemy's
+  // head kills them on the spot and you bounce up a little (stompKillBounce). CS modes: anyone's
+  // head throws you straight up (stompCsUp; 9 m/s ≈ 2 m above their head, feet ~3.8 m over the
+  // floor): team boosts onto high ledges, never a kill. No fall damage, no damage at all except
+  // the enemy stomp kill. Not in races.
+  stompMinFallSpeed: 1.5, // m/s downward: a sideways bump or standing on someone never counts
+  stompReach: 0.5, // m: your body centre within this of theirs, sideways (capsule radius 0.4)
+  stompCooldownSec: 0.5, // the same pair can't stomp again for this long
+  stompTeamForward: 14, // m/s along your view (sideways part): sprint is 9
+  stompTeamUp: 6, // m/s up with it
+  stompKillBounce: 5, // m/s up after stomping an enemy
+  stompCsUp: 9, // m/s straight up (CS modes); your sideways speed is kept as it was
+
   // Races (race tracks, sim/race.ts): the dash key is SURGE instead — a short forward burst, a
   // few per race; the jetpack tank only refills at fuel cells (a respawn gives back the fuel you
   // had when you passed that checkpoint or anchor); falling off (or the respawn key) puts you

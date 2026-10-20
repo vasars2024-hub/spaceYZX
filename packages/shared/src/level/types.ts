@@ -189,6 +189,19 @@ export interface PortalDef {
   glyph?: string;
 }
 
+/**
+ * A suction tube (sim/devices.ts) — what the maps have instead of ladders: step into its mouth
+ * (a cylinder of `radius` around the line `base` → `top`, from base up to the top) and it pulls
+ * you up the tube to `top`, then throws you in an arc onto `land` (feet position). The throw
+ * never causes fall damage (like a launch pad's flight).
+ */
+export interface LiftTubeDef {
+  base: Vec3;
+  top: Vec3;
+  land: Vec3;
+  radius: number;
+}
+
 /** A bomb site (Bomb mode): the area where the bomb can be planted. */
 export interface BombSiteDef {
   name: 'A' | 'B';
@@ -313,6 +326,8 @@ export interface LevelDef {
   bombSites?: BombSiteDef[];
   /** Launch pads (sim/devices.ts). */
   launchPads?: LaunchPadDef[];
+  /** Suction tubes (sim/devices.ts): the maps' ladders. */
+  liftTubes?: LiftTubeDef[];
   /** Portals (sim/devices.ts): each entry teleports one way; pairs are two entries. */
   portals?: PortalDef[];
   /** Power-up spawn points (rules/powerups.ts): where power-ups float during a round. */

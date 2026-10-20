@@ -72,9 +72,12 @@ export interface GrayboxArea {
  *   rail   — a zip-rail from → to at hanging height
  *   portal / tunnel — a portal pair (one way: only from → to)
  *   jump / jet — a gap you jump or jetpack across: nothing extra (the layout leaves the gap)
+ *   tube   — a suction tube (instead of a ladder): sucks you up at the from-area's cell nearest the
+ *            target and throws you onto the target (LevelDef.liftTubes); one way
  * Bots never ride pads, rails or portals (bots/brain.ts): their routes must not need them.
  */
-export type GrayboxLinkKind = 'drop' | 'pad' | 'rail' | 'portal' | 'tunnel' | 'jump' | 'jet';
+export type GrayboxLinkKind =
+  'drop' | 'pad' | 'rail' | 'portal' | 'tunnel' | 'jump' | 'jet' | 'tube';
 export type GrayboxLink = [from: string, to: string, kind: GrayboxLinkKind, oneWay?: boolean];
 
 export interface GrayboxLayer {

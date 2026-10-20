@@ -658,7 +658,8 @@ export const surfaceTextures = (
     layers.magFilter = THREE.LinearFilter;
     layers.minFilter = THREE.LinearMipmapLinearFilter;
     layers.generateMipmaps = true;
-    layers.anisotropy = 8;
+    // (sharp floors at a glancing angle; the small low-quality set skips it: it costs on weak GPUs)
+    layers.anisotropy = size >= 512 ? 4 : 1;
     layers.colorSpace = THREE.NoColorSpace; // brightness factors, not colours
     layers.needsUpdate = true;
     const msize = 256;

@@ -16,6 +16,9 @@ export type KillKind =
   | 'deagle'
   | 'world';
 
+/** Why a Wind-up Throw can't start right now (sim/combat.ts `windupBlock`). */
+export type WindupRefusal = 'running' | 'air' | 'crouched';
+
 export type SimEvent =
   | { type: 'jump'; player: number }
   | { type: 'land'; player: number; speed: number }
@@ -42,6 +45,9 @@ export type SimEvent =
   | { type: 'mag'; player: number; on: boolean }
   | { type: 'padFlip'; pad: number; zone: number }
   | { type: 'launch'; player: number; pad: number }
+  /** a suction tube (LevelDef.liftTubes) pulled `player` in / threw them out at its top */
+  | { type: 'tubeEnter'; player: number; tube: number }
+  | { type: 'tubeExit'; player: number; tube: number }
   | {
       type: 'portal';
       player: number;
@@ -85,6 +91,11 @@ export type SimEvent =
   | { type: 'windupStart'; player: number }
   | { type: 'windupReady'; player: number }
   | { type: 'windupCancel'; player: number }
+  /**
+   * RMB didn't start a Wind-up Throw, and why (the HUD says so): running on the ground, in the
+   * air without the jetpack, or crouched / sliding
+   */
+  | { type: 'windupRefused'; player: number; reason: WindupRefusal }
   | { type: 'slash'; player: number }
   | { type: 'laserWarn'; player: number }
   | { type: 'laserFire'; player: number; from: Vec3; to: Vec3; hit: number }

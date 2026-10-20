@@ -21,6 +21,7 @@ export interface BoomerangState {
   vel: Vec3;
   t: number; // ticks in current phase
   outTicks: number; // planned out-flight ticks
+  dist: number; // metres flown on the way out (a Quick Throw's speed falls off with it)
   curve: number; // -1 left, 0 straight, +1 right
   curveAxis: Vec3; // axis the curve rotates around (thrower's up at release)
   tiltRef: Vec3; // the throw's flat aim direction: turning away from it tilts a Quick Throw
@@ -115,8 +116,19 @@ export interface CombatPlayerState {
    * small Laser shot) and breaks. A charged Wind-up Throw goes straight through it.
    */
   shield: boolean;
-  /** thrown by a launch pad and not landed yet: that landing never hurts */
+  /**
+   * thrown by a launch pad or a suction tube (sim/devices.ts) and not settled on the ground
+   * yet: no landing hurts until then (not even after hitting a wall or ceiling, landing lower
+   * than aimed, or brushing a ledge on the way). It ends after `padSettleSec` on the ground.
+   */
   padFlight: boolean;
+  /** ticks on the ground since a pad / tube flight came down (ends padFlight, see above) */
+  padSettle: number;
+  /**
+   * in the air on a jetpack flight: the jetpack burned since you left the ground (the
+   * Wind-up Throw may be used then, sim/combat.ts). Cleared on landing.
+   */
+  jetFlight: boolean;
   lastHurtTick: number;
   lastAttacker: number;
   kills: number;

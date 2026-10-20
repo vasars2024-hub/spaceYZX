@@ -50,6 +50,7 @@ export const newBoomerang = (owner: number, pos: Vec3): BoomerangState => ({
   vel: v3(),
   t: 0,
   outTicks: 0,
+  dist: 0,
   curve: 0,
   curveAxis: v3(0, 1, 0),
   tiltRef: v3(0, 0, -1),
@@ -148,6 +149,8 @@ export const createPlayer = (
     stun: 0,
     shield: false,
     padFlight: false,
+    padSettle: 0,
+    jetFlight: false,
     lastHurtTick: -1000,
     lastAttacker: -1,
     kills: 0,
@@ -164,6 +167,8 @@ export const createPlayer = (
     raceAnchor: -1,
     raceFreeCp: 0,
     portalYaw: 0,
+    tube: -1,
+    tubeCd: 0,
   };
 };
 
@@ -248,13 +253,14 @@ export const step = (
     updateMovement(world, ctx, p, input);
     updateDevices(world, ctx, p);
     if (race) updateRaceBody(world, ctx, p);
-    // a hard landing hurts (races have no damage; a launch pad's landing never does)
-    const tickEvents = world.events.slice(eventsBefore);
-    const landed = tickEvents.find((e) => e.type === 'land' && e.player === p.id);
+    // a hard landing hurts (races have no damage). A launch pad's or suction tube's flight
+    // never does: p.padFlight stays on until you've stood on the ground for a moment
+    // (devices.ts), whatever the flight hit on the way, and landing on a pad sets it too
+    const landed = world.events
+      .slice(eventsBefore)
+      .find((e) => e.type === 'land' && e.player === p.id);
     if (landed && landed.type === 'land') {
       const dmg = race || p.padFlight ? 0 : fallDamage(landed.speed, ctx);
-      // the pad flight is over, unless a pad threw you again this same tick
-      if (!tickEvents.some((e) => e.type === 'launch' && e.player === p.id)) p.padFlight = false;
       if (dmg > 0)
         applyDamage(world, ctx, p.id, p, dmg, 'world', false, clone(p.pos), clone(p.pos));
     }

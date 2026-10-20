@@ -423,9 +423,12 @@ describe('power-ups: Double boomerang', () => {
     // flick left in flight: the real one bends left (-X); the twin keeps its angle to the right
     tick(sim, { 1: { buttons: 0, view: view(15) } }, 1);
     tick(sim, { 1: { buttons: 0, view: view(30) } }, 1);
+    // (a tilt only bends a throw once it is tiltStartDist metres out)
+    for (let i = 0; i < 30 && b.curve === 0; i++)
+      tick(sim, { 1: { buttons: 0, view: view(30) } }, 1);
     expect(b.curve).toBeLessThan(-0.2);
     expect(t.curve).toBe(0);
-    tick(sim, { 1: { buttons: 0, view: view(30) } }, 18);
+    tick(sim, { 1: { buttons: 0, view: view(30) } }, 12);
     expect(t.pos.x - b.pos.x).toBeGreaterThan(1);
   });
 

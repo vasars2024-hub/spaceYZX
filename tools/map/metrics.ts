@@ -1130,7 +1130,7 @@ export const sightEdges = (an: Analyzer): SightEdge[] => {
       notes.set(k, notes.get(k) ? `${notes.get(k)}; ${note}` : note);
   };
   for (const at of [10, 35, 60, 90]) put(at, '');
-  put(c.quickSpeed * c.quickOutSec, "the Quick Throw's turn-back point");
+  put(c.quickOutDist, "the Quick Throw's turn-back point");
   put(c.windupRange, "the Wind-up Throw's range");
   const fog = an.level.def.fog;
   if (fog) put(fog.far, 'the fog limit');
@@ -2505,7 +2505,7 @@ export const analyzeMap = (
         fog: level.def.fog ? { near: level.def.fog.near, far: level.def.fog.far } : null,
         game: {
           sprintSpeed: an.game.movement.sprintSpeed,
-          quickThrowReach: r1(an.game.combat.quickSpeed * an.game.combat.quickOutSec),
+          quickThrowReach: r1(an.game.combat.quickOutDist),
           windupRange: an.game.combat.windupRange,
           laserRange: an.game.combat.laserRange,
           spawnLockSec: an.game.rules.spawnLockSec,

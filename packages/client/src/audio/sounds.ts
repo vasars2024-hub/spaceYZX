@@ -337,6 +337,19 @@ const defs = {
       0.6,
     );
   },
+  tubeSuck: (sr) => {
+    // a suction tube pulling you in: a hollow whoosh rising in pitch as it carries you up
+    const d = 0.75;
+    return finish(
+      mix(sr, d, [
+        { sig: whoosh(sr, d, 71, expSweep(350, 3200, 0.6), 1.6, swell(0.12, 0.35)), gain: 1 },
+        { sig: whoosh(sr, d, 72, expSweep(180, 900, 0.6), 2.5, swell(0.2, 0.3)), gain: 0.5 },
+        { sig: tone(sr, d, 'sine', expSweep(110, 330, 0.6), 0.3, 0.15), gain: 0.25 },
+      ]),
+      sr,
+      0.7,
+    );
+  },
   step: (sr) => {
     const d = 0.08;
     return finish(

@@ -10,12 +10,18 @@ import {
   addPlayer,
   predictThrow,
   eyePos,
+  hitboxOf,
+  chestOf,
+  madd,
+  quickSpeedAt,
+  quickFlightTime,
   type PlayerState,
   type PlayerInput,
   type SimEvent,
   type Quat,
   type BoxDef,
   type BoomerangState,
+  type Vec3,
 } from '../src/index';
 import { flatLevel, makeSim, settle, view, type Sim } from './helpers';
 
@@ -72,7 +78,7 @@ describe('Boomerang: Quick Throw', () => {
     }
     expect(caught).toBe(true);
     expect(b.phase).toBe(Phase.Held);
-    // ~45 m/s for ~0.63 s out => roughly 28-34 m (+50 % after the first playtest)
+    // it turns back after quickOutDist (32 m)
     expect(maxDist).toBeGreaterThan(24);
     expect(maxDist).toBeLessThan(38);
   });
@@ -124,8 +130,16 @@ describe('Boomerang: Quick Throw', () => {
     tick(sim, { 1: { buttons: 0, view: view(-15) } }, 1);
     tick(sim, { 1: { buttons: 0, view: view(-30) } }, 1);
     const b = boomerangOf(sim, 1);
+    // (no tilt over the first tiltStartDist metres)
+    expect(b.curve).toBe(0);
+    let distAtTilt = 0;
+    for (let i = 0; i < 30 && b.curve === 0; i++) {
+      distAtTilt = b.dist;
+      tick(sim, { 1: { buttons: 0, view: view(-30) } }, 1);
+    }
+    expect(distAtTilt).toBeGreaterThanOrEqual(sim.config.combat.tiltStartDist);
     expect(b.curve).toBeGreaterThan(0.5);
-    tick(sim, { 1: { buttons: 0, view: view(-30) } }, 24); // 0.4 s later
+    tick(sim, { 1: { buttons: 0, view: view(-30) } }, 18); // 0.3 s later
     expect(b.phase).toBe(Phase.Out);
     expect(b.curve).toBe(0);
   });
@@ -235,6 +249,105 @@ describe('Boomerang: Quick Throw', () => {
   });
 });
 
+/** The view looking from `from` at `to` (yaw 0 = facing -Z, 90 = facing -X). */
+const lookAt = (from: Vec3, to: Vec3): Quat => {
+  const d = sub(to, from);
+  const yaw = (Math.atan2(-d.x, -d.z) * 180) / Math.PI;
+  const pitch = (Math.atan2(d.y, Math.hypot(d.x, d.z)) * 180) / Math.PI;
+  return view(yaw, pitch);
+};
+
+describe('Boomerang: speed falls off with distance, short and medium throws go where you aim', () => {
+  it('the speed curve: +50 % near, slower far', () => {
+    const c = makeSim(flatLevel()).config.combat;
+    expect(quickSpeedAt(0, c)).toBeCloseTo(45 * 1.5, 6);
+    expect(quickSpeedAt(c.quickFastDist, c)).toBeCloseTo(c.quickSpeed, 6);
+    expect(quickSpeedAt(30, c)).toBeLessThan(c.quickSpeed);
+    expect(quickSpeedAt(30, c)).toBeGreaterThan(c.quickFarSpeed);
+    expect(quickSpeedAt(c.quickSlowDist, c)).toBeCloseTo(c.quickFarSpeed, 6);
+    expect(quickSpeedAt(80, c)).toBeCloseTo(c.quickFarSpeed, 6);
+    for (let d = 0; d < 60; d += 0.5)
+      expect(quickSpeedAt(d + 0.5, c)).toBeLessThanOrEqual(quickSpeedAt(d, c));
+  });
+
+  it('a real throw flies at that speed, and reaches 5 / 15 / 30 m in quickFlightTime', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    sim.config.movement.runSpeed = 0;
+    sim.config.movement.sprintSpeed = 0;
+    quickThrow(sim, 1);
+    const b = boomerangOf(sim, 1);
+    const start = { ...b.pos };
+    const reached: Record<number, number> = {};
+    for (let i = 1; i <= 40 && b.phase === Phase.Out; i++) {
+      const before = b.dist;
+      tick(sim);
+      if (b.phase !== Phase.Out) break;
+      // this tick's step is the speed at the distance flown so far
+      expect((b.dist - before) * 60).toBeCloseTo(quickSpeedAt(before, sim.config.combat), 6);
+      for (const d of [5, 15, 30])
+        if (reached[d] === undefined && len(sub(b.pos, start)) >= d) reached[d] = i / 60;
+    }
+    for (const d of [5, 15, 30]) {
+      const t = quickFlightTime(d, sim.config.combat, 1 / 60);
+      expect(reached[d]).toBeGreaterThanOrEqual(t - 1e-9);
+      expect(reached[d]).toBeLessThan(t + 1 / 60 + 1e-9);
+    }
+    // much faster than before at medium range (it was 45 m/s: 0.33 s to 15 m)
+    expect(quickFlightTime(15, sim.config.combat, 1 / 60)).toBeLessThan(0.25);
+  });
+
+  /** Throw at a target `dist` m away (aimed at `part`), then optionally turn the view. */
+  const shoot = (dist: number, part: 'head' | 'chest', afterTurnDeg = 0, strafe = false) => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    const enemy = addOther(sim, 2, 1, v3(0, 0, -dist), 180);
+    const moving = strafe ? Btn.Right : 0;
+    tick(sim, { 2: { buttons: moving } }, 60);
+    const eye = eyePos(sim.p, sim.config.movement);
+    const target = () => {
+      const hb = hitboxOf(enemy, sim.config);
+      const at = part === 'head' ? hb.head : chestOf(hb);
+      // lead a moving target by the throw's flight time (what the bots do; the throw leaves
+      // next tick)
+      const t = quickFlightTime(len(sub(at, eye)), sim.config.combat, 1 / 60) + 1 / 60;
+      return strafe ? madd(at, enemy.vel, t) : at;
+    };
+    const ev = tick(
+      sim,
+      { 1: { buttons: Btn.Fire, view: lookAt(eye, target()) }, 2: { buttons: moving } },
+      5,
+    );
+    const at = target();
+    ev.push(...tick(sim, { 1: { buttons: 0, view: lookAt(eye, at) }, 2: { buttons: moving } }, 1));
+    // a quick mouse correction right after letting go (turning `afterTurnDeg` in 2 ticks)
+    const yaw = (Math.atan2(-(at.x - eye.x), -(at.z - eye.z)) * 180) / Math.PI;
+    const pitch =
+      (Math.atan2(at.y - eye.y, Math.hypot(at.x - eye.x, at.z - eye.z)) * 180) / Math.PI;
+    for (let i = 1; i <= 40; i++) {
+      const turned = view(yaw - afterTurnDeg * Math.min(1, i / 2), pitch);
+      ev.push(...tick(sim, { 1: { view: turned }, 2: { buttons: moving } }, 1));
+    }
+    return ev.find((e) => e.type === 'hit' && e.victim === 2);
+  };
+
+  for (const d of [5, 15, 30]) {
+    it(`hits exactly where you aim at ${d} m: head, chest, after a quick mouse correction`, () => {
+      const head = shoot(d, 'head');
+      expect(head?.type === 'hit' && head.head).toBe(true);
+      const chest = shoot(d, 'chest');
+      expect(chest?.type === 'hit' && !chest.head).toBe(true);
+      expect(shoot(d, 'chest', 10)).toBeDefined();
+      expect(shoot(d, 'chest', -10)).toBeDefined();
+    });
+  }
+
+  it('hits a strafing target at 15 and 30 m when you lead it by the flight time', () => {
+    expect(shoot(15, 'chest', 0, true)).toBeDefined();
+    expect(shoot(30, 'chest', 0, true)).toBeDefined();
+  });
+});
+
 describe('Wind-up Throw', () => {
   it('takes windupSec, slows you to a walk, then kills in one body hit', () => {
     const sim = makeSim(flatLevel());
@@ -284,6 +397,76 @@ describe('Wind-up Throw', () => {
     tick(sim, { 1: { buttons: Btn.Alt }, 2: { buttons: Btn.Fire, view: view(180, -3) } }, 20);
     expect(sim.p.hp).toBeLessThan(100);
     expect(sim.p.windup === 0 || sim.p.windup < 40).toBe(true);
+  });
+});
+
+describe('Wind-up Throw ("sniper" throw): jetpacking yes, running no', () => {
+  const refusal = (ev: SimEvent[]) => {
+    const r = ev.find((e) => e.type === 'windupRefused' && e.player === 1);
+    return r?.type === 'windupRefused' ? r.reason : null;
+  };
+
+  it('is refused while running on the ground, and starts once you slow down', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    tick(sim, { 1: { buttons: Btn.Forward } }, 40); // sprinting
+    expect(Math.hypot(sim.p.vel.x, sim.p.vel.z)).toBeGreaterThan(8);
+    let ev = tick(sim, { 1: { buttons: Btn.Forward | Btn.Alt } }, 1);
+    expect(refusal(ev)).toBe('running');
+    expect(sim.p.windup).toBe(0);
+    // still refused while you keep running with RMB held
+    tick(sim, { 1: { buttons: Btn.Forward | Btn.Alt } }, 30);
+    expect(sim.p.windup).toBe(0);
+    // let go of the keys: you slow down in a moment, then RMB starts it
+    tick(sim, {}, 15);
+    expect(Math.hypot(sim.p.vel.x, sim.p.vel.z)).toBeLessThanOrEqual(
+      sim.config.combat.windupMaxRunSpeed,
+    );
+    ev = tick(sim, { 1: { buttons: Btn.Alt } }, 1);
+    expect(ev.some((e) => e.type === 'windupStart')).toBe(true);
+    expect(sim.p.windup).toBeGreaterThan(0);
+  });
+
+  it('is refused in a plain jump (no jetpack)', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    tick(sim, { 1: { buttons: Btn.Jump } }, 1);
+    tick(sim, {}, 6);
+    expect(sim.p.grounded).toBe(false);
+    const ev = tick(sim, { 1: { buttons: Btn.Alt } }, 1);
+    expect(refusal(ev)).toBe('air');
+    expect(sim.p.windup).toBe(0);
+  });
+
+  it('works in the air on the jetpack: winds up, keeps going as you fall, kills', () => {
+    const sim = makeSim(flatLevel());
+    settle(sim);
+    const enemy = addOther(sim, 2, 1, v3(0, 0, -40));
+    settle(sim);
+    // jump, then press and hold Space in the air: the jetpack
+    tick(sim, { 1: { buttons: Btn.Jump } }, 1);
+    tick(sim, {}, 4);
+    tick(sim, { 1: { buttons: Btn.Jump } }, 10);
+    expect(sim.p.jetOn).toBe(true);
+    let ev = tick(sim, { 1: { buttons: Btn.Jump | Btn.Alt } }, 1);
+    expect(refusal(ev)).toBe(null);
+    expect(sim.p.windup).toBeGreaterThan(0);
+    // hold RMB (and Space while the fuel lasts) until it's fully wound, still in the air
+    const full = Math.round(sim.config.combat.windupSec * 60);
+    ev = [];
+    for (let i = 0; i < full + 5 && !ev.some((e) => e.type === 'windupReady'); i++)
+      ev.push(...tick(sim, { 1: { buttons: Btn.Alt | (i < 30 ? Btn.Jump : 0) } }, 1));
+    expect(ev.some((e) => e.type === 'windupReady')).toBe(true);
+    expect(ev.some((e) => e.type === 'windupCancel')).toBe(false);
+    expect(sim.p.grounded).toBe(false);
+    expect(sim.p.jetOn).toBe(false); // (the tank ran dry: still a jetpack flight)
+    // fire from the air at the enemy's chest
+    const aim = lookAt(eyePos(sim.p, sim.config.movement), chestOf(hitboxOf(enemy, sim.config)));
+    ev = tick(sim, { 1: { buttons: Btn.Alt | Btn.Fire, view: aim } }, 1);
+    for (let i = 0; i < 30; i++) ev.push(...tick(sim));
+    const kill = ev.find((e) => e.type === 'kill');
+    expect(kill?.type === 'kill' && kill.kind).toBe('windup');
+    expect(enemy.alive).toBe(false);
   });
 });
 

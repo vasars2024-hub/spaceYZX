@@ -1,256 +1,542 @@
-// Train (the CS2 / CS:GO map de_train), rebuilt as a graybox about 3× its real size: our players
-// are much faster than CS players (sprint 9 m/s, dash, jetpack), so every distance and every
-// corridor width is scaled up the same way. Heights keep the CS differences, × 1.5 at most.
-//
-// Scale: CS units → metres (1 unit = 0.0254 m), then × TRAIN_SCALE (3) horizontally. The layout
-// below is written in real CS units (about 4150 × 3100 of them); a grid cell is 64 units (4.88 m at
-// 3×: few enough cells for the bots' route search), so changing TRAIN_SCALE rescales the whole map.
-// Result: 65 × 48 cells of 4.88 m = 317 × 234 m, 1492 floor cells (bot waypoints).
-//
-// North is up (row 0). T spawn in the west, CT spawn in the east; A (the big train yard, the
-// "outer" / old bomb site) in the north, B (the "inner" / new site) in the south-east. Callouts:
-//   T side   T Spawn, Ivy (north, then east into the yard), T Main → A Main, Popdog (A Main →
-//            T Connector), T Connector (Popdog → Upper B Halls), B Halls (the hall out of
-//            T spawn), Upper B Halls (one floor up), Lower B Halls
-//   A        A Yard with the train cars in rows (the Ivy row, the bomb train row through the
-//            A Site, the Main row),
-//            Ivy Trains, El Box (the electrical box by A Main), Z (south-east corner), Hell
-//            (under Heaven), Heaven (the catwalk over Hell, one floor up), Ladder Room (A → CT,
-//            with a suction tube up to Heaven instead of the ladder, and stairs for the bots),
-//            Connector (Z → B)
-//   B        B Site with its two cars, Upper B (the balcony where Upper B Halls come out)
-//   CT       CT Spawn (to Ladder Room), CT B (the hall down to B)
-// The trains are long props (car-sized blocks 3.5 m tall) standing in rows with gaps between
-// them, the cover of the map. Bomb: T spawn = Orange (attackers), CT spawn = Cyan (defenders).
+// Train (CS2), TRACED from Valve's radar overview by the CS map tracer (trace.mjs, outside
+// the repo: C:\Users\rolli\wt\cs-refs; spec: specs/train.json). Regenerate it rather than editing:
+//   node C:\Users\rolli\wt\cs-refs\trace.mjs train --repo <checkout>
+// Scale: 1.25× the real map across (1 radar px = 4.082077 units; one cell = 40 units =
+// 1.270 m), heights 1.0× (1 unit = 0.0254 m), per cell from the radar's height colours, built
+// smooth (graybox.ts: layer heights). 103 × 94 cells ≈ 131 × 119 m, 4493 floor cells.
+// North (row 0) is up on the radar. Orange = T (attackers), Cyan = CT (defenders).
+// Callouts: T Spawn, Alley, Pigeons, Ivy, Tunnels, CT Stairs, CT Spawn, Back Site, B Site,
+// B Site, Catwalk, Headshot, Upper B, B Halls, Brown Halls, Lower B, Long Dog, T Stairs, T Main,
+// Popdog, T Connector, T Upper, Popdog Room, A Main, Ladder Room, Heaven, El Box, Sandwich, A Site,
+// A Site, Hell, A Passages, Connector, Z.
 import type { LevelDef } from '../../types';
-import {
-  buildGraybox,
-  type GrayboxArea,
-  type GrayboxLayout,
-  type GrayboxProp,
-  type GrayboxSign,
-} from '../../graybox';
+import { buildGraybox, unpackHeights, type GrayboxLayout } from '../../graybox';
 
-/** How much bigger than the real CS map (horizontally). The one number to change the scale. */
-export const TRAIN_SCALE = 3;
-/** Real CS height differences × this (the owner's rule: 1.5 at most). */
-const V_SCALE = 1.5;
-/** One CS unit in metres. */
-const UNIT_M = 0.0254;
-/** CS units per grid cell (64: about 4.9 m at 3×; keeps the bots' waypoint count low). */
-const UNITS_PER_CELL = 64;
-/** Metres per grid cell. */
-const CELL_M = UNITS_PER_CELL * UNIT_M * TRAIN_SCALE;
-/** The map's corner (CS units, as written below) and its extent from there. */
-const X0 = 50;
-const Y0 = 200;
-const W_U = 4150;
-const H_U = 3100;
-
-/** CS units → grid cells. */
-const cell = (u: number) => Math.round(u / UNITS_PER_CELL);
-/** CS units of height → metres in our map. */
-const hu = (u: number) => Math.round(u * UNIT_M * V_SCALE * 100) / 100;
-
-/** An area rectangle in CS units: [legend char, west, north, east, south]. Later ones win. */
-type Rect = [c: string, x0: number, y0: number, x1: number, y1: number];
-
-const paint = (rects: Rect[]): string[] => {
-  const grid = Array.from({ length: cell(H_U) }, () => Array<string>(cell(W_U)).fill('.'));
-  for (const [c, x0, y0, x1, y1] of rects)
-    for (let y = cell(y0 - Y0); y < cell(y1 - Y0); y++)
-      for (let x = cell(x0 - X0); x < cell(x1 - X0); x++) grid[y][x] = c;
-  return grid.map((r) => r.join(''));
-};
-
-/** A prop in CS units (corner to corner), `h` metres tall (props keep human-size heights). */
-const prop = (
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  h: number,
-  kind: GrayboxProp['kind'],
-): GrayboxProp => {
-  const k = 1 / UNITS_PER_CELL;
-  const r = (v: number) => Math.round(v * 100) / 100;
-  return {
-    x: r((x0 - X0) * k),
-    y: r((y0 - Y0) * k),
-    w: r((x1 - x0) * k),
-    d: r((y1 - y0) * k),
-    h,
-    kind,
-  };
-};
-
-/** A train car lying east-west: 3.5 m tall, about 30 m long and 7.5 m wide at this scale. */
-const car = (x0: number, y0: number, len = 400): GrayboxProp =>
-  prop(x0, y0, x0 + len, y0 + 100, 3.5, 'car');
-
-type Dir = 'n' | 's' | 'e' | 'w';
-const STEP: Record<Dir, [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
-const BACK: Record<Dir, Dir> = { n: 's', s: 'n', e: 'w', w: 'e' };
-const RIGHT: Record<Dir, Dir> = { n: 'e', e: 's', s: 'w', w: 'n' };
-
-const H_UP = hu(128); // one floor up: Heaven, Upper B Halls, Upper B
-
-const legend: Record<string, GrayboxArea> = {
-  O: { n: 'T Spawn', k: 'orange', h: 0 },
-  i: { n: 'Ivy', k: 'room', h: 0 },
-  m: { n: 'T Main', k: 'room', h: 0 },
-  M: { n: 'A Main', k: 'room', h: 0 },
-  P: { n: 'Popdog', k: 'room', h: 0 },
-  c: { n: 'T Connector', k: 'ramp', r: [0, H_UP], dir: 's', s: 'T Con' },
-  b: { n: 'B Halls', k: 'room', h: 0 },
-  U: { n: 'Upper B Ramp', k: 'ramp', r: [0, H_UP], dir: 'e', s: 'Upper B' },
-  u: { n: 'Upper B Halls', k: 'room', h: H_UP, s: 'Upper B' },
-  l: { n: 'Lower B Halls', k: 'room', h: 0, s: 'Lower B' },
-  y: { n: 'A Yard', k: 'room', h: 0, s: 'Yard' },
-  A: { n: 'A Site', k: 'site', h: 0 },
-  n: { n: 'Ivy Trains', k: 'room', h: 0, s: 'Ivy' },
-  e: { n: 'El Box', k: 'room', h: 0 },
-  Z: { n: 'Z', k: 'room', h: 0 },
-  h: { n: 'Hell', k: 'room', h: 0 },
-  H: { n: 'Heaven', k: 'room', h: H_UP },
-  L: { n: 'Ladder Room', k: 'room', h: 0, s: 'Ladder' },
-  R: { n: 'Heaven Stairs', k: 'ramp', r: [0, H_UP], dir: 'n', s: 'Ladder' },
-  C: { n: 'Connector', k: 'room', h: 0, s: 'Con' },
-  B: { n: 'B Site', k: 'site', h: 0 },
-  X: { n: 'Upper B', k: 'room', h: H_UP },
-  Y: { n: 'CT Spawn', k: 'cyan', h: 0 },
-  k: { n: 'CT B', k: 'room', h: 0 },
-};
-
-const ground = paint([
-  // ---- T side
-  ['O', 150, 1550, 650, 2550],
-  ['i', 300, 300, 500, 1550],
-  ['i', 300, 300, 1450, 500],
-  ['m', 650, 1700, 1100, 1950],
-  ['M', 1050, 1300, 1450, 1750],
-  ['P', 1250, 1750, 1450, 2100],
-  ['P', 1250, 2100, 2050, 2300],
-  ['c', 1850, 2300, 2050, 2500],
-  ['b', 650, 2400, 950, 3150],
-  ['U', 950, 2500, 1400, 2700],
-  ['u', 1400, 2500, 2800, 2700],
-  ['l', 950, 2950, 2800, 3150],
-  // ---- A: the train yard
-  ['y', 1450, 300, 3100, 1550],
-  ['n', 1450, 300, 2900, 600],
-  ['A', 1800, 700, 2700, 1200],
-  ['e', 1450, 1150, 1800, 1550],
-  ['Z', 2700, 1300, 3300, 1550],
-  ['h', 2900, 300, 3100, 1050],
-  ['R', 3100, 350, 3350, 900],
-  ['L', 3100, 900, 3700, 1250],
-  ['C', 3100, 1550, 3300, 2450],
-  // ---- B
-  ['B', 2800, 2450, 3600, 3150],
-  ['X', 2800, 2450, 3050, 2700],
-  // ---- CT
-  ['Y', 3700, 950, 4100, 1750],
-  ['k', 3600, 1750, 3780, 2700],
-]);
-/** Heaven: the catwalk over Hell, one floor up (an overlay: '.' there is nothing, not wall). */
-const upper = paint([['H', 2900, 300, 3100, 1050]]);
-
-const rows = ground;
-
-/**
- * A painted sign for a reader standing at (x, y) (CS units) and looking `wall`-ward: it goes on
- * the first wall that way, on the face toward the reader. `toward`: the way the arrow points on
- * the map, drawn → or ← as the reader facing the wall sees it.
- */
-const sign = (x: number, y: number, wall: Dir, label: string, toward?: Dir): GrayboxSign => {
-  const [dx, dy] = STEP[wall];
-  const k = 1 / UNITS_PER_CELL;
-  let cx = Math.floor((x - X0) * k);
-  let cy = Math.floor((y - Y0) * k);
-  // (a spot right at a wall's edge may fall into the wall cell: step back out of it)
-  for (let i = 0; i < 3 && rows[cy]?.[cx] === '.'; i++) {
-    cx -= dx;
-    cy -= dy;
-  }
-  if (rows[cy]?.[cx] === '.') throw new Error(`Train: sign "${label}" stands in a wall`);
-  while ((rows[cy + dy]?.[cx + dx] ?? '.') !== '.') {
-    cx += dx;
-    cy += dy;
-  }
-  const text = !toward
-    ? label
-    : toward === RIGHT[wall]
-      ? `${label} →`
-      : toward === BACK[RIGHT[wall]]
-        ? `← ${label}`
-        : label;
-  return { x: cx + dx, y: cy + dy, face: BACK[wall], text };
-};
-
-const props: GrayboxProp[] = [
-  // A: the Ivy row of cars, the bomb train row through the site, the Main row by El Box / Z
-  car(1500, 380),
-  car(2000, 380),
-  car(2500, 380, 350),
-  car(1850, 900),
-  car(2350, 900, 300),
-  car(1850, 1300),
-  car(2350, 1300, 250),
-  // the El Box, boxes by Z and in Hell
-  prop(1550, 1300, 1650, 1400, 2.0, 'wall'),
-  prop(2850, 1400, 2950, 1500, 1.6, 'crate'),
-  prop(2950, 800, 3050, 900, 1.2, 'crate'),
-  // a car along Ivy
-  car(700, 330),
-  // B: two cars and boxes
-  car(3100, 2750),
-  car(2900, 3000),
-  prop(3450, 2980, 3550, 3080, 1.6, 'crate'),
-  prop(2850, 2750, 2950, 2850, 1.2, 'crate'),
-  // halls and CT spawn
-  prop(750, 2900, 850, 3000, 1.6, 'crate'),
-  prop(3850, 1300, 3950, 1400, 1.6, 'crate'),
-];
-
-const signs: GrayboxSign[] = [
-  // T spawn: which way to each site
-  sign(400, 1600, 'w', 'IVY', 'n'),
-  sign(600, 1600, 'n', 'A MAIN', 'e'),
-  sign(600, 2500, 's', 'B', 'e'),
-  // Ivy, A Main, Popdog into A
-  sign(1350, 350, 'n', 'A', 'e'),
-  sign(1400, 1350, 'n', 'A', 'e'),
-  sign(1400, 2250, 's', 'POPDOG'),
-  sign(1950, 2350, 'e', 'UPPER B', 's'),
-  sign(2300, 350, 'n', 'A SITE'),
-  // B halls
-  sign(1100, 2550, 'n', 'UPPER B', 'e'),
-  sign(1100, 3080, 's', 'LOWER B', 'e'),
-  sign(3300, 3100, 's', 'B SITE'),
-  // A side toward CT and B
-  sign(3200, 1600, 'w', 'CONNECTOR'),
-  sign(3400, 1200, 's', 'CT', 'e'),
-  sign(3200, 950, 'n', 'HEAVEN'),
-  // CT spawn
-  sign(3900, 1000, 'n', 'A', 'w'),
-  sign(3700, 2650, 's', 'B', 'w'),
-];
+/** metres per grid cell */
+export const TRAIN_CELL_M = 1.27;
 
 export const TRAIN_LAYOUT: GrayboxLayout = {
   name: 'Train',
-  cellM: CELL_M,
-  layers: [
-    { name: 'Yard', y: 0, rows: ground },
-    { name: 'Heaven (one floor up)', y: H_UP, rows: upper, overlay: true },
-  ],
-  legend,
-  // the ladder from Ladder Room up to Heaven: a suction tube (no ladders in our game)
-  links: [['L', 'H', 'tube', true]],
+  cellM: TRAIN_CELL_M,
   theme: 'industrial',
   cover: false,
-  props,
-  signs,
+  waypointEvery: 2,
+  props: [
+    { x: 59.578, y: 47.638, w: 13.063, d: 4.184, h: 3.8, kind: 'car' },
+    { x: 48.658, y: 76.416, w: 13.063, d: 3.674, h: 3.8, kind: 'car' },
+    { x: 64.782, y: 70.599, w: 11.532, d: 3.164, h: 3.4, kind: 'car' },
+    { x: 64.272, y: 33.044, w: 10.511, d: 3.164, h: 3.8, kind: 'car' },
+    { x: 49.169, y: 70.599, w: 10.409, d: 3.164, h: 3.8, kind: 'car' },
+    { x: 56.414, y: 83.662, w: 12.042, d: 2.653, h: 3.8, kind: 'car' },
+    { x: 48.046, y: 40.29, w: 5.409, d: 2.449, h: 3.8, kind: 'car' },
+    { x: 53.659, y: 38.453, w: 5.409, d: 2.449, h: 3.8, kind: 'car' },
+    { x: 36.616, y: 37.126, w: 1.837, d: 2.85, h: 1.3, kind: 'crate' },
+    { x: 46.923, y: 51.414, w: 2.143, d: 2.551, h: 2.2, kind: 'crate' },
+    { x: 79.376, y: 31.411, w: 2.551, d: 2.143, h: 1.6, kind: 'crate' },
+    { x: 66.109, y: 36.544, w: 5.065, d: 0.962, h: 2.2, kind: 'crate' },
+    { x: 68.15, y: 68.558, w: 2.449, d: 1.418, h: 1.3, kind: 'crate' },
+    { x: 51.024, y: 31.024, w: 1.411, d: 0.898, h: 2.2, kind: 'crate' },
+    { x: 59.476, y: 55.292, w: 1.837, d: 1.735, h: 2.2, kind: 'crate' },
+    { x: 29.575, y: 82.335, w: 1.735, d: 1.735, h: 2.2, kind: 'crate' },
+    { x: 38.555, y: 43.045, w: 0.816, d: 3.674, h: 2.6, l: 1, kind: 'wall' },
+    { x: 42.637, y: 33.024, w: 0.339, d: 4.919, h: 2.6, l: 1, kind: 'wall' },
+    { x: 75.172, y: 69.187, w: 0.805, d: 0.789, h: 1.3, kind: 'crate' },
+    { x: 78.287, y: 66.311, w: 1.407, d: 1.407, h: 1.3, kind: 'crate' },
+    { x: 76.08, y: 9.129, w: 1.362, d: 1.362, h: 2.2, kind: 'crate' },
+    { x: 34.024, y: 24.024, w: 0.48, d: 1.969, h: 1.3, l: 1, kind: 'crate' },
+    { x: 71.024, y: 64.024, w: 0.698, d: 0.963, h: 2.2, kind: 'crate' },
+    { x: 51.414, y: 45.495, w: 0.816, d: 1.939, h: 2.2, kind: 'crate' },
+    { x: 71.518, y: 88.024, w: 0.458, d: 1.353, h: 1.3, kind: 'crate' },
+    { x: 35.315, y: 28.109, w: 1.061, d: 1.061, h: 1.3, kind: 'crate' },
+    { x: 71.926, y: 9.164, w: 0.816, d: 1.327, h: 2.2, kind: 'crate' },
+    { x: 7.735, y: 15.593, w: 0.816, d: 1.327, h: 2.2, kind: 'crate' },
+    { x: 29.248, y: 74.558, w: 0.144, d: 7.288, h: 2.2, kind: 'crate' },
+    { x: 36.435, y: 28.142, w: 1.021, d: 1.021, h: 1.3, kind: 'crate' },
+    { x: 77.029, y: 68.762, w: 0.816, d: 1.225, h: 1.3, kind: 'crate' },
+    { x: 37.517, y: 28.068, w: 0.924, d: 0.924, h: 1.3, kind: 'crate' },
+    { x: 99.837, y: 60.4, w: 0.924, d: 0.924, h: 1.3, kind: 'crate' },
+    { x: 34.659, y: 28.613, w: 0.632, d: 0.918, h: 1.3, kind: 'crate' },
+    { x: 39.024, y: 37.024, w: 0.246, d: 0.919, h: 2.2, l: 1, kind: 'crate' },
+    { x: 99.024, y: 56.513, w: 0.884, d: 0.884, h: 2.2, kind: 'crate' },
+    { x: 2.327, y: 14.267, w: 0.816, d: 0.71, h: 1.1, kind: 'barrel' },
+    { x: 29.983, y: 74.886, w: 0.816, d: 0.714, h: 1.1, kind: 'barrel' },
+    { x: 49.679, y: 74.069, w: 5.511, d: 0.102, h: 2.6, kind: 'wall' },
+    { x: 34.024, y: 27.636, w: 1.776, d: 0.306, h: 2.6, l: 1, kind: 'wall' },
+    { x: 38.465, y: 27.696, w: 0.56, d: 0.729, h: 1.3, kind: 'crate' },
+    { x: 64.432, y: 64.171, w: 0.722, d: 0.722, h: 1.3, kind: 'crate' },
+    { x: 31.024, y: 18.145, w: 0.388, d: 0.714, h: 2.2, kind: 'crate' },
+    { x: 33.248, y: 53.455, w: 4.388, d: 0.102, h: 2.6, kind: 'wall' },
+    { x: 3.347, y: 14.369, w: 0.612, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 4.878, y: 14.369, w: 0.612, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 6.409, y: 14.369, w: 0.612, d: 0.608, h: 1.1, kind: 'barrel' },
+    { x: 17.634, y: 14.369, w: 0.612, d: 0.608, h: 1.1, kind: 'barrel' },
+    { x: 19.165, y: 14.369, w: 0.612, d: 0.608, h: 1.1, kind: 'barrel' },
+    { x: 20.024, y: 14.369, w: 0.57, d: 0.608, h: 1.1, kind: 'barrel' },
+    { x: 38.351, y: 43.045, w: 0.102, d: 3.674, h: 2.6, l: 1, kind: 'wall' },
+    { x: 4.164, y: 14.369, w: 0.51, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 5.694, y: 14.369, w: 0.51, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 18.451, y: 14.369, w: 0.51, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 20.798, y: 14.369, w: 0.51, d: 0.608, h: 2.2, kind: 'crate' },
+    { x: 34.311, y: 29.555, w: 0.586, d: 0.494, h: 1.3, kind: 'crate' },
+    { x: 31.922, y: 18.349, w: 0.51, d: 0.51, h: 2.2, kind: 'crate' },
+    { x: 65.701, y: 60.292, w: 1.429, d: 0.102, h: 2.6, kind: 'wall' },
+    { x: 77.947, y: 68.558, w: 0.102, d: 1.429, h: 2.6, kind: 'wall' },
+  ],
+  signs: [
+    { x: 11, y: 8, face: 's', text: 'T SPAWN' },
+    { x: 39, y: 6, face: 's', text: 'ALLEY' },
+    { x: 86, y: 19, face: 'w', text: 'IVY' },
+    { x: 43, y: 22, face: 'w', text: 'T MAIN' },
+    { x: 59, y: 29, face: 's', text: 'A SITE' },
+    { x: 66, y: 59, face: 'w', text: 'CONNECTOR' },
+    { x: 49, y: 65, face: 's', text: 'B SITE' },
+    { x: 37, y: 70, face: 'n', text: 'UPPER B' },
+    { x: 39, y: 87, face: 's', text: 'LOWER B' },
+    { x: 34, y: 76, face: 'w', text: 'B HALLS' },
+    { x: 93, y: 70, face: 's', text: 'CT SPAWN' },
+    { x: 86, y: 45, face: 's', text: 'TUNNELS' },
+    { x: 101, y: 59, face: 'w', text: 'CT STAIRS' },
+    { x: 29, y: 52, face: 's', text: 'POPDOG' },
+  ],
+  layers: [
+    {
+      name: 'Ground',
+      y: -6.3,
+      rows: [
+        '.......................................................................................................',
+        '.............................................BBBBBBBBBB................................................',
+        '.............................................BBBBBBBBBB................BBBBBB...BBBBBB.DD..............',
+        '.............................................BBBBBBBBBBB.........BBBBBBBBBBBBBBBBBBBBBDDD..............',
+        '.............................................BBBBBBBBBBBBB.CBBB.BBBBBBBBBBBBBBBBBBBBBDDDD..............',
+        '...........................................BBBBBBBBBBBBBBBBCCBBBBBBBBBBBBBBBBBBBBBBDDDDDD..............',
+        '.........................................BBBBBBBBBBBBBBBBBCCCBBBBBBBBBBBBBBBBBBBBBDDDDDDD..............',
+        '......................................BBBBBBBBBBBBBBBBBBBCCCCCBBB.BBBBBBBBBBBBBBBDDDDDDDD..............',
+        '..................................BBBBBBBBBBBBBBBBBBBBBBCCCCCCCC..BBBBBBBBBBBBBBDDDDDDDDD..............',
+        '.AAAAAAAAAAAAAAAAAAAAAA......BBBBBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCC...BBBBBB...BBBBDDDDDDDDD..............',
+        '.AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCC...BBBBBB...BBBDDDDDDDDDD..............',
+        '.AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBB........CCCCCCC..................DDDD..................',
+        '.AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBB........CCCCCCC..................DDDD..................',
+        '.AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBB........CCCCCCC..................DDDD..................',
+        '.AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBB........CCCCCCC..................DDDD..................',
+        '.......AAAAAAAAAA.........BBBBBBBBBBBBBBBBB.BBB.........CCCCCCC..................DDDDD.................',
+        '.......AAAAAAAAAA..............BBBBBBBRRSSS..............CCCCCC..................DDDDD.................',
+        '...............................BBBBBRRRSSSS......................................DDDDD.................',
+        '...............................RRRRRRRSSSSS......................................DDDDD.................',
+        '...............................RRRRRRSSSSSS......................................DDDDD.................',
+        '...............................RRRRRRSSSSSS......................................DDDDD.................',
+        '..............................RRRRRRSSSSSSS......................................DDDD..................',
+        '...............................RRR..SSSSSSS......................................DDDD..................',
+        '...............................RRR..SSSS.........................................DDDD..................',
+        '...............................RRR..SSSS.........................................DDDD..................',
+        '...............................RRRRSSSSS.........................................DDDD..................',
+        '...............................RRRRSSSSS.........................................DDDD..................',
+        '...............................RRRSSSSSS..........................ddddddd........DDDD..................',
+        '...............................RRRSSSSSS..........................ddddddd.........DDDDDD...............',
+        '...............................RRSSSSSSS...ZZZZZZZZlZZZZ..........ddddddd........DDDDDDD...............',
+        '...............................RRSSSSS.....ZZZZZZZZZZZZZ.bbbbbbbb.ddddddd........DDDDDDD...............',
+        '...............................RR.SSSS.....XXXYYYYYYYYYbbbbbbbbbdddddddddd..DDDDDDDDDDDDDDDEEEEEE......',
+        '..................................SSSSSSSS.XXXXYYkYYYYYbbbbbbbbbbdddddddddeDDDDDDDDDDDDDDDEEEEEEE......',
+        '..................................SSSSSSSSXXXXXYYYYYYYYbbbbbbbbbbddddddddeeeDDDDDDDDDDDDDEEEEEEEE......',
+        '..................................SSSSSSSSXXXXXYYYYYYYYbbbbbbbbbbdddddddeeeeeDDDDDDDDDDDDEEEEEEEE......',
+        '..................................SSSSSSSSXXXXXXYYYYYYYbbbbbbbbbbddddddeeeeeeeDDDDDDDDDDEEEEEEEEE......',
+        '..................................SSSSSSSSXXXXXXYYYYYYYbbbbbbbbbbdddddeeeeeeeeEDDDDDDDDDEEEEEEEEE......',
+        '..................................SSSSSSSS.XXXddddddYYYbbbbbbbbbbdddeeeeeeeeeeEEEEDDDDDEEEEEEEEEE......',
+        '..................................SSSSSSSS.Xdddddddddddbbbbbbbbbbbdeeeeeeee..EEEE...........EEEE.......',
+        '..................................SSSSSSSS.ddddddddddddddbbbcccccccccccccce..EEEE...........EEEE.......',
+        '............................................ddddddddddddddbbcccccccccccccceEEEEEE...........EEEE.......',
+        '............................................dddddddddddddddbcccccccccccccceEEEEE............EEEE.......',
+        '............................................ddddddddddddddddccccccccccccccEEEEEE............EEEE.......',
+        '............................................ddddddddddddddddccccccccccccccfEEEEE............EEEE.......',
+        '...........................................dddddddddddddddddccccccccccccccf..EEEE...........EEEE.......',
+        '...........................................dddddddddddddddddccccccccccccccf..ffEE...........EEEE.......',
+        '...........................................dddddddddddddddddccccccccccccccfffffffEEEEEEEEEEEEEEEEEEE...',
+        '...........................................dddddddddddddddddccccccccccccccfffffffEEEEEEEEEEEEEEEEEEE...',
+        '............................................ddddddddddddddddccccccccccccccffffffEEEEEEEEEEEEEEEEEEE....',
+        '...........................................dddddddddddddddddccccccccccccccffffffEEEEEEEEEEEEEEEEEEEE...',
+        '...........................................dddddaaaaadddddddccccccccccccccffffffEEEEEEEEEEEEEEEEEEFF...',
+        '...........................................aaaaaaaaaaaadddddccccccccccccccffffffEEEEEEEEEEEEEEEEEFFF...',
+        '...........................................aaaaaaaaaaaaaaaddcccccccccccccc.fffffEEEEEEEEEEEEEEEEFFFF...',
+        '.......................QQQQQQQQTTTTTTTTTTT..aaaaaaaaaaa..aggdddddddddddddd......................FFFFF..',
+        '.......................QQQQQQQQTTTTTTTTTTTaaaaaaaa.........gggdddd....ddddd.....................FFFFF..',
+        '.......................QQQQQQQQQQTTTTTiTTaaaaaaaaa.........gggggdd....ddddd.....................FFFFF..',
+        '.......................QQQQQQQQQQTTTTTTTTaaaaaaaaa.........ggggggg....dddd......................FFFFF..',
+        '.......................QQQ.....QQ.......Taa.aaaaa..........ggggggg..............................FFFFF..',
+        '.......................QQQ.....QQ.......Taa.................gggggg..............................FFFFF..',
+        '.......................QQQQQQQQQQQQQQQQQTaa................ggggggg..............................FFFFF..',
+        '.......................QQQQQQQQQQQQQQQQQQaa................gggggggggghhhhhh.....................FFFFF..',
+        '.......................QQQQQQQQQQQQQQQQQQQa.................ggggggggghhhhhh.....................FFFFF..',
+        '...........................QQQQQQQ..........................gggggggghhhhhhh.....................FFFFF..',
+        '...........................QQQQQQQ...........................ggggggghhhhhhh.....................FFFFF..',
+        '...........................OQQQQQQ...........................ggggggghhhhhhh.....................FFFFF..',
+        '...........................OOOQQQQ......................................hhh.....................FFFFF..',
+        '...........................OOOOMMM.MMMMMM...KKKKKKKKKKKKKKKKKKKKKKKKhhhhhhhhLLLLLLLL..LLLLLL....FFFFF..',
+        '...........................OOOOOMMMMMMMMMMKKKKKKKKKKKKKKKKKKKKKKKKKKhhhhhhhhLLLLLLLLLLLLLLLL....FFFFF..',
+        '...........................OOOOOMMMMMMMMMMKKKKKKKKKKKKKKKKKKKKKKKKKKhhhhhhhhLLLLLLLLLLLLLLLL....FFFFF..',
+        '...........................OOOOONMMMMMMMMMKKKKKKKKKKKKKKKKKKKKKKKKKKhhhhhhhhLLLLLLLLLLLLLLLL....FFFFF..',
+        '...........................OOOONNN..........KKKIIIIIIIIIIIIIIIIKKKKJJJhhhhhLLLLLLLLL..LLLLLL....FFFFF..',
+        '...........................OOOONNN..........KKKIIIIIIIIIIIIIIIIKKKJJJJJJJhhLLLLLLLLL..LLLLLLLLFFFFFFF..',
+        '...........................OOONNNN..........JJJIIIIIIIIIIIIIIIIKKJJJJJJJJJJHHHHHHLLL..GGGGGGGGGGGGGGG..',
+        '...........................OONNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHH...GGGGGGGGGGGGGGG..',
+        '...........................ONNNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH..GGGGGGGGGGGGGGG..',
+        '...........................ONNNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGG......',
+        '...........................NNNNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGG......',
+        '...........................ONNNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGG......',
+        '...........................OONNNNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHH....GGGGGGGGGGGGGG..',
+        '...........................OOOONNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGGGGGG..',
+        '...........................OOOONNN..........JJJIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGGGGGG..',
+        '...........................OOOONNN..........PPPIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH...GGGGGGGGGGGGGG..',
+        '...........................OOONNNN..........PPPIIIIIIIIIIIIIIIIJJJJJJJJJJJJHHHHHHHHH..GGGGGGGGGGGGGGG..',
+        '...........................OOONNNN..........PPPPPPPPPJJJJJJJJJJJJJJJJJJJJJJHHHHHHHH...GGGGGGGGGGGGGGG..',
+        '...........................OONNNNN..........PPPPPPPPPJJJJJJJJJJJJJJJJJJJJJHHHHHHHHHH..GGGGGGGGGGGGGGG..',
+        '...........................OONNNNN..........PPPPPPPPPJJJJJJJJJJJJJJJJJJJJHHHHHHHHHHH..GGGGGGGGGGGGGGG..',
+        '...........................ONNNNNN..........PPPPPPPPPJJJJJJJJJJJJJJJJJJJHHHHHHHHHHHH..GGGGGGGGGGGGGGG..',
+        '..............................NNN...........PPP.......JJJJJJJJJJJJJJJJJHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH..',
+        '..............................NNNNPPPPPPPPPPPPPPPPPPP.........JJJJJJJJJHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH..',
+        '.............................NNNNNPPPPPPPPPPPPPPPPPPP.........JJJJJJJJHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH..',
+        '.............................NNNNNPPPPPPPPPPPPPPPPPPP.........JJJJJJJJHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH..',
+        '..............................................PPPPP...........J.JJJJ.JH.................HHH............',
+        '.......................................................................................................',
+        '.......................................................................................................',
+      ],
+      heights: unpackHeights(-6.3, [
+        '..............................................................................................................................................................................................................',
+        '..........................................................................................00000000000000000000................................................................................................',
+        '..........................................................................................00000000000000000000................................000000000000......000000000000..0000............................',
+        '..........................................................................................0000000000000000000000..................000000000000000000000000000000000000000000000000............................',
+        '..........................................................................................00000000000000000000000000..00000000..00000000000000000000000000000000000000000000000000............................',
+        '......................................................................................00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000............................',
+        '..................................................................................000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000............................',
+        '............................................................................000000000000000000000000000000000000000000000000000000..0000000000000000000000000000000000000000000000............................',
+        '....................................................................000000000000000000000000000000000000000000000000000000000000....0000000000000000000000000000000000000000000000............................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V............0000000000000000000000000000000000000000000000000000000000000000000000......000000000000......00000000000000000000000000............................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V00000000000000000000000000000000000000000000000000000000000000000000000000000000......000000000000......00000000000000000000000000............................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V000000000000000000000000000000000000000000000000................00000000000000....................................0z17170z....................................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V000000000000000000000000000000000000000000000000................00000000000000....................................1S1S1S1S....................................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V000000000000000000000000000000000000000000000000................00000000000000....................................1m1m1m1m....................................',
+        '..0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V0V000000000000000000000000000000000000000000000000................00000000000000....................................1w1w1w1w....................................',
+        '..............0V0V0V0V0V0V0V0V0V0V..................0000000000000000000000000000000000..000000..................00000000000000....................................1w1w1w1w1w..................................',
+        '..............0V0V0V0V0V0V0V0V0V0V............................000000000000000000000000............................000000000000....................................1w1w1w1w1w..................................',
+        '..............................................................0K0K0K000000000000000000............................................................................1w1w1w1w1w..................................',
+        '..............................................................0K0K0K0A0000000000000000............................................................................1w1w1w1w1w..................................',
+        '..............................................................0K0K0K0A0A00000000000000............................................................................1w1w1w1w1w..................................',
+        '..............................................................0K0K0K0K0A0A0A0000000000............................................................................1w1w1w1w1w..................................',
+        '............................................................0p0z0z0z0V0K0K0K0K0A000000............................................................................1w1w1w1w....................................',
+        '..............................................................1m1m1m....0p0p0f0f0A0000............................................................................1w1w1w1w....................................',
+        '..............................................................2Z2Z2Z....0A0A0A0A..................................................................................1w1w1w1w....................................',
+        '..............................................................3B3B3B....0V0V0V0V..................................................................................1w1w1w1w....................................',
+        '..............................................................3-3-3-0z0z0z0z0z0z..................................................................................1w1w1w1w....................................',
+        '..............................................................4d4d4d1H1H1H242424..................................................................................1w1w1w1w....................................',
+        '..............................................................5Q5Q5Q242424242424....................................................3B3B3B3B3B3B31................1w1w1w1w....................................',
+        '..............................................................626262242424242424....................................................3B3B3B3B3B3B3B..................1w1w1w1w1w1w..............................',
+        '..............................................................6r6r6r242424242424......7y7y7y7y7y7y7y7y7y7y7y7y7y....................3B3B3B3B3B3B3B................1w1w1w1w1w1w1w..............................',
+        '..............................................................7e7e7e24242424..........7y7y7y7y7y7y7y7y7y7y7y7y7y..3B3B3B3B3B3B3B3B..3B3B3B3B3B3B3B................1w1w1w1w1w1w1w..............................',
+        '..............................................................8G8G..3B3B3B3B..........3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B....241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B..3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2E241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2E241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B..3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w............',
+        '....................................................................3B3B3B3B3B3B3B3B..3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B....1w1w1w1w......................1w1w1w1w..............',
+        '....................................................................3B3B3B3B3B3B3B3B..3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B....1w1w1w1w......................1w1w1w1w..............',
+        '........................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2O241w1w1w......................1w1w1w1w..............',
+        '........................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2O24241w........................1w1w1w1w..............',
+        '........................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2O24241w........................1w1w1w1w..............',
+        '........................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B2O241w1w........................1w1w1w1w..............',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B....1w1w1w1w......................1w1w1w1w..............',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B....1w1w1w1w......................1w1w1w1w..............',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '........................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w........',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '......................................................................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B..3B241w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w1w......',
+        '..............................................625u5a554d483B3B3B3B3B3B3B3B3B3B3B3B3B....3B3B3B3B3B3B3B3B3B3B3B....3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B............................................1w1w1w1w1w....',
+        '..............................................625u5a554d4I3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B..................3B3B3B3B3B3B3B........3B3B3B3B3B..........................................2424242424....',
+        '..............................................5u5k5a554d4T3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B..................3B3B3B3B3B3B3B........3B3B3B3B3B..........................................24242E2E2E....',
+        '..............................................5k5a5Q554n4T3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B..................3B3B3B3B3B3B3B........3B3B3B3B............................................2E2E2E2E2E....',
+        '..............................................5a5a5a..........6_6_..............4d4d4I..3B3B3B3B3B....................3B3B3B3B3B3B3B............................................................2O2O2E2E2E....',
+        '..............................................5a5a5a..........7979..............4x4x4n..................................3B3B3B3B3B3B............................................................2O2O2E2E2E....',
+        '..............................................5k5k5k5u6262626C6X6X625a5F554x4x4x55555F................................3B3B3B3B3B3B3B............................................................2Z2Z2j2j2j....',
+        '..............................................5u5u5u5u626262626C625u5a5Q5F554x555F5Q5Q................................3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B3B..........................................2Z2Z2j2j2j....',
+        '..............................................5u5u5u62625u5u5u5u5u5k5a5Q5F5555555F5Q5a..................................3B3B3B3B3B3B3B3B3B3B3B3L3L3L3L..........................................2j2j2j2j2j....',
+        '......................................................625u5u5k5k5k5k....................................................3B3B3B3B3B3B3B3B3B3B3B3q3q3q3q..........................................2t2t2j2j2j....',
+        '......................................................625u5u5k5k5k5k......................................................3B3B3B3B3B3B3B3B3B3B4d4d4848..........................................3131313131....',
+        '......................................................625u5u5u5u5u5u......................................................3B3B3B3B3B3B3B3B3B3B4d4d4d4d..........................................3B3B3B3B3B....',
+        '......................................................6262626262625u............................................................................4d5555..........................................3L3L3L3L3L....',
+        '......................................................6262626262625u..4T4I483-3q3q......3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3q3-4I4d5a5a5a5a5a5a5a5a4x4I4I4I4I3g3g3g....3-3-3-3-3-3-........3-3-3-3-3-....',
+        '......................................................6262626C6C625k5F4n4T483-3q3q3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3q3-4I4d5a5a5a5a5a5a5a5a4x3-3-3-4I3g3g3g3-3-3-3-3-3-3-3-........3-3-3-3-3-....',
+        '......................................................6262626C6C625k5F4n4T483-3q3q3g3g3g3g3g3g3g3g3W3W3W3W3W3W3W3g3g3g3g3g3g3g3g3q484I5a5a5a5a5a5a5a5a5a3-3-3-3-4I3g3g3g3-3-3-3-3-3-3-3-........3-3-3-3-3-....',
+        '......................................................6262626C6C625u5F4n4T483-3q3q3g3g3g3g3g3g3g3-3-3-3-3-3-3-3-3-3-3-3-3-3g3g3-3-3-3-5a5a5a5a5a5a5a5a5a3-3-3-3-3g3g3g3g3-3-3-3-3-3-3-3-........3-3-3-3-3-....',
+        '......................................................6262626C6C6C62....................3g3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-........3-3-3-3-3-....',
+        '......................................................6262626C6C6C6C....................3q3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................6262626C6C6C6C....................3q3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................62626262626C6C....................3q3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................62626262626C6C....................3q3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................62626262626C6C....................3q3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-............',
+        '......................................................62626262626C6C....................3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-............',
+        '......................................................626262626C6C6C....................3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-............',
+        '......................................................626262626C6C6C....................3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-........3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626262626C6C6C....................3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626262626C6C6C....................3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626262626C6C6C....................483-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626262626C6C6C....................4848483-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626C6C6C6C6C6C....................4T4T4T3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-......3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626C6C6C6C6C6C....................4x4x4x3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................626C6C6C6C6C6C....................5F5F5F3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '......................................................6262626C6C6C6C....................5k5k5k3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '............................................................6C6C6C......................626262..............3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '............................................................6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6M..................6M6M6M6M6M6M6M6M6M6M483q3q3g3g3g3g3g3g3g3g3g3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '..........................................................6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C6M6M..................6M6M6M6M6M6M6M6M6M6M4T3-3q3g3g3g3g3g3g3g3g3g3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-3-....',
+        '..........................................................6C6C6C6C6C6M6M6C6C6C6C6C6C6C6C6C6C6C6C6C6C6M6M6M..................6M6M6M6M6M6M6M6M6M6M4d483q3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g3g....',
+        '............................................................................................6C6C6C6M6M......................6M..6M6M6M6M..6M6M..................................3g3g3g........................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+      ]),
+    },
+    {
+      name: 'T Upper',
+      y: -0.51,
+      overlay: true,
+      rows: [
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '...................................VVV.VVV.............................................................',
+        '..................................VVVVVVVV.............................................................',
+        '..................................VVVVVVVV.............................................................',
+        '..................................VVVVVVVVV............................................................',
+        '..................................VVVVVVVV.............................................................',
+        '..................................VVVVVVVV.............................................................',
+        '..................................VVVVVVVVV............................................................',
+        '..................................VVVVVVVVV............................................................',
+        '..................................VVVVVVVVV............................................................',
+        '.......................................VVV.............................................................',
+        '...............................UUU.....VVVV............................................................',
+        '...............................UU......VVVV............................................................',
+        '...............................UUU.....VVVV............................................................',
+        '...............................UUU.....VVVV............................................................',
+        '...............................UUU.....VVVV............................................................',
+        '...............................UUU.....VVVV............................................................',
+        '...............................UU......VVV.............................................................',
+        '...............................UUU.VVVVVVVV............................................................',
+        '...............................UUU.VVVVVVVV............................................................',
+        '...............................UUU..WW..VVV............................................................',
+        '...............................UUU..WW..WWW............................................................',
+        '...............................UU...WWWWWWW............................................................',
+        '...............................UUU..WWWWWWW............................................................',
+        '...............................UUU..WWWWWWW............................................................',
+        '...............................UUU..WWWWWWW............................................................',
+        '...............................UUU..WW..WWW............................................................',
+        '...............................UU...Wj..WWW............................................................',
+        '...............................UUU.UUWWWWWW............................................................',
+        '...............................UUUUUUUWWWWW............................................................',
+        '...............................UUUUUUUUUWWW............................................................',
+        '...............................UUUUUUUUUUUW............................................................',
+        '...............................UU....UUUUUU............................................................',
+        '..............................UUU....UUUUUU............................................................',
+        '..............................UUU....UUUUUU............................................................',
+        '...............................UU.....UUUU.............................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+        '.......................................................................................................',
+      ],
+      heights: unpackHeights(-0.51, [
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '......................................................................000000..000000..........................................................................................................................',
+        '....................................................................0000000000000000..........................................................................................................................',
+        '....................................................................0000000000000000..........................................................................................................................',
+        '....................................................................000000000000000000........................................................................................................................',
+        '....................................................................0000000000000000..........................................................................................................................',
+        '....................................................................0000000000000000..........................................................................................................................',
+        '....................................................................000000000000000000........................................................................................................................',
+        '....................................................................000000000000000000........................................................................................................................',
+        '....................................................................000000000000000000........................................................................................................................',
+        '..............................................................................000000..........................................................................................................................',
+        '..............................................................000000..........00000000........................................................................................................................',
+        '..............................................................0000............00000000........................................................................................................................',
+        '..............................................................000000..........00000000........................................................................................................................',
+        '..............................................................000000..........00000000........................................................................................................................',
+        '..............................................................000000..........00000000........................................................................................................................',
+        '..............................................................000000..........00000000........................................................................................................................',
+        '..............................................................0000............000000..........................................................................................................................',
+        '..............................................................000000..0000000000000000........................................................................................................................',
+        '..............................................................000000..0000000000000000........................................................................................................................',
+        '..............................................................000000....0000....000000........................................................................................................................',
+        '..............................................................000000....0000....000000........................................................................................................................',
+        '..............................................................0000......00000000000000........................................................................................................................',
+        '..............................................................000000....00000000000000........................................................................................................................',
+        '..............................................................000000....00000000000000........................................................................................................................',
+        '..............................................................000000....00000000000000........................................................................................................................',
+        '..............................................................000000....0000....000000........................................................................................................................',
+        '..............................................................0000......0000....000000........................................................................................................................',
+        '..............................................................000000..0000000000000000........................................................................................................................',
+        '..............................................................000000000000000000000000........................................................................................................................',
+        '..............................................................000000000000000000000000........................................................................................................................',
+        '..............................................................000000000000000000000000........................................................................................................................',
+        '..............................................................0000........000000000000........................................................................................................................',
+        '............................................................000000........000000000000........................................................................................................................',
+        '............................................................000000........000000000000........................................................................................................................',
+        '..............................................................0000..........00000000..........................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+        '..............................................................................................................................................................................................................',
+      ]),
+    },
+  ],
+  legend: {
+    A: { n: 'T Spawn', k: 'orange', h: -5.99 },
+    B: { n: 'Alley', k: 'room', h: -6.3 },
+    C: { n: 'Pigeons', k: 'room', h: -6.3 },
+    D: { n: 'Ivy', k: 'room', h: -5.08 },
+    E: { n: 'Tunnels', k: 'room', h: -5.08 },
+    F: { n: 'CT Stairs', k: 'room', h: -4.57 },
+    G: { n: 'CT Spawn', k: 'cyan', h: -3.76 },
+    H: { n: 'Back Site', k: 'room', h: -3.76 },
+    I: { n: 'B Site', k: 'site', h: -3.76, s: 'B' },
+    J: { n: 'B Site', k: 'room', h: -3.76 },
+    K: { n: 'Catwalk', k: 'room', h: -3.96 },
+    L: { n: 'Headshot', k: 'room', h: -3.76 },
+    M: { n: 'Upper B', k: 'room', h: -3.56 },
+    N: { n: 'B Halls', k: 'room', h: -2.34 },
+    O: { n: 'Brown Halls', k: 'room', h: -2.44 },
+    P: { n: 'Lower B', k: 'room', h: -2.34 },
+    Q: { n: 'Long Dog', k: 'room', h: -2.64 },
+    R: { n: 'T Stairs', k: 'room', h: -5.69 },
+    S: { n: 'T Main', k: 'room', h: -4.98 },
+    T: { n: 'Popdog', k: 'room', h: -4.27 },
+    U: { n: 'T Connector', k: 'room', h: -0.51, s: 'Showers' },
+    V: { n: 'T Upper', k: 'room', h: -0.51 },
+    W: { n: 'Popdog Room', k: 'room', h: -0.51 },
+    X: { n: 'A Main', k: 'room', h: -4.27 },
+    Y: { n: 'Ladder Room', k: 'room', h: -4.27 },
+    Z: { n: 'Heaven', k: 'room', h: -1.22 },
+    a: { n: 'El Box', k: 'room', h: -4.27, s: 'E Box' },
+    b: { n: 'Sandwich', k: 'room', h: -4.27 },
+    c: { n: 'A Site', k: 'site', h: -4.27, s: 'A' },
+    d: { n: 'A Site', k: 'room', h: -4.27 },
+    e: { n: 'Hell', k: 'room', h: -4.27 },
+    f: { n: 'A Passages', k: 'room', h: -5.08 },
+    g: { n: 'Connector', k: 'room', h: -4.27, s: 'Z' },
+    h: { n: 'Z', k: 'room', h: -3.35 },
+    i: { n: 'Popdog', k: 'room', h: -4.27 },
+    j: { n: 'Popdog Room', k: 'room', h: -0.51 },
+    k: { n: 'Ladder Room', k: 'room', h: -4.27 },
+    l: { n: 'Heaven', k: 'room', h: -1.22 },
+  },
+  links: [
+    ['i', 'j', 'tube'],
+    ['k', 'l', 'tube'],
+  ],
 };
 
 export const buildTrain = (): LevelDef => buildGraybox(TRAIN_LAYOUT);

@@ -53,8 +53,8 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
       rows: [
         '............CCCCCCCC............',
         '............CCCCCCCCR...........',
-        '.........qqqCCCCCCCRRRR.........',
-        '.........WqqCCCCCCCCRRRRR.......',
+        '.........qqqCCCCppCRRRR.........',
+        '........WqqqCCCCppCCRRRRR.......',
         '.......WWWW....pp......RRRR.....',
         '......WWWW.....VV........RRR....',
         '.....WWWW.VV..VVLL........RRR...',
@@ -73,8 +73,8 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
         '.....XXXX.YY..YYMM........ZZZ...',
         '......XXXX.....YY........ZZZ....',
         '.......XXXX....PP......ZZZZ.....',
-        '.........XQQOOOOOOOOZZZZZ.......',
-        '.........QQQOOOOOOOZZZZ.........',
+        '........XQQQOOOOPPOOZZZZZ.......',
+        '.........QQQOOOOPPOZZZZ.........',
         '............OOOOOOOOZ...........',
         '............OOOOOOOO............',
       ],
@@ -119,8 +119,9 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
     '~': { n: 'Gorge', k: 'void' },
     C: { n: 'Cyan Pueblo', k: 'cyan', h: 6 },
     O: { n: 'Orange Pueblo', k: 'orange', h: 6 },
-    q: { n: 'North Pueblo Stairs', k: 'ramp', r: [0, 6], s: 'Pueblo Stairs' },
-    Q: { n: 'South Pueblo Stairs', k: 'ramp', r: [0, 6], s: 'Pueblo Stairs' },
+    // (straight flights of three cells: 6 m over 12 m, 27°)
+    q: { n: 'North Pueblo Stairs', k: 'ramp', r: [0, 6], dir: 'e', s: 'Pueblo Stairs' },
+    Q: { n: 'South Pueblo Stairs', k: 'ramp', r: [0, 6], dir: 'e', s: 'Pueblo Stairs' },
     W: { n: 'North-West Wash', k: 'room', h: 0, s: 'West Wash' },
     X: { n: 'South-West Wash', k: 'room', h: 0, s: 'West Wash' },
     B: { n: 'B Mine', k: 'site', h: -2 },
@@ -128,8 +129,9 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
     // (one straight flight up the gantry's east side: every cell touches both the mine floor and
     // the gantry, so the path between them has no length to follow)
     l: { n: 'Gantry Ladder', k: 'ramp', r: [-2, 3], dir: 'n', s: 'Ladder' },
-    p: { n: 'North Steps', k: 'ramp', r: [0, 6], s: 'Steps' },
-    P: { n: 'South Steps', k: 'ramp', r: [0, 6], s: 'Steps' },
+    // (cut into the pueblos: three cells from the Center Wash up to the spawn's back row)
+    p: { n: 'North Steps', k: 'ramp', r: [0, 6], dir: 'n', s: 'Steps' },
+    P: { n: 'South Steps', k: 'ramp', r: [0, 6], dir: 's', s: 'Steps' },
     V: { n: 'North Center Wash', k: 'room', h: 0, s: 'Center Wash' },
     Y: { n: 'South Center Wash', k: 'room', h: 0, s: 'Center Wash' },
     // tunnel stairs: straight flights under the rock (in the tunnel layer), 2 m per cell, rising
@@ -143,7 +145,8 @@ export const CANYON_RELAY_GRAYBOX_LAYOUT: GrayboxLayout = {
     R: { n: 'North Rim Trail', k: 'room', h: 6, s: 'Rim Trail' },
     Z: { n: 'South Rim Trail', k: 'room', h: 6, s: 'Rim Trail' },
     A: { n: 'A Reservoir', k: 'site', h: -6 },
-    s: { n: 'Spillway', k: 'ramp', r: [-6, 0] },
+    // (three cells falling east from the ledges to the reservoir: 27°)
+    s: { n: 'Spillway', k: 'ramp', r: [-6, 0], dir: 'w' },
     // reservoir stairs: one straight flight each (5 cells, 2.4 m per cell) up the east edge, from
     // the reservoir floor to the rim trail
     r: { n: 'North Reservoir Stairs', k: 'ramp', r: [-6, 6], dir: 'n', s: 'Stairs' },

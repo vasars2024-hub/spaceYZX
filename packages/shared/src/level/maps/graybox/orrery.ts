@@ -76,10 +76,9 @@ export const ORRERY_GRAYBOX_LAYOUT: GrayboxLayout = {
     w: { n: 'West Spoke', k: 'room', h: 0 },
     e: { n: 'East Spoke', k: 'room', h: 0 },
   },
-  links: [
-    ['l', 'A', 'drop', true],
-    ['k', 'B', 'drop', true],
-  ],
+  // (the plan's drops from the libraries and crypts to the galleries are left out: walls stand
+  // between them, and the rises and falls already join them)
+  links: [],
   // forcefield size walls (v2 sizes.mjs): closed at 3v3 and smaller, more at 2v2 and smaller
   sizes: {
     3: ['0', '9', 'g', 'G', 'E', 'W', 'w', 'e'],

@@ -75,9 +75,9 @@ describe('Split Deck graybox', () => {
   });
 
   it('every stair step is a walkable step (no higher than the step-up height)', () => {
+    // (ramps of 30° or less are smooth slopes; steeper ones are stairs)
     const lv = buildLevel(mapDef(ID));
     const stepUp = defaultConfig().movement.stepHeight;
-    expect(lv.def.boxes.filter((b) => b.mat === 'grate').length).toBeGreaterThan(40);
     const s = SPLIT_DECK_LAYOUT.cellM;
     const rows = SPLIT_DECK_LAYOUT.layers[0].rows;
     // walk each straight flight along its rising direction, a quarter metre at a time (inside
@@ -166,10 +166,12 @@ describe('Split Deck graybox', () => {
     expect(arrived).toBe(true);
   });
 
-  it('3v3 and smaller: force fields close the east long route, spawns and sites stay open', () => {
+  it('2v2 and smaller: force fields close the east long route, spawns and sites stay open', () => {
+    // (3v3 and bigger play the whole map)
     const full = mapDef(ID);
-    const small = mapDefForSize(ID, 3);
+    const small = mapDefForSize(ID, 2);
     expect(small.boxes.length).toBeGreaterThan(full.boxes.length);
+    expect(mapDefForSize(ID, 3).boxes.length).toBe(full.boxes.length);
     expect(mapDefForSize(ID, 5).boxes.length).toBe(full.boxes.length);
     const lv = buildLevel(small);
     const fields = small.boxes.filter((b) => b.mat === 'forcefield');

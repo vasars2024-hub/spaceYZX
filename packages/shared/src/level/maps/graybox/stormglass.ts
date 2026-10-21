@@ -58,7 +58,7 @@ export const STORMGLASS_GRAYBOX_LAYOUT: GrayboxLayout = {
     d: { n: 'West Cable Walk', k: 'room', h: 10, s: 'Cable Walk' },
     D: { n: 'East Cable Walk', k: 'room', h: 10, s: 'Cable Walk' },
     A: { n: 'A Lens Dome', k: 'site', h: 10, s: 'A Lens' },
-    k: { n: 'Lens Ramp', k: 'ramp', r: [0, 10] },
+    k: { n: 'Lens Ramp', k: 'ramp', r: [0, 10], dir: 'n' }, // (straight up from the hub: 34°)
     s: { n: 'Cyan Sag Stairs', k: 'ramp', r: [-8, 0], s: 'Sag Stairs' },
     Q: { n: 'Orange Sag Stairs', k: 'ramp', r: [-8, 0], s: 'Sag Stairs' },
     t: { n: 'West Broken Span', k: 'room', h: -8, s: 'Broken Span' },

@@ -10,6 +10,8 @@
 // truth). Each spiral is a double helix in its 3x3 stairwell: two crossing flights, each a Low
 // flight (-4 -> +1, layer 1), a landing at +1 (the Spiral callout) and a High flight (+1 -> +6,
 // layer 2), so the lower ring at one corner leads up to the upper ring at the other corner.
+// (Where the rings step diagonally, a cell more joins them edge to edge: bots and the builder
+// only go straight across cell edges, and a ring cut in two left the east spirals a dead end.)
 import type { LevelDef } from '../../types';
 import { buildGraybox, type GrayboxLayout } from '../../graybox';
 
@@ -26,7 +28,7 @@ export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
         '..............................',
         '..............................',
         '..............nn..............',
-        '..........nnnnnn...n..........',
+        '..........nnnnnnn..n..........',
         '.........nnnnn..nnnn..........',
         '...................n..........',
         '....BB........................',
@@ -45,7 +47,7 @@ export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
         '....99........................',
         '...................s..........',
         '.........sssss..ssss..........',
-        '..........ssssss...s..........',
+        '..........sssssss..s..........',
         '..............ss..............',
         '..............................',
         '..............................',
@@ -99,7 +101,7 @@ export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
         '..............................',
         '..............NN..............',
         '...............NNNNN..........',
-        '..........NNNN..NNNNN.........',
+        '..........NNNNNNNNNNN.........',
         '........rrN.........z.........',
         '....................z.f.AA....',
         '......wbb.............f.AA....',
@@ -116,7 +118,7 @@ export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
         '......wjj.............m.00....',
         '....................H.m.00....',
         '........EES.........H.........',
-        '..........SSSS..SSSSS.........',
+        '..........SSSSSSSSSSS.........',
         '...............SSSSS..........',
         '..............SS..............',
         '..............................',
@@ -172,8 +174,9 @@ export const ORBITAL_RING_GRAYBOX_LAYOUT: GrayboxLayout = {
     B: { n: 'B Coolant Exchange', k: 'site', h: -4, s: 'B Exchange' },
   },
   links: [
-    ['K', 'N', 'pad', true],
-    ['K', 'S', 'pad', true],
+    // (tubes: the core's ceiling is the upper ring's floor, so no pad arc gets up there)
+    ['K', 'N', 'tube'],
+    ['K', 'S', 'tube'],
     ['N', 'A', 'rail', true],
     ['n', 'B', 'rail', true],
   ],

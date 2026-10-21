@@ -42,6 +42,8 @@ export interface GrayboxFloorCell {
   sloped: boolean;
   /** walked upside down / on a side: no cover (for now) */
   o: 'up' | 'down' | 'side';
+  /** no cover on this cell (hand-placed props stand in its area or next to it) */
+  noCover?: boolean;
 }
 
 /** The numbers of the cover rules (metres unless said otherwise). */
@@ -84,6 +86,8 @@ export const COVER_RULES = {
   spawnPieces: 2,
   /** waist cover: this share of the full cover count, on top */
   waistShare: 0.5,
+  /** the sight model looks from at most about this many cells (huge maps: every kth cell) */
+  modelCells: 2500,
 };
 
 const R = COVER_RULES;
@@ -102,6 +106,38 @@ const hash = (a: number, b: number, c: number, d = 0): number => {
   return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
 };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** A binary min-heap of [key, id] pairs (ties: the lower id first, so results never vary). */
+const less = (a: [number, number], b: [number, number]) =>
+  a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+const heapPush = (h: [number, number][], e: [number, number]) => {
+  h.push(e);
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (!less(e, h[p])) break;
+    h[i] = h[p];
+    i = p;
+  }
+  h[i] = e;
+};
+const heapPop = (h: [number, number][]): [number, number] | undefined => {
+  const top = h[0];
+  const last = h.pop();
+  if (!h.length || !last) return top;
+  let i = 0;
+  for (;;) {
+    const l = 2 * i + 1;
+    if (l >= h.length) break;
+    const r = l + 1;
+    const m = r < h.length && less(h[r], h[l]) ? r : l;
+    if (!less(h[m], last)) break;
+    h[i] = h[m];
+    i = m;
+  }
+  h[i] = last;
+  return top;
+};
 
 /** A footprint on the floor (metres): x0, z0, x1, z1. */
 type Foot = [number, number, number, number];
@@ -212,7 +248,7 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     return n;
   };
   const coverCell = (p: GrayboxFloorCell) => {
-    if (p.o !== 'up' || p.sloped || lay.layers[p.l].overlay) return false;
+    if (p.o !== 'up' || p.sloped || p.noCover || lay.layers[p.l].overlay) return false;
     if (busy.has(p) || stackedTight(p)) return false;
     // a passage one or two cells wide stays clear
     if (run(p, 1, 0) + run(p, -1, 0) < 2 || run(p, 0, 1) + run(p, 0, -1) < 2) return false;
@@ -231,7 +267,14 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     wall: Spot['wall'];
     floor: GrayboxFloorCell[];
   }
+  const cornerMemo = new Map<number, Corner | null>();
   const cornerAt = (l: number, vx: number, vy: number): Corner | null => {
+    const mk = (l * (H + 1) + vy) * (W + 1) + vx;
+    let m = cornerMemo.get(mk);
+    if (m === undefined) cornerMemo.set(mk, (m = cornerOf(l, vx, vy)));
+    return m;
+  };
+  const cornerOf = (l: number, vx: number, vy: number): Corner | null => {
     const around = [
       [vx - 1, vy - 1],
       [vx, vy - 1],
@@ -393,12 +436,17 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
         if (x >= 0 && y >= 0 && x < W && y < H) touching[(k.l * H + y) * W + x].push(k);
   // everyone stands on a cell centre; a sightline between two of them is two pairs (each one
   // the target of the other), pairs 2u and 2u + 1 of line u
-  const points = cells.map((p) => ({
-    x: (p.x + 0.5) * s,
-    z: (p.y + 0.5) * s,
-    g: groupOf(p.l),
-    c: p.c,
-  }));
+  // (huge maps: the model looks from every kth cell only, so it stays fast)
+  const stride =
+    cells.length > R.modelCells ? Math.ceil(Math.sqrt(cells.length / R.modelCells)) : 1;
+  const points = cells
+    .filter((p) => stride === 1 || (p.x % stride === 0 && p.y % stride === 0))
+    .map((p) => ({
+      x: (p.x + 0.5) * s,
+      z: (p.y + 0.5) * s,
+      g: groupOf(p.l),
+      c: p.c,
+    }));
   const pairTarget: number[] = [];
   const pairSector: number[] = [];
   /** the pair is a shot from outside a spawn area into it */
@@ -550,8 +598,11 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   const fullCap = (c: string) =>
     isSite(c) ? R.siteMax - 1 : Math.max(1, Math.floor((openCells.get(c) ?? 0) / R.cellsPerPiece));
   const chosen: { k: Spot; full: boolean }[] = [];
-  const inArea = (c: string, full?: boolean) =>
-    chosen.filter((q) => q.k.c === c && (full === undefined || q.full === full)).length;
+  const perArea = new Map<string, { all: number; full: number }>();
+  const inArea = (c: string, full?: boolean) => {
+    const n = perArea.get(c);
+    return !n ? 0 : full === undefined ? n.all : full ? n.full : n.all - n.full;
+  };
   // two pieces stand a lane apart
   // two pieces stand at least a cell apart, and every piece keeps its lanes past the others
   const apart = (a: Foot, b: Foot) => Math.max(a[0] - b[2], b[0] - a[2], a[1] - b[3], b[1] - a[3]);
@@ -578,45 +629,59 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
     new Float64Array(spots.length).fill(Infinity),
     new Float64Array(spots.length).fill(Infinity),
   ];
-  const best = (ok: (k: Spot) => boolean, spawn = false) => {
+  // (a queue of the spots passing `ok`, highest known gain first: the one on top is looked at
+  // again, and taken once its fresh gain still beats every other spot's last known one. A spot
+  // that fails `ok` or isn't free leaves the queue for good: both only get stricter as cover
+  // goes in. Huge maps have tens of thousands of spots: no sorting them all again per piece.)
+  const picker = (ok: (k: Spot) => boolean, spawn = false) => {
     const last = known[spawn ? 1 : 0];
-    const order = spots.filter(ok).sort((p, q) => last[q.id] - last[p.id] || p.id - q.id);
-    let top: Spot | null = null;
-    let topGain = 0;
-    for (const k of order) {
-      if (last[k.id] < topGain - 1e-9 || (top && last[k.id] <= topGain + 1e-9 && k.id > top.id))
-        break;
-      if (!free(k)) continue;
-      const g = gainOf(k, spawn);
-      last[k.id] = g;
-      if (g > topGain + 1e-9 || (top && Math.abs(g - topGain) <= 1e-9 && k.id < top.id)) {
-        top = k;
-        topGain = g;
+    const heap: [number, number][] = [];
+    for (const k of spots) if (ok(k)) heapPush(heap, [-last[k.id], k.id]);
+    return (): { k: Spot; gain: number } | null => {
+      while (heap.length) {
+        const [, id] = heapPop(heap)!;
+        const k = spots[id];
+        if (!ok(k) || !free(k)) continue;
+        const g = gainOf(k, spawn);
+        last[id] = g;
+        const top = heap[0];
+        if (!top || g > -top[0] + 1e-9 || (Math.abs(g + top[0]) <= 1e-9 && id < top[1]))
+          return g > 1e-9 ? { k, gain: g } : null;
+        heapPush(heap, [-g, id]);
       }
-    }
-    return top && topGain > 1e-9 ? { k: top, gain: topGain } : null;
+      return null;
+    };
   };
   const take = (k: Spot, full: boolean) => {
     chosen.push({ k, full });
+    const n = perArea.get(k.c) ?? { all: 0, full: 0 };
+    n.all++;
+    if (full) n.full++;
+    perArea.set(k.c, n);
     if (full) block(k);
   };
   // 1. spawns: full cover where it blocks the most shots from outside into the spawn
-  for (const c of spawnAreas)
+  for (const c of spawnAreas) {
+    const next = picker((k) => k.c === c, true);
     for (let n = 0; n < R.spawnPieces; n++) {
-      const b = best((k) => k.c === c, true);
+      const b = next();
       if (b) take(b.k, true);
     }
+  }
   // 2. bomb sites: plant cover
-  for (const c of sites)
+  for (const c of sites) {
+    const next = picker((k) => k.c === c);
     for (let n = 0; n < R.siteMin; n++) {
-      const b = best((k) => k.c === c);
+      const b = next();
       if (b) take(b.k, true);
     }
+  }
   // 3. the rest of the map, worst spots first, until few are seen from everywhere
+  const next3 = picker(
+    (k) => inArea(k.c, true) < fullCap(k.c) && (!isSite(k.c) || inArea(k.c) < R.siteMax),
+  );
   while (wideShare() > R.wideShare) {
-    const b = best(
-      (k) => inArea(k.c, true) < fullCap(k.c) && (!isSite(k.c) || inArea(k.c) < R.siteMax),
-    );
+    const b = next3();
     if (!b || b.gain < R.minGain) {
       break;
     }
@@ -624,23 +689,26 @@ export const grayboxCover = (lay: GrayboxLayout, cells: GrayboxFloorCell[]): Box
   }
   // 4. waist cover (corner pieces only) at the next best corners; every site up to its minimum
   const waist = Math.round(chosen.length * R.waistShare);
+  const next4 = picker(
+    (k) =>
+      k.span === 0 &&
+      k.wall === 'none' &&
+      !isSpawn(k.c) &&
+      inArea(k.c) < (isSite(k.c) ? R.siteMax : fullCap(k.c) + 1),
+  );
   for (let n = 0; n < waist; n++) {
-    const b = best(
-      (k) =>
-        k.span === 0 &&
-        k.wall === 'none' &&
-        !isSpawn(k.c) &&
-        inArea(k.c) < (isSite(k.c) ? R.siteMax : fullCap(k.c) + 1),
-    );
+    const b = next4();
     if (!b) break;
     take(b.k, false);
   }
-  for (const c of sites)
+  for (const c of sites) {
+    const next = picker((k) => k.c === c && k.span === 0);
     while (inArea(c) < R.siteMin) {
-      const b = best((k) => k.c === c && k.span === 0);
+      const b = next();
       if (!b) break;
       take(b.k, false);
     }
+  }
 
   // ---- the pieces --------------------------------------------------------------------------
   const boxes: BoxDef[] = [];

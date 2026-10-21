@@ -1,16 +1,9 @@
-// Inferno and Nuke (level/maps/cs/): the CS2 classics rebuilt as grayboxes at about 3× their real
-// size. Checks what the shared graybox tests don't: the grid size, smooth straight ramps no
+// Inferno and Nuke (level/maps/cs/): the CS2 classics rebuilt as grayboxes (traced ones: 1.25× real,
+// others about 3×). Checks what the shared graybox tests don't: the grid size, smooth straight ramps no
 // steeper than 30°, no gravity areas, the real callouts, props standing on flat floor, signs on
 // walls facing a floor, and Nuke's stacked sites with the Vents drop.
 import { describe, expect, it } from 'vitest';
-import {
-  INFERNO_LAYOUT,
-  mapDef,
-  MAPS,
-  NUKE_LAYOUT,
-  pointInAabb,
-  type GrayboxLayout,
-} from '../src/index';
+import { INFERNO_LAYOUT, mapDef, MAPS, NUKE_LAYOUT, type GrayboxLayout } from '../src/index';
 
 const CALLOUTS: Record<string, string[]> = {
   inferno: [
@@ -44,12 +37,12 @@ const CALLOUTS: Record<string, string[]> = {
   ],
   nuke: [
     'T Spawn',
+    'T Roof',
     'Outside',
     'Secret',
     'Mini',
     'Garage',
     'Silo',
-    'Container',
     'Lobby',
     'Squeaky',
     'Hut',
@@ -88,7 +81,11 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
     const m = MAPS.find((x) => x.id === id)!;
     expect(m).toBeDefined();
     expect(m.competitive && m.graybox).toBe(true);
-    expect(lay.cellM).toBeCloseTo(64 * 0.0254 * 3, 6);
+    // (maps traced from the radar — per-cell heights — are 1.25× real size: 32..48 CS units a cell)
+    if (lay.layers.some((L) => L.heights)) {
+      expect(lay.cellM).toBeGreaterThanOrEqual(32 * 0.0254 * 1.25 - 1e-6);
+      expect(lay.cellM).toBeLessThanOrEqual(48 * 0.0254 * 1.25 + 1e-6);
+    } else expect(lay.cellM).toBeCloseTo(64 * 0.0254 * 3, 6);
     expect(W).toBeLessThanOrEqual(140);
     expect(H).toBeLessThanOrEqual(140);
     for (const layer of lay.layers) {
@@ -114,7 +111,7 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
     // tubes and pads are for players only; nothing else
     for (const [, , kind, oneWay] of lay.links ?? []) {
       expect(kind).toBe('tube');
-      expect(oneWay).toBe(true);
+      expect(oneWay).not.toBe(false);
     }
   });
 
@@ -136,6 +133,18 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
   });
 
   it('props stand on flat floor of one area inside their layer', () => {
+    // (maps traced from the radar — per-cell heights — keep the radar's props where they are:
+    // they only have to stand on floor, never cut into a wall; the tracer flattens the floor
+    // under each and the builder keeps bots clear)
+    if (lay.layers.some((L) => L.heights)) {
+      for (const p of lay.props ?? []) {
+        const l = p.l ?? 0;
+        for (let y = Math.floor(p.y); y < p.y + p.d - 1e-6; y++)
+          for (let x = Math.floor(p.x); x < p.x + p.w - 1e-6; x++)
+            expect(floorArea(at(l, x, y)), `prop at ${p.x},${p.y} over ${x},${y}`).toBeDefined();
+      }
+      return;
+    }
     for (const p of lay.props ?? []) {
       const l = p.l ?? 0;
       const seen = new Set<string>();
@@ -172,21 +181,20 @@ describe('nuke: vertical', () => {
     expect(a.min.y - b.max.y).toBeGreaterThan(-0.01);
     const ox = Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x);
     const oz = Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z);
-    expect(ox).toBeGreaterThan(30);
-    expect(oz).toBeGreaterThan(30);
+    // (traced at 1.25× real size the two bomb zones overlap about 10 m each way; the old 3× build 30 m)
+    const min = NUKE_LAYOUT.layers.some((L) => L.heights) ? 8 : 30;
+    expect(ox).toBeGreaterThan(min);
+    expect(oz).toBeGreaterThan(min);
   });
 
-  it('Vents: bots can drop from the duct into B, never climb back up that way', () => {
-    const wps = d.waypoints!;
-    const vents = wps
-      .map((w, i) => [w, i] as const)
-      .filter(([w]) => (w.name ?? '').startsWith('Z'));
-    const b = site('B');
-    const drop = vents.flatMap(([w]) =>
-      w.links.filter((j) => pointInAabb(wps[j].pos, b.min, b.max)),
+  it('Vents: a one-way suction tube from the duct under A up into A (no ladder)', () => {
+    const lay = NUKE_LAYOUT;
+    const tubes = (lay.links ?? []).filter(
+      ([a, , k]) => k === 'tube' && lay.legend[a].n === 'Vents',
     );
-    expect(drop.length).toBe(1);
-    const back = wps[drop[0]].links.filter((j) => vents.some(([, i]) => i === j));
-    expect(back).toEqual([]);
+    expect(tubes.length).toBe(1);
+    const [a, b] = tubes[0];
+    expect(lay.legend[b].h!).toBeGreaterThan(lay.legend[a].h! + 6);
+    expect(['Mini', 'Main', 'A Site']).toContain(lay.legend[b].n);
   });
 });

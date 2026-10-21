@@ -10,63 +10,68 @@ import {
   mapDef,
   MAPS,
   TRAIN_LAYOUT,
-  TRAIN_SCALE,
   type GrayboxLayout,
 } from '../src/index';
 
-const MAPS_4: [id: string, layout: GrayboxLayout, scale: number, callouts: string[]][] = [
+// (scale: undefined = traced from the radar at 1.25× real size)
+const MAPS_4: [id: string, layout: GrayboxLayout, scale: number | undefined, callouts: string[]][] =
   [
-    'cache',
-    CACHE_LAYOUT,
-    CACHE_SCALE,
     [
-      'T Spawn',
-      'A Main',
-      'Squeaky',
-      'A Site',
-      'Quad',
-      'Forklift',
-      'Highway',
-      'CT',
-      'Garage',
-      'Mid',
-      'White Box',
-      'Z Connector',
-      'Boost',
-      'Vents',
-      'Checkers',
-      'B Main',
-      'B Site',
-      'Headshot',
-      'Heaven',
-      'Sun Room',
-      'T Connector',
-      'CT Spawn',
+      'cache',
+      CACHE_LAYOUT,
+      CACHE_SCALE,
+      [
+        'T Spawn',
+        'A Main',
+        'Squeaky',
+        'A Site',
+        'Quad',
+        'Forklift',
+        'Highway',
+        'CT',
+        'Garage',
+        'Mid',
+        'White Box',
+        'Z Connector',
+        'Boost',
+        'Vents',
+        'Checkers',
+        'B Main',
+        'B Site',
+        'Headshot',
+        'Heaven',
+        'Sun Room',
+        'T Connector',
+        'CT Spawn',
+      ],
     ],
-  ],
-  [
-    'train',
-    TRAIN_LAYOUT,
-    TRAIN_SCALE,
     [
-      'T Spawn',
-      'T Main',
-      'Ivy',
-      'Popdog',
-      'A Site',
-      'Ladder Room',
-      'Connector',
-      'Z',
-      'El Box',
-      'Heaven',
-      'B Site',
-      'Upper B Halls',
-      'Lower B Halls',
-      'B Halls',
-      'CT Spawn',
+      'train',
+      TRAIN_LAYOUT,
+      undefined,
+      [
+        'T Spawn',
+        'Alley',
+        'T Main',
+        'Ivy',
+        'Popdog',
+        'A Main',
+        'A Site',
+        'Ladder Room',
+        'Connector',
+        'Z',
+        'El Box',
+        'Heaven',
+        'Hell',
+        'B Site',
+        'Upper B',
+        'Lower B',
+        'B Halls',
+        'Catwalk',
+        'CT Spawn',
+      ],
     ],
-  ],
-];
+  ];
 
 /** The real maps' playable size in CS units (about), to check the 3× scale. */
 const REAL_U: Record<string, number> = { cache: 3750, train: 4250 };
@@ -90,11 +95,12 @@ describe.each(MAPS_4)('%s', (id, lay, scale, callouts) => {
     expect(lay.sizes).toBeUndefined(); // 3v3 and up play the whole map
   });
 
-  it('is about 3× the real map, with at most ~140 cells across', () => {
-    expect(scale).toBe(3);
+  it('is about 3× (traced: 1.25×) the real map, with at most ~140 cells across', () => {
+    const traced = lay.layers.some((L) => L.heights);
+    if (!traced) expect(scale).toBe(3);
     expect(Math.max(W, H)).toBeLessThanOrEqual(140);
     const across = Math.max(W, H) * lay.cellM;
-    const real = REAL_U[id] * 0.0254 * 3;
+    const real = REAL_U[id] * 0.0254 * (traced ? 1.25 : 3);
     expect(across).toBeGreaterThan(real * 0.8);
     expect(across).toBeLessThan(real * 1.25);
   });
@@ -172,8 +178,12 @@ describe('train', () => {
   });
 
   it('has a suction tube from Ladder Room up to Heaven instead of the ladder', () => {
-    expect(TRAIN_LAYOUT.links).toContainEqual(['L', 'H', 'tube', true]);
-    expect(TRAIN_LAYOUT.legend.L.n).toBe('Ladder Room');
-    expect(TRAIN_LAYOUT.legend.H.n).toBe('Heaven');
+    const lg = TRAIN_LAYOUT.legend;
+    const tube = (TRAIN_LAYOUT.links ?? []).find(
+      ([a, b, k]) => k === 'tube' && lg[a].n === 'Ladder Room' && lg[b].n === 'Heaven',
+    );
+    expect(tube).toBeDefined();
+    expect(tube![3]).not.toBe(false);
+    expect(lg[tube![1]].h!).toBeGreaterThan(lg[tube![0]].h! + 2.6); // (too high to climb)
   });
 });

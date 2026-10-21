@@ -45,6 +45,8 @@ export class GameClient {
   paused = false;
   fovOverride: number | null = null; // aiming zoom (horizontal degrees)
   private levelMeshes: LevelMeshes;
+  /** level parts that turn by themselves (zero-G dust, portal rings) */
+  private spinners: THREE.Object3D[] = [];
   /** where turning portals lead, shown in their discs (surf maps) */
   private portalPreviews: PortalPreviews;
   /** moving blocks (player-made maps), drawn at the local player's predicted tick */
@@ -100,6 +102,10 @@ export class GameClient {
     };
     this.levelMeshes = deps.levelMeshes?.(meshOpts) ?? buildLevelMeshes(def, meshOpts);
     this.scene.add(this.levelMeshes.group);
+    // (found once: walking the whole level every frame for them cost more than turning them)
+    this.levelMeshes.group.traverse((o) => {
+      if (o.userData.spin || o.userData.portalSpin) this.spinners.push(o);
+    });
     this.raceAudio = def.race ? new RaceAudio(deps.audio, def.name) : null;
     this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
     this.moverMeshes = buildMoverMeshes(def, {
@@ -260,11 +266,11 @@ export class GameClient {
     const local = this.session.local();
     this.hud.update(local, this.session.config.movement, dt, this.fps.forward(), this.fps.camUp());
 
-    // animate zero-G dust
-    this.levelMeshes.group.traverse((o) => {
+    // animate zero-G dust and portal rings
+    for (const o of this.spinners) {
       if (o.userData.spin) o.rotation.y += dt * 0.01;
       if (o.userData.portalSpin) o.rotation.z += dt * 1.5;
-    });
+    }
 
     const events = this.session.drainEvents();
     const speed = local ? len(projectOnPlane(local.vel, local.up)) : 0;

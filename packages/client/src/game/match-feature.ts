@@ -76,6 +76,7 @@ export class MatchFeature implements ClientFeature {
       opacity: 0.22,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       depthWrite: false,
     }),
   );
@@ -164,6 +165,7 @@ export class MatchFeature implements ClientFeature {
           depthWrite: false,
           blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide,
+          forceSinglePass: true,
         }),
       );
       // (a Tower hanging from a ceiling deck shines down from the ceiling)
@@ -178,6 +180,7 @@ export class MatchFeature implements ClientFeature {
           opacity: 0.6,
           depthWrite: false,
           side: THREE.DoubleSide,
+          forceSinglePass: true,
         }),
       );
       ring.rotation.x = -Math.PI / 2;

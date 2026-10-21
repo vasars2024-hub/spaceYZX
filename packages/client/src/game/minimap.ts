@@ -147,6 +147,7 @@ export class Minimap implements ClientFeature {
       opacity: 0.85,
       depthWrite: false,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
     });
     this.chevrons = new THREE.InstancedMesh(geo, mat, CHEVRONS);
     this.chevrons.count = 0;

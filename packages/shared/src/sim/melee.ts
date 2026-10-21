@@ -1,7 +1,8 @@
-// Teleport slash (melee remodel): hold E with the sword out (the Boomerang in hand) for
-// `teleportChargeSec`, then let go. You dash `teleportDistance` metres straight ahead along the
-// floor (the level part of where you look), stopping at walls, and every enemy whose body comes
-// within `teleportKillRadius` of the path dies. A quick tap of E is still the normal slash
+// Teleport slash (melee remodel): hold E for `teleportChargeSec` (whatever your Boomerang is
+// doing: the sword is its own weapon), then let go. You dash `teleportDistance` metres the way
+// you look — up and down too — or, with movement keys held, that way (A = left, S = back, W + D
+// = forward-right…), stopping at walls, and every enemy whose body comes within
+// `teleportKillRadius` of the path dies. A quick tap of E is still the normal slash
 // (combat.ts), which fires the moment E goes down, so deflects keep their timing.
 //
 // Why "release to fire" (not "fires by itself at 1 s"): you choose the moment, e.g. wait at a
@@ -13,8 +14,8 @@
 // (LoadoutDef.teleportSlash). Judged by the server like the slash: against the hitboxes the
 // attacker saw (lag compensation); the client predicts the dash with this same code.
 import type { Vec3 } from '../math/vec3';
-import { add, sub, scale, dot, madd, normalize, clone, projectOnPlane } from '../math/vec3';
-import { qForward, qUp } from '../math/quat';
+import { add, scale, dot, madd, normalize, clone, projectOnPlane } from '../math/vec3';
+import { qForward, qRight } from '../math/quat';
 import { closestSegSeg } from '../math/geom';
 import { capsuleOverlaps, lineOfSight } from '../level/collision';
 import { loadoutOf } from '../config/loadout';
@@ -24,7 +25,6 @@ import { Btn } from './input';
 import type { PlayerState, WorldState } from './state';
 import { Move } from './state';
 import type { BoomerangState } from './combat-state';
-import { Phase } from './combat-state';
 import { capsuleOf } from './movement';
 import type { Hitbox } from './hitbox';
 import { applyDamage } from './combat';
@@ -42,13 +42,15 @@ const PATH_HOVER = 0.02;
 const PATH_LIFTS = [0, 0.06, 0.12];
 
 /**
- * The level direction of your view: the forward vector with its up/down part removed. Looking
- * straight up or down still gives the way you face (the camera's own up vector tells it).
+ * Which way the dash goes: straight where you look (up and down included), or — with movement
+ * keys held — that way relative to your view (A left, D right, S back, W + D forward-right…).
  */
-export const teleportDir = (p: PlayerState): Vec3 => {
+export const teleportDir = (p: PlayerState, buttons = 0): Vec3 => {
   const fwd = qForward(p.view);
-  const flat = sub(fwd, scale(qUp(p.view), dot(fwd, p.up)));
-  return normalize(projectOnPlane(flat, p.up), projectOnPlane(fwd, p.up));
+  const fb = (buttons & Btn.Forward ? 1 : 0) - (buttons & Btn.Back ? 1 : 0);
+  const lr = (buttons & Btn.Right ? 1 : 0) - (buttons & Btn.Left ? 1 : 0);
+  if (fb === 0 && lr === 0) return normalize(fwd, fwd);
+  return normalize(add(scale(fwd, fb), scale(qRight(p.view), lr)), fwd);
 };
 
 /**
@@ -69,9 +71,13 @@ export const teleportPath = (ctx: SimContext, p: PlayerState, dir: Vec3, dist: n
   const steps = Math.ceil(dist / PATH_STEP - 1e-9);
   for (let i = 1; i <= steps; i++) {
     const stepLen = Math.min(PATH_STEP, dist - moved);
-    const ahead = madd(at, dir, stepLen);
-    let next: Vec3 | null = null;
-    for (const h of lifts) {
+    // straight along the dash (up into the air, down a slope) when that's free…
+    const straight = madd(at, dir, stepLen);
+    let next: Vec3 | null = free(straight) ? straight : null;
+    // …else slide along the floor / wall the way the dash points, stepping up kerbs
+    const flat = normalize(projectOnPlane(dir, p.up), dir);
+    const ahead = madd(at, flat, stepLen);
+    for (const h of next ? [] : lifts) {
       if (rise + h > (moved + stepLen) * slope + m.stepHeight + 1e-9) break;
       const c = madd(ahead, p.up, h);
       if (free(c)) {
@@ -104,9 +110,10 @@ const fireTeleport = (
   ctx: SimContext,
   p: PlayerState,
   boxes: readonly Hitbox[],
+  buttons: number,
 ): void => {
   const c = ctx.config.combat;
-  const dir = teleportDir(p);
+  const dir = teleportDir(p, buttons);
   const from = clone(p.pos);
   const to = teleportPath(ctx, p, dir, c.teleportDistance);
   p.pos = to;
@@ -146,8 +153,8 @@ const fireTeleport = (
 
 /**
  * One tick of the teleport slash for one player (from updateCombat, before anything else that
- * player does). `b` = their Boomerang (the sword is out while it's in hand), `stunned` = hit by a
- * Freeze this tick, `boxes` = hitboxes as this player saw them.
+ * player does). `_b` = their Boomerang (unused: the sword doesn't need it in hand), `stunned` = hit
+ * by a Freeze this tick, `boxes` = hitboxes as this player saw them.
  */
 export const updateTeleportSlash = (
   world: WorldState,
@@ -155,19 +162,14 @@ export const updateTeleportSlash = (
   p: PlayerState,
   buttons: number,
   pressed: number,
-  b: BoomerangState | undefined,
+  _b: BoomerangState | undefined,
   stunned: boolean,
   boxes: () => readonly Hitbox[],
 ): void => {
   const c = ctx.config.combat;
   if (p.teleportCd > 0) p.teleportCd--;
   const can =
-    loadoutOf(ctx.config).teleportSlash &&
-    p.alive &&
-    !p.frozen &&
-    !stunned &&
-    b?.phase === Phase.Held &&
-    p.windup === 0;
+    loadoutOf(ctx.config).teleportSlash && p.alive && !p.frozen && !stunned && p.windup === 0;
   if (p.meleeCharge > 0) {
     if (!can) return endCharge(world, ctx, p, !p.alive);
     const full = ticks(c.teleportChargeSec, ctx.dt);
@@ -175,7 +177,7 @@ export const updateTeleportSlash = (
       // let go: fire if it was fully charged, else it was just a slash
       if (p.meleeCharge >= full) {
         endCharge(world, ctx, p, true);
-        fireTeleport(world, ctx, p, boxes());
+        fireTeleport(world, ctx, p, boxes(), buttons);
       } else endCharge(world, ctx, p, false);
       return;
     }

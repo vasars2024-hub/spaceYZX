@@ -273,3 +273,42 @@ describe('bots and the teleport slash', () => {
     expect(dashes).toBeGreaterThan(0);
   });
 });
+
+describe('teleport slash: owner tweaks (any direction, own weapon, 3 s cooldown)', () => {
+  /** Charge fully with `keys` held, then let go of E (keys still held); position before / after. */
+  const dashWith = (sim: Sim, keys: number, v: Quat) => {
+    tick(sim, Btn.Melee | keys, FULL, v);
+    const before = { ...sim.world.players[0].pos };
+    const ev = tick(sim, keys, 1, v);
+    return { ev, before, after: sim.world.players[0].pos };
+  };
+
+  it('has a 3 s cooldown', () => {
+    expect(COMBAT_DEFAULTS.teleportCooldownSec).toBe(3);
+  });
+
+  it('works whatever the Boomerang is doing (the sword is its own weapon)', () => {
+    const sim = sim0();
+    settle(sim);
+    for (const b of sim.world.boomerangs) if (b.owner === 1) b.phase = 3; // dropped: not in hand
+    expect(fired(holdE(sim, FULL))).toBe(true);
+  });
+
+  it('goes the way the movement keys point: A dashes left', () => {
+    const sim = sim0();
+    settle(sim);
+    const { ev, before, after } = dashWith(sim, Btn.Left, view(0));
+    expect(fired(ev)).toBe(true);
+    // view(0) looks along -z, so left is -x
+    expect(before.x - after.x).toBeGreaterThan(3);
+    expect(Math.abs(after.z - before.z)).toBeLessThan(1);
+  });
+
+  it('goes up when you look up (no keys held)', () => {
+    const sim = sim0();
+    settle(sim);
+    const { ev, before, after } = dashWith(sim, 0, view(0, 60));
+    expect(fired(ev)).toBe(true);
+    expect(after.y - before.y).toBeGreaterThan(2.5);
+  });
+});

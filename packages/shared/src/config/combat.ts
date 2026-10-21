@@ -108,7 +108,7 @@ export const COMBAT_DEFAULTS = {
   teleportDistance: 4,
   teleportKillRadius: 0.8,
   teleportDamage: 200, // kills from full health
-  teleportCooldownSec: 7, // from the moment it fires
+  teleportCooldownSec: 3, // from the moment it fires
   teleportExitSpeed: 4, // forward speed you keep after arriving
   teleportFriendlyFire: 0, // 1 = it also kills teammates on the line (off: anti-grief)
 

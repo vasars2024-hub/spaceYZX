@@ -342,6 +342,27 @@ export class CombatFeature implements ClientFeature {
           // RMB didn't start a Wind-up Throw: say why
           if (e.player === me) this.hud.showCenter(WINDUP_REFUSED[e.reason], 1.4, 'warn');
           break;
+        case 'teleportSlash': {
+          // a quick burst of black particles along the dash
+          for (let i = 0; i <= 6; i++) {
+            const t = i / 6;
+            const at = v3(
+              e.from.x + (e.to.x - e.from.x) * t,
+              e.from.y + (e.to.y - e.from.y) * t,
+              e.from.z + (e.to.z - e.from.z) * t,
+            );
+            this.view.fragments.burst(
+              at,
+              0x050505,
+              7,
+              5,
+              0.35,
+              0.5,
+              scale(normalize(gravity, v3(0, -1, 0)), 4),
+            );
+          }
+          break;
+        }
         case 'stomp': {
           // landing on a head: a thud + boing (lower for a stomp kill), a puff at their head
           const rate = e.kind === 'kill' ? 0.8 : e.kind === 'up' ? 1.1 : 1;

@@ -1100,8 +1100,8 @@ export const updateCombat = (
     // --- Gravity Grenade: hold Q to charge, let go to throw; middle mouse = bounces ---
     updateGrenadeInput(world, ctx, p, buttons, pressed);
 
-    // --- Slash (E) with the Boomerang in hand ---
-    if (pressed & Btn.Melee && p.slashCd === 0 && held && p.windup === 0) {
+    // --- Slash (E): the sword is its own weapon (the Boomerang may be anywhere) ---
+    if (pressed & Btn.Melee && p.slashCd === 0 && p.windup === 0) {
       p.slashTicks = ticks(c.slashActiveSec, dt);
       p.slashCd = ticks(c.slashCooldownSec, dt);
       p.slashHit = false;

@@ -229,7 +229,6 @@ export const ANCIENT_LAYOUT: GrayboxLayout = {
     sign(24, 13.5, 'n', 'A', 'w'),
     sign(46, 30, 's', 'B', 'e'),
     sign(50, 50, 's', 'B', 'e'),
-    sign(55, 42, 'e', 'B', 'n'),
     sign(55, 24, 'e', 'B SITE', 'n'),
     sign(38, 4.5, 'n', 'A', 'w'),
     sign(43, 4.5, 'n', 'B', 'e'),

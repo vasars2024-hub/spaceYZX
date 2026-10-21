@@ -278,7 +278,6 @@ export const NUKE_LAYOUT: GrayboxLayout = {
     { x: 51, y: 21, l: 1, face: 's', text: 'HEAVEN ←' },
     { x: 51, y: 15, l: 1, face: 'e', text: 'OUTSIDE ↑' },
     { x: 46, y: 14, l: 1, face: 'n', text: 'SECRET ↓' },
-    { x: 21, y: 35, face: 's', text: 'RAMP' },
     { x: 28, y: 31, face: 's', text: 'TOXIC' },
     { x: 35, y: 37, face: 'n', text: 'B SITE' },
     { x: 44, y: 26, face: 's', text: 'DECON' },

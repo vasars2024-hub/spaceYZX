@@ -2120,7 +2120,20 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     if (text !== upper) say(`sign "${sg.text}": characters the font has not got are left blank`);
     // (x, y) is the wall cell; the sign is read from its neighbour in direction `face`
     const fl = cellAt(l, sg.x + dx, sg.y + dy);
-    const ok = !cellAt(l, sg.x, sg.y) && !!fl && paint(sg.x, sg.y, fl, text);
+    let ok = !cellAt(l, sg.x, sg.y) && !!fl && paint(sg.x, sg.y, fl, text);
+    // (a sign placed a cell off: the nearest wall face within 4 cells that has a floor in front,
+    // the same facing first)
+    for (let r = 1; !ok && r <= 4; r++)
+      for (const face of [sg.face, ...(['n', 's', 'e', 'w'] as const).filter((q) => q !== sg.face)])
+        for (let oy = -r; !ok && oy <= r; oy++)
+          for (let ox = -r; !ok && ox <= r; ox++) {
+            if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+            const [fx2, fy2] = FACE[face];
+            const wx = sg.x + ox;
+            const wy = sg.y + oy;
+            const f2 = cellAt(l, wx + fx2, wy + fy2);
+            if (!cellAt(l, wx, wy) && f2) ok = paint(wx, wy, f2, text);
+          }
     if (!ok)
       say(
         `sign "${sg.text}" at ${sg.x},${sg.y} (${sg.face}): no wall there with a floor on its ${sg.face} side`,

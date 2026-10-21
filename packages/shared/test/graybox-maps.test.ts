@@ -22,7 +22,6 @@ import {
   step,
   TICK_DT,
   v3,
-  waypointRoute,
   yawToView,
   type GrayboxLayout,
   type LevelDef,

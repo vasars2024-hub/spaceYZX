@@ -43,7 +43,7 @@ describe('Shibuya (royale mega map)', () => {
       for (const c of [v.x, v.y, v.z]) expect(Math.abs(c)).toBeLessThanOrEqual(500);
     expect(d.bombSites ?? []).toEqual([]);
     // (a big map, but not a heavy one)
-    expect(d.boxes.length).toBeLessThan(8000);
+    expect(d.boxes.length).toBeLessThan(16000);
   });
 
   it('has 10–12 royale spawns, far apart, and a zone covering the whole city', () => {

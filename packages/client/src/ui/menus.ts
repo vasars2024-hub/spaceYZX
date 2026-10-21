@@ -10,20 +10,24 @@ export const setText = (el: HTMLElement, text: string): void => {
   if (el.textContent !== text) el.textContent = text;
 };
 
-/** Last value written by setStyle per element (the browser rewrites colours as rgb()). */
-const written = new WeakMap<HTMLElement, Record<string, string>>();
+/** What setStyle last wrote per element and property, and how the browser stored it. */
+const written = new WeakMap<HTMLElement, Record<string, [string, string]>>();
 
-/** Per-frame inline style: writes only when it changed since the last setStyle. */
+/**
+ * Per-frame inline style: writes only when it changed. (Compared with what setStyle wrote,
+ * since the browser rewrites colours as rgb(); a write from elsewhere since then is noticed.)
+ */
 export const setStyle = (
   el: HTMLElement,
   prop: 'display' | 'color' | 'opacity' | 'width' | 'transform',
   value: string,
 ): void => {
   let w = written.get(el);
-  if (!w) written.set(el, (w = {}));
-  if (w[prop] === value) return;
-  w[prop] = value;
+  const last = w?.[prop];
+  if (last && last[0] === value && last[1] === el.style[prop]) return;
   el.style[prop] = value;
+  if (!w) written.set(el, (w = {}));
+  w[prop] = [value, el.style[prop]];
 };
 
 export const h = <K extends keyof HTMLElementTagNameMap>(

@@ -17,7 +17,7 @@ import {
   projectOnPlane,
 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
-import { h } from '../ui/menus';
+import { h, setStyle, setText } from '../ui/menus';
 import { effects } from '../render/effects';
 
 export type SoundKind =
@@ -250,7 +250,7 @@ export class SoundRadar implements ClientFeature {
   frame(c: GameClient, dt: number): void {
     this.time += dt;
     const on = this.enabled();
-    this.root.style.display = on ? '' : 'none';
+    setStyle(this.root, 'display', on ? '' : 'none');
     if (!on) {
       // keep forgetting old sounds while switched off (they'd pile up otherwise)
       for (const [key, snd] of this.sounds)
@@ -357,12 +357,12 @@ export class SoundRadar implements ClientFeature {
             : TEAM_COLOR[snd.team];
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
-      el.style.color = color;
-      el.style.opacity = String(Math.max(0.2, loud * (1 - age * 0.6)));
-      el.style.transform = `translate(-50%, -50%) scale(${0.85 + loud * 0.35})`;
+      setStyle(el, 'color', color);
+      setStyle(el, 'opacity', String(Math.max(0.2, loud * (1 - age * 0.6))));
+      setStyle(el, 'transform', `translate(-50%, -50%) scale(${0.85 + loud * 0.35})`);
       el.classList.toggle('danger', !!info.danger);
       const arrow = el.children[0] as HTMLSpanElement;
-      arrow.style.transform = `rotate(${(dir.angle * 180) / Math.PI}deg)`;
+      setStyle(arrow, 'transform', `rotate(${(dir.angle * 180) / Math.PI}deg)`);
       // "Throw · Footsteps ×3": the loudest kinds in this direction
       const counts = new Map<SoundKind, number>();
       for (const m of cl) counts.set(m.snd.kind, (counts.get(m.snd.kind) ?? 0) + 1);
@@ -370,10 +370,10 @@ export class SoundRadar implements ClientFeature {
         .slice(0, 2)
         .map(([k, n]) => `${SOUND_KINDS[k].label}${n > 1 ? ` ×${n}` : ''}`)
         .join(' · ');
-      (el.children[1] as HTMLSpanElement).textContent = label;
+      setText(el.children[1] as HTMLSpanElement, label);
       const nearest = Math.min(...cl.map((m) => m.dir.dist));
       const vert = dir.vertical > 3 ? ' ▲ above' : dir.vertical < -3 ? ' ▼ below' : '';
-      (el.children[2] as HTMLSpanElement).textContent = `${Math.round(nearest)} m${vert}`;
+      setText(el.children[2] as HTMLSpanElement, `${Math.round(nearest)} m${vert}`);
     }
     for (const [key, el] of this.items)
       if (!keep.has(key)) {

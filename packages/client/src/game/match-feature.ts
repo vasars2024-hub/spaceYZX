@@ -7,7 +7,7 @@ import type { SimEvent } from '@space-yz/shared';
 import { TICK_DT, collapseRadius, yawToView, v3 } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { MatchInfo, Session } from './session';
-import { h } from '../ui/menus';
+import { h, setStyle, setText } from '../ui/menus';
 import { mutes } from '../net/mutes';
 import { TEAM_COLOR, TEAM_HEX, towerRole, controllerAtHome } from './objectives';
 import { setSidesSwapped } from '../render/team-palette';
@@ -395,22 +395,22 @@ export class MatchFeature implements ClientFeature {
     setSidesSwapped(!!m?.sideSwapped);
     if (!m) {
       if (this.root.style.display !== 'none') clearTransitions();
-      this.root.style.display = 'none';
+      setStyle(this.root, 'display', 'none');
       this.group.visible = false;
       c.panelOpen = false;
       return;
     }
-    this.root.style.display = '';
+    setStyle(this.root, 'display', '');
     this.group.visible = true;
     const tick = s.tickNow?.() ?? s.world().tick;
     const mine = this.myTeam(s);
     const rules = s.config.rules;
 
     // ---- score bar ----
-    this.scoreA.textContent = String(m.scores[0]);
-    this.scoreB.textContent = String(m.scores[1]);
-    this.scoreA.style.color = TEAM_COLOR[0];
-    this.scoreB.style.color = TEAM_COLOR[1];
+    setText(this.scoreA, String(m.scores[0]));
+    setText(this.scoreB, String(m.scores[1]));
+    setStyle(this.scoreA, 'color', TEAM_COLOR[0]);
+    setStyle(this.scoreB, 'color', TEAM_COLOR[1]);
     for (const t of [0, 1] as const)
       (this.dropped[t].material as THREE.MeshBasicMaterial).color.setHex(TEAM_HEX[t]);
     let centerText = '';
@@ -492,15 +492,15 @@ export class MatchFeature implements ClientFeature {
       );
       subText = parts.join('   ·   ');
     }
-    this.center.textContent = centerText;
+    setText(this.center, centerText);
     this.center.classList.toggle('urgent', urgent);
-    this.sub.textContent = subText;
+    setText(this.sub, subText);
     this.bar.dataset.team = String(mine);
 
     // ---- banner ----
     const bannerOn = this.time >= this.bannerFrom && this.time < this.bannerUntil;
-    this.banner.style.opacity = bannerOn ? '1' : '0';
-    this.bannerSub.style.opacity = bannerOn ? '1' : '0';
+    setStyle(this.banner, 'opacity', bannerOn ? '1' : '0');
+    setStyle(this.bannerSub, 'opacity', bannerOn ? '1' : '0');
     // safety net: a card never stays over live combat (e.g. the roundLive event was missed)
     if (m.phase === 'live' && transitionShowing()) clearTransitions();
 
@@ -523,7 +523,7 @@ export class MatchFeature implements ClientFeature {
     this.zoneWarn.classList.toggle('show', outside);
     if (outside) {
       const left = Math.max(0, rules.collapseOutsideSec - this.outsideFor);
-      this.zoneWarn.textContent = `OUT OF THE ZONE · ${left.toFixed(1)} s · get to the middle`;
+      setText(this.zoneWarn, `OUT OF THE ZONE · ${left.toFixed(1)} s · get to the middle`);
     }
 
     // ---- bomb mode: the bomb, its beeps, your plant / defuse progress ----
@@ -554,8 +554,11 @@ export class MatchFeature implements ClientFeature {
         const planting = !!bomb.plant;
         const need = (planting ? rules.bombPlantSec : rules.bombDefuseSec) * 60;
         const u = Math.min(1, prog.ticks / need);
-        this.bombBarFill.style.width = `${u * 100}%`;
-        this.bombBarText.textContent = `${planting ? 'PLANTING' : 'DEFUSING'} · ${((need - prog.ticks) / 60).toFixed(1)} s`;
+        setStyle(this.bombBarFill, 'width', `${u * 100}%`);
+        setText(
+          this.bombBarText,
+          `${planting ? 'PLANTING' : 'DEFUSING'} · ${((need - prog.ticks) / 60).toFixed(1)} s`,
+        );
       }
     } else this.bombBar.classList.remove('show');
 
@@ -593,8 +596,8 @@ export class MatchFeature implements ClientFeature {
     // ---- scoreboard & results ----
     const showBoard = this.boardHeld || m.phase === 'roundEnd';
     const refresh = this.time - this.lastBoard > 0.25;
-    this.board.style.display = showBoard && m.phase !== 'matchEnd' ? '' : 'none';
-    this.results.style.display = m.phase === 'matchEnd' ? '' : 'none';
+    setStyle(this.board, 'display', showBoard && m.phase !== 'matchEnd' ? '' : 'none');
+    setStyle(this.results, 'display', m.phase === 'matchEnd' ? '' : 'none');
     // name tags and markers would show through the (see-through) panels
     c.panelOpen = showBoard || m.phase === 'matchEnd';
     if (refresh) {

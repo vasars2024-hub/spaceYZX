@@ -77,12 +77,12 @@ const inRoom = (p: Vec3) =>
   ROOMS.some((r) => [p.z, mirZ(p.z)].some((z) => p.x > r.x0 && p.x < r.x1 && z > r.z0 && z < r.z1));
 
 describe('Sakura Hold map', () => {
-  it('is a competitive map kept out of the Premier pool; Split Deck stays the default', () => {
+  it('is a competitive map kept out of the Premier pool; Dust 2 is the default', () => {
     const m = MAPS.find((x) => x.id === 'sakura-hold');
     expect(m?.competitive).toBe(true);
     expect(m?.premier).toBe(false);
     expect(m?.arena).toBeFalsy();
-    expect(DEFAULT_MATCH_MAP()).toBe('split-deck-graybox');
+    expect(DEFAULT_MATCH_MAP()).toBe('dust2');
     const d = def();
     expect(d.name).toBe('Sakura Hold');
     expect(d.boundsMax.x - d.boundsMin.x).toBe(80);

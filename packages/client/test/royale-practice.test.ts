@@ -111,20 +111,25 @@ describe('Royale HUD lines', () => {
 
 describe('Royale in the menus', () => {
   it('only offered while a map has royale data (5–10 players)', () => {
-    // (no shipped map has royale data until the Shibuya map lands)
-    const now = practiceModes(true, MAPS, mapDef).some((m) => m.id === 'royale');
-    expect(now).toBe(MAPS.some((m) => m.royale && !m.retired));
+    expect(practiceModes(true).some((m) => m.id === 'royale')).toBe(true);
+    expect(mapsForMode('royale').map((m) => m.id)).toEqual(['shibuya']);
+    const withoutRoyale = MAPS.filter((m) => !m.royale);
+    expect(practiceModes(true, withoutRoyale).some((m) => m.id === 'royale')).toBe(false);
+    expect(roomObjectives(withoutRoyale).some((o) => o.id === 'royale')).toBe(false);
     expect(practiceModes(true, withTest, defOf).some((m) => m.id === 'royale')).toBe(true);
-    expect(mapsForMode('royale', withTest, defOf).map((m) => m.id)).toEqual([ROYALE_TEST_MAP]);
+    expect(mapsForMode('royale', withTest, defOf).map((m) => m.id)).toEqual([
+      'shibuya',
+      ROYALE_TEST_MAP,
+    ]);
     expect(sizesFor('royale')).toEqual([5, 6, 8, 10]);
-    expect(roomObjectives(withTest, defOf).some((o) => o.id === 'royale')).toBe(true);
+    expect(roomObjectives().some((o) => o.id === 'royale')).toBe(true);
   });
 
   it('a Royale room: up to 10 players, bots fill it', () => {
-    const s = pickRoomObjective(initialRoom(), 'royale', withTest, defOf);
-    expect(s.map).toBe(ROYALE_TEST_MAP);
+    const s = pickRoomObjective(initialRoom(), 'royale');
+    expect(s.map).toBe('shibuya');
     const a = roomCreateArgs({ ...s, size: '5v5', bots: true });
-    expect(a).toMatchObject({ mode: 'royale', map: ROYALE_TEST_MAP, bots: 9 });
+    expect(a).toMatchObject({ mode: 'royale', map: 'shibuya', bots: 9 });
     expect(roomCreateArgs({ ...s, size: '1v1', bots: true }).bots).toBe(4);
     expect(roomCreateArgs({ ...s, bots: false }).bots).toBe(0);
   });

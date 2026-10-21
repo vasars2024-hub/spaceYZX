@@ -60,11 +60,13 @@ const withBlocked = (d: LevelDef, names: string[]): LevelDef => {
 };
 
 describe('Split Deck map', () => {
-  it('keeps the redesigned Split Deck as the default: competitive, not mirror-symmetric; Kestrel stays available', () => {
+  it('keeps Split Deck and Kestrel buildable in the archive; Dust 2 is the default', () => {
     const m = MAPS.find((x) => x.id === 'split-deck-graybox');
     expect(m?.competitive).toBe(true);
     expect(m?.symmetric).toBeFalsy();
-    expect(DEFAULT_MATCH_MAP()).toBe('split-deck-graybox');
+    expect(m?.retired).toBe(true);
+    expect(DEFAULT_MATCH_MAP()).toBe('dust2');
+    expect(getMap('kestrel-graybox').retired).toBe(true);
     expect(getMap('kestrel-graybox').id).toBe('kestrel-graybox');
     expect(mapDef('kestrel-graybox').name).toBe('Kestrel');
   });

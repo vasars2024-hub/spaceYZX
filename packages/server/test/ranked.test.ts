@@ -304,7 +304,7 @@ describe('accounts & ranked store', () => {
 
 describe('anti-grief in matches', () => {
   it('warns, then kicks a team killer', () => {
-    const room = new Room({ code: 'GRF', mode: '2v2', map: 'kestrel-graybox', seed: 2 });
+    const room = new Room({ code: 'GRF', mode: '2v2', map: 'dust2', seed: 2 });
     const rules = new MatchRules('2v2');
     room.rules = rules;
     const fake = { rttMs: 0, sendBinary: () => {}, sendJson: () => {} } as unknown as Conn;
@@ -348,7 +348,7 @@ describe('ranked forfeits', () => {
     const room = new Room({
       code: 'FF1',
       mode: '1v1',
-      map: 'kestrel-graybox',
+      map: 'dust2',
       ranked: true,
       seed: 3,
     });

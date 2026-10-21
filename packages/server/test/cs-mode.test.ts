@@ -8,7 +8,7 @@ import { MatchRules } from '../src/game/rules/match';
 describe('CS mode rooms', () => {
   it('a CS room plays bomb rules with the CS config (guns, slower movement)', () => {
     const hub = new GameHub({ log: () => {} });
-    const room = hub.createRoom({ mode: '2v2', map: 'split-deck-graybox', loadout: 'cs' })!;
+    const room = hub.createRoom({ mode: '2v2', map: 'dust2', loadout: 'cs' })!;
     expect(configLoadout(room.ctx.config)).toBe('cs');
     expect(room.ctx.config.movement.sprintSpeed).toBe(
       defaultConfig().movement.sprintSpeed * CS_MOVE_SCALE,
@@ -22,12 +22,12 @@ describe('CS mode rooms', () => {
 
   it('normal rooms stay Lethal Recoil; ranked and practice rooms ignore a CS request', () => {
     const hub = new GameHub({ log: () => {} });
-    const normal = hub.createRoom({ mode: '1v1', map: 'split-deck-graybox', objective: 'bomb' })!;
+    const normal = hub.createRoom({ mode: '1v1', map: 'dust2', objective: 'bomb' })!;
     expect(configLoadout(normal.ctx.config)).toBe('lethal');
     expect((normal.rules as MatchRules).ms.loadout).toBe('lethal');
     const ranked = hub.createRoom({
       mode: '1v1',
-      map: 'kestrel-graybox',
+      map: 'dust2',
       ranked: true,
       loadout: 'cs',
     })!;
@@ -40,12 +40,12 @@ describe('CS mode rooms', () => {
 describe('Elimination and 3v3 rooms', () => {
   it('Elimination rooms keep their objective with either kit (CS never forces the bomb)', () => {
     const hub = new GameHub({ log: () => {} });
-    const lethal = hub.createRoom({ mode: '2v2', map: 'kestrel-graybox', objective: 'elim' })!;
+    const lethal = hub.createRoom({ mode: '2v2', map: 'dust2', objective: 'elim' })!;
     expect((lethal.rules as MatchRules).ms.objective).toBe('elim');
     expect((lethal.rules as MatchRules).ms.loadout).toBe('lethal');
     const cs = hub.createRoom({
       mode: '2v2',
-      map: 'kestrel-graybox',
+      map: 'dust2',
       objective: 'elim',
       loadout: 'cs',
     })!;
@@ -54,7 +54,7 @@ describe('Elimination and 3v3 rooms', () => {
     // CS with Towers is not a thing: still the bomb
     const csTower = hub.createRoom({
       mode: '2v2',
-      map: 'split-deck-graybox',
+      map: 'dust2',
       objective: 'tower',
       loadout: 'cs',
     })!;
@@ -62,7 +62,7 @@ describe('Elimination and 3v3 rooms', () => {
     // ranked stays Tower rules
     const ranked = hub.createRoom({
       mode: '2v2',
-      map: 'kestrel-graybox',
+      map: 'dust2',
       objective: 'elim',
       ranked: true,
     })!;
@@ -72,7 +72,7 @@ describe('Elimination and 3v3 rooms', () => {
   it('3v3 rooms hold six players with 3v3 rules, for every objective', () => {
     const hub = new GameHub({ log: () => {} });
     for (const objective of ['tower', 'bomb', 'elim'] as const) {
-      const room = hub.createRoom({ mode: '3v3', map: 'split-deck-graybox', objective })!;
+      const room = hub.createRoom({ mode: '3v3', map: 'dust2', objective })!;
       expect(room.maxPlayers).toBe(6);
       const rules = room.rules as MatchRules;
       expect(rules).toBeInstanceOf(MatchRules);

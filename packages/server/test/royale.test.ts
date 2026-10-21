@@ -42,11 +42,15 @@ const royaleOf = (extra: unknown): RoyaleView | null => {
 };
 
 describe('Royale rooms', () => {
-  it('are refused while no map has royale data', async () => {
-    const c = client('Ann', (core) => core.createRoom('royale', 'colossus-yard', 4, 'rookie'));
+  it('accept Shibuya, the shipped Royale map', async () => {
+    const c = client('Ann', (core) => core.createRoom('royale', 'shibuya', 0, 'rookie'));
     await until(() => c.core.error !== null || c.core.state === 'room');
-    expect(c.core.state).not.toBe('room');
-    expect(c.core.error).toMatch(/Royale/);
+    expect(c.core.error).toBeNull();
+    expect(c.core.state).toBe('room');
+    expect(c.core.map).toBe('shibuya');
+    const room = server.hub.rooms.get(c.core.code)!;
+    expect(room.rules).toBeInstanceOf(RoyaleRules);
+    expect(room.level.def.royale?.spawns.length).toBeGreaterThanOrEqual(10);
   });
 
   it('a bot-filled room starts by itself; the dead see everyone', async () => {

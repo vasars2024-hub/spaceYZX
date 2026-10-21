@@ -29,9 +29,9 @@ const wholeMap = (name = 'Test Map'): CustomMapDoc => ({
   launchPads: [],
 });
 
-const MAP = 'kestrel-graybox';
+const MAP = 'dust2';
 /** An edit of a built-in map: one of its boxes removed, one block added. */
-const edit = (name = 'Kestrel edit', which = 5): CustomMapDoc => ({
+const edit = (name = 'Dust 2 edit', which = 5): CustomMapDoc => ({
   ...wholeMap(name),
   base: MAP,
   spawns: [],

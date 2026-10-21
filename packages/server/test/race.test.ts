@@ -63,9 +63,7 @@ describe('race rooms (hub)', () => {
     const hub = new GameHub({ log: () => {} });
     try {
       expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
-      expect(hub.createRoom({ mode: 'race', map: 'split-deck-graybox' })!.map).toBe(
-        DEFAULT_RACE_MAP,
-      );
+      expect(hub.createRoom({ mode: 'race', map: 'dust2' })!.map).toBe(DEFAULT_RACE_MAP);
       expect(hub.createRoom({ mode: 'race', map: 'surf-glass-garden' })!.map).toBe(
         'surf-glass-garden',
       );

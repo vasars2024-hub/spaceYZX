@@ -70,7 +70,7 @@ describe('queues', () => {
       },
     } as unknown as GameHub;
     s.queue.rand = () => 0;
-    s.queue.mapPool = () => ['split-deck-graybox', 'canyon-relay-graybox', 'orbital-ring-graybox'];
+    s.queue.mapPool = () => ['dust2', 'canyon-relay-graybox', 'mirage'];
     // (the real race tracks are retired, which closes the Race queue: race-ranked.test.ts)
     s.queue.trackPool = () => ['track-a'];
     s.queue.onlineCount = () => 100;
@@ -468,7 +468,7 @@ describe('Brawl results', () => {
   it("are recorded with each player's stats (objective brawl)", () => {
     const s = createServices({ dbFile: ':memory:', log: () => {} });
     const id = s.accounts.login('Brawler').account.id;
-    const room = new Room({ code: 'BRAWL1', mode: 'brawl', map: 'split-deck-graybox' });
+    const room = new Room({ code: 'BRAWL1', mode: 'brawl', map: 'dust2' });
     const rules = new BrawlRules('brawl');
     room.rules = rules;
     rules.setup(room);

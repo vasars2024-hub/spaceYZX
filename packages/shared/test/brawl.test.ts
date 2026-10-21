@@ -324,8 +324,20 @@ describe('brawl: maps and determinism', () => {
     expect(ids[0]).toBe('colossus-yard');
     expect(DEFAULT_BRAWL_MAP()).toBe('colossus-yard');
     expect(ids).not.toContain('training-bay'); // (too cramped for ten)
-    expect(ids).toContain('split-deck-graybox');
-    expect(ids).not.toContain('skyfount-graybox'); // free roam, not competitive
+    expect(ids.slice(1)).toEqual([
+      'dust2',
+      'mirage',
+      'inferno',
+      'nuke',
+      'ancient',
+      'anubis',
+      'cache',
+      'train',
+      'canyon-relay-graybox',
+      'antipode-graybox',
+    ]);
+    expect(ids).not.toContain('skyfount-graybox'); // archived, not competitive
+    expect(ids).not.toContain('shibuya'); // Royale only
     for (const m of MAPS) {
       if (m.arena || m.race || m.retired) expect(ids).not.toContain(m.id);
       if ((m.competitive || m.brawl) && !m.arena && !m.race && !m.retired)

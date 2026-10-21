@@ -75,9 +75,9 @@ const sim = (d: LevelDef = def()) => {
 };
 
 describe('Canyon Relay map', () => {
-  it('is a competitive outdoor map (Split Deck stays default)', () => {
+  it('is a competitive outdoor map (Dust 2 is the default)', () => {
     expect(MAPS.find((x) => x.id === 'canyon-relay')?.competitive).toBe(true);
-    expect(DEFAULT_MATCH_MAP()).toBe('split-deck-graybox');
+    expect(DEFAULT_MATCH_MAP()).toBe('dust2');
     const d = def();
     expect(d.name).toBe('Canyon Relay');
     // an outdoor map: sky gradient, sunset key light, warm fog the colour of the horizon

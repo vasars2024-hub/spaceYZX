@@ -73,8 +73,8 @@ describe('menu flow: practice wizard', () => {
     expect(s.step).toBe('mode');
     s = pickPracticeMode(s, 'match');
     expect(s.step).toBe('map');
-    s = pickPracticeMap(s, 'kestrel-graybox');
-    expect(s).toMatchObject({ step: 'setup', map: 'kestrel-graybox' });
+    s = pickPracticeMap(s, 'dust2');
+    expect(s).toMatchObject({ step: 'setup', map: 'dust2' });
     s = practiceBack(s)!;
     expect(s.step).toBe('map');
     s = practiceBack(s)!;
@@ -83,7 +83,7 @@ describe('menu flow: practice wizard', () => {
   });
 
   it('free fight skips the map step and always plays the big Brawl map (Colossus Yard)', () => {
-    const s = pickPracticeMode({ ...initialPractice(), map: 'kestrel-graybox' }, 'deathmatch');
+    const s = pickPracticeMode({ ...initialPractice(), map: 'dust2' }, 'deathmatch');
     expect(practiceSteps('deathmatch')).toEqual(['mode', 'setup']);
     expect(s.step).toBe('setup');
     expect(practiceMapId(s)).toBe('colossus-yard');
@@ -106,11 +106,13 @@ describe('menu flow: practice wizard', () => {
     expect(mapsForMode('elim').map((m) => m.id)).toEqual(
       MAPS.filter((m) => m.competitive && !m.arena && !m.retired).map((m) => m.id),
     );
-    for (const id of ['split-deck-graybox', 'kestrel-graybox', 'orbital-ring-graybox'])
+    for (const id of ['dust2', 'antipode-graybox', 'canyon-relay-graybox'])
       expect(mapsForMode('elim').some((m) => m.id === id)).toBe(true);
     expect(mapsForMode('elim').some((m) => m.id === 'skyfount-graybox')).toBe(false);
-    for (const mode of ['bomb', 'cs'] as const)
+    for (const mode of ['bomb', 'cs'] as const) {
+      expect(mapsForMode(mode).some((m) => m.id === 'dust2')).toBe(true);
       expect(mapsForMode(mode).some((m) => m.id === 'kestrel-graybox')).toBe(false);
+    }
   });
 
   it('keeps a valid map when switching mode, else picks the first valid one', () => {
@@ -128,11 +130,12 @@ describe('menu flow: practice wizard', () => {
     ]);
   });
 
-  it('lists the five modes (Arena only behind its flag) with icons', () => {
+  it('lists the available modes including Royale (Arena only behind its flag) with icons', () => {
     const ids = practiceModes(false).map((m) => m.id);
     expect(ids).toEqual([
       'brawl',
       'brawl-ffa',
+      'royale',
       'match',
       'bomb',
       'elim',
@@ -273,7 +276,7 @@ describe('menu flow: online room wizard', () => {
     });
     // Elimination suggests every competitive map (it needs no Towers or sites)
     const best = roomMaps('elim').best.map((m) => m.id);
-    for (const id of ['split-deck-graybox', 'kestrel-graybox', 'orbital-ring-graybox'])
+    for (const id of ['dust2', 'antipode-graybox', 'canyon-relay-graybox'])
       expect(best).toContain(id);
     expect(pickRoomObjective(initialRoom(), 'elim-cs').step).toBe('map');
     // (Arena rooms: the 3v3 card means six players in all)
@@ -373,7 +376,7 @@ describe('menu flow: Brawl and one-click Play', () => {
     for (const mode of ['brawl', 'brawl-ffa'] as const) {
       const maps = mapsForMode(mode).map((m) => m.id);
       expect(maps[0]).toBe('colossus-yard'); // the big Brawl map comes first
-      expect(maps).toContain('split-deck-graybox');
+      expect(maps).toContain('dust2');
       expect(maps).not.toContain('training-bay'); // (too cramped for ten)
       expect(mapsForMode(mode).some((m) => m.arena || m.race)).toBe(false);
       expect(practiceSteps(mode)).toEqual(['mode', 'map', 'setup']);
@@ -386,8 +389,8 @@ describe('menu flow: Brawl and one-click Play', () => {
     expect(pickPracticeMode({ ...initialPractice(), size: 1 }, 'brawl-ffa').size).toBe(
       QUICK_PLAY_OFFLINE.ffa,
     );
-    const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'brawl-ffa'), 'kestrel-graybox');
-    expect(practiceMapId(s)).toBe('kestrel-graybox');
+    const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'brawl-ffa'), 'dust2');
+    expect(practiceMapId(s)).toBe('dust2');
   });
 
   it('Brawl rooms online: rotation maps only, bots fill TDM teams / FFA player counts', () => {
@@ -430,7 +433,7 @@ describe('menu flow: free roam', () => {
     expect(isFreeRoam('deathmatch')).toBe(false);
     expect(sizesFor('freeroam')).toEqual([1]);
     expect(practiceSteps('freeroam')).toEqual(['mode', 'map', 'setup']);
-    const track = MAPS.find((m) => m.race && !m.retired)?.id ?? 'kestrel-graybox';
+    const track = MAPS.find((m) => m.race && !m.retired)?.id ?? 'dust2';
     const s = pickPracticeMap(pickPracticeMode(initialPractice(), 'freeroam'), track);
     expect(practiceMapId(s)).toBe(track);
     expect(ICONS[modeChoice('freeroam').icon]).toBeTruthy();
@@ -564,17 +567,40 @@ describe('menu flow: retired maps (archived competitive maps and parkour tracks)
     'leviathan',
   ];
   const retired = MAPS.filter((m) => m.retired);
+  const archivedGrayboxes = [
+    'split-deck-graybox',
+    'kestrel-graybox',
+    'orbital-ring-graybox',
+    'sakura-hold-graybox',
+    'stormglass-graybox',
+    'afterglow-graybox',
+    'orrery-graybox',
+    'leviathan-graybox',
+    'skyfount-graybox',
+  ];
 
-  it('the ten archived maps and three parkour tracks are retired; redesigned and surf maps are not', () => {
+  it('archives the ten original maps, nine grayboxes and three parkour tracks; keeps the new lineup and surf maps', () => {
     expect(retired.map((m) => m.id).sort()).toEqual(
-      [...archived, 'race-ember', 'race-neon', 'race-sunspire'].sort(),
+      [...archived, ...archivedGrayboxes, 'race-ember', 'race-neon', 'race-sunspire'].sort(),
     );
     for (const id of archived) {
       expect(getInfo(id).retired).toBe(true);
-      expect(getInfo(`${id}-graybox`).retired).toBeFalsy();
+      expect(!!getInfo(`${id}-graybox`).retired).toBe(archivedGrayboxes.includes(`${id}-graybox`));
       expect(getInfo(`${id}-graybox`).competitive).toBe(true);
       expect(getInfo(`${id}-graybox`).name).toBe(getInfo(id).name);
     }
+    expect(mapsForMode('elim').map((m) => m.id)).toEqual([
+      'dust2',
+      'mirage',
+      'inferno',
+      'nuke',
+      'ancient',
+      'anubis',
+      'cache',
+      'train',
+      'canyon-relay-graybox',
+      'antipode-graybox',
+    ]);
     expect(raceTracks()).toEqual([]);
     expect(surfMaps().some((m) => m.retired)).toBe(false);
     expect(DEFAULT_RACE_MAP).toBe('surf-copper-reef');
@@ -592,6 +618,7 @@ describe('menu flow: retired maps (archived competitive maps and parkour tracks)
       'race',
       'brawl',
       'brawl-ffa',
+      'royale',
     ] as const;
     const offered = new Set<string>();
     for (const mode of modes) for (const m of mapsForMode(mode)) offered.add(m.id);
@@ -613,13 +640,11 @@ describe('menu flow: retired maps (archived competitive maps and parkour tracks)
       { ...getInfo('surf-copper-reef') },
       { ...getInfo('split-deck') },
       { ...getInfo('kestrel-graybox') },
+      { ...getInfo('dust2') },
     ];
     expect(mapsForMode('race', maps).map((m) => m.id)).toEqual(['surf-copper-reef']);
-    expect(mapsForMode('freeroam', maps).map((m) => m.id)).toEqual([
-      'surf-copper-reef',
-      'kestrel-graybox',
-    ]);
-    const { best, other } = roomMaps('tower', maps, () => mapDef('kestrel-graybox'));
-    expect([...best, ...other].map((m) => m.id)).toEqual(['kestrel-graybox']);
+    expect(mapsForMode('freeroam', maps).map((m) => m.id)).toEqual(['surf-copper-reef', 'dust2']);
+    const { best, other } = roomMaps('tower', maps, () => mapDef('dust2'));
+    expect([...best, ...other].map((m) => m.id)).toEqual(['dust2']);
   });
 });

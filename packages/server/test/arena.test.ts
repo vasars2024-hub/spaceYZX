@@ -48,7 +48,7 @@ describe('Arena 1v1 over WebSocket', () => {
 
   it('a private arena room: bots fill it, pits are paired, each client sees only its pit', async () => {
     const host = bot('ArenaHost', (core) =>
-      core.createRoom('arena', 'split-deck-graybox', 5, 'casual', 'tower', 'cs'),
+      core.createRoom('arena', 'dust2', 5, 'casual', 'tower', 'cs'),
     );
     await until(() => host.core.state === 'room');
     expect(host.core.mode).toBe('arena');

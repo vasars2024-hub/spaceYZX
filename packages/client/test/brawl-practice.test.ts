@@ -11,7 +11,7 @@ describe('offline Brawl vs bots', () => {
       variant: 'tdm',
       size: 3,
       skill: 'rookie',
-      map: 'kestrel-graybox',
+      map: 'dust2',
       config: defaultConfig(),
     });
     const w = s.world();
@@ -19,7 +19,7 @@ describe('offline Brawl vs bots', () => {
     expect(w.players.filter((p) => p.team === 0).length).toBe(3);
     expect(s.local()!.team).toBe(0);
     expect(s.ctx.ffa).toBeFalsy();
-    expect(s.mapId).toBe('kestrel-graybox');
+    expect(s.mapId).toBe('dust2');
     expect(s.brawl.phase).toBe('live');
     // spawn protection at the start
     expect(w.players.every((p) => p.shield)).toBe(true);

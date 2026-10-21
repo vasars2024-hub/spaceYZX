@@ -856,6 +856,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   const bottom = low - 4;
   const wallTop = top + WALL_ABOVE;
 
+  /** areas drawn as shallow water (themes with a water colour) */
+  const WATER_AREA = /\b(water|canal|sea)\b/i;
   // ---- looks (level/graybox-theme.ts; unthemed: the plain graybox colours) ------------------
   const colorOf = (c: string, h: number): number => {
     const k = area(c).k;
@@ -869,6 +871,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     if (!pal) return { mat: 'floor', color: colorOf(c, h) };
     const k = area(c).k;
     if (k === 'site') return { mat: pal.site.mat, color: pal.site.color };
+    if (pal.water && WATER_AREA.test(area(c).n))
+      return { mat: pal.water.mat, color: pal.water.color };
     const base = shade(
       pick(h <= -2 ? pal.floor.alt : pal.floor.colors, c),
       1 + Math.max(-8, Math.min(12, h)) * 0.006,

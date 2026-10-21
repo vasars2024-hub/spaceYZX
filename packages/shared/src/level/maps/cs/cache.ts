@@ -1,263 +1,322 @@
-// Cache (the CS2 / CS:GO map de_cache), rebuilt as a graybox about 3× its real size: our players
-// are much faster than CS players (sprint 9 m/s, dash, jetpack), so every distance and every
-// corridor width is scaled up the same way. Heights keep the CS differences, × 1.5 at most.
-//
-// Scale: CS units → metres (1 unit = 0.0254 m), then × CACHE_SCALE (3) horizontally. The layout
-// below is written in real CS units (about 3700 × 3400 of them); a grid cell is 64 units (4.88 m at
-// 3×: few enough cells for the bots' route search), so changing CACHE_SCALE rescales the whole map.
-// Result: 58 × 53 cells of 4.88 m = 283 × 258 m, 1401 floor cells (bot waypoints).
-//
-// North is up (row 0). T spawn in the west, CT spawn in the east, A in the north, B in the
-// south, Mid between them running west → east. Callouts:
-//   T side   T Spawn, A Main (long hall north then east), T Mid, B Main (south then east),
-//            T Connector (T Mid → B Main)
-//   A        Forklift (A Main exit), A Site with the Truck, Quad (stacked boxes by Squeaky),
-//            Highway (the boxes on the east side), CT (the passage A → CT spawn)
-//   Mid      Mid, Squeaky Hall → Squeaky (the door into Quad), White Box (end of mid),
-//            Z Connector (White Box → CT / A), Garage (White Box → CT spawn / Checkers),
-//            Boost (the ledge on the south side of mid), Vents (Boost → B site)
-//   B        B Site, Headshot (raised ledge by the B Main exit), Heaven (raised ledge over the
-//            site, stairs from Checkers), Checkers (B → Garage), Sun Room (B → CT spawn)
-//   CT       CT Spawn
-// Bomb: T spawn = Orange (attackers), CT spawn = Cyan (defenders).
-// Cache has no ladders, so it has no suction tubes; every route is walked.
+// Cache (CS2), TRACED from Valve's radar overview by the CS map tracer (trace.mjs, outside
+// the repo: C:\Users\rolli\wt\cs-refs; spec: specs/cache.json). Regenerate it rather than editing:
+//   node C:\Users\rolli\wt\cs-refs\trace.mjs cache --repo <checkout>
+// Scale: 1.25× the real map across (1 radar px = 4.9 units; one cell = 40 units =
+// 1.270 m), heights 1.0× (1 unit = 0.0254 m), per cell from the radar's height colours, built
+// smooth (graybox.ts: layer heights). 117 × 88 cells ≈ 149 × 112 m, 4977 floor cells.
+// North (row 0) is up on the radar. Orange = T (attackers), Cyan = CT (defenders).
+// Callouts: T Spawn, T Connector / Alt Mid, A Main, Squeaky, A Site, Quad, Truck, Default,
+// Forklift, Highway, CT, Z / Connector, Boost, Mid, White Box, Vents, Garage, Checkers, Sun Room,
+// Heaven, Headshot, B Main, B Site, CT Mid, CT Spawn.
 import type { LevelDef } from '../../types';
-import {
-  buildGraybox,
-  type GrayboxArea,
-  type GrayboxLayout,
-  type GrayboxProp,
-  type GrayboxSign,
-} from '../../graybox';
+import { buildGraybox, unpackHeights, type GrayboxLayout } from '../../graybox';
 
-/** How much bigger than the real CS map (horizontally). The one number to change the scale. */
-export const CACHE_SCALE = 3;
-/** Real CS height differences × this (the owner's rule: 1.5 at most). */
-const V_SCALE = 1.5;
-/** One CS unit in metres. */
-const UNIT_M = 0.0254;
-/** CS units per grid cell (64: about 4.9 m at 3×; keeps the bots' waypoint count low). */
-const UNITS_PER_CELL = 64;
-/** Metres per grid cell. */
-const CELL_M = UNITS_PER_CELL * UNIT_M * CACHE_SCALE;
-/** The map's corner (CS units, as written below) and its extent from there (west → east, north → south). */
-const X0 = 100;
-const Y0 = 250;
-const W_U = 3700;
-const H_U = 3400;
-
-/** CS units → grid cells. */
-const cell = (u: number) => Math.round(u / UNITS_PER_CELL);
-/** CS units of height → metres in our map. */
-const hu = (u: number) => Math.round(u * UNIT_M * V_SCALE * 100) / 100;
-
-/** An area rectangle in CS units: [legend char, west, north, east, south]. Later ones win. */
-type Rect = [c: string, x0: number, y0: number, x1: number, y1: number];
-
-const paint = (rects: Rect[]): string[] => {
-  const grid = Array.from({ length: cell(H_U) }, () => Array<string>(cell(W_U)).fill('.'));
-  for (const [c, x0, y0, x1, y1] of rects)
-    for (let y = cell(y0 - Y0); y < cell(y1 - Y0); y++)
-      for (let x = cell(x0 - X0); x < cell(x1 - X0); x++) grid[y][x] = c;
-  return grid.map((r) => r.join(''));
-};
-
-/** A prop in CS units (corner to corner), `h` metres tall (props keep human-size heights). */
-const prop = (
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  h: number,
-  kind: GrayboxProp['kind'],
-): GrayboxProp => {
-  const k = 1 / UNITS_PER_CELL;
-  const r = (v: number) => Math.round(v * 100) / 100;
-  return {
-    x: r((x0 - X0) * k),
-    y: r((y0 - Y0) * k),
-    w: r((x1 - x0) * k),
-    d: r((y1 - y0) * k),
-    h,
-    kind,
-  };
-};
-
-type Dir = 'n' | 's' | 'e' | 'w';
-const STEP: Record<Dir, [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
-const BACK: Record<Dir, Dir> = { n: 's', s: 'n', e: 'w', w: 'e' };
-const RIGHT: Record<Dir, Dir> = { n: 'e', e: 's', s: 'w', w: 'n' };
-
-const H_T = hu(48); // T spawn stands a little higher than the middle of the map
-const H_BOOST = hu(32); // Boost ledge and the vent duct
-const H_HEADSHOT = hu(30); // the Headshot ledge (vaulted onto)
-const H_HEAVEN = hu(96); // B Heaven
-
-const legend: Record<string, GrayboxArea> = {
-  O: { n: 'T Spawn', k: 'orange', h: H_T },
-  m: { n: 'A Main', k: 'room', h: 0 },
-  a: { n: 'A Main Ramp', k: 'ramp', r: [0, H_T], dir: 's', s: 'A Main' },
-  f: { n: 'Forklift', k: 'room', h: 0 },
-  A: { n: 'A Site', k: 'site', h: 0 },
-  u: { n: 'Quad', k: 'room', h: 0 },
-  h: { n: 'Highway', k: 'room', h: 0 },
-  C: { n: 'CT', k: 'room', h: 0 },
-  t: { n: 'T Mid', k: 'ramp', r: [0, H_T], dir: 'w' },
-  M: { n: 'Mid', k: 'room', h: 0 },
-  q: { n: 'Squeaky Hall', k: 'room', h: 0, s: 'Squeaky' },
-  Q: { n: 'Squeaky', k: 'room', h: 0 },
-  w: { n: 'White Box', k: 'room', h: 0 },
-  z: { n: 'Z Connector', k: 'room', h: 0, s: 'Z' },
-  g: { n: 'Garage', k: 'room', h: 0 },
-  x: { n: 'Boost', k: 'room', h: H_BOOST },
-  v: { n: 'Vents', k: 'room', h: H_BOOST },
-  T: { n: 'T Connector', k: 'room', h: 0, s: 'T Con' },
-  c: { n: 'B Main Ramp', k: 'ramp', r: [0, H_T], dir: 'n', s: 'B Main' },
-  b: { n: 'B Main', k: 'room', h: 0 },
-  B: { n: 'B Site', k: 'site', h: 0 },
-  s: { n: 'Headshot', k: 'room', h: H_HEADSHOT },
-  e: { n: 'Heaven', k: 'room', h: H_HEAVEN },
-  E: { n: 'Heaven Stairs', k: 'ramp', r: [0, H_HEAVEN], dir: 's', s: 'Heaven' },
-  k: { n: 'Checkers', k: 'room', h: 0 },
-  r: { n: 'Sun Room', k: 'room', h: 0 },
-  Y: { n: 'CT Spawn', k: 'cyan', h: 0 },
-};
-
-const rows = paint([
-  // ---- T side
-  ['O', 300, 1550, 850, 2250],
-  ['m', 450, 400, 1950, 650], // A Main, the long east-west part
-  ['m', 450, 650, 750, 1200], // A Main, north out of T spawn
-  ['a', 450, 1200, 750, 1550],
-  ['t', 850, 1760, 1300, 1960],
-  ['c', 450, 2250, 750, 2600],
-  ['b', 450, 2600, 750, 2800],
-  ['b', 450, 2800, 1950, 3030],
-  ['T', 1350, 1960, 1550, 2800],
-  // ---- A
-  ['A', 1950, 300, 2950, 1150],
-  ['f', 1950, 300, 2250, 700],
-  ['u', 1950, 900, 2300, 1150],
-  ['h', 2950, 300, 3300, 1150],
-  ['C', 3100, 1150, 3420, 1500],
-  // ---- Mid
-  ['M', 1300, 1760, 2650, 1960],
-  ['q', 1500, 1100, 1700, 1760],
-  ['Q', 1700, 1000, 1950, 1150],
-  ['w', 2650, 1700, 3000, 2050],
-  ['z', 2700, 1330, 2850, 1760],
-  ['z', 2700, 1330, 3100, 1470],
-  ['g', 3000, 1750, 3400, 2300],
-  ['x', 2250, 1960, 2550, 2150],
-  ['v', 2400, 2150, 2520, 2800],
-  // ---- B
-  ['B', 1950, 2800, 2800, 3550],
-  ['s', 1950, 3250, 2250, 3550],
-  ['k', 2650, 2620, 3250, 2800],
-  ['k', 3050, 2300, 3250, 2800],
-  ['e', 2800, 2850, 3050, 3200],
-  ['E', 3050, 2800, 3250, 3200],
-  ['r', 2800, 3300, 3350, 3550],
-  ['r', 3350, 2600, 3550, 3550],
-  // ---- CT
-  ['Y', 3400, 1400, 3750, 2600],
-]);
-
-/**
- * A painted sign for a reader standing at (x, y) (CS units) and looking `wall`-ward: it goes on
- * the first wall that way, on the face toward the reader. `toward`: the way the arrow points on
- * the map, drawn → or ← as the reader facing the wall sees it.
- */
-const sign = (x: number, y: number, wall: Dir, label: string, toward?: Dir): GrayboxSign => {
-  const [dx, dy] = STEP[wall];
-  const k = 1 / UNITS_PER_CELL;
-  let cx = Math.floor((x - X0) * k);
-  let cy = Math.floor((y - Y0) * k);
-  // (a spot right at a wall's edge may fall into the wall cell: step back out of it)
-  for (let i = 0; i < 3 && rows[cy]?.[cx] === '.'; i++) {
-    cx -= dx;
-    cy -= dy;
-  }
-  if (rows[cy]?.[cx] === '.') throw new Error(`Cache: sign "${label}" stands in a wall`);
-  while ((rows[cy + dy]?.[cx + dx] ?? '.') !== '.') {
-    cx += dx;
-    cy += dy;
-  }
-  const text = !toward
-    ? label
-    : toward === RIGHT[wall]
-      ? `${label} →`
-      : toward === BACK[RIGHT[wall]]
-        ? `← ${label}`
-        : label;
-  return { x: cx + dx, y: cy + dy, face: BACK[wall], text };
-};
-
-const props: GrayboxProp[] = [
-  // A site: the Truck in the middle, the Forklift at the A Main exit, the Quad stack
-  prop(2380, 620, 2520, 1000, 3.2, 'car'),
-  prop(2020, 430, 2120, 580, 2.2, 'car'),
-  prop(2020, 960, 2120, 1060, 2.4, 'crate'),
-  prop(2120, 960, 2220, 1060, 2.4, 'crate'),
-  prop(2020, 1060, 2120, 1120, 1.2, 'crate'),
-  // A default boxes and the Highway boxes
-  prop(2700, 420, 2830, 520, 1.6, 'crate'),
-  prop(2800, 980, 2900, 1080, 1.2, 'crate'),
-  prop(3080, 450, 3220, 590, 2.4, 'crate'),
-  prop(3150, 760, 3250, 900, 1.6, 'crate'),
-  prop(3100, 1000, 3200, 1100, 1.2, 'crate'),
-  // A Main and Mid
-  prop(1150, 420, 1250, 520, 1.6, 'crate'),
-  prop(1800, 1880, 1950, 1960, 1.2, 'wall'),
-  // the White Box at the end of mid, the car in Garage
-  prop(2760, 1780, 2900, 1920, 2.4, 'crate'),
-  prop(3120, 1900, 3240, 2120, 1.6, 'car'),
-  // B site boxes, the Headshot box, Checkers and Sun Room cover
-  prop(2320, 3050, 2460, 3190, 1.6, 'crate'),
-  prop(2460, 3080, 2560, 3180, 1.2, 'crate'),
-  prop(2500, 3380, 2640, 3520, 2.4, 'crate'),
-  prop(2040, 3330, 2140, 3430, 1.2, 'crate'),
-  prop(2900, 2640, 3000, 2720, 1.2, 'crate'),
-  prop(2950, 3330, 3090, 3470, 1.6, 'crate'),
-  // B Main and CT spawn
-  prop(1300, 2830, 1420, 2950, 1.6, 'crate'),
-  prop(3600, 1900, 3740, 2040, 1.6, 'crate'),
-];
-
-const signs: GrayboxSign[] = [
-  // T spawn: which way to each site
-  sign(870, 1550, 'e', 'A MAIN', 'n'),
-  sign(870, 2200, 'e', 'B', 's'),
-  // A Main and Squeaky into A, the sites
-  sign(1850, 400, 'n', 'A', 'e'),
-  sign(1600, 1680, 'w', 'A', 'n'),
-  sign(2600, 320, 'n', 'A SITE'),
-  sign(2400, 3580, 's', 'B SITE'),
-  // Mid
-  sign(1400, 1780, 'n', 'SQUEAKY', 'e'),
-  sign(2000, 1980, 's', 'MID'),
-  sign(2300, 2100, 's', 'VENTS', 'e'),
-  sign(2950, 1720, 'n', 'Z', 'w'),
-  sign(2950, 2030, 's', 'GARAGE', 'e'),
-  // B
-  sign(1850, 2780, 'n', 'B', 'e'),
-  sign(1500, 2100, 'e', 'B', 's'),
-  sign(2700, 2620, 'n', 'GARAGE', 'e'),
-  sign(3450, 3580, 's', 'SUN ROOM'),
-  // CT spawn
-  sign(3600, 1380, 'n', 'A', 'w'),
-  sign(3600, 2580, 's', 'B', 'w'),
-];
+/** metres per grid cell */
+export const CACHE_CELL_M = 1.27;
 
 export const CACHE_LAYOUT: GrayboxLayout = {
   name: 'Cache',
-  cellM: CELL_M,
-  layers: [{ name: 'Cache', y: 0, rows }],
-  legend,
+  cellM: CACHE_CELL_M,
   theme: 'industrial',
   cover: false,
-  props,
-  signs,
+  waypointEvery: 2,
+  props: [
+    { x: 42.773, y: 50.98, w: 10.167, d: 4.41, h: 2.4, kind: 'crate' },
+    { x: 66.17, y: 41.302, w: 3.308, d: 8.207, h: 2.6, kind: 'car' },
+    { x: 94.835, y: 63.352, w: 3.063, d: 8.82, h: 2.6, kind: 'crate' },
+    { x: 93.365, y: 46.325, w: 8.207, d: 2.94, h: 2.6, kind: 'crate' },
+    { x: 93.732, y: 43.385, w: 8.208, d: 2.817, h: 2.6, kind: 'crate' },
+    { x: 1.49, y: 29.91, w: 2.45, d: 7.718, h: 1, kind: 'crate' },
+    { x: 21.702, y: 27.46, w: 2.695, d: 5.88, h: 2, kind: 'car' },
+    { x: 38.363, y: 11.902, w: 2.695, d: 5.758, h: 2.4, kind: 'car' },
+    { x: 82.34, y: 32.36, w: 2.083, d: 5.88, h: 2.4, kind: 'crate' },
+    { x: 62.024, y: 39.024, w: 2.554, d: 0.953, h: 1.3, kind: 'crate' },
+    { x: 77.072, y: 30.277, w: 3.797, d: 2.45, h: 2.2, kind: 'crate' },
+    { x: 18.15, y: 65.313, w: 2.082, d: 3.797, h: 2.2, kind: 'crate' },
+    { x: 40.935, y: 41.057, w: 2.818, d: 2.45, h: 1.3, kind: 'crate' },
+    { x: 47.69, y: 57.024, w: 3.876, d: 1.752, h: 2.2, kind: 'crate' },
+    { x: 46.815, y: 18.64, w: 3.063, d: 2.205, h: 1.8, kind: 'car' },
+    { x: 52.94, y: 65.802, w: 1.838, d: 2.817, h: 1.3, kind: 'crate' },
+    { x: 34.075, y: 27.582, w: 2.205, d: 2.205, h: 2.2, kind: 'crate' },
+    { x: 44.365, y: 18.64, w: 2.205, d: 2.205, h: 1.3, kind: 'crate' },
+    { x: 60.024, y: 48.04, w: 2.104, d: 2.205, h: 1.3, kind: 'crate' },
+    { x: 48.04, y: 7.024, w: 2.205, d: 1.204, h: 2.2, kind: 'crate' },
+    { x: 48.04, y: 8.252, w: 2.205, d: 2.058, h: 1.3, kind: 'crate' },
+    { x: 36.157, y: 84.422, w: 2.083, d: 2.205, h: 1.3, kind: 'crate' },
+    { x: 75.235, y: 75.97, w: 3.063, d: 1.47, h: 1, kind: 'crate' },
+    { x: 51.024, y: 7.024, w: 0.953, d: 1.204, h: 2.2, kind: 'crate' },
+    { x: 50.269, y: 8.252, w: 1.708, d: 2.058, h: 1.3, kind: 'crate' },
+    { x: 60.903, y: 82.34, w: 2.082, d: 2.083, h: 1.3, kind: 'crate' },
+    { x: 24.765, y: 61.27, w: 2.211, d: 1.593, h: 2.2, kind: 'crate' },
+    { x: 35.79, y: 76.582, w: 2.205, d: 1.837, h: 1.3, kind: 'crate' },
+    { x: 42.16, y: 80.135, w: 2.45, d: 1.593, h: 1.3, kind: 'crate' },
+    { x: 33.953, y: 4.185, w: 1.96, d: 1.96, h: 1.3, kind: 'crate' },
+    { x: 35.937, y: 4.185, w: 1.936, d: 1.96, h: 1.3, kind: 'crate' },
+    { x: 38.019, y: 76.582, w: 2.059, d: 1.837, h: 2.2, kind: 'crate' },
+    { x: 11.535, y: 30.645, w: 0.98, d: 3.675, h: 2.6, kind: 'wall' },
+    { x: 11.535, y: 34.81, w: 0.98, d: 3.675, h: 2.6, kind: 'wall' },
+    { x: 60.045, y: 76.828, w: 2.94, d: 1.149, h: 1.3, kind: 'crate' },
+    { x: 69.502, y: 41.404, w: 1.096, d: 2.499, h: 2.2, kind: 'crate' },
+    { x: 44.61, y: 75.235, w: 2.205, d: 1.347, h: 1.3, kind: 'crate' },
+    { x: 39.465, y: 39.465, w: 1.446, d: 1.837, h: 1.1, kind: 'barrel' },
+    { x: 35.121, y: 60.025, w: 1.616, d: 0.952, h: 2.2, kind: 'crate' },
+    { x: 40.322, y: 10.065, w: 1.348, d: 1.813, h: 1.3, kind: 'crate' },
+    { x: 88.342, y: 72.785, w: 1.47, d: 1.593, h: 2.2, kind: 'crate' },
+    { x: 53.063, y: 21.58, w: 1.348, d: 1.593, h: 2.2, kind: 'crate' },
+    { x: 65.313, y: 6.39, w: 5.635, d: 0.367, h: 2.6, kind: 'wall' },
+    { x: 79.032, y: 53.552, w: 0.944, d: 1.424, h: 1, kind: 'crate' },
+    { x: 60.78, y: 84.545, w: 7.196, d: 0.245, h: 2.6, kind: 'wall' },
+    { x: 37.26, y: 15.822, w: 1.079, d: 1.593, h: 1.3, kind: 'crate' },
+    { x: 53.185, y: 7.024, w: 1.347, d: 0.959, h: 2.2, kind: 'crate' },
+    { x: 91.282, y: 76.215, w: 1.347, d: 1.225, h: 2.2, kind: 'crate' },
+    { x: 26.014, y: 63.053, w: 0.962, d: 1.279, h: 2.2, kind: 'crate' },
+    { x: 91.772, y: 32.36, w: 0.98, d: 1.593, h: 1.3, kind: 'crate' },
+    { x: 32.024, y: 1, w: 3.031, d: 0.49, h: 2.6, kind: 'wall' },
+    { x: 23.785, y: 49.142, w: 1.191, d: 1.225, h: 2.2, kind: 'crate' },
+    { x: 79.522, y: 76.337, w: 1.225, d: 1.225, h: 2.2, kind: 'crate' },
+    { x: 41.058, y: 1, w: 2.94, d: 0.49, h: 2.6, kind: 'wall' },
+    { x: 5.777, y: 57.35, w: 2.327, d: 0.612, h: 2.6, kind: 'wall' },
+    { x: 10.555, y: 57.35, w: 2.328, d: 0.612, h: 2.6, kind: 'wall' },
+    { x: 53.199, y: 34.434, w: 1.778, d: 0.725, h: 2.2, kind: 'crate' },
+    { x: 15.332, y: 34.81, w: 0.368, d: 3.675, h: 2.6, kind: 'wall' },
+    { x: 92.262, y: 41.792, w: 0.613, d: 2.082, h: 2.2, kind: 'crate' },
+    { x: 16.19, y: 53.062, w: 0.49, d: 2.328, h: 2.6, kind: 'wall' },
+    { x: 98.643, y: 60.73, w: 1.586, d: 0.653, h: 2.2, kind: 'crate' },
+    { x: 3.024, y: 43.507, w: 0.671, d: 0.98, h: 2.2, kind: 'crate' },
+    { x: 101.115, y: 60.57, w: 1.793, d: 0.527, h: 2.2, kind: 'crate' },
+    { x: 52.024, y: 84.545, w: 3.121, d: 0.245, h: 2.6, kind: 'wall' },
+    { x: 41.082, y: 12.147, w: 0.466, d: 1.47, h: 2.2, kind: 'crate' },
+    { x: 60.168, y: 20.477, w: 2.817, d: 0.245, h: 2.6, kind: 'wall' },
+    { x: 53.185, y: 20.723, w: 1.102, d: 0.612, h: 2.2, kind: 'crate' },
+    { x: 27.95, y: 55.267, w: 1.026, d: 0.613, h: 2.6, kind: 'wall' },
+    { x: 35.505, y: 52.838, w: 0.604, d: 1.094, h: 2.2, kind: 'crate' },
+    { x: 15.332, y: 28.317, w: 0.368, d: 1.715, h: 2.6, kind: 'wall' },
+    { x: 53.675, y: 62.25, w: 0.735, d: 0.735, h: 1.1, kind: 'barrel' },
+    { x: 97.162, y: 62.617, w: 0.735, d: 0.711, h: 1.1, kind: 'barrel' },
+    { x: 14.72, y: 39.587, w: 0.367, d: 1.103, h: 2.2, kind: 'crate' },
+    { x: 15.332, y: 39.587, w: 0.368, d: 1.103, h: 2.2, kind: 'crate' },
+    { x: 92.63, y: 46.447, w: 0.612, d: 0.613, h: 1.1, kind: 'barrel' },
+    { x: 61.821, y: 6.431, w: 1.308, d: 0.275, h: 2.2, kind: 'crate' },
+    { x: 92.997, y: 43.63, w: 0.613, d: 0.49, h: 2.2, kind: 'crate' },
+    { x: 48.407, y: 65.19, w: 0.123, d: 2.328, h: 2.6, kind: 'wall' },
+    { x: 30.155, y: 71.315, w: 0.123, d: 2.328, h: 2.6, kind: 'wall' },
+    { x: 64.087, y: 29.665, w: 0.368, d: 0.735, h: 1.3, kind: 'crate' },
+  ],
+  signs: [
+  ],
+  layers: [
+    {
+      name: 'Main',
+      y: 0,
+      rows: [
+        '.....................................................................................................................',
+        '................................GGGGGGGGGGGG.DDDDDDD..DDDDDDDDDDD....................................................',
+        '................................GGGGGGGGGGGG.DDDDDDDDDDDDDDDDDDDD....................................................',
+        '................................GGGGGGGGGGGG.DDDDDDDDDDDDDDDDDDDD....................................................',
+        '................................GGGGGGGGGGGG.DDDDDDDDDDDDDDDDDDCC....................................................',
+        '................................GGGGGGGGGGGG.DDDDDDD..DDDDDDDDCCC....................................................',
+        '................................GEEEEEEEEGGGG.DD.............CCC.CCCCCC..............................................',
+        '................................GEEEEEEEEGGGGGDDDFFF.FCCCCCC.CCCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGGFFFFF.FCCCCCC.CCCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGGFFFFF.FCCCCCC.CCCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGGFFFFF.FCCCCCC.CCCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGGFFFFF.FCCCCCC..CCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGFFFFFFFFCCCCCC..CCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGFFFFFFFFCCCCCC..CCCCCCCCC..............................................',
+        '................................KEEEEEEEEGGGGGFFFFFFFCCCCCCC..CCCCCCCCC..............................................',
+        '................................KEEEEEEEEHHHHHFFFFFFFCCCCCCC...C..CCCC...............................................',
+        '................................KEEEEEEEEHHHHHHFFFFF.CCCCCCCCCC.CCCCCCCC.............................................',
+        '................................KEEEEEEEEHHHHHHHFFFF.CCCCCCCCCC.CCCCCCCC.............................................',
+        '................................KEEEEEEEEHHHHHHIIIFF.CCCCCCCCCC.CCCCCCCC.............................................',
+        '..................JJJJJJJJJJKKKKKKKKKHHHHHHHHIIIIIII.CCCCCCCCCC.CCCCCCCC.............................................',
+        '..................JJJJJJJJJJKKKKKKKKKKHHHHHHIIIIIIII.CCCCCCCCCC.CCCCCCCC.............................................',
+        '..................JJJJJJJJJJKKKKKKKKKKHHHHHIIIIIIIII.CCCCCCC....CCCCCCCC.............................................',
+        '..................JJJJJJJJJJKKKKKKKKKKHHHIIIIIIIIIII.CCCCCCC....CCCCCCCC.............................................',
+        '..................JJJJJJJJJJKKKKKKKKKKKHII....I......MMMMCCC....CCCCCCCC.............................................',
+        '..................JJJJJJJJJKKKKKKKKKKKKKI............MMMMMMC....CCCCCCCC.............................................',
+        '..................JJJJJJJJJKKKKKKKKKKKKKK............MMMMMMM....CCCCCCCC.............................................',
+        '..................JJJJJJJJJKKKKKKKKKKKKKK............MMMMMMM....CCCCCCCC.............................................',
+        '..................JJJJJJJ...K.....KKKKKKK............MMMMMMM....CCCCCCCC.............................................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........KKKKKKL............MMMMMMM....CCCCCCCC.............................................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........KKKLLLL............MMMMMMM....CCCCCCNN.............................................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMM....CCNNNNNNNNNNNNNNB....................................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL.............MMMMMM....NNNNNNNNNNNNNNNNB....................................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL.............MMMMMM....NNNNNNNNNNNNNNNBB.BBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL...............MMMM.....NNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMNNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMNNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMMNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMMNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMMNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL............MMMMMMMMMMMMMNNNNNNNNNNNNNBBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJJ.........LLLLLLL...........NNMMMMMM...............NNN.BBBBBBBBBBBBBB........................',
+        '.YYYYYYYYYYYYYYY..JJJJJJ..........LLLLLLLLNNNNNNNNNNNNMMMMM.QQQQQQQQQQQQQQQNNNNB.BBBBBBBBBBBB........................',
+        '......YYYYYY.......JJJJJ..........LLLLLLLNNNNNNNNNNNNNNMMMM.QQQQQQQQQQQQQQQQQNNB.BBBBBBBBBBBB........................',
+        '...YYYYYYYYYYYY....JJJJX..........LLLLLLNNNNNNNNNNNNNNNNMMM.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...YYYYYYYYYYYYJ..JJJXXXX.........XXXXXNNNNNNNNNNNNNNNNNNMM.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...YYYYYYYYYYYYJJJJXXXXXX.XXXXXXXX.XXXXXNNNNNNNNNNNNNNNNNNMMQQQQQQQQQQQQQQQQQQQQBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '..YYYYYYYYYYYYYRXXXXXXXXXXXXXXXXXX.XXXXXNNNNNNNNNNNNNNNNNNMMQQQQQQQQQQQQQQQQQQQQBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA.',
+        '...YYYYYYYYYYYYRRRXXXXXXXXXXXXXXXX.XXXXXXOOOOOOOOOOOOOOOOOO.QQQQQQQQQQQQQQQQQQQQBBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...YYYYYYYYYYYYRRRRRXXXXXXXXXXXXXX.XXXXXXOOOOOOOOOOOOOOOOOP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRRRRRRRRXX....XXXXXXXXXXXXOOOOOOOOOOOOOOOOPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRR....XXXXXXXXXXXXOOOOOOOOOOOOOOPPPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRR....XXXXXXXXXXXXOOOOOOOOOOOOPPPPPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRR....XXXXXXXXXXXXOOOOOOOOOOOPPPPPPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '..RRRRRRRRRRRRRRR.RRRRRRR....XXXXXXXXXXXXOOOOOOOOOOPPPPPPPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAAA.',
+        '...RRRRRRRRRRRRRR.RRRRRRR....XXXXX.XXXXXXOOOOOOOOOPPPPPPPPP.QQQQQQQQQQQQQQQQQQQQ.BBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRRRRRR......XXXXXXOOOOOOOOPPPPPPPPPP.......QQQ...........BBBBBBBBBBBBBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRRRRRRRRR.....................PP......QQQQQQQQQQQ...........B.....B.BBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...RRRRRRRRRRRRRR.RRRRRRRRRRRRRR.SSSSSSSSSSSSSSSPPPPPPP......QQQQQQQQQQQ...................BBBBBBBBBBBAAAAAAAAAAAAA..',
+        '.................RRRRRRRRRRRRRRR.SSSSSSSSSSSSSSSPPPPPPP......QQQQQQQQQQQ...................BBBBBBBBBBBAAAAAAAAAAAAA..',
+        '.................RRRRRRRRRRRRRRR.SSSSSSSSSSSSSSSSPPP.........QQQQQQQQQQQ...................BBBBBBBBBBBAAAAAAAAAAAAAA.',
+        '.................RRRRRRRR..RRRRR.SSSSSSSSSSSSSSSSPPP.........QQQQQQQQQQQ...................BBBBBBBBBBBAAAAAAAAAAAAA..',
+        '...................RRRRRRRR.RRRR.SS...SSS......SSP...........QQQ.QQQQQQ....................BBBBBBBBBBBAAAAAAAAAAAAA..',
+        '.................RRRRRRRRRR.RRRR...TTTTSSSSSSSS.VVVVVVV.......QQQQ.........................VVVVVBB...................',
+        '.................RRRRRRRRRR........TTTTTSSSSSSV.VVVVVVV.......QQQQ.........VVVVVVV.....VVVVVVVVVVV...................',
+        '.................RRRRRRRRRR.TTTT...TTTTTTTSSSVVVVVVVVVV.......VVVV.........VVVVVVV.....VVVVVVVVVVV...................',
+        '.................RRRRRRRRRR.TTTT...TTTTTTTTTTVVVVVVVVVV......VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRR.TTTT...TTTTTTTTTTVVVVVVVVVV.......VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRR.TTTTTTTTTTTTTTTTTVVVVVVVVVV.......VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRR.TTTTTTTTTTTTTTTTTVV.VVVVVVV.......VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRRR.....TTTTTTTTTTTTVV.VVVVVVV.......VVVVVVVVVVVV.VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRRRRRRRTTTTTTTTTTTTTTV.VVVVVVV.......VVVVVVVVVVVV.VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRRRRRRRTTTTTTTTTTTTTTV..VVVVVVVVVVVVVVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRRRRRRRRTTTTTTTTTTTTTV...VVVVVVVVVVVVVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '.................RRRRRRRRRRRRRRRRRTTTTTTTTTTTTT...VVVVVVVUVVVVVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '..................RRRRRRRRRRR..RRRRTTTTTTTTTTTT...VVVVVUUUUUVVVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '...................RRRRRRRRR....RRRWWWWWWWWWWWW...VUUUUUUUUUUVVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '................................RRRWWWWWWWWWWWW...UUUUUUUUUUUUVVVVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '................................RRRWWWWWWWWWWWW..UUUUUUUUUUUUUUUUVV........VVVVVVVVVVVVVVVVVVVVVVV...................',
+        '................................RRRWWWWWWWWWWWW.........UUUU...UUUU..................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW.....UUUUUUUUUUUUUUUU.................................................',
+        '................................RRRWWWWWWWWWWWW......................................................................',
+        '................................RRRWWWWWWWWWWWW......................................................................',
+        '.....................................................................................................................',
+      ],
+      heights: unpackHeights(0, [
+        '..........................................................................................................................................................................................................................................',
+        '................................................................0A0A0A0A0A0000000A0A0A0A..00000000000000....0000000000000000000000........................................................................................................',
+        '................................................................0A0A0A0A0A0A00000A0A0A0A..0000000000000000000000000000000000000000........................................................................................................',
+        '................................................................0K0K0K0K0K0K0K0000000A0A..0000000000000000000000000000000000000000........................................................................................................',
+        '................................................................0K0K0K0K0K0K0K0A00000000..0000000000000000000000000000000000000000........................................................................................................',
+        '................................................................0K0K0K0K0K0K0K0A00000000..00000000000000....0000000000000000000000........................................................................................................',
+        '................................................................0K0K0K0K0K0K0K000000000000..000K..........................000000..000000000000............................................................................................',
+        '................................................................0K0K0K0K0K0K0K000000000000000A0K0K0K0K0K..1H1H1H1H1H1H1H..00000000000000000000............................................................................................',
+        '................................................................0000000000000000000A000000000A0K0K0K0K0K..1H1H1H1H1H1H1H..00000000000000000000............................................................................................',
+        '................................................................00000000000000000000000000000A0K0K0K0K0K..1H1H1H1H1H1H1H..00000000000000000000............................................................................................',
+        '................................................................0000000000000000000000000000000K0K0K0K0K..1H1H1H1H1H1H1H..00000000000000000000............................................................................................',
+        '................................................................00000000000000000000000A0000000K0K0K0K0K..1H1H1H1H1H1H1H....000000000000000000............................................................................................',
+        '................................................................00000000000000000000000A0000000000000A0A0A1H1H1H1H1H1H1H....000000000000000000............................................................................................',
+        '................................................................000000000000000000000000000000000000000A0A1H1H1H1H1H1H1H....000000000000000000............................................................................................',
+        '................................................................000000000000000000000000000000000000000A0A1H1H1H1H1H1H1H....000000000000000000............................................................................................',
+        '................................................................00000000000000000000000000000000000000000A1H1H1H1H1H1H1H......00....00000000..............................................................................................',
+        '................................................................0000000000000000000000000A0A0A0A00000000..1H1H1H1H1H1H1H1w1w24..00000A0A0A0A0000..........................................................................................',
+        '................................................................00000000000000000000000A0A0A0A0A0A0A0A00..1H1H1H1H1H1H1H1w2424..0000000000000000..........................................................................................',
+        '................................................................00000000000000000000000A0A0A0A0A0A0A0A00..1H1H1H1H1H1H1H242424..0000000000000000..........................................................................................',
+        '....................................0000000000000000000000000000000000000000000000000A0A0A0A0A0A0A0A0A00..1H1H1H1H1H1H24242424..0000000000000000..........................................................................................',
+        '....................................0000000000000000000000000000000000000000000000000A0A0A0A0A0A0A0A0A00..1H1H1H1H1H1H24242424..0000000000000000..........................................................................................',
+        '....................................0000000000000000000000000000000000000000001w1w1w1w1w1w1w1w1w1w1w1w1w..1H1H1H1H1H1H24........0A0A0A0A0A0A0A0A..........................................................................................',
+        '....................................0000000000000000000000000000000000000000001w1w1w1w1w1w1w1w1w1w1w1w1w..1H1H1H1H1H1H1H........0K0K0K0K0K0K0K0K..........................................................................................',
+        '....................................0000000000000000000000000000000000000000001w1w1w........1w............1H1H1H1H1H1H1H........0f0f0f0f0f0f0f0f..........................................................................................',
+        '....................................0000000000000000000000000000000000000000001w1w........................1H1H1H1H1H1H1H........0z0z0z0z0z0z0z0z..........................................................................................',
+        '....................................0000000A0A0A0A00000000000000000A0A0A0A0A001w1w........................1H1H1H1H1H1H1H........1H1H1H1H1H1H1H1H..........................................................................................',
+        '....................................000A0f0f0f0f0f0f0000000000000A0f0f0f0f0f0A1w1w........................1H1H1H1H1H1H1H........1R1R1R1R1R1R1R1R..........................................................................................',
+        '....................................0A0A0f0f0f0f0f......00..........0f0f0f0f0A0A0A........................1H1H1H1H1H1H1H........1m1m1m1m1m1m1m1m..........................................................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....0K0K0f0f0f0f0f..................0f0f0f0f0A0A0A........................1H1H1H1H1H1H1H........2O2O242424242424..........................................................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....0U0U0f0f0f0f0f..................0f0f0f0f0A0A0A........................1H1H1H1H1H1H1H........2O2O2E2E2E2E2E2E..........................................................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....0f0f0f0f0f0f0f..................0f0f0f0f0A0A0A........................1H1H1H1H1H1H1H........2O2O2O2O2O2O2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z........................................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....0p0p0f0f0f0f0f..................0f0U0U0K0K0K0K..........................1H1H1H1H1H1H........2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z........................................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....0z0z0f0f0f0f0f..................0f0U0U0U0U0U0U..........................1H1H1H1H1H1H........2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....17170f0f0f0f0f..................0f0f0f0f0f0f0f..............................1H1H1H1H..........2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....1H1H0f0f0f0f0f..................0p0p0p0p0p0p0p........................2t2t1w1w1w1w1w1w1w1w2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....1R1R1R1R1R1R1R..................17171717171717........................2t2t1w1w1w1w1w1w1w1w2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....1c1c1c1c1c1c1c..................1H1H1H1H1H1H1H........................2t2t1w1w1w1w1w1w1w1w2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....1m1m1m1m1m1m1m..................1R1R1R1R1R1R1R........................2j2j1w1w1w1w1w1w1w1w2j2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....1w1w1w1w1w1w1w..................1m1m1m1m1m1m1m........................2Z2Z1w1w1w1w1w1w1w1w2t2t2t2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....24242424242424..................1w1w1w1w2Z2Z2Z........................2Z2Z2Z2Z2j2j2j2t2t2t2t2t2t2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....2E2E2E2E2E2E2E..................242424242Z2Z2Z......................2Z2Z2Z2Z2Z2Z2j2j..............................2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....2O2O2O2O2O2O....................2E2E2E2E2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '............2Z2Z2Z2Z2Z2Z..............2Z2Z2Z2Z2Z....................2O2O2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z................................................',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z........2Z2Z2Z2Z2Z....................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....2Z2Z2Z2Z2Z2Z2Z..................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..1c0z0K0p0K0A0000..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '....2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2E1c0z0K0f0K0A0000..2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2O2O241c170f0K0A0000..2E2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2O2O2O2O2E2E2E2E241c170U0A000000..1w242O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2O2E2E2E2E2E2E2E........0A0A00000A0f1H1w2E2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2E2E2E2E2E2E2E........000000000A0U171w2E2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..1c1c1c1c2E2E2E........000000000A0U1R1R2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..0z0z0z0z0z0z0z........0000000A0K0f1R1R2E2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '....2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..0K0K0K0K0K0K0K........0A0A0A0A0K1R1R1R2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2O2Z2j2j2j..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..00000000000000........000A0A0A0A..1R1R2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z1w2O2Z2j2j..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..0000000000000000000000............2O2O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z1R1R2E2Z2j2j..............2Z2Z2Z......................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..0000000000000000000000000000..........................................1717............2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z......................2Z..........2Z..2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..0000000000000000000000000000..00000000000000000000000000000000000000000f0f............2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z......................................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '..................................000000000000000000000000000000..00000000000000000000000000000000000000000A0A............2O2O2O2O2O2Z2Z2Z2Z2Z2Z......................................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '..................................000000000000000000000000000000..00000000000000000000000000000000000000..................24242424242Z2Z2Z2Z2Z2Z......................................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z..',
+        '..................................0000000000000000....000A0A0A0A..00000000000000000000000000000000000000..................1w1w1w1w1w2O2Z2Z2Z2Z2Z......................................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '......................................0000000000000000..0A0A0K0K..0000......000000............000000......................1c1c1c..1c2E2O2Z2Z2Z........................................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z....',
+        '..................................00000000000000000000..0K0K0K0K......2t0000000000000000000000..00000000000000..............1H1H1H1H..................................................2Z2Z2j2j2j2Z2Z......................................',
+        '..................................00000000000000000000................2t0000000000000000000000..00000000000000..............0z0z0z0z..................2Z2Z2Z2Z2Z2Z2j..........2Z2Z2Z2Z2Z2Z2j2j2j2Z2Z......................................',
+        '..................................00000000000000000000..0K171m2Z......2t00000000000000000000000A0A0A0000000000..............0f0f0f0f..................1c242O2Z2Z2Z2j..........2Z2Z2Z2Z2Z2Z2j2j2j2Z2Z......................................',
+        '..................................00000000000000000000..0K171m2Z......2t00000000000000000000000A0A0A0000000000............0U0U0U0U0U00000000000A0U0z1H1c242O2Z2Z2Z2j2j2j2j2j2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000..0K171m2Z......2t00000000000000000000000A0A0A0000000000..............0A0A0A0A00000000000A0U0z1H1c242O2Z2Z2Z2Z2j2j2j2j2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000..0K171m2Z2t2t2t2t00000000000000000000000A0A0A0000000000..............0000000000000000000A0U0z1H1c242O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000..0K171m2Z2t2t2t2t0000000000000000000000..0A0A0000000000..............0000000000000000000A0U0z1H1c242O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................0000000000000000000000..........0000000000000000000000000000..00000000000000..............0000000000000000000A0U0z..1c242O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000000A000000000000000000000000000000000000..00000000000000..............0000000000000000000A0U0z..1c242O2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000000A000000000000000000000000000000000000....000000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000000A000000000000000000000000000000000000......0000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '..................................00000000000000000000000A000000000000000000000000000000000000......0000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j......................................',
+        '....................................0000000000000000000000....00000000000000000000000000000000......0000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z......................................',
+        '......................................000000000000000000........000000000000000000000000000000......0000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j2j2j2j2Z2Z2Z2Z......................................',
+        '................................................................000000000000000000000000000000......0000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j2j2j2j2Z2Z2Z2Z......................................',
+        '................................................................000000000000000000000000000000....000000000000000000000000000000000000................2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2Z2j2j2j2j2j2j2j2j2Z2Z2Z2Z......................................',
+        '................................................................000000000000000000000000000000..................1H1H1H1H......1H1H1H1H....................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000..........1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..................................................................................................',
+        '................................................................000000000000000000000000000000............................................................................................................................................',
+        '................................................................000000000000000000000000000000............................................................................................................................................',
+        '..........................................................................................................................................................................................................................................',
+      ]),
+    },
+  ],
+  legend: {
+    'A': { n: 'T Spawn', k: 'orange', h: 1.63 },
+    'B': { n: 'T Connector / Alt Mid', k: 'room', h: 1.63, s: 'Alt Mid' },
+    'C': { n: 'A Main', k: 'room', h: 0.61 },
+    'D': { n: 'Squeaky', k: 'room', h: 0 },
+    'E': { n: 'A Site', k: 'site', h: 0, s: 'A' },
+    'F': { n: 'Quad', k: 'room', h: 0.1 },
+    'G': { n: 'Truck', k: 'room', h: 0 },
+    'H': { n: 'Default', k: 'room', h: 0.1 },
+    'I': { n: 'Forklift', k: 'room', h: 1.22 },
+    'J': { n: 'Highway', k: 'room', h: 0.41 },
+    'K': { n: 'CT', k: 'room', h: 0 },
+    'L': { n: 'Z / Connector', k: 'room', h: 0.81, s: 'Z' },
+    'M': { n: 'Boost', k: 'room', h: 1.22 },
+    'N': { n: 'Mid', k: 'room', h: 1.63 },
+    'O': { n: 'White Box', k: 'room', h: 1.63 },
+    'P': { n: 'Vents', k: 'room', h: 1.63 },
+    'Q': { n: 'Garage', k: 'room', h: 1.63 },
+    'R': { n: 'Checkers', k: 'room', h: 0 },
+    'S': { n: 'Sun Room', k: 'room', h: 0 },
+    'T': { n: 'Heaven', k: 'room', h: 0 },
+    'U': { n: 'Headshot', k: 'room', h: 0.81 },
+    'V': { n: 'B Main', k: 'room', h: 1.63 },
+    'W': { n: 'B Site', k: 'site', h: 0, s: 'B' },
+    'X': { n: 'CT Mid', k: 'room', h: 1.42 },
+    'Y': { n: 'CT Spawn', k: 'cyan', h: 1.63 },
+  },
 };
 
 export const buildCache = (): LevelDef => buildGraybox(CACHE_LAYOUT);

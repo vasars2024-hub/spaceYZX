@@ -56,18 +56,25 @@ const MAPS_4: [id: string, layout: GrayboxLayout, scale: number | undefined, cal
         'Ivy',
         'Popdog',
         'A Main',
+        'Showers',
+        'Underpass',
         'A Site',
-        'Ladder Room',
+        'Olof',
         'Connector',
         'Z',
         'El Box',
-        'Heaven',
+        'Old Heaven',
         'Hell',
+        'A1',
+        'A2',
+        'CT Tunnel',
         'B Site',
+        'B Ramp',
         'Upper B',
-        'Lower B',
+        'B Ladder',
         'B Halls',
         'Catwalk',
+        'Headshot',
         'CT Spawn',
       ],
     ],
@@ -164,9 +171,10 @@ describe('train', () => {
     const cars = TRAIN_LAYOUT.props!.filter((p) => p.kind === 'car');
     expect(cars.length).toBeGreaterThanOrEqual(8);
     for (const c of cars) {
-      expect(c.h).toBeGreaterThanOrEqual(3);
+      // (the A bomb car is a low flatbed either side of its transformer)
+      expect(c.h).toBeGreaterThanOrEqual(1.2);
       expect(c.h).toBeLessThanOrEqual(4);
-      expect(c.w * TRAIN_LAYOUT.cellM).toBeGreaterThan(c.d * TRAIN_LAYOUT.cellM * 2);
+      if (c.h >= 3) expect(c.w * TRAIN_LAYOUT.cellM).toBeGreaterThan(c.d * TRAIN_LAYOUT.cellM * 2);
     }
     // no two cars touch (walkable gaps between them)
     for (const a of cars)
@@ -177,13 +185,14 @@ describe('train', () => {
           );
   });
 
-  it('has a suction tube from Ladder Room up to Heaven instead of the ladder', () => {
+  it('has a suction tube for the B Ladder up to Upper B; no Popdog or old A Heaven ladder (2024 remake)', () => {
     const lg = TRAIN_LAYOUT.legend;
-    const tube = (TRAIN_LAYOUT.links ?? []).find(
-      ([a, b, k]) => k === 'tube' && lg[a].n === 'Ladder Room' && lg[b].n === 'Heaven',
-    );
-    expect(tube).toBeDefined();
-    expect(tube![3]).not.toBe(false);
-    expect(lg[tube![1]].h!).toBeGreaterThan(lg[tube![0]].h! + 2.6); // (too high to climb)
+    const tubes = (TRAIN_LAYOUT.links ?? []).filter(([, , k]) => k === 'tube');
+    expect(tubes).toHaveLength(1);
+    const [a, b, , oneWay] = tubes[0];
+    expect(lg[a].n).toBe('B Site');
+    expect(lg[b].n).toBe('B Ladder');
+    expect(oneWay).not.toBe(false);
+    expect(lg[b].h!).toBeGreaterThan(lg[a].h! + 2.6); // (too high to climb)
   });
 });

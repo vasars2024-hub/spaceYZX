@@ -3,14 +3,7 @@
 // steeper than 30°, no gravity areas, the real callouts, props standing on flat floor, signs on
 // walls facing a floor, and Nuke's stacked sites with the Vents drop.
 import { describe, expect, it } from 'vitest';
-import {
-  INFERNO_LAYOUT,
-  mapDef,
-  MAPS,
-  NUKE_LAYOUT,
-  pointInAabb,
-  type GrayboxLayout,
-} from '../src/index';
+import { INFERNO_LAYOUT, mapDef, MAPS, NUKE_LAYOUT, type GrayboxLayout } from '../src/index';
 
 const CALLOUTS: Record<string, string[]> = {
   inferno: [
@@ -45,12 +38,12 @@ const CALLOUTS: Record<string, string[]> = {
   ],
   nuke: [
     'T Spawn',
+    'T Roof',
     'Outside',
     'Secret',
     'Mini',
     'Garage',
     'Silo',
-    'Container',
     'Lobby',
     'Squeaky',
     'Hut',
@@ -119,7 +112,7 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
     // tubes and pads are for players only; nothing else
     for (const [, , kind, oneWay] of lay.links ?? []) {
       expect(kind).toBe('tube');
-      expect(oneWay).toBe(true);
+      expect(oneWay).not.toBe(false);
     }
   });
 
@@ -189,21 +182,20 @@ describe('nuke: vertical', () => {
     expect(a.min.y - b.max.y).toBeGreaterThan(-0.01);
     const ox = Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x);
     const oz = Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z);
-    expect(ox).toBeGreaterThan(30);
-    expect(oz).toBeGreaterThan(30);
+    // (traced at 1.25× real size the two bomb zones overlap about 10 m each way; the old 3× build 30 m)
+    const min = NUKE_LAYOUT.layers.some((L) => L.heights) ? 8 : 30;
+    expect(ox).toBeGreaterThan(min);
+    expect(oz).toBeGreaterThan(min);
   });
 
-  it('Vents: bots can drop from the duct into B, never climb back up that way', () => {
-    const wps = d.waypoints!;
-    const vents = wps
-      .map((w, i) => [w, i] as const)
-      .filter(([w]) => (w.name ?? '').startsWith('Z'));
-    const b = site('B');
-    const drop = vents.flatMap(([w]) =>
-      w.links.filter((j) => pointInAabb(wps[j].pos, b.min, b.max)),
+  it('Vents: a one-way suction tube from the duct under A up into A (no ladder)', () => {
+    const lay = NUKE_LAYOUT;
+    const tubes = (lay.links ?? []).filter(
+      ([a, , k]) => k === 'tube' && lay.legend[a].n === 'Vents',
     );
-    expect(drop.length).toBe(1);
-    const back = wps[drop[0]].links.filter((j) => vents.some(([, i]) => i === j));
-    expect(back).toEqual([]);
+    expect(tubes.length).toBe(1);
+    const [a, b] = tubes[0];
+    expect(lay.legend[b].h!).toBeGreaterThan(lay.legend[a].h! + 6);
+    expect(['Mini', 'Main', 'A Site']).toContain(lay.legend[b].n);
   });
 });

@@ -22,6 +22,8 @@ export interface GrayboxPalette {
   ramp: { mat: Material; colors: number[] };
   /** bomb site floors */
   site: { mat: Material; color: number };
+  /** shallow water (areas named Water / Canal / Sea): a walkable floor that looks like water */
+  water?: { mat: Material; color: number };
   /** door frames: strips on both sides of every doorway between two areas */
   door: { mat: Material; colors: number[] };
   /** props and automatic cover */
@@ -126,6 +128,7 @@ export const GRAYBOX_THEMES: Record<GrayboxTheme, GrayboxPalette> = {
     floor: { mat: 'rock', colors: [0x7a7360, 0x857c66, 0x6f6a58], alt: [0x5f6a50] },
     ramp: { mat: 'rock', colors: [0x857c66, 0x7a7360] },
     site: { mat: 'rock', color: 0x9a8f70 },
+    water: { mat: 'plate', color: 0x3f7f78 },
     door: { mat: 'rock', colors: [0xc7a64a, 0xb08f40] },
     crate: { mat: 'crate', colors: [0x6a5a3a, 0x7a6a42] },
     pillar: { mat: 'rock', colors: [0x9a9a80, 0x8a8a72] },
@@ -153,6 +156,7 @@ export const GRAYBOX_THEMES: Record<GrayboxTheme, GrayboxPalette> = {
     floor: { mat: 'sand', colors: [0xd9c59a, 0xcfb98c, 0xe0cea6], alt: [0xb8a47c] },
     ramp: { mat: 'rock', colors: [0xcdbb92, 0xc4b088] },
     site: { mat: 'plate', color: 0xcbb88d },
+    water: { mat: 'plate', color: 0x2f8fb8 },
     door: { mat: 'plate', colors: [0x2a6fb8, 0xd4a83a] },
     crate: { mat: 'crate', colors: [0x9a7a4a, 0x8a6a42] },
     pillar: { mat: 'sand', colors: [0xe6d8b0, 0xd8c69c] },

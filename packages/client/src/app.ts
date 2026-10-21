@@ -227,7 +227,11 @@ export class App {
     const join = params.get('join');
     if (join) this.showOnline(join.toUpperCase().slice(0, 6), 'fade');
     else if (params.has('bench'))
-      this.runBench(Number(params.get('bench')) || 20, params.get('map') ?? undefined);
+      this.runBench(
+        Number(params.get('bench')) || 20,
+        params.get('map') ?? undefined,
+        params.get('mode') === 'tdm' ? 'tdm' : 'match',
+      );
     else this.showTitle('fade');
     this.initAccount();
     this.server.connect();
@@ -1334,12 +1338,20 @@ export class App {
 
   /**
    * Benchmark: an offline 5v5 bot match (default match map unless `map` is given) for N seconds,
-   * then frame-time stats and draw calls. Used by tools/perf/browser-bench.mjs (CPU throttling +
-   * software rendering).
+   * then frame-time stats and draw calls. `mode` 'tdm' plays the title screen's offline Team
+   * Brawl instead (4v4 vs bots, what one-click Play starts without a server). Used by
+   * tools/perf/browser-bench.mjs (CPU throttling + software rendering, or the real GPU).
    */
-  runBench(seconds: number, map?: string): void {
+  runBench(seconds: number, map?: string, mode: 'match' | 'tdm' = 'match'): void {
     const w = window as unknown as { __spaceyz: Record<string, unknown> };
-    this.startPractice(5, 'normal', 'match', map);
+    if (mode === 'tdm')
+      startBrawlPractice(this, {
+        variant: 'tdm',
+        size: QUICK_PLAY_OFFLINE.tdm,
+        skill: 'casual',
+        map,
+      });
+    else this.startPractice(5, 'normal', 'match', map);
     const t0 = performance.now();
     let calls = 0;
     let triangles = 0;

@@ -48,6 +48,7 @@ export class PortalPreviews {
       const view = new THREE.MeshBasicMaterial({
         map: target.texture,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
         transparent: true,
         opacity: 0.92,
         fog: false,

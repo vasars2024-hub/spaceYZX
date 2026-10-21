@@ -210,6 +210,7 @@ export class Viewmodel {
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
       }),
     );
     this.glow.rotation.x = Math.PI / 2;

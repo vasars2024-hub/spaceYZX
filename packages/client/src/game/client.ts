@@ -46,6 +46,8 @@ export class GameClient {
   paused = false;
   fovOverride: number | null = null; // aiming zoom (horizontal degrees)
   private levelMeshes: LevelMeshes;
+  /** level parts that turn by themselves (zero-G dust, portal rings) */
+  private spinners: THREE.Object3D[] = [];
   /** where turning portals lead, shown in their discs (surf maps) */
   private portalPreviews: PortalPreviews;
   /** moving blocks (player-made maps), drawn at the local player's predicted tick */
@@ -83,6 +85,13 @@ export class GameClient {
    * moves the camera (position, rotation, fov). The viewmodel is not drawn meanwhile.
    */
   cinematic: ((camera: THREE.PerspectiveCamera, dt: number) => void) | null = null;
+  /**
+   * The view size in CSS pixels (kept from resize). Features read this instead of the
+   * canvas or window size: those reads force the browser to redo layout mid-frame after
+   * other HUD elements changed (about 0.7 ms a frame).
+   */
+  viewW = typeof window === 'undefined' ? 1280 : window.innerWidth || 1280;
+  viewH = typeof window === 'undefined' ? 720 : window.innerHeight || 720;
   /** Drawn after the world with a cleared depth buffer (first-person viewmodel). */
   overlay: { scene: THREE.Scene; camera: THREE.PerspectiveCamera } | null = null;
 
@@ -103,6 +112,10 @@ export class GameClient {
     };
     this.levelMeshes = deps.levelMeshes?.(meshOpts) ?? buildLevelMeshes(def, meshOpts);
     this.scene.add(this.levelMeshes.group);
+    // (found once: walking the whole level every frame for them cost more than turning them)
+    this.levelMeshes.group.traverse((o) => {
+      if (o.userData.spin || o.userData.portalSpin) this.spinners.push(o);
+    });
     this.raceAudio = def.race ? new RaceAudio(deps.audio, def.name) : null;
     this.portalPreviews = new PortalPreviews(def, this.levelMeshes.group);
     this.moverMeshes = buildMoverMeshes(def, {
@@ -268,11 +281,11 @@ export class GameClient {
     const local = this.session.local();
     this.hud.update(local, this.session.config.movement, dt, this.fps.forward(), this.fps.camUp());
 
-    // animate zero-G dust
-    this.levelMeshes.group.traverse((o) => {
+    // animate zero-G dust and portal rings
+    for (const o of this.spinners) {
       if (o.userData.spin) o.rotation.y += dt * 0.01;
       if (o.userData.portalSpin) o.rotation.z += dt * 1.5;
-    });
+    }
 
     const events = this.session.drainEvents();
     const speed = local ? len(projectOnPlane(local.vel, local.up)) : 0;
@@ -374,6 +387,8 @@ export class GameClient {
   }
 
   resize(w: number, h: number): void {
+    this.viewW = Math.max(1, w);
+    this.viewH = Math.max(1, h);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.fov = 0; // force FOV recompute
     this.camera.updateProjectionMatrix();

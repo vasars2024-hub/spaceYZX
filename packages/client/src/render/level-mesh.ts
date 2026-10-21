@@ -627,6 +627,7 @@ export const buildLevelMeshes = (def: LevelDef, opts: LevelMeshOptions = {}): Le
       opacity: 0.4,
       depthWrite: false,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       blending: THREE.AdditiveBlending,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -873,6 +874,7 @@ const buildAtmosphere = (
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
       });
       const m = new THREE.Mesh(geo, mat);
       m.position.set(l.pos.x, l.pos.y, l.pos.z);
@@ -1062,6 +1064,7 @@ const buildExtras = (def: LevelDef, dust: boolean): { group: THREE.Group; dispos
       transparent: true,
       opacity: 0.35,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });

@@ -8,7 +8,7 @@ import type { BrawlRow, BrawlView } from '@space-yz/shared';
 import { TICK_DT, getMap } from '@space-yz/shared';
 import type { ClientFeature, GameClient } from './client';
 import type { CombatFeature } from './combat-feature';
-import { h } from '../ui/menus';
+import { h, setStyle, setText } from '../ui/menus';
 import { TEAM_COLOR } from './objectives';
 import { setSidesSwapped } from '../render/team-palette';
 
@@ -138,7 +138,7 @@ export class BrawlFeature implements ClientFeature {
       this.root.style.display = 'none';
       return;
     }
-    this.root.style.display = '';
+    setStyle(this.root, 'display', '');
     // no side swaps in a Brawl: team colours stay put (a match before may have swapped them)
     setSidesSwapped(false);
     const s = c.session;
@@ -151,31 +151,34 @@ export class BrawlFeature implements ClientFeature {
     // ---- top bar ----
     const clock = v.phase === 'live' ? fmt(secs(v.endsTick)) : 'Results';
     if (v.variant === 'tdm') {
-      this.left.textContent = String(v.scores[0]);
-      this.left.style.color = TEAM_COLOR[0];
-      this.right.textContent = String(v.scores[1]);
-      this.right.style.color = TEAM_COLOR[1];
-      this.center.textContent = clock;
-      this.sub.textContent = `Team deathmatch · first team to ${v.target} kills`;
+      setText(this.left, String(v.scores[0]));
+      setStyle(this.left, 'color', TEAM_COLOR[0]);
+      setText(this.right, String(v.scores[1]));
+      setStyle(this.right, 'color', TEAM_COLOR[1]);
+      setText(this.center, clock);
+      setText(this.sub, `Team deathmatch · first team to ${v.target} kills`);
     } else {
       const leader = v.table[0];
       const place = brawlPlace(v, me);
-      this.left.textContent = String(mine?.kills ?? 0);
-      this.left.style.color = TEAM_COLOR[0];
-      this.center.textContent = clock;
-      this.right.textContent = leader ? String(leader.kills) : '0';
-      this.right.style.color = TEAM_COLOR[1];
-      this.sub.textContent = [
-        place > 0 ? `You: #${place} of ${v.table.length}` : '',
-        leader && leader.id !== me
-          ? `Leader: ${this.name(c, leader.id)}`
-          : leader
-            ? 'You lead'
-            : '',
-        `first to ${v.target} kills`,
-      ]
-        .filter(Boolean)
-        .join(' · ');
+      setText(this.left, String(mine?.kills ?? 0));
+      setStyle(this.left, 'color', TEAM_COLOR[0]);
+      setText(this.center, clock);
+      setText(this.right, leader ? String(leader.kills) : '0');
+      setStyle(this.right, 'color', TEAM_COLOR[1]);
+      setText(
+        this.sub,
+        [
+          place > 0 ? `You: #${place} of ${v.table.length}` : '',
+          leader && leader.id !== me
+            ? `Leader: ${this.name(c, leader.id)}`
+            : leader
+              ? 'You lead'
+              : '',
+          `first to ${v.target} kills`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      );
     }
     this.center.classList.toggle('urgent', v.phase === 'live' && secs(v.endsTick) <= 30);
 
@@ -197,8 +200,8 @@ export class BrawlFeature implements ClientFeature {
       this.buildResults(c, v);
     }
     const bannerOn = this.time < this.bannerUntil;
-    this.banner.style.opacity = bannerOn ? '1' : '0';
-    this.bannerSub.style.opacity = bannerOn ? '1' : '0';
+    setStyle(this.banner, 'opacity', bannerOn ? '1' : '0');
+    setStyle(this.bannerSub, 'opacity', bannerOn ? '1' : '0');
 
     // ---- dead: the respawn countdown ----
     const combat = this.opts.combat;
@@ -213,8 +216,8 @@ export class BrawlFeature implements ClientFeature {
 
     // ---- scoreboard (Tab) and the results ----
     const showBoard = this.boardHeld && v.phase === 'live' && v.table.length > 0;
-    this.board.style.display = showBoard ? '' : 'none';
-    this.results.style.display = v.phase === 'end' ? '' : 'none';
+    setStyle(this.board, 'display', showBoard ? '' : 'none');
+    setStyle(this.results, 'display', v.phase === 'end' ? '' : 'none');
     c.panelOpen = showBoard || v.phase === 'end';
     if (this.time - this.lastBoard > 0.25) {
       this.lastBoard = this.time;

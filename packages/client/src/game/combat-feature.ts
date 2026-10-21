@@ -762,7 +762,7 @@ export class CombatFeature implements ClientFeature {
       // nothing to go and get while you're dead
       const marker =
         me.alive && myB && myB.phase !== Phase.Held
-          ? projectMarker(myB.pos, c.camera, window.innerWidth, window.innerHeight)
+          ? projectMarker(myB.pos, c.camera, c.viewW, c.viewH)
           : null;
       this.hud.update(
         dt,
@@ -818,7 +818,7 @@ export class CombatFeature implements ClientFeature {
                 spreadPx:
                   (Math.tan(gunConeDeg(me, s.ctx) * DEG) /
                     Math.tan(((c.camera.fov / 2) * Math.PI) / 180)) *
-                  (window.innerHeight / 2),
+                  (c.viewH / 2),
               }
             : null,
         },

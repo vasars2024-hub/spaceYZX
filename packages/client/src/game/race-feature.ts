@@ -40,7 +40,7 @@ import type { ClientFeature, GameClient } from './client';
 import { gateSemis, raceCue } from './race-audio';
 import type { RenderPlayer } from './session';
 import { PlayerModels } from '../render/players';
-import { h } from '../ui/menus';
+import { h, setText } from '../ui/menus';
 import { edgePoint, projectMarker } from '../ui/markers';
 import { storage } from '../settings';
 
@@ -534,7 +534,7 @@ export class RaceFeature implements ClientFeature {
       v && (phase === 'racing' || phase === 'results')
         ? this.myFinishMs || Math.max(0, (myTick - v.startTick) * TICK_DT * 1000)
         : 0;
-    this.clockEl.textContent = formatRaceTime(phase === 'racing' || this.myFinishMs ? clockMs : 0);
+    setText(this.clockEl, formatRaceTime(phase === 'racing' || this.myFinishMs ? clockMs : 0));
     const place = v ? racePlace(v, s.localId) : null;
     const field = v?.racers.length ?? 0;
     this.placeEl.textContent =
@@ -542,7 +542,7 @@ export class RaceFeature implements ClientFeature {
     const cp = Math.max(0, Math.min(race.checkpoints.length, me?.raceCp ?? 0));
     this.cpEl.textContent =
       me && me.raceCp > race.checkpoints.length ? 'FINISH' : `CP ${cp}/${race.checkpoints.length}`;
-    if (this.time > this.splitUntil) this.splitEl.textContent = '';
+    if (this.time > this.splitUntil) setText(this.splitEl, '');
     this.subEl.textContent = this.subText(v, serverTick, me);
 
     // penalty: frozen at the checkpoint for a moment
@@ -674,8 +674,8 @@ export class RaceFeature implements ClientFeature {
     }
     const g = gates[next];
     const p = gateCenter(g);
-    const w = window.innerWidth;
-    const hgt = window.innerHeight;
+    const w = c.viewW;
+    const hgt = c.viewH;
     const pm = projectMarker(v3(p.x, g.min.y + 3, p.z), c.camera, w, hgt);
     const label = next === gates.length - 1 ? 'FINISH' : String(next + 1);
     this.arrowEl.style.display = '';

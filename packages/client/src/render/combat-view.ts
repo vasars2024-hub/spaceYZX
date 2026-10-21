@@ -109,6 +109,7 @@ class PowerupModel {
         blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
         depthWrite: !additive,
         side: additive ? THREE.DoubleSide : THREE.FrontSide,
+        forceSinglePass: true,
       });
       this.mats.push(m);
       return m;
@@ -196,6 +197,7 @@ class Trail {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
     });
     this.mesh = new THREE.Mesh(this.geo, mat);
     this.mesh.frustumCulled = false;
@@ -473,6 +475,7 @@ export class CombatView {
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
         transparent: true,
         opacity: 0.9,
         depthWrite: false,
@@ -485,6 +488,7 @@ export class CombatView {
       new THREE.MeshBasicMaterial({
         color: PREVIEW_ENEMY,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
         transparent: true,
         opacity: 0.95,
         depthTest: false,
@@ -499,6 +503,7 @@ export class CombatView {
       new THREE.MeshBasicMaterial({
         color: 0xffe45c,
         side: THREE.DoubleSide,
+        forceSinglePass: true,
         transparent: true,
         opacity: 0.95,
         depthWrite: false,
@@ -675,6 +680,7 @@ export class CombatView {
               blending: THREE.AdditiveBlending,
               depthWrite: false,
               side: THREE.DoubleSide,
+              forceSinglePass: true,
             }),
           );
           this.pullShells.set(g.id, shell);

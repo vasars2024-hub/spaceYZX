@@ -64,6 +64,7 @@ export const muzzleFlash = (size: number): THREE.Mesh => {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
     }),
   );
   m.visible = false;

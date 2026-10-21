@@ -383,6 +383,9 @@ const buildModel = (team: 0 | 1, id: number): Model => {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
+      // (additive: one pass looks the same as three.js's back-then-front passes, which also
+      // rebuild the shader choice twice per draw, every frame)
+      forceSinglePass: true,
     }),
   );
   shield.scale.set(0.62, 1.05, 0.62);

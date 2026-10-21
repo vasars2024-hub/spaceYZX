@@ -4,6 +4,34 @@ import { DEFAULT_KEYBINDS, keyHint, type Keybinds } from '../keybinds';
 import type { Settings, CameraRotation } from '../settings';
 import { saveSettings } from '../settings';
 
+/**
+ * Per-frame HUD text: writes only when it changed (setting textContent always replaces the
+ * text node, which makes the browser redo style and layout that frame).
+ */
+export const setText = (el: HTMLElement, text: string): void => {
+  if (el.textContent !== text) el.textContent = text;
+};
+
+/** What setStyle last wrote per element and property, and how the browser stored it. */
+const written = new WeakMap<HTMLElement, Record<string, [string, string]>>();
+
+/**
+ * Per-frame inline style: writes only when it changed. (Compared with what setStyle wrote,
+ * since the browser rewrites colours as rgb(); a write from elsewhere since then is noticed.)
+ */
+export const setStyle = (
+  el: HTMLElement,
+  prop: 'display' | 'color' | 'opacity' | 'width' | 'transform',
+  value: string,
+): void => {
+  let w = written.get(el);
+  const last = w?.[prop];
+  if (last && last[0] === value && last[1] === el.style[prop]) return;
+  el.style[prop] = value;
+  if (!w) written.set(el, (w = {}));
+  w[prop] = [value, el.style[prop]];
+};
+
 export const h = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},

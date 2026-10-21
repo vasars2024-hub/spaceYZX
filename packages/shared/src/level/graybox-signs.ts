@@ -63,8 +63,7 @@ const GAP_Y = 2;
 export const hasGlyph = (ch: string): boolean => ch.toUpperCase() in FONT;
 
 /** Width of a line of text in pixels. */
-export const textWidthPx = (line: string): number =>
-  [...line].length * (GLYPH_W + GAP_X) - GAP_X;
+export const textWidthPx = (line: string): number => [...line].length * (GLYPH_W + GAP_X) - GAP_X;
 
 /** Height of a (multi-line) text in pixels. */
 export const textHeightPx = (lines: number): number => lines * (GLYPH_H + GAP_Y) - GAP_Y;

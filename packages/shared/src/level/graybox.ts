@@ -87,6 +87,14 @@ export interface GrayboxArea {
    * door frames of its doorways (e.g. Dust 2's blue doors)
    */
   look?: GrayboxAreaLook;
+  /**
+   * how high the walls beside this area stand over its floor (m; default: the layout's `wallH`).
+   * A wall cell shows up to the highest of its neighbours' floor + wall height (at least 2.4 m
+   * over the floor); above that an invisible collider (a player clip) reaches the map's ceiling
+   */
+  wall?: number;
+  /** the walls beside this area are walkable roofs: no invisible collider over them */
+  roof?: boolean;
   /** short label for the minimap / overview (default: `n`) */
   s?: string;
 }
@@ -189,6 +197,11 @@ export interface GrayboxLayout {
   autoSigns?: boolean;
   /** bot waypoints on every Nth cell only (huge maps: keeps the bots' route search fast); default 1 */
   waypointEvery?: number;
+  /**
+   * visible wall height over the floor beside it (m) for areas without their own `wall`. Absent
+   * (and no area sets `wall`): every wall rises to the map's ceiling as before
+   */
+  wallH?: number;
 }
 
 /** A map's look (palettes in level/graybox-theme.ts). */
@@ -313,6 +326,8 @@ interface Seg {
   mat: Material;
   color?: number;
 }
+/** the lowest a wall shows over the floor beside it (blocks a jump, holds a door frame's lower part) */
+const WALL_MIN = 2.4;
 
 interface Look {
   mat: Material;
@@ -1162,6 +1177,53 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       { y0: band + 0.25, y1: g.y1, mat: wm, color: own?.wall?.upper ?? pick(pal.wall.upper, key) },
     ];
   };
+  // wall heights (layout wallH / area wall): the visible top of every wall cell, from the floors
+  // around it; above it an invisible collider up to the ceiling (none beside roof areas)
+  const wallOpt =
+    !sky &&
+    (lay.wallH !== undefined || Object.values(lay.legend).some((a) => a.wall !== undefined));
+  const visTop = new Float64Array(W * H).fill(NaN);
+  const roofOk = new Uint8Array(W * H);
+  if (wallOpt) {
+    const isWallCol = (x: number, y: number) => bands.some((b) => isSolid(at(b.i, x, y)));
+    const queue: number[] = [];
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!isWallCol(x, y)) continue;
+        let t = -Infinity;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            for (const q of here0(x + dx, y + dy)) {
+              if (q.o !== 'up' || q.zg) continue;
+              const a = area(q.c);
+              const f = q.corners ? highY(q) : standY(q);
+              const wh = a.wall ?? lay.wallH;
+              t = Math.max(t, wh === undefined ? wallTop : f + Math.max(WALL_MIN, wh));
+              if (a.roof) roofOk[y * W + x] = 1;
+            }
+        if (t > -Infinity) {
+          visTop[y * W + x] = Math.min(wallTop, Math.round(t * 4) / 4);
+          queue.push(y * W + x);
+        }
+      }
+    // (walls with no floor beside them: the height of the nearest wall that has one)
+    for (let i = 0; i < queue.length; i++) {
+      const k = queue[i];
+      const x = k % W;
+      const y = (k - x) / W;
+      for (const [dx, dy] of DIRS) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const kk = yy * W + xx;
+        if (!Number.isNaN(visTop[kk]) || !isWallCol(xx, yy)) continue;
+        visTop[kk] = visTop[k];
+        roofOk[kk] = roofOk[k];
+        queue.push(kk);
+      }
+    }
+  }
+  const clips: [number, number][][] = Array.from({ length: W * H }, () => []);
   if (!sky)
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
@@ -1272,6 +1334,20 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
             last.y1 = Math.max(last.y1, g.y1);
           } else merged.push({ ...g });
         }
+        // (wall heights: the wall up to its visible top, a player clip over it)
+        const topSeg = merged[merged.length - 1];
+        if (
+          wallOpt &&
+          topSeg &&
+          topSeg.mat === 'hull' &&
+          topSeg.y1 >= wallTop - 0.01 &&
+          !Number.isNaN(visTop[k]) &&
+          visTop[k] < topSeg.y1 - 0.05
+        ) {
+          if (!roofOk[k]) clips[k].push([topSeg.y0, topSeg.y1]);
+          if (visTop[k] <= topSeg.y0 + 0.05) merged.pop();
+          else topSeg.y1 = visTop[k];
+        }
         segsAt[k] = pal ? merged.flatMap((g) => paintWall(g, x, y)) : merged;
       }
   // equal blocks of neighbouring columns merge into big boxes
@@ -1292,6 +1368,24 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         h: v3(((r.x1 - r.x0 + 1) / 2) * s, (y1 - y0) / 2, ((r.y1 - r.y0 + 1) / 2) * s),
         mat: mat as Material,
         ...(col ? { color: Number(col) } : {}),
+      });
+  }
+  // player clips over lowered walls: invisible, merged like the walls
+  const clipKey = new Map<string, number[]>();
+  for (let k = 0; k < W * H; k++)
+    for (const [y0, y1] of clips[k]) {
+      const sk = `${y0.toFixed(3)}|${y1.toFixed(3)}`;
+      if (!clipKey.has(sk)) clipKey.set(sk, []);
+      clipKey.get(sk)!.push(k);
+    }
+  for (const [sk, idx] of clipKey) {
+    const [y0, y1] = sk.split('|').map(Number);
+    for (const r of rectangles(idx, W))
+      boxes.push({
+        c: v3(((r.x0 + r.x1 + 1) / 2) * s, (y0 + y1) / 2, ((r.y0 + r.y1 + 1) / 2) * s),
+        h: v3(((r.x1 - r.x0 + 1) / 2) * s, (y1 - y0) / 2, ((r.y1 - r.y0 + 1) / 2) * s),
+        mat: 'hull',
+        noRender: true,
       });
   }
   // smooth ramps: straight runs standing on the ground become one wedge each (cells of the same

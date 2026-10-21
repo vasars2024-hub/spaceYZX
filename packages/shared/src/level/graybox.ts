@@ -241,6 +241,11 @@ export interface GrayboxBuildOptions {
   warn?: (message: string) => void;
 }
 
+/**
+ * Painted wall signs (layout `signs` + the automatic A/B arrows): off — the owner didn't like the
+ * big text on the walls. The sign data stays in the layouts; set true to paint them again.
+ */
+const PAINT_SIGNS = false;
 const WALL = '.';
 const VOID = '~';
 const STEP = 0.3; // stairs fallback: (0.35 m steps on short treads can't be walked up)
@@ -2266,7 +2271,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     usedFaces.add(fk);
     return true;
   };
-  for (const sg of lay.signs ?? []) {
+  for (const sg of PAINT_SIGNS ? (lay.signs ?? []) : []) {
     const l = sg.l ?? 0;
     const [dx, dy] = FACE[sg.face];
     const upper = sg.text.toUpperCase();
@@ -2295,7 +2300,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   }
   // automatic signs: where you walk into a junction, the wall ahead says which way A and B are
   // (along the shortest walk), one sign per wall face
-  if (lay.autoSigns !== false && !sky && siteAreas.length) {
+  if (PAINT_SIGNS && lay.autoSigns !== false && !sky && siteAreas.length) {
     const ids = idOf;
     const preds: number[][] = cells.map(() => []);
     const succ: Cell[][] = cells.map(() => []);

@@ -1,0 +1,954 @@
+// Bot brains: produce a PlayerInput each tick from what the bot can perceive.
+// Bots use the real movement (sprint, slide-hop, air strafe, dash) and the full kit, so
+// balance tests measure accuracy against fast movement, not standing dummies.
+// Deterministic: each bot has its own seeded RNG.
+import type { Vec3 } from '../math/vec3';
+import {
+  v3,
+  add,
+  sub,
+  scale,
+  dot,
+  len,
+  lenSq,
+  madd,
+  normalize,
+  projectOnPlane,
+  cross,
+  rotateToward,
+  angleBetween,
+  clone,
+} from '../math/vec3';
+import type { Quat } from '../math/quat';
+import { qForward, qFromBasis } from '../math/quat';
+import type { RngState } from '../math/rng';
+import { rngFromSeed, rngFloat, rngInt } from '../math/rng';
+import { lineOfSight, raycast } from '../level/collision';
+import { inSkyZone } from '../level/sky-arena';
+import { pointInAabb } from '../level/level';
+import type { SimContext } from '../sim/context';
+import { isEnemy, isTeammate } from '../sim/context';
+import type { WaypointDef } from '../level/types';
+import type { PlayerInput } from '../sim/input';
+import { Btn } from '../sim/input';
+import type { PlayerState, WorldState } from '../sim/state';
+import { Move } from '../sim/state';
+import { Phase } from '../sim/combat-state';
+import { eyePos } from '../sim/movement';
+import { hitboxOf, chestOf } from '../sim/hitbox';
+import { isFlying, quickDropAt, quickFlightTime, recallLine } from '../sim/combat';
+import { loadoutOf } from '../config/loadout';
+import { teleportSlashButtons, type BotTeleportMemory } from './melee';
+import { type BotGunMemory, botGunSkill, newBotGunMemory, gunAimDir, gunBotButtons } from './guns';
+import { type BotUtilityMemory, botUtilityButtons } from './utility';
+
+const DEG = Math.PI / 180;
+
+/** Bot difficulty ids, weakest first (menus list them in this order). */
+export const BOT_SKILL_NAMES = ['rookie', 'casual', 'easy', 'normal', 'hard'] as const;
+export type BotSkillName = (typeof BOT_SKILL_NAMES)[number];
+/** Menu labels for the difficulty ids. */
+export const BOT_SKILL_LABELS: Record<BotSkillName, string> = {
+  rookie: 'Rookie',
+  casual: 'Casual',
+  easy: 'Easy',
+  normal: 'Normal',
+  hard: 'Hard',
+};
+/** Default difficulty for new offline games and online bot fill. */
+export const DEFAULT_BOT_SKILL: BotSkillName = 'casual';
+/** A difficulty id from untrusted input (menus, network), or the default. */
+export const botSkillName = (v: unknown): BotSkillName =>
+  (BOT_SKILL_NAMES as readonly unknown[]).includes(v) ? (v as BotSkillName) : DEFAULT_BOT_SKILL;
+
+export interface BotSkill {
+  name: BotSkillName;
+  reactionTicks: number; // before engaging a newly seen target
+  aimErrorDeg: number; // random aim wobble
+  turnDegPerTick: number; // max view turn speed
+  leadAccuracy: number; // 0..1 how well it leads moving targets
+  deflectChance: number; // chance to attempt a deflect on a close incoming Boomerang
+  dodgeChance: number; // chance to dash/jump away from threats
+  throwInterval: [number, number]; // ticks between throws
+  laserChance: number; // per tick when the Boomerang is away
+  slideHop: boolean;
+  windupChance: number; // per decision when far from target
+  recallSkill: number; // chance to notice a recall line through an enemy
+  headChance: number; // chance to aim at the head instead of the chest
+  grenadeChance: number; // per tick at mid range
+  sightRange: number; // how far away enemies are noticed (m)
+  fovDeg: number; // view cone for noticing new enemies (360 = sees all around)
+}
+
+export const BOT_SKILLS: Record<BotSkillName, BotSkill> = {
+  // rookie / casual: for new players. Slow to react and turn, wide aim error, no advanced
+  // movement or wind-ups, and they only notice enemies in front of them (or who hit them).
+  rookie: {
+    name: 'rookie',
+    reactionTicks: 60,
+    aimErrorDeg: 10,
+    turnDegPerTick: 2.5,
+    leadAccuracy: 0.1,
+    deflectChance: 0,
+    dodgeChance: 0.03,
+    throwInterval: [100, 190],
+    laserChance: 0.006,
+    slideHop: false,
+    windupChance: 0,
+    recallSkill: 0.03,
+    headChance: 0,
+    grenadeChance: 0.0005,
+    sightRange: 50,
+    fovDeg: 140,
+  },
+  casual: {
+    name: 'casual',
+    reactionTicks: 42,
+    aimErrorDeg: 7,
+    turnDegPerTick: 3.5,
+    leadAccuracy: 0.25,
+    deflectChance: 0.01,
+    dodgeChance: 0.07,
+    throwInterval: [80, 150],
+    laserChance: 0.012,
+    slideHop: false,
+    windupChance: 0.0008,
+    recallSkill: 0.08,
+    headChance: 0,
+    grenadeChance: 0.0015,
+    sightRange: 75,
+    fovDeg: 200,
+  },
+  easy: {
+    name: 'easy',
+    reactionTicks: 30,
+    aimErrorDeg: 4.5,
+    turnDegPerTick: 5,
+    leadAccuracy: 0.4,
+    deflectChance: 0.02,
+    dodgeChance: 0.15,
+    throwInterval: [60, 120],
+    laserChance: 0.02,
+    slideHop: false,
+    windupChance: 0.002,
+    recallSkill: 0.2,
+    headChance: 0,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
+  },
+  normal: {
+    name: 'normal',
+    reactionTicks: 16,
+    aimErrorDeg: 2.4,
+    turnDegPerTick: 9,
+    leadAccuracy: 0.75,
+    deflectChance: 0.08,
+    dodgeChance: 0.35,
+    throwInterval: [35, 80],
+    laserChance: 0.04,
+    slideHop: true,
+    windupChance: 0.004,
+    recallSkill: 0.5,
+    headChance: 0,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
+  },
+  hard: {
+    name: 'hard',
+    reactionTicks: 8,
+    aimErrorDeg: 1.2,
+    turnDegPerTick: 14,
+    leadAccuracy: 0.95,
+    deflectChance: 0.18,
+    dodgeChance: 0.6,
+    throwInterval: [25, 60],
+    laserChance: 0.06,
+    slideHop: true,
+    windupChance: 0.006,
+    recallSkill: 0.85,
+    headChance: 0.3,
+    grenadeChance: 0.003,
+    sightRange: 120,
+    fovDeg: 360,
+  },
+};
+
+export interface BotMemory {
+  id: number;
+  skill: BotSkill;
+  rng: RngState;
+  target: number | null;
+  targetSeenTick: number;
+  engageTick: number; // tick when the current target was first seen
+  strafeDir: 1 | -1;
+  strafeUntil: number;
+  throwPhase: number; // >0 while holding LMB
+  nextThrowTick: number;
+  aimErr: Vec3; // current aim wobble offset (unit-ish)
+  aimErrUntil: number;
+  goal: Vec3 | null;
+  goalUntil: number;
+  stuckTicks: number;
+  lastPos: Vec3;
+  slideTick: number;
+  windupActive: boolean;
+  /** tick the bot decided on a Wind-up Throw (it stops running first, then holds RMB) */
+  windupTick: number;
+  deflecting: number; // ticks left holding a deflect look
+  jumpCooldown: number;
+  /** optional objective: where the bot wants to go when it has no target */
+  objective: Vec3 | null;
+  /** head for the objective even while fighting (Controller carriers) */
+  objectiveFirst: boolean;
+  /** bomb mode: hold Use (plant / defuse) once here */
+  useAt?: Vec3 | null;
+  /** current waypoint route */
+  path: Vec3[];
+  pathGoal: Vec3 | null;
+  pathUntil: number;
+  /** CS mode guns (bots/guns.ts), created on first use */
+  gun?: BotGunMemory;
+  /** charged grenade / remote mine (bots/utility.ts), created on first use */
+  util?: BotUtilityMemory;
+  /** teleport slash charge (bots/melee.ts) */
+  teleport?: BotTeleportMemory['teleport'];
+}
+
+export const createBotMemory = (id: number, skill: BotSkill, seed: number): BotMemory => ({
+  id,
+  skill,
+  rng: rngFromSeed(seed * 7919 + id * 104729),
+  target: null,
+  targetSeenTick: -1000,
+  engageTick: 0,
+  strafeDir: 1,
+  strafeUntil: 0,
+  throwPhase: 0,
+  nextThrowTick: 30,
+  aimErr: v3(),
+  aimErrUntil: 0,
+  goal: null,
+  goalUntil: 0,
+  stuckTicks: 0,
+  lastPos: v3(),
+  slideTick: -1000,
+  windupActive: false,
+  windupTick: 0,
+  deflecting: 0,
+  jumpCooldown: 0,
+  objective: null,
+  objectiveFirst: false,
+  path: [],
+  pathGoal: null,
+  pathUntil: 0,
+});
+
+const range = (rng: RngState, [a, b]: [number, number]): number =>
+  a + rngInt(rng, Math.max(1, b - a + 1));
+
+/** Turn the current view toward a desired direction, at most `maxDeg`, keeping the body's up. */
+const turnView = (view: Quat, desired: Vec3, up: Vec3, maxDeg: number): Quat => {
+  const fwd = qForward(view);
+  const next = rotateToward(fwd, normalize(desired, fwd), maxDeg * DEG);
+  // avoid degenerate up (looking straight along it)
+  let u = up;
+  if (Math.abs(dot(next, u)) > 0.995) u = normalize(cross(cross(next, up), next), up);
+  return qFromBasis(next, normalize(projectOnPlane(u, next), up));
+};
+
+/** Movement buttons that best approximate a desired planar direction relative to the view. */
+const moveButtons = (view: Quat, up: Vec3, desired: Vec3): number => {
+  if (lenSq(desired) < 1e-6) return 0;
+  const fwd = normalize(projectOnPlane(qForward(view), up), v3(0, 0, -1));
+  const right = normalize(cross(fwd, up));
+  const d = normalize(projectOnPlane(desired, up));
+  const f = dot(d, fwd);
+  const r = dot(d, right);
+  let b = 0;
+  if (f > 0.38) b |= Btn.Forward;
+  else if (f < -0.38) b |= Btn.Back;
+  if (r > 0.38) b |= Btn.Right;
+  else if (r < -0.38) b |= Btn.Left;
+  return b;
+};
+
+/** Pick a wander goal: level areas, spawns and waypoints. */
+const pickGoal = (ctx: SimContext, mem: BotMemory): Vec3 => {
+  const def = ctx.level.def;
+  const pts: Vec3[] = [
+    ...(def.waypoints ?? []).map((w) => w.pos),
+    ...(def.areas ?? []).map((a) => a.pos),
+    ...def.spawns.map((s) => s.pos),
+  ];
+  return clone(pts[rngInt(mem.rng, pts.length)] ?? v3());
+};
+
+/** Height (along `up`) of the floor under `pt`, or null if there is none within reach. */
+const floorBelow = (level: SimContext['level'], pt: Vec3, up: Vec3): number | null => {
+  const hit = raycast(level, madd(pt, up, 1), scale(up, -1), 4.5);
+  return hit ? dot(hit.point, up) : null;
+};
+
+/** Highest step up a walker takes on its own (just under the auto-vault height). */
+const MAX_STEP_UP = 1.1;
+
+/**
+ * Can a walker at `p` (body up `up`) head straight for `q`? Needs a clear line and, unless
+ * floating: no big climb/drop along its up axis, ground all the way (no holes) and no ledge
+ * higher than it can vault — seeing a spot is not the same as being able to walk there.
+ */
+const walkable = (level: SimContext['level'], p: Vec3, q: Vec3, up: Vec3 | null): boolean => {
+  if (up !== null && Math.abs(dot(sub(q, p), up)) >= 2.5) return false;
+  if (!lineOfSight(level, p, q)) return false;
+  if (up === null) return true;
+  const d = sub(q, p);
+  const n = Math.min(32, Math.ceil(len(projectOnPlane(d, up)) / 1.25));
+  let prev = floorBelow(level, p, up);
+  if (prev === null) return true; // airborne: can't judge, let it try
+  for (let i = 1; i <= n; i++) {
+    const f = floorBelow(level, madd(p, d, i / n), up);
+    if (f === null || f - prev > MAX_STEP_UP) return false;
+    prev = f;
+  }
+  return true;
+};
+
+/**
+ * A min-heap of (key, index) pairs, smallest key first and the lower index on equal keys — the
+ * same order a scan "first smallest wins" picks in, so routes come out exactly as before.
+ * Typed arrays: big royale maps have 5–15k waypoints.
+ */
+class IndexHeap {
+  private keys: Float64Array;
+  private ids: Int32Array;
+  size = 0;
+  constructor(cap: number) {
+    this.keys = new Float64Array(Math.max(4, cap));
+    this.ids = new Int32Array(Math.max(4, cap));
+  }
+  private less(a: number, b: number): boolean {
+    const ka = this.keys[a];
+    const kb = this.keys[b];
+    return ka < kb || (ka === kb && this.ids[a] < this.ids[b]);
+  }
+  private swap(a: number, b: number): void {
+    const k = this.keys[a];
+    this.keys[a] = this.keys[b];
+    this.keys[b] = k;
+    const i = this.ids[a];
+    this.ids[a] = this.ids[b];
+    this.ids[b] = i;
+  }
+  push(key: number, id: number): void {
+    if (this.size === this.keys.length) {
+      const k = new Float64Array(this.size * 2);
+      k.set(this.keys);
+      this.keys = k;
+      const d = new Int32Array(this.size * 2);
+      d.set(this.ids);
+      this.ids = d;
+    }
+    let i = this.size++;
+    this.keys[i] = key;
+    this.ids[i] = id;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (!this.less(i, up)) break;
+      this.swap(i, up);
+      i = up;
+    }
+  }
+  /** The smallest key (call only when size > 0). */
+  topKey(): number {
+    return this.keys[0];
+  }
+  /** Remove the smallest; returns its index (call only when size > 0). */
+  pop(): number {
+    const top = this.ids[0];
+    const last = --this.size;
+    if (last > 0) {
+      this.keys[0] = this.keys[last];
+      this.ids[0] = this.ids[last];
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < last && this.less(l, m)) m = l;
+        if (r < last && this.less(r, m)) m = r;
+        if (m === i) break;
+        this.swap(i, m);
+        i = m;
+      }
+    }
+    return top;
+  }
+}
+
+/**
+ * The nearest waypoint a walker at `p` can head straight for (one within 2 m always counts);
+ * none at all: the nearest one. Waypoints are tried nearest first (a heap), so only a few need
+ * the walkability check even on a map with thousands of them; the answer is the same as
+ * checking them all (the nearest that passes, the lower index on a tie).
+ */
+const nearestWaypoint = (
+  wps: WaypointDef[],
+  p: Vec3,
+  level: SimContext['level'],
+  up: Vec3 | null,
+): number => {
+  if (!wps.length) return -1;
+  const heap = new IndexHeap(wps.length);
+  for (let i = 0; i < wps.length; i++) heap.push(lenSq(sub(wps[i].pos, p)), i);
+  let nearest = -1;
+  while (heap.size) {
+    const d = heap.topKey();
+    const i = heap.pop();
+    if (nearest < 0) nearest = i;
+    if (d < 4 || walkable(level, p, wps[i].pos, up)) return i;
+  }
+  return nearest;
+};
+
+/**
+ * Shortest waypoint route (Dijkstra with a binary heap: fast on big maps). Nodes come off the
+ * heap in the same order as the old scan for the smallest distance (ties: the lower index), so
+ * every route is exactly the one the old version found.
+ */
+export const waypointRoute = (wps: WaypointDef[], from: number, to: number): number[] => {
+  const n = wps.length;
+  if (from < 0 || from >= n || to < 0 || to >= n) return [];
+  const dist = new Float64Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const done = new Uint8Array(n);
+  const heap = new IndexHeap(n);
+  dist[from] = 0;
+  heap.push(0, from);
+  while (heap.size) {
+    const d = heap.topKey();
+    const u = heap.pop();
+    // (a stale entry: this node was already settled, or later found nearer)
+    if (done[u] || d !== dist[u]) continue;
+    if (u === to) break;
+    done[u] = 1;
+    const pu = wps[u].pos;
+    for (const v of wps[u].links) {
+      const nd = dist[u] + len(sub(pu, wps[v].pos));
+      if (nd < dist[v]) {
+        dist[v] = nd;
+        prev[v] = u;
+        heap.push(nd, v);
+      }
+    }
+  }
+  if (dist[to] === Infinity) return [];
+  const out: number[] = [];
+  for (let v = to; v >= 0; v = prev[v]) out.push(v);
+  return out.reverse();
+};
+
+/** Next point to walk toward on the way to `goal` (via the map's waypoint graph if any). */
+const navigate = (
+  ctx: SimContext,
+  mem: BotMemory,
+  self: PlayerState,
+  goal: Vec3,
+  tick: number,
+): Vec3 => {
+  const pos = self.pos;
+  const up = self.move === Move.Float ? null : self.up;
+  const wps = ctx.level.def.waypoints;
+  // (the sky duel arena has no waypoints: the ship's are far below it)
+  if (
+    !wps ||
+    wps.length < 2 ||
+    inSkyZone(ctx.level.def, pos) ||
+    walkable(ctx.level, pos, goal, up)
+  ) {
+    mem.path = [];
+    return goal;
+  }
+  const stale =
+    mem.path.length === 0 ||
+    tick >= mem.pathUntil ||
+    !mem.pathGoal ||
+    lenSq(sub(mem.pathGoal, goal)) > 16;
+  if (stale) {
+    const a = nearestWaypoint(wps, pos, ctx.level, up);
+    const b = nearestWaypoint(wps, goal, ctx.level, null);
+    mem.path = a >= 0 && b >= 0 ? waypointRoute(wps, a, b).map((i) => clone(wps[i].pos)) : [];
+    mem.path.push(clone(goal));
+    mem.pathGoal = clone(goal);
+    mem.pathUntil = tick + 180;
+  }
+  // skip waypoints we already reached, or can shortcut past
+  while (mem.path.length > 1) {
+    const d = sub(mem.path[0], pos);
+    if (lenSq(d) < 6.25 || walkable(ctx.level, pos, mem.path[1], up)) mem.path.shift();
+    else break;
+  }
+  return mem.path[0] ?? goal;
+};
+
+/** How far below a step a bot still expects floor (deeper than any drop its routes take). */
+const LEDGE_DEPTH = 30;
+
+/**
+ * Would a grounded bot stepping this way head for its death: no floor within LEDGE_DEPTH under
+ * the step, floor inside a kill volume, or a launch pad (bots can't fly one)?
+ */
+const deadlyAhead = (ctx: SimContext, pos: Vec3, up: Vec3, dir: Vec3): boolean => {
+  const def = ctx.level.def;
+  const ahead = madd(pos, normalize(dir), 1.6);
+  for (const pad of def.launchPads ?? []) if (pointInAabb(ahead, pad.min, pad.max)) return true;
+  const hit = raycast(ctx.level, ahead, scale(up, -1), LEDGE_DEPTH);
+  if (!hit) return true;
+  for (const k of def.killVolumes ?? []) if (pointInAabb(hit.point, k.min, k.max)) return true;
+  return false;
+};
+
+export const botThink = (
+  world: WorldState,
+  ctx: SimContext,
+  self: PlayerState,
+  mem: BotMemory,
+): PlayerInput => {
+  const tick = world.tick + 1;
+  const s = mem.skill;
+  const rng = mem.rng;
+  const c = ctx.config.combat;
+  // CS mode: AK + Deagle instead of the Boomerang kit
+  const guns = loadoutOf(ctx.config).guns;
+  const gs = botGunSkill(s.name);
+  const gm = (mem.gun ??= newBotGunMemory());
+  if (!self.alive || self.frozen) return { tick, buttons: 0, view: self.view };
+
+  const eye = eyePos(self, ctx.config.movement);
+  const up = self.up;
+  let buttons = 0;
+  let view = self.view;
+  const myB = world.boomerangs.find((b) => b.owner === self.id);
+
+  // ---------------- perception ----------------
+  const enemies = world.players.filter((p) => p.alive && isEnemy(ctx, p, self));
+  const visible = enemies.filter((p) => {
+    const hb = hitboxOf(p, ctx.config);
+    return (
+      len(sub(p.pos, self.pos)) < s.sightRange &&
+      (lineOfSight(ctx.level, eye, hb.head) || lineOfSight(ctx.level, eye, chestOf(hb)))
+    );
+  });
+  // weaker bots only notice new enemies in their view cone, or ones that just hit them
+  const noticeable =
+    s.fovDeg >= 360
+      ? visible
+      : visible.filter(
+          (p) =>
+            angleBetween(qForward(self.view), sub(p.pos, self.pos)) <= (s.fovDeg / 2) * DEG ||
+            world.events.some(
+              (e) => e.type === 'hit' && e.victim === self.id && e.attacker === p.id,
+            ),
+        );
+  let target = mem.target !== null ? enemies.find((p) => p.id === mem.target) : undefined;
+  const targetVisible = !!target && visible.includes(target);
+  if (targetVisible) mem.targetSeenTick = tick;
+  if (!target || (!targetVisible && tick - mem.targetSeenTick > 120)) {
+    target = undefined;
+    mem.target = null;
+    let best = Infinity;
+    for (const p of noticeable) {
+      const d = len(sub(p.pos, self.pos));
+      if (d < best) {
+        best = d;
+        target = p;
+      }
+    }
+    if (target) {
+      mem.target = target.id;
+      mem.targetSeenTick = tick;
+      mem.engageTick = tick;
+    }
+  }
+  const engaged = !!target && tick - mem.engageTick >= s.reactionTicks;
+
+  // ---------------- threats ----------------
+  let threat: Vec3 | null = null; // direction of the incoming threat
+  let deflectTarget: Vec3 | null = null;
+  for (const b of world.boomerangs) {
+    const ctrl = world.players.find((p) => p.id === b.controller);
+    if (!ctrl || !isEnemy(ctx, ctrl, self) || !isFlying(b)) continue;
+    const rel = sub(eye, b.pos);
+    const closing = dot(normalize(b.vel), normalize(rel));
+    const d = len(rel);
+    if (closing > 0.9 && d < 14) {
+      threat = normalize(rel);
+      if (d < 3.2 && d > 1.2 && myB?.phase === Phase.Held) deflectTarget = b.pos;
+    }
+    if (b.phase === Phase.RecallTelegraph && b.recallLethal && b.recallFrom && b.recallTo) {
+      const seg = sub(b.recallTo, b.recallFrom);
+      const t = Math.max(
+        0,
+        Math.min(1, dot(sub(self.pos, b.recallFrom), seg) / Math.max(1e-6, dot(seg, seg))),
+      );
+      const closest = madd(b.recallFrom, seg, t);
+      if (len(sub(closest, self.pos)) < 1.5) threat = normalize(sub(self.pos, closest));
+    }
+  }
+  for (const p of enemies) {
+    if (p.laserWarn > 0 && visible.includes(p)) {
+      const toMe = normalize(sub(eye, eyePos(p, ctx.config.movement)));
+      if (dot(qForward(p.view), toMe) > 0.97) threat = toMe;
+    }
+  }
+
+  // ---------------- movement ----------------
+  let navPoint: Vec3 | null = null;
+  let moveDir: Vec3;
+  const planarTo = (p: Vec3) => projectOnPlane(sub(p, self.pos), up);
+  if (mem.objective && mem.objectiveFirst) {
+    // carrying the Controller: keep running for the Tower, fight on the move
+    navPoint = navigate(ctx, mem, self, mem.objective, tick);
+    moveDir = normalize(planarTo(navPoint));
+    if (target && targetVisible && tick >= mem.strafeUntil) {
+      mem.strafeDir = rngFloat(rng) < 0.5 ? 1 : -1;
+      mem.strafeUntil = tick + 25 + rngInt(rng, 60);
+    }
+    if (target && targetVisible)
+      moveDir = add(moveDir, scale(normalize(cross(up, moveDir)), mem.strafeDir * 0.35));
+  } else if (target && (targetVisible || tick - mem.targetSeenTick < 120)) {
+    const to = planarTo(target.pos);
+    const dist = len(to);
+    const toN = normalize(to);
+    const side = normalize(cross(up, toN));
+    if (tick >= mem.strafeUntil) {
+      mem.strafeDir = rngFloat(rng) < 0.5 ? 1 : -1;
+      mem.strafeUntil = tick + 25 + rngInt(rng, 60);
+    }
+    let approach = 0;
+    if (dist > 20) approach = 1;
+    else if (dist < 7 && myB?.phase !== Phase.Held) approach = -0.6;
+    else if (dist < 4) approach = myB?.phase === Phase.Held ? 0.6 : -1; // slash range
+    // guns: hold a mid-range fight (close the distance from far, back off when too close)
+    if (guns) approach = dist > 25 ? 1 : dist < 6 ? -0.5 : 0;
+    moveDir = add(scale(toN, approach), scale(side, mem.strafeDir));
+  } else {
+    // wander / objective
+    const goal = mem.objective ?? mem.goal;
+    if (!mem.objective && (!goal || tick > mem.goalUntil || len(planarTo(goal)) < 3)) {
+      mem.goal = pickGoal(ctx, mem);
+      mem.goalUntil = tick + 600;
+    }
+    const g = mem.objective ?? mem.goal!;
+    navPoint = navigate(ctx, mem, self, g, tick);
+    moveDir = normalize(planarTo(navPoint));
+  }
+
+  // obstacle avoidance: probe ahead at chest height, steer around walls
+  if (lenSq(moveDir) > 0.01) {
+    const md = normalize(moveDir);
+    const probe = raycast(ctx.level, madd(self.pos, up, 0.3), md, 2.5);
+    if (probe && Math.abs(dot(probe.normal, up)) < 0.5) {
+      const tall = raycast(ctx.level, madd(self.pos, up, 1.4), md, 2.5);
+      if (tall) {
+        // turn along the wall
+        const along = normalize(cross(up, probe.normal));
+        moveDir = dot(along, md) >= 0 ? along : scale(along, -1);
+      }
+    }
+  }
+  // stuck detection
+  if (len(sub(self.pos, mem.lastPos)) < 0.02 && lenSq(moveDir) > 0.01) mem.stuckTicks++;
+  else mem.stuckTicks = 0;
+  mem.lastPos = clone(self.pos);
+  if (mem.stuckTicks > 30) {
+    mem.goal = pickGoal(ctx, mem);
+    mem.strafeDir = mem.strafeDir === 1 ? -1 : 1;
+    mem.stuckTicks = 0;
+    buttons |= Btn.Jump;
+  }
+
+  // ---------------- aiming ----------------
+  let aimDir: Vec3 | null = null;
+  if (deflectTarget && mem.deflecting === 0 && rngFloat(rng) < s.deflectChance) mem.deflecting = 8;
+  if (mem.deflecting > 0) {
+    mem.deflecting--;
+    if (deflectTarget) aimDir = sub(deflectTarget, eye);
+    if (deflectTarget && len(sub(deflectTarget, eye)) < 2.4) buttons |= Btn.Melee;
+  } else if (target && engaged) {
+    const hb = hitboxOf(target, ctx.config);
+    const aimAt = guns
+      ? gm.head
+        ? hb.head
+        : chestOf(hb)
+      : s.headChance > 0 && rngFloat(rng) < s.headChance
+        ? hb.head
+        : chestOf(hb);
+    const dist = len(sub(aimAt, eye));
+    const held = myB?.phase === Phase.Held;
+    // flight time: the Wind-up Throw flies at one speed, a Quick Throw is fast near and slower
+    // far (sim/combat.ts quickSpeedAt)
+    const t = !held
+      ? c.laserWarnSec
+      : self.windup > 0
+        ? dist / c.windupSpeed
+        : quickFlightTime(dist, c, ctx.dt);
+    let lead = madd(aimAt, target.vel, t * s.leadAccuracy);
+    // gravity drop compensation for Quick Throws (none over the first, straight metres)
+    if (held && self.windup === 0)
+      lead = madd(lead, up, quickDropAt(dist, c, ctx.config.movement.gravity, ctx.dt));
+    if (tick >= mem.aimErrUntil) {
+      const e = (guns ? gs.aimDeg : s.aimErrorDeg) * DEG * dist;
+      if (guns) gm.head = rngFloat(rng) < gs.headChance;
+      mem.aimErr = v3(
+        (rngFloat(rng) - 0.5) * e,
+        (rngFloat(rng) - 0.5) * e,
+        (rngFloat(rng) - 0.5) * e,
+      );
+      mem.aimErrUntil = tick + 20 + rngInt(rng, 30);
+    }
+    aimDir = guns
+      ? gunAimDir(ctx, self, eye, aimAt, target.vel, mem.aimErr, gs, s.leadAccuracy)
+      : sub(add(lead, mem.aimErr), eye);
+  } else if (lenSq(moveDir) > 0.01) {
+    aimDir = moveDir;
+  }
+  if (aimDir) view = turnView(self.view, aimDir, up, s.turnDegPerTick);
+  // zero-G: look straight at the next point (in 3D) and push off / thrust toward it
+  const floatNav = self.move === Move.Float && navPoint !== null && !(target && engaged);
+  if (floatNav) {
+    const d3 = sub(navPoint!, self.pos);
+    view = turnView(self.view, d3, up, s.turnDegPerTick);
+    const aligned = angleBetween(qForward(view), d3) < 0.3;
+    const toward = dot(self.vel, normalize(d3));
+    if (aligned && toward < 5 && mem.jumpCooldown === 0) {
+      buttons |= Btn.Jump;
+      mem.jumpCooldown = 20;
+    }
+  }
+  const aimErrNow = aimDir ? angleBetween(qForward(view), aimDir) : Math.PI;
+
+  // ---------------- dodging ----------------
+  if (threat && rngFloat(rng) < s.dodgeChance * 0.25) {
+    const side = normalize(cross(up, threat));
+    moveDir = scale(side, mem.strafeDir);
+    if (self.dashCd === 0) buttons |= Btn.Dash;
+    else if (self.grounded && mem.jumpCooldown === 0) {
+      buttons |= Btn.Jump;
+      mem.jumpCooldown = 20;
+    }
+  }
+  if (mem.jumpCooldown > 0) mem.jumpCooldown--;
+
+  // up on the sky duel arena: never walk (or dash) off an edge; over the void, head back to
+  // the middle on the jetpack
+  const arena = inSkyZone(ctx.level.def, self.pos) ? ctx.level.def.skyArena : undefined;
+  if (arena) {
+    const home = normalize(planarTo(arena.center));
+    const down = scale(up, -1);
+    if (self.grounded && lenSq(moveDir) > 0.01) {
+      const ahead = madd(self.pos, normalize(moveDir), 2);
+      if (!raycast(ctx.level, ahead, down, 6)) {
+        moveDir = home;
+        buttons &= ~Btn.Dash;
+      }
+    } else if (!self.grounded && !raycast(ctx.level, self.pos, down, 12)) {
+      moveDir = home;
+      buttons &= ~Btn.Dash;
+      // a fresh press arms the jetpack, holding keeps it burning
+      if (self.jetOn || self.jetHold >= 0 || !(self.prevButtons & Btn.Jump)) buttons |= Btn.Jump;
+      else buttons &= ~Btn.Jump;
+    }
+  } else if (self.grounded && lenSq(moveDir) > 0.01 && deadlyAhead(ctx, self.pos, up, moveDir)) {
+    // the ship's own voids (Stormglass's Eye, drydock edges, gorges): a grounded bot never
+    // walks, strafes or dashes toward a fall to its death, nor onto a launch pad (it can't fly
+    // one): it stops there and lets its route or goal move on
+    moveDir = v3();
+    buttons &= ~Btn.Dash;
+  }
+
+  if (floatNav) buttons |= Btn.Forward;
+  else buttons |= moveButtons(view, up, moveDir);
+
+  // slide-hop: slide when fast, jump out of the slide
+  const planarSpeed = len(projectOnPlane(self.vel, up));
+  if (s.slideHop && self.grounded && self.windup === 0) {
+    if (
+      self.move !== Move.Slide &&
+      planarSpeed > 8.5 &&
+      tick - mem.slideTick > 70 &&
+      rngFloat(rng) < 0.05
+    ) {
+      buttons |= Btn.Crouch;
+      mem.slideTick = tick;
+    } else if (self.move === Move.Slide) {
+      buttons |= Btn.Crouch;
+      if (tick - mem.slideTick > 12) buttons |= Btn.Jump;
+    }
+  }
+
+  // ---------------- weapons ----------------
+  let releaseTick = false;
+  if (guns) {
+    // CS mode: stop, burst / spray, reload, switch (bots/guns.ts)
+    buttons = gunBotButtons(
+      ctx,
+      self,
+      gm,
+      gs,
+      rng,
+      buttons,
+      !!target && engaged && targetVisible,
+      target ? len(sub(target.pos, self.pos)) : 0,
+      aimErrNow,
+      (d) => moveButtons(view, up, d),
+    );
+  } else if (myB && target && engaged && targetVisible) {
+    const dist = len(sub(target.pos, self.pos));
+    const held = myB.phase === Phase.Held;
+    if (held) {
+      if (dist < 2.6 && self.slashCd === 0) buttons |= Btn.Melee;
+      // Wind-up Throw at long range
+      if (mem.windupActive) {
+        // (gave up: it never started, or it was cancelled, e.g. by a hit)
+        if (self.windup === 0 && tick - mem.windupTick > 60) mem.windupActive = false;
+        else {
+          // stand still (a Wind-up can't start while running), then hold RMB
+          buttons &= ~(
+            Btn.Forward |
+            Btn.Back |
+            Btn.Left |
+            Btn.Right |
+            Btn.Crouch |
+            Btn.Jump |
+            Btn.Dash
+          );
+          if (self.windup > 0) buttons |= Btn.Alt;
+          else if (planarSpeed <= c.windupMaxRunSpeed && !(self.prevButtons & Btn.Alt))
+            buttons |= Btn.Alt;
+          const full = Math.round(c.windupSec / ctx.dt);
+          if (self.windup >= full && aimErrNow < 1.2 * DEG) {
+            buttons |= Btn.Fire;
+            mem.windupActive = false;
+          }
+        }
+      } else if (dist > 28 && self.grounded && rngFloat(rng) < s.windupChance) {
+        mem.windupActive = true;
+        mem.windupTick = tick;
+        buttons &= ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right | Btn.Dash);
+      } else if (mem.throwPhase > 0) {
+        mem.throwPhase++;
+        if (mem.throwPhase < 6 || aimErrNow > (s.aimErrorDeg * 0.8 + 0.6) * DEG) {
+          if (mem.throwPhase < 40) buttons |= Btn.Fire;
+          else mem.throwPhase = 0; // give up this throw
+        } else {
+          mem.throwPhase = 0; // release => throw
+          mem.nextThrowTick = tick + range(rng, s.throwInterval);
+          releaseTick = true;
+        }
+      } else if (tick >= mem.nextThrowTick && dist < 45 && aimErrNow < 12 * DEG) {
+        mem.throwPhase = 1;
+        buttons |= Btn.Fire;
+      }
+    } else {
+      mem.throwPhase = 0;
+      mem.windupActive = false;
+      // steer the throw toward the target
+      if (
+        (myB.phase === Phase.Out || myB.phase === Phase.Return) &&
+        myB.steerLeft > 0 &&
+        rngFloat(rng) < 0.5
+      )
+        buttons |= Btn.Alt;
+      // laser while the Boomerang is away
+      if (
+        self.laserCharges > 0 &&
+        self.laserWarn === 0 &&
+        aimErrNow < 2 * DEG &&
+        rngFloat(rng) < s.laserChance
+      )
+        buttons |= Btn.Fire;
+      // Lethal Recall when an enemy stands on the (open) line
+      if (myB.phase === Phase.Dropped || myB.phase === Phase.Out || myB.phase === Phase.Return) {
+        const line = recallLine(myB, self, ctx);
+        if (line.lethal) {
+          const seg = sub(line.to, line.from);
+          for (const e of enemies) {
+            const tt = Math.max(
+              0,
+              Math.min(1, dot(sub(e.pos, line.from), seg) / Math.max(1e-6, dot(seg, seg))),
+            );
+            const onLine =
+              len(sub(madd(line.from, seg, tt), e.pos)) < 1.0 && tt > 0.05 && tt < 0.95;
+            const mateOnLine = world.players.some(
+              (m) =>
+                m.alive &&
+                isTeammate(ctx, m, self) &&
+                len(
+                  sub(
+                    madd(
+                      line.from,
+                      seg,
+                      Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          dot(sub(m.pos, line.from), seg) / Math.max(1e-6, dot(seg, seg)),
+                        ),
+                      ),
+                    ),
+                    m.pos,
+                  ),
+                ) < 1.2,
+            );
+            if (onLine && !mateOnLine && rngFloat(rng) < s.recallSkill * 0.2) buttons |= Btn.Recall;
+          }
+        }
+      }
+      // get a dropped Boomerang back: walk over it when close, otherwise recall it
+      if (myB.phase === Phase.Dropped) {
+        const d = len(sub(myB.pos, self.pos));
+        if (d < 6) {
+          moveDir = normalize(projectOnPlane(sub(myB.pos, self.pos), up));
+          buttons =
+            (buttons & ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right)) |
+            moveButtons(view, up, moveDir);
+        } else if (rngFloat(rng) < 0.04) buttons |= Btn.Recall;
+      }
+    }
+    // grenade at mid range: bots/utility.ts picks the charge and throws it
+    if (self.grenadesLeft > 0 && dist > 8 && dist < 20 && rngFloat(rng) < s.grenadeChance)
+      (mem.util ??= { nadeHold: 0, wantNade: false }).wantNade = true;
+    // (a Quick Throw leaves straight; flicking the view in flight tilts it)
+    if (releaseTick) buttons &= ~(Btn.Left | Btn.Right);
+  } else if (myB) {
+    mem.throwPhase = 0;
+    if (mem.windupActive) mem.windupActive = false;
+    // retrieve a dropped Boomerang: walk to it if close, recall if far
+    if (myB.phase === Phase.Dropped) {
+      const d = len(sub(myB.pos, self.pos));
+      if (d < 15) {
+        moveDir = normalize(projectOnPlane(sub(myB.pos, self.pos), up));
+        buttons =
+          (buttons & ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right)) |
+          moveButtons(view, up, moveDir);
+      } else if (rngFloat(rng) < 0.05) buttons |= Btn.Recall;
+    }
+  }
+
+  // teleport slash up close, now and then (bots/melee.ts)
+  if (!guns) {
+    const foe = target && engaged && targetVisible ? target : null;
+    buttons = teleportSlashButtons(ctx, self, mem, s.deflectChance, rng, buttons, myB, foe);
+  }
+
+  // bomb mode: at the spot, stand still and hold Use (plant / defuse)
+  if (mem.useAt && len(projectOnPlane(sub(mem.useAt, self.pos), up)) < 1.4) {
+    buttons &= ~(Btn.Forward | Btn.Back | Btn.Left | Btn.Right | Btn.Jump | Btn.Crouch | Btn.Dash);
+    buttons |= Btn.Use;
+  }
+  // charged grenade (both kits) and the remote mine (bots/utility.ts)
+  buttons = botUtilityButtons(world, ctx, self, mem, buttons, target, engaged && targetVisible);
+  return { tick, buttons, view };
+};

@@ -1,0 +1,173 @@
+// Combat-related state (Boomerang, Laser, Grenade, Slash, Dash).
+import type { Vec3 } from '../math/vec3';
+
+export const Phase = {
+  Held: 0,
+  Out: 1,
+  Return: 2,
+  Dropped: 3,
+  RecallTelegraph: 4,
+  Recall: 5,
+  Deflected: 6, // flying straight back after a deflect, controlled by the deflector
+} as const;
+export type BoomerangPhase = (typeof Phase)[keyof typeof Phase];
+
+export interface BoomerangState {
+  id: number; // == owner player id (one Boomerang per player)
+  owner: number; // whose Boomerang it is (catch / pick up / recall)
+  controller: number; // who gets credit for damage (changes on deflect)
+  phase: BoomerangPhase;
+  pos: Vec3;
+  vel: Vec3;
+  t: number; // ticks in current phase
+  outTicks: number; // planned out-flight ticks
+  dist: number; // metres flown on the way out (a Quick Throw's speed falls off with it)
+  curve: number; // -1 left, 0 straight, +1 right
+  curveAxis: Vec3; // axis the curve rotates around (thrower's up at release)
+  tiltRef: Vec3; // the throw's flat aim direction: turning away from it tilts a Quick Throw
+  windup: boolean; // Wind-up Throw: straight, fast, one-hit kill
+  steerLeft: number; // ticks of steering left
+  hitIds: number[]; // players already hit in this phase
+  throwId: number;
+  recallFrom: Vec3 | null;
+  recallTo: Vec3 | null;
+  recallLethal: boolean;
+  /** dropped by hitting a wall: stuck in it (this is the wall's normal) instead of falling */
+  stuck: Vec3 | null;
+  explosive: boolean; // this Quick Throw explodes on the first wall or player it hits
+  bounced: boolean; // a Quick Throw bounces off the first wall it hits, then drops on the next
+}
+
+export interface GrenadeState {
+  id: number;
+  owner: number;
+  pos: Vec3;
+  vel: Vec3;
+  phase: 0 | 1 | 2; // 0 flying, 1 pulling, 2 finished
+  t: number;
+  /** bounces left before it goes off: 0 = the next impact sets it off (sim/grenade.ts) */
+  bounces: number;
+}
+
+/**
+ * A remote mine lying where its owner stood (sim/mine.ts). One per player per round; the owner
+ * sets it off from anywhere. Enemies only see it up close (the server doesn't send it further).
+ */
+export interface MineState {
+  id: number;
+  owner: number;
+  /** on the ground under the owner's feet */
+  pos: Vec3;
+  /** the floor's up (the owner's up when placed): drawn flat on it, blast centre above it */
+  up: Vec3;
+  /** tick it was placed (it arms after combat.mineArmSec) */
+  placedTick: number;
+}
+
+/** Your remote mine this round / life: still to place, lying somewhere, or gone. */
+export const MineSlot = {
+  Ready: 0,
+  Placed: 1,
+  Used: 2,
+} as const;
+export type MineSlotState = (typeof MineSlot)[keyof typeof MineSlot];
+
+/**
+ * Power-ups (lethal loadout only; config/loadout.ts `powerups`). The match rules spawn them in
+ * the middle of the map (rules/powerups.ts); walking into one picks it up (sim/powerups.ts).
+ * 0 = none held.
+ */
+export const Powerup = {
+  None: 0,
+  /** your next few damaging Boomerang / Laser / slash hits on an enemy also freeze them */
+  Freeze: 1,
+  /** your next few Quick Throws split: the real Boomerang plus a mirrored "twin" */
+  Double: 2,
+} as const;
+export type PowerupKind = (typeof Powerup)[keyof typeof Powerup];
+export const POWERUP_NAMES: Record<PowerupKind, string> = {
+  0: '',
+  1: 'FREEZE',
+  2: 'DOUBLE BOOMERANG',
+};
+
+/** A power-up floating at its spawn point, waiting to be picked up. */
+export interface PowerupPickup {
+  id: number;
+  kind: 1 | 2;
+  pos: Vec3;
+  /** tick it appeared (the client spins/bobs it from here) */
+  spawnTick: number;
+}
+
+export interface CombatPlayerState {
+  aiming: boolean; // holding LMB to aim a Quick Throw
+  aimTicks: number;
+  blastCount: number; // Quick Throws since the last explosion (charged at blastEvery - 1)
+  flick: number; // smoothed sideways turn rate (deg/s, + = right): sets the Quick Throw curve
+  windup: number; // ticks wound up (0 = not winding)
+  windupHeld: number; // ticks held after fully wound
+  weapon: 0 | 1; // 0 = Boomerang, 1 = Laser (the Laser is also used whenever the Boomerang is away)
+  laserCharges: number; // shots left in the magazine
+  laserReserve: number; // spare shots
+  laserReload: number; // ticks until the reload finishes (0 = not reloading)
+  laserCd: number; // ticks until the next shot is allowed
+  laserWarn: number; // ticks until a pending laser shot fires (0 = none)
+  slashCd: number;
+  slashTicks: number; // remaining active slash window
+  slashHit: boolean;
+  /** teleport slash (sim/melee.ts): ticks E has been held toward it (0 = not charging) */
+  meleeCharge: number;
+  /** ticks until the next teleport slash is allowed */
+  teleportCd: number;
+  grenadesLeft: number;
+  /** holding Q: ticks held so far (0 = not charging); the throw's strength (sim/grenade.ts) */
+  nadeCharge: number;
+  /** bounces the next grenade makes before it goes off (middle mouse cycles it) */
+  nadeBounces: number;
+  /** your remote mine this round / life (MineSlot) */
+  mineSlot: MineSlotState;
+  // CS mode guns (sim/guns.ts). `weapon` 0 = AK-47, 1 = Desert Eagle there.
+  akMag: number;
+  akReserve: number;
+  deagleMag: number;
+  deagleReserve: number;
+  gunCd: number; // ticks until the next shot is allowed (fire rate, drawing a gun)
+  gunReload: number; // ticks until the reload finishes (0 = not reloading)
+  gunSpray: number; // spray pattern index (fractional while it recovers toward 0)
+  gunPenalty: number; // stored inaccuracy (mrad): stance base + firing + landing, recovering
+  gunLastShot: number; // tick of the last shot
+  gunShots: number; // shots fired (this life)
+  // Power-ups (sim/powerups.ts)
+  powerup: PowerupKind; // held power-up (one at a time)
+  powerupCharges: number; // uses left of the held power-up
+  /**
+   * Freeze power-up stun, in ticks left (NOT the spawn-lock `frozen`: a stunned player can't
+   * move or act but still takes damage). Counts down in updateCombat.
+   */
+  stun: number;
+  /**
+   * Round-start shield: soaks up the next hit completely (a headshot, a Lethal Recall, even a
+   * small Laser shot) and breaks. A charged Wind-up Throw goes straight through it.
+   */
+  shield: boolean;
+  /**
+   * thrown by a launch pad or a suction tube (sim/devices.ts) and not settled on the ground
+   * yet: no landing hurts until then (not even after hitting a wall or ceiling, landing lower
+   * than aimed, or brushing a ledge on the way). It ends after `padSettleSec` on the ground.
+   */
+  padFlight: boolean;
+  /** ticks on the ground since a pad / tube flight came down (ends padFlight, see above) */
+  padSettle: number;
+  /**
+   * in the air on a jetpack flight: the jetpack burned since you left the ground (the
+   * Wind-up Throw may be used then, sim/combat.ts). Cleared on landing.
+   */
+  jetFlight: boolean;
+  lastHurtTick: number;
+  lastAttacker: number;
+  kills: number;
+  deaths: number;
+  teamKills: number;
+  damageDealt: number;
+}

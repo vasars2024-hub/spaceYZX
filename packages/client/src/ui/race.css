@@ -1,0 +1,168 @@
+/* Parkour race HUD (game/race-feature.ts): clock bar, countdown, live order, next-gate marker,
+   results. Warm sunlight colours so it reads on the bright outdoor tracks. */
+.race-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #fff8e6;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 1px #000;
+  font-variant-numeric: tabular-nums;
+}
+.race-bar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+.race-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: rgba(20, 14, 6, 0.5);
+  border: 1px solid rgba(255, 233, 168, 0.25);
+  border-radius: 8px;
+  padding: 4px 18px;
+}
+.race-clock {
+  font-size: 30px;
+  font-weight: 800;
+  min-width: 150px;
+  letter-spacing: 0.02em;
+}
+.race-stat {
+  font-size: 17px;
+  font-weight: 700;
+  min-width: 70px;
+  opacity: 0.95;
+}
+.race-split {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 800;
+  min-height: 24px;
+}
+.race-sub {
+  font-size: 12px;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+.race-center {
+  position: absolute;
+  top: 24%;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+.race-big {
+  font-size: 64px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  transition: opacity 0.25s;
+}
+.race-big-sub {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 2px;
+  transition: opacity 0.25s;
+}
+.race-list {
+  position: absolute;
+  top: 64px;
+  right: 12px;
+  min-width: 190px;
+  font-size: 13px;
+}
+.race-li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px;
+  background: rgba(20, 14, 6, 0.4);
+  border-radius: 4px;
+  margin-bottom: 2px;
+}
+.race-li.me {
+  background: rgba(255, 193, 74, 0.35);
+}
+.race-li-pos {
+  width: 16px;
+  font-weight: 800;
+}
+.race-li-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.race-li-t {
+  opacity: 0.85;
+}
+.race-next {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffe9a8;
+  white-space: nowrap;
+}
+.race-results {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 360px;
+  max-width: calc(100vw - 32px);
+  background: rgba(20, 14, 6, 0.82);
+  border: 1px solid rgba(255, 233, 168, 0.35);
+  border-radius: 10px;
+  padding: 14px 20px;
+}
+.race-results h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.race-results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.race-results th {
+  text-align: left;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.race-results td {
+  padding: 3px 6px 3px 0;
+}
+.race-results tr.me td {
+  color: #ffc14a;
+  font-weight: 800;
+}
+.race-results-rating {
+  margin: 4px 0 0;
+  font-weight: 800;
+  color: #5dff9a;
+}
+.race-results-pb {
+  margin: 10px 0 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+@media (max-width: 700px) {
+  .race-clock {
+    font-size: 22px;
+    min-width: 110px;
+  }
+  .race-big {
+    font-size: 44px;
+  }
+  .race-list {
+    display: none;
+  }
+}
+.race-results-rating:empty {
+  display: none;
+}

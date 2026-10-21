@@ -1,0 +1,2125 @@
+// Expand a course (./types.ts: plain JSON data) into a LevelDef: route geometry, the racing
+// line, gates, devices, kill floors and scenery. Deterministic (the server and every client
+// build the same map from the same data); no randomness beyond the seeded hash.
+import type { Vec3 } from '../../math/vec3';
+import { v3, add, sub, scale, len, normalize, cross, madd, dot, UP } from '../../math/vec3';
+import type { Quat } from '../../math/quat';
+import { qFromBasis, qRotate } from '../../math/quat';
+import type {
+  BoxDef,
+  LaunchPadDef,
+  LevelDef,
+  LightDef,
+  Material,
+  PortalDef,
+  RaceAnchorDef,
+  RaceForkDef,
+  RaceGateDef,
+  RaceLineNode,
+  SlowZoneDef,
+  SpawnDef,
+} from '../types';
+import type {
+  CourseData,
+  CourseFork,
+  CoursePalette,
+  CurveEl,
+  Go,
+  IslandStyle,
+  P3,
+  PortalEl,
+  RestartBay,
+  RouteElement,
+  SceneryElement,
+  SurfEl,
+} from './types';
+import { buildCurve, curvePath, curveRidePoint } from './curve';
+
+const DEG = Math.PI / 180;
+/** gravity the launch pads are aimed with (MOVEMENT_DEFAULTS.gravity) */
+const G = 20;
+
+export const p3 = (p: P3): Vec3 => v3(p[0], p[1], p[2]);
+/** Compass heading (deg) → horizontal unit direction. */
+export const headingDir = (deg: number): Vec3 => v3(Math.sin(deg * DEG), 0, -Math.cos(deg * DEG));
+/** Compass heading → the game's yawDeg (0 = facing -z, 90 = facing -x). */
+export const headingYaw = (deg: number): number => -deg;
+/** Heading of a horizontal direction. */
+export const headingOf = (d: Vec3): number => (((Math.atan2(d.x, -d.z) / DEG) % 360) + 360) % 360;
+
+/** Deterministic 0..1 from an integer. */
+export const hash01 = (n: number): number => {
+  let x = Math.imul((n | 0) ^ 0x2545f491, 0x9e3779b1);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x85ebca6b);
+  x ^= x >>> 13;
+  return (x >>> 0) / 4294967295;
+};
+
+/** A heading's rotation (local -z along it, local +x to its right); none when cardinal. */
+const yawOf = (heading: number): { q?: Quat; swap: boolean } => {
+  const h = ((heading % 360) + 360) % 360;
+  if (Math.abs(h % 90) < 1e-9) return { swap: h === 90 || h === 270 };
+  return { q: qFromBasis(headingDir(h), UP), swap: false };
+};
+
+interface Style {
+  mat?: Material;
+  color: number;
+  noCollide?: boolean;
+  trim?: number;
+  lowDetail?: boolean;
+}
+
+/** Collects boxes (with the heading helpers every element uses). */
+class Geo {
+  readonly boxes: BoxDef[] = [];
+  /** A box: `c` centre, `size` [across, height, along] in the heading's frame. */
+  box(c: Vec3, size: Vec3, heading: number, s: Style): void {
+    const y = yawOf(heading);
+    const h = y.swap
+      ? v3(size.z / 2, size.y / 2, size.x / 2)
+      : v3(size.x / 2, size.y / 2, size.z / 2);
+    const b: BoxDef = { c: round3(c), h: round3(h), mat: s.mat ?? 'rock', color: s.color };
+    if (y.q) b.q = y.q;
+    if (s.noCollide) b.noCollide = true;
+    if (s.trim !== undefined) b.trim = s.trim;
+    if (s.lowDetail) b.lowDetail = true;
+    this.boxes.push(b);
+  }
+  /** A box whose top is at `top` (the middle of its top face). */
+  slab(top: Vec3, w: number, d: number, thick: number, heading: number, s: Style): void {
+    this.box(v3(top.x, top.y - thick / 2, top.z), v3(w, thick, d), heading, s);
+  }
+}
+
+/** Snap to 1 mm (clean data; the same numbers everywhere). */
+const r3 = (x: number): number => Math.round(x * 1000) / 1000;
+const round3 = (v: Vec3): Vec3 => v3(r3(v.x), r3(v.y), r3(v.z));
+
+/** Local → world for a heading frame: x right, z back (so -z = forward). */
+const frame = (at: Vec3, heading: number) => {
+  const f = headingDir(heading);
+  const r = cross(f, UP);
+  return (x: number, y: number, z: number): Vec3 =>
+    add(add(madd(at, r, x), scale(f, -z)), v3(0, y, 0));
+};
+
+// ------------------------------------------------------------------------------------------
+// Shared pieces
+
+/**
+ * A floating platform: a walkable top slab with painted edge lines, a rock body in stepped
+ * tiers under it and a few stalactites (every piece stacked face to face: nothing cuts through
+ * anything). `at` = middle of the top.
+ */
+const platform = (
+  g: Geo,
+  pal: CoursePalette,
+  at: Vec3,
+  w: number,
+  d: number,
+  heading: number,
+  opts: { top?: number; depth?: number; edges?: boolean; seed?: number; plain?: boolean } = {},
+): void => {
+  const top = opts.top ?? pal.ground;
+  const L = frame(at, heading);
+  const thick = 0.6;
+  g.slab(at, w, d, thick, heading, { mat: 'sand', color: top });
+  if (opts.edges !== false && w >= 2.5 && d >= 2.5) {
+    // painted edge lines on the top, just inside both long sides and the ends
+    const e = 0.22;
+    for (const s of [-1, 1]) {
+      g.slab(L(s * (w / 2 - 0.2 - e / 2), 0.03, 0), e, d - 0.4, 0.03, heading, {
+        mat: 'sand',
+        color: pal.edge,
+        noCollide: true,
+      });
+      g.slab(L(0, 0.03, s * (d / 2 - 0.2 - e / 2)), w - 0.4 - 2 * e, e, 0.03, heading, {
+        mat: 'sand',
+        color: pal.edge,
+        noCollide: true,
+      });
+    }
+  }
+  // a bright rim under the top's edge, sticking out a hand's breadth: the outline reads from far
+  const rim = 0.35;
+  g.box(v3(at.x, at.y - thick - rim / 2, at.z), v3(w + 0.3, rim, d + 0.3), heading, {
+    mat: 'sand',
+    color: pal.edge,
+    lowDetail: true,
+  });
+  if (opts.plain) return;
+  const depth = opts.depth ?? Math.min(8, 1.5 + Math.max(w, d) * 0.35);
+  const seed = opts.seed ?? Math.round(at.x * 7 + at.z * 13 + at.y);
+  let y = at.y - thick - rim;
+  let k = 1;
+  const tiers = depth > 4 ? 3 : 2;
+  for (let i = 0; i < tiers; i++) {
+    const hh = (depth * (tiers - i)) / ((tiers * (tiers + 1)) / 2);
+    k *= i === 0 ? 0.92 : 0.72;
+    const turn = heading + (hash01(seed + i * 5) - 0.5) * 16;
+    g.box(v3(at.x, y - hh / 2, at.z), v3(w * k, hh, d * k), turn, {
+      mat: 'rock',
+      color: i % 2 ? pal.rockDark : pal.rock,
+      lowDetail: true,
+    });
+    y -= hh;
+  }
+  // stalactites under the last tier
+  const n = Math.min(5, 1 + Math.floor((w * d) / 40));
+  for (let i = 0; i < n; i++) {
+    const sx = (hash01(seed * 3 + i) - 0.5) * w * k * 0.6;
+    const sz = (hash01(seed * 5 + i) - 0.5) * d * k * 0.6;
+    const hh = 1 + hash01(seed * 7 + i) * depth * 0.5;
+    const sw = 0.5 + hash01(seed * 11 + i) * Math.min(w, d) * k * 0.15;
+    g.box(add(L(sx, 0, sz), v3(0, y - at.y - hh / 2, 0)), v3(sw, hh, sw), heading + 45 * i, {
+      mat: 'rock',
+      color: pal.rockDark,
+      noCollide: true,
+      lowDetail: true,
+    });
+  }
+};
+
+/** Painted floor chevrons at `at` pointing along `heading` (on a top at at.y). */
+const chevron = (g: Geo, at: Vec3, heading: number, color: number, size = 1): void => {
+  for (const s of [-1, 1]) {
+    const d = headingDir(heading + s * 40);
+    const c = madd(madd(at, cross(headingDir(heading), UP), s * 0.45 * size), d, -0.3 * size);
+    g.box(v3(c.x, at.y + 0.02, c.z), v3(0.26 * size, 0.04, 1.5 * size), heading + s * 40, {
+      mat: 'sand',
+      color,
+      noCollide: true,
+    });
+  }
+};
+
+/** A 7-segment digit board face (painted) centred at `at` on a plane facing `heading`. */
+const SEG: Record<string, number[]> = {
+  0: [0, 1, 2, 4, 5, 6],
+  1: [2, 5],
+  2: [0, 2, 3, 4, 6],
+  3: [0, 2, 3, 5, 6],
+  4: [1, 2, 3, 5],
+  5: [0, 1, 3, 5, 6],
+  6: [0, 1, 3, 4, 5, 6],
+  7: [0, 2, 5],
+  8: [0, 1, 2, 3, 4, 5, 6],
+  9: [0, 1, 2, 3, 5, 6],
+};
+const digits = (g: Geo, at: Vec3, heading: number, text: string, color: number, h = 1.6): void => {
+  const L = frame(at, heading);
+  const w = h * 0.55;
+  const t = h * 0.14;
+  const gap = w * 0.45;
+  const total = text.length * w + (text.length - 1) * gap;
+  [...text].forEach((ch, i) => {
+    const x0 = -total / 2 + i * (w + gap) + w / 2;
+    const segs = SEG[ch] ?? [];
+    // 0 top, 1 upper-left, 2 upper-right, 3 middle, 4 lower-left, 5 lower-right, 6 bottom
+    const spots: [number, number, boolean][] = [
+      [0, h / 2 - t / 2, true],
+      [-w / 2 + t / 2, h / 4, false],
+      [w / 2 - t / 2, h / 4, false],
+      [0, 0, true],
+      [-w / 2 + t / 2, -h / 4, false],
+      [w / 2 - t / 2, -h / 4, false],
+      [0, -h / 2 + t / 2, true],
+    ];
+    for (const s of segs) {
+      const [sx, sy, horiz] = spots[s];
+      g.box(L(x0 + sx, sy, -0.06), v3(horiz ? w : t, horiz ? t : h / 2, 0.12), heading, {
+        mat: 'sand',
+        color,
+        noCollide: true,
+      });
+    }
+  });
+};
+
+// ------------------------------------------------------------------------------------------
+// The route
+
+interface Built {
+  /** racing line points of this element, in order */
+  nodes: RaceLineNode[];
+  /** where the next element's line starts from (the element's exit) */
+  exit: Vec3;
+}
+
+export interface ExpandedCourse {
+  def: LevelDef;
+  /** per route element: its racing line nodes (tests and tools) */
+  elementNodes: RaceLineNode[][];
+}
+
+/** A surf ramp's frame: ridge from → to, local x along it, y the prism's up, z to its right. */
+export const surfFrame = (e: Pick<SurfEl, 'from' | 'to' | 'height' | 'angle' | 'side'>) => {
+  const a = p3(e.from);
+  const b = p3(e.to);
+  const L = normalize(sub(b, a));
+  const yl = normalize(sub(UP, scale(L, dot(UP, L))));
+  const zl = cross(L, yl);
+  const run = e.height / Math.tan(e.angle * DEG);
+  const hz = e.side === 'both' ? run : run / 2;
+  const prism = e.side === 'both' ? 0 : e.side === 'right' ? -1 : 1;
+  return { a, b, L, yl, zl, run, hz, prism, length: len(sub(b, a)) };
+};
+
+const expandRoute = (
+  data: CourseData,
+  g: Geo,
+  lights: LightDef[],
+): {
+  line: RaceLineNode[];
+  elementNodes: RaceLineNode[][];
+  checkpoints: RaceGateDef[];
+  anchors: RaceAnchorDef[];
+  finish: RaceGateDef | null;
+  start: { respawn: Vec3; yawDeg: number } | null;
+  grid: SpawnDef[];
+  launchPads: LaunchPadDef[];
+  portals: PortalDef[];
+  fuelCells: Vec3[];
+  slowZones: SlowZoneDef[];
+} => {
+  const pal = data.palette;
+  const checkpoints: RaceGateDef[] = [];
+  let finish: RaceGateDef | null = null;
+  let start: { respawn: Vec3; yawDeg: number } | null = null;
+  let grid: SpawnDef[] = [];
+  const launchPads: LaunchPadDef[] = [];
+  const portals: PortalDef[] = [];
+  const fuelCells: Vec3[] = [];
+  const slowZones: SlowZoneDef[] = [];
+  const elementNodes: RaceLineNode[][] = [];
+  const anchors: RaceAnchorDef[] = [];
+  /** restart bays whose way back joins the line after element `el` (join worked out below) */
+  const bays: { def: RaceGateDef; el: number; to: Vec3 }[] = [];
+  let cp = 0;
+  let pos = v3();
+  const route = data.route;
+
+  /** The first line point of the element after `i` (where you head when leaving `i`). */
+  const nextAnchor = (i: number): Vec3 | null => {
+    for (let j = i + 1; j < route.length; j++) {
+      const e = route[j];
+      if (e.alt) continue;
+      switch (e.t) {
+        case 'wall':
+        case 'fuel':
+        case 'red':
+        case 'anchor':
+        case 'gate':
+          continue;
+        case 'curve': {
+          const face = e.side === 'both' ? (e.legs[0]?.ride ?? e.ride ?? 'right') : e.side;
+          return curveRidePoint(e, curvePath(e).at(0), face, e.legs[0]?.depth ?? e.depth ?? 0.35);
+        }
+        case 'path':
+          return null;
+        case 'jumps':
+          return p3(e.pads[0].at);
+        case 'surf': {
+          const f = surfFrame(e);
+          return rideAt(f, e, 0.04);
+        }
+        case 'pillars':
+          return p3(e.from);
+        default:
+          return p3(e.at);
+      }
+    }
+    return null;
+  };
+
+  /** The point on a platform's top edge (w × d at `at`, heading) toward `to`, `inset` inside. */
+  const edgeToward = (at: Vec3, w: number, d: number, heading: number, to: Vec3, inset = 0.4) => {
+    const f = headingDir(heading);
+    const r = cross(f, UP);
+    const dir = sub(v3(to.x, at.y, to.z), at);
+    const dl = len(dir);
+    if (dl < 1e-6) return at;
+    const u = scale(dir, 1 / dl);
+    const along = dot(u, f);
+    const side = dot(u, r);
+    const tx = Math.abs(side) > 1e-6 ? (w / 2 - inset) / Math.abs(side) : Infinity;
+    const tz = Math.abs(along) > 1e-6 ? (d / 2 - inset) / Math.abs(along) : Infinity;
+    return madd(at, u, Math.min(tx, tz, dl));
+  };
+
+  const node = (p: Vec3, flags: Partial<RaceLineNode> = {}): RaceLineNode => ({
+    pos: round3(p),
+    cp,
+    ...flags,
+  });
+
+  route.forEach((e, i) => {
+    const out = buildElement(e, i);
+    const go: Go = e.go ?? 'run';
+    // (off the racing line: its geometry only)
+    const nodes = e.alt ? [] : out.nodes;
+    if (nodes.length) {
+      const last = nodes[nodes.length - 1];
+      if (go === 'jump') last.jump = true;
+      if (e.jet) {
+        last.jump = true;
+        last.jet = e.jet;
+      }
+      if (go === 'strafe') last.strafe = true;
+      // (a hop chain hops on every pad; anything else only off its last point)
+      if (go === 'hop')
+        for (const n of e.t === 'jumps' ? nodes : [last]) if (!n.portal) n.hop = true;
+    }
+    elementNodes.push(nodes);
+    if (!e.alt) pos = out.exit;
+  });
+
+  /** A surf ramp's colour: its stage's (CourseData.surfColors), a shade lighter ridden left. */
+  function surfColor(e: SurfEl | CurveEl): number {
+    const list = data.surfColors;
+    const base = list?.length ? list[checkpoints.length % list.length] : pal.surf;
+    const face = e.side === 'both' ? (e.ride ?? 'right') : e.side;
+    if (face === 'right') return base;
+    const ch = (sh: number) => Math.min(255, Math.round(((base >> sh) & 255) * 1.18 + 12));
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+  }
+
+  function rideAt(f: ReturnType<typeof surfFrame>, e: SurfEl, t: number): Vec3 {
+    const face = e.side === 'both' ? (e.ride ?? 'right') : e.side;
+    const depth = e.depth ?? 0.3;
+    const s = face === 'right' ? 1 : -1;
+    // ridge point, then down the face `depth` of its height, lifted a little off it
+    const ridge = madd(f.a, sub(f.b, f.a), t);
+    const ridgeZ = f.prism * f.hz;
+    const edgeZ = s * f.hz;
+    const zl = ridgeZ + (edgeZ - ridgeZ) * depth;
+    const yLocal = -e.height * depth;
+    const pt = add(add(ridge, scale(f.yl, yLocal)), scale(f.zl, zl - ridgeZ));
+    const nrm = normalize(add(scale(f.yl, f.run), scale(f.zl, s * e.height)));
+    return madd(pt, nrm, 0.05);
+  }
+
+  /**
+   * A restart bay (surf maps: gates and anchors): a small platform off the route, facing its
+   * launch pad a step ahead, which throws you onto `to` in `flightSec` (the same re-entry every
+   * time). Returns the respawn, the facing and the bot's way back (bay, pad, landing).
+   */
+  function restartBay(r: RestartBay, i: number): Omit<RaceGateDef, 'min' | 'max'> {
+    const bay = p3(r.bay);
+    const to = p3(r.to);
+    const h = r.bayHeading ?? headingOf(sub(to, bay));
+    const L = frame(bay, h);
+    const glow = pal.anchor ?? pal.stageGlow;
+    platform(g, pal, L(0, 0, -1), 7, 9, h, { seed: 7000 + i, top: pal.ground2, plain: true });
+    // a low back wall behind it with the recovery glyph (the bay reads as "come back here")
+    g.box(L(0, 0.6, 3.95), v3(6.2, 3.2, 0.6), h, { mat: 'rock', color: pal.stage });
+    g.box(L(0, 1.4, 3.6), v3(1.2, 1.2, 0.1), h, {
+      mat: 'glow',
+      color: glow,
+      noCollide: true,
+      lowDetail: true,
+    });
+    const padAt = L(0, 0, -2.2);
+    const T = r.flightSec;
+    const from = add(padAt, v3(0, 0.9, 0));
+    const aim = add(to, v3(0, 0.9, 0));
+    const vel = v3(
+      (aim.x - from.x) / T,
+      (aim.y - from.y + 0.5 * G * T * T) / T,
+      (aim.z - from.z) / T,
+    );
+    launchPads.push({
+      min: round3(v3(padAt.x - 1.3, padAt.y - 0.2, padAt.z - 1.3)),
+      max: round3(v3(padAt.x + 1.3, padAt.y + 1.6, padAt.z + 1.3)),
+      vel: round3(vel),
+    });
+    g.slab(add(padAt, v3(0, 0.06, 0)), 2.8, 2.8, 0.06, h, {
+      mat: 'sand',
+      color: pal.pad,
+      noCollide: true,
+    });
+    g.slab(add(padAt, v3(0, 0.12, 0)), 1.4, 1.4, 0.06, h + 45, {
+      mat: 'trim',
+      color: pal.pad,
+      noCollide: true,
+    });
+    const respawn = round3(L(0, 0, 0.6));
+    return {
+      respawn,
+      yawDeg: headingYaw(h),
+      bayLine: [
+        { pos: respawn, cp },
+        { pos: round3(padAt), cp, strafe: true },
+        { pos: round3(to), cp },
+      ],
+    };
+  }
+
+  /** A fly-through trigger: the box `size` [width, height] × `depth` deep standing on `at`. */
+  function flyThrough(at: Vec3, heading: number, w: number, h: number, depth: number) {
+    const L = frame(at, heading);
+    const pts = [
+      L(-w / 2, 0, -depth / 2),
+      L(w / 2, 0, -depth / 2),
+      L(-w / 2, 0, depth / 2),
+      L(w / 2, 0, depth / 2),
+    ];
+    return {
+      min: round3(v3(Math.min(...pts.map((q) => q.x)), at.y, Math.min(...pts.map((q) => q.z)))),
+      max: round3(v3(Math.max(...pts.map((q) => q.x)), at.y + h, Math.max(...pts.map((q) => q.z)))),
+    };
+  }
+
+  /** A ring frame of four bars round an opening (w × h, bottom middle at `at`). */
+  function ring(at: Vec3, heading: number, w: number, h: number, t: number, s: Style): void {
+    const L = frame(at, heading);
+    g.box(L(0, -t / 2, 0), v3(w + 2 * t, t, t), heading, s);
+    g.box(L(0, h + t / 2, 0), v3(w + 2 * t, t, t), heading, s);
+    for (const k of [-1, 1]) g.box(L(k * (w / 2 + t / 2), h / 2, 0), v3(t, h, t), heading, s);
+  }
+
+  function buildElement(e: RouteElement, i: number): Built {
+    switch (e.t) {
+      case 'curve': {
+        const built = buildCurve(
+          e,
+          { color: e.color ?? surfColor(e), trim: pal.surfEdge, hazard: pal.hazard ?? HAZARD },
+          cp,
+        );
+        g.boxes.push(...built.boxes);
+        return { nodes: built.nodes, exit: built.nodes[built.nodes.length - 1].pos };
+      }
+      case 'gate': {
+        const at = p3(e.at);
+        const [w, h] = e.size;
+        const glow = e.finish ? pal.finish : pal.stageGlow;
+        // a brass pressure arch round the opening, a glowing strip inside it
+        ring(at, e.heading, w, h, 1.2, { mat: 'rock', color: pal.stage });
+        const L = frame(at, e.heading);
+        for (const z of [-1, 1])
+          ring(L(0, 0, z * 0.66), e.heading, w - 0.3, h - 0.3, 0.14, {
+            mat: 'glow',
+            color: glow,
+            noCollide: true,
+            lowDetail: true,
+          });
+        lights.push({ pos: L(0, h + 0.8, 0), color: glow, radius: 12, intensity: 0.9 });
+        const box = flyThrough(at, e.heading, w, h, 4);
+        if (e.finish) {
+          const bay = e.bay ? p3(e.bay) : madd(at, headingDir(e.heading), 20);
+          if (e.bay) platform(g, pal, bay, 18, 18, e.heading, { seed: 9000 + i });
+          finish = { ...box, respawn: round3(bay), yawDeg: headingYaw(e.heading) };
+          cp++;
+          // (the racing line flies through its middle)
+          return { nodes: [node(L(0, h / 2 - 0.9, 0), { air: true, strafe: true })], exit: pos };
+        }
+        const gate: RaceGateDef = e.bay
+          ? { ...box, ...restartBay(e as RestartBay, i) }
+          : { ...box, respawn: round3(at), yawDeg: headingYaw(e.heading) };
+        if (e.name) gate.name = e.name;
+        checkpoints.push(gate);
+        if (e.bay) bays.push({ def: gate, el: i, to: p3(e.to!) });
+        cp++;
+        // (the bay line's nodes belong to the new section)
+        for (const n of gate.bayLine ?? []) n.cp = cp;
+        return { nodes: [], exit: pos };
+      }
+      case 'anchor': {
+        const at = p3(e.at);
+        const [w, h] = e.size ?? [10, 10];
+        const glow = pal.anchor ?? pal.stageGlow;
+        // an unobtrusive ring (it never collides) with the recovery glyph on top
+        ring(at, e.heading, w, h, 0.22, {
+          mat: 'glow',
+          color: glow,
+          noCollide: true,
+          lowDetail: true,
+        });
+        g.box(frame(at, e.heading)(0, h + 1.1, 0), v3(0.9, 0.9, 0.2), e.heading, {
+          mat: 'glow',
+          color: 0xf2fff6,
+          noCollide: true,
+          lowDetail: true,
+        });
+        const a: RaceAnchorDef = {
+          ...flyThrough(at, e.heading, w, h, 4),
+          ...restartBay(e, i),
+          cp,
+        };
+        if (e.name) a.name = e.name;
+        anchors.push(a);
+        bays.push({ def: a, el: i, to: p3(e.to) });
+        return { nodes: [], exit: pos };
+      }
+      case 'red': {
+        const at = p3(e.at);
+        const [w, h, d] = e.size;
+        const hd = e.heading ?? 0;
+        const y = yawOf(hd);
+        const b: BoxDef = {
+          c: round3(add(at, v3(0, h / 2, 0))),
+          h: round3(y.swap ? v3(d / 2, h / 2, w / 2) : v3(w / 2, h / 2, d / 2)),
+          mat: 'hazard',
+          color: pal.hazard ?? HAZARD,
+          kill: true,
+        };
+        if (y.q) b.q = y.q;
+        g.boxes.push(b);
+        return { nodes: [], exit: pos };
+      }
+      case 'start': {
+        const at = p3(e.at);
+        const [w, d] = e.size ?? [14, 16];
+        const L = frame(at, e.heading);
+        platform(g, pal, at, w, d, e.heading, { seed: i });
+        g.slab(L(0, 0.03, d / 2 - 3.2), w - 1.2, 5, 0.03, e.heading, {
+          mat: 'sand',
+          color: pal.start,
+          noCollide: true,
+        });
+        archFrame(g, pal, L(0, 0, -d / 2 + 2), e.heading, w - 4.4, 6, pal.start);
+        const f = headingDir(e.heading);
+        const r = cross(f, UP);
+        grid = [];
+        for (let k = 0; k < 8; k++) {
+          const row = Math.floor(k / 4);
+          const col = (k % 4) - 1.5;
+          grid.push({
+            pos: round3(madd(madd(at, f, 2 - row * 2.5), r, col * 2.2)),
+            yawDeg: headingYaw(e.heading),
+          });
+        }
+        start = { respawn: round3(madd(at, f, 3.5)), yawDeg: headingYaw(e.heading) };
+        chevron(g, L(0, 0, -d / 2 + 4.5), e.heading, pal.arrow, 1.4);
+        const exit = L(0, 0, -d / 2 + 0.4);
+        return { nodes: [node(at), node(exit)], exit };
+      }
+      case 'stage':
+      case 'finish': {
+        const at = p3(e.at);
+        const [w, d] = e.size ?? [12, 14];
+        const L = frame(at, e.heading);
+        const isFinish = e.t === 'finish';
+        const glow = isFinish ? pal.finish : pal.stageGlow;
+        platform(g, pal, at, w, d, e.heading, { seed: i, edges: false });
+        stageRoom(
+          g,
+          pal,
+          at,
+          w,
+          d,
+          e.heading,
+          glow,
+          isFinish ? 'F' : String(checkpoints.length + 1),
+          data.roomMat ?? 'rock',
+          lights,
+        );
+        g.slab(L(0, 0.03, 0), w - 3.2, d - 2, 0.03, e.heading, {
+          mat: 'sand',
+          color: isFinish ? pal.finish : pal.ground2,
+          noCollide: true,
+        });
+        if (!isFinish) chevron(g, L(0, 0.03, -d / 2 + 2.5), e.heading, pal.arrow, 1.2);
+        // the gate: the room's inside (the AABB of it when turned)
+        const corners = [
+          L(-w / 2, -1.5, -d / 2),
+          L(w / 2, -1.5, -d / 2),
+          L(-w / 2, -1.5, d / 2),
+          L(w / 2, -1.5, d / 2),
+        ];
+        const min = v3(
+          Math.min(...corners.map((c) => c.x)),
+          at.y - 1.5,
+          Math.min(...corners.map((c) => c.z)),
+        );
+        const max = v3(
+          Math.max(...corners.map((c) => c.x)),
+          at.y + STAGE_H,
+          Math.max(...corners.map((c) => c.z)),
+        );
+        const gate: RaceGateDef = {
+          min: round3(min),
+          max: round3(max),
+          respawn: round3(L(0, 0, 1)),
+          yawDeg: headingYaw(e.heading),
+        };
+        if (e.t === 'stage' && e.name) gate.name = e.name;
+        if (e.t === 'stage' && e.cap) {
+          slowZones.push({ min: gate.min, max: gate.max, speedMul: e.cap / 9 });
+        }
+        const back = node(L(0, 0, d / 2 - 0.6));
+        const mid = node(at);
+        if (isFinish) finish = gate;
+        else checkpoints.push(gate);
+        cp++;
+        const exit = L(0, 0, -d / 2 + 0.4);
+        const nodes = isFinish ? [back, mid] : [back, mid, node(exit)];
+        return { nodes, exit };
+      }
+      case 'platform': {
+        const at = p3(e.at);
+        const [w, d] = e.size;
+        const h = e.heading ?? 0;
+        const style = e.style ?? 'island';
+        if (style === 'slab') g.slab(at, w, d, 1.2, h, { mat: 'rock', color: pal.ground2 });
+        else platform(g, pal, at, w, d, h, { seed: i, plain: style === 'plain' });
+        const nodes = [node(at)];
+        const nx = nextAnchor(i);
+        const go = e.go ?? 'run';
+        // (a walkway going on from here starts at its far edge)
+        let exit = frame(at, h)(0, 0, -d / 2);
+        if (nx && go !== 'run') {
+          exit = edgeToward(at, w, d, h, nx, go === 'jump' ? 0.3 : 0.6);
+          nodes.push(node(exit));
+          if (go !== 'hop')
+            chevron(
+              g,
+              madd(exit, normalize(sub(exit, at)), -1.8),
+              headingOf(sub(nx, at)),
+              pal.arrow,
+            );
+        }
+        return { nodes, exit };
+      }
+      case 'path': {
+        const b = p3(e.to);
+        // (starting a hand's breadth past the edge you step off: no corner cutting into it)
+        const a = e.from ? p3(e.from) : madd(pos, normalize(v3(b.x - pos.x, 0, b.z - pos.z)), 0.35);
+        const w = e.width ?? (e.style === 'beam' ? 1 : 4);
+        walkway(g, pal, a, b, w, e.style === 'beam');
+        return { nodes: [node(a), node(b)], exit: b };
+      }
+      case 'jumps': {
+        const nodes: RaceLineNode[] = [];
+        const nx = nextAnchor(i);
+        const hop = e.go === 'hop';
+        const bhop = e.style === 'bhop';
+        e.pads.forEach((pd, k) => {
+          const at = p3(pd.at);
+          const [w, d] = pd.size ?? [4, 4];
+          const h = pd.heading ?? 0;
+          platform(g, pal, at, w, d, h, {
+            seed: i * 31 + k,
+            top: bhop ? (pal.bhop ?? pal.pad) : k % 2 ? pal.ground2 : pal.ground,
+            depth: 1.5 + Math.min(w, d) * 0.3,
+          });
+          nodes.push(node(at));
+          const next = k + 1 < e.pads.length ? p3(e.pads[k + 1].at) : nx;
+          // bhop pads: a painted arrow toward the next pad (or where you leave the last)
+          if (bhop && next) chevron(g, at, headingOf(sub(next, at)), pal.arrow, 1.1);
+          if (!hop && next && k + 1 < e.pads.length)
+            nodes.push(node(edgeToward(at, w, d, h, next, 0.3), { jump: true }));
+        });
+        const last = p3(e.pads[e.pads.length - 1].at);
+        let exit = last;
+        if (!hop && nx && e.go === 'jump') {
+          const pd = e.pads[e.pads.length - 1];
+          const [w, d] = pd.size ?? [4, 4];
+          exit = edgeToward(last, w, d, pd.heading ?? 0, nx, 0.3);
+          nodes.push(node(exit));
+        }
+        return { nodes, exit };
+      }
+      case 'surf': {
+        const f = surfFrame(e);
+        // local x = the ridge, local y = up, local z = right of the way
+        const ridgeMid = scale(add(f.a, f.b), 0.5);
+        const c = sub(ridgeMid, scale(f.yl, e.height / 2));
+        const cz = f.prism === 0 ? 0 : -f.prism * f.hz;
+        const center = add(c, scale(f.zl, cz));
+        g.boxes.push({
+          c: round3(center),
+          h: round3(v3(f.length / 2, e.height / 2, f.hz)),
+          q: qFromBasis(scale(f.zl, -1), f.yl),
+          prism: f.prism,
+          surf: true,
+          mat: 'rock',
+          color: surfColor(e),
+          trim: pal.surfEdge,
+        });
+        const n = Math.max(2, Math.ceil(f.length / 10));
+        const nodes: RaceLineNode[] = [];
+        for (let k = 0; k <= n; k++) {
+          const t = 0.04 + (0.92 * k) / n;
+          nodes.push(node(rideAt(f, e, t), { strafe: true, surf: true }));
+        }
+        return { nodes, exit: nodes[nodes.length - 1].pos };
+      }
+      case 'launch': {
+        const at = p3(e.at);
+        const to = p3(e.to);
+        const T = e.flightSec;
+        const from = add(at, v3(0, 0.9, 0));
+        const aim = add(to, v3(0, 0.9, 0));
+        const vel = v3(
+          (aim.x - from.x) / T,
+          (aim.y - from.y + 0.5 * G * T * T) / T,
+          (aim.z - from.z) / T,
+        );
+        launchPads.push({
+          min: round3(v3(at.x - 1.3, at.y - 0.2, at.z - 1.3)),
+          max: round3(v3(at.x + 1.3, at.y + 1.6, at.z + 1.3)),
+          vel: round3(vel),
+        });
+        const h = headingOf(sub(to, at));
+        if (e.base !== false) platform(g, pal, at, 5, 5, h, { seed: i });
+        g.slab(add(at, v3(0, 0.06, 0)), 2.8, 2.8, 0.06, h, {
+          mat: 'sand',
+          color: pal.pad,
+          noCollide: true,
+        });
+        g.slab(add(at, v3(0, 0.12, 0)), 1.4, 1.4, 0.06, h + 45, {
+          mat: 'trim',
+          color: pal.pad,
+          noCollide: true,
+        });
+        return { nodes: [node(at, { strafe: true }), node(to)], exit: to };
+      }
+      case 'booster': {
+        const at = p3(e.at);
+        const f = headingDir(e.heading);
+        const [w, d] = e.size ?? [4, 5];
+        const vel = add(scale(f, e.speed), v3(0, e.up ?? 3, 0));
+        const L = frame(at, e.heading);
+        const corners = [
+          L(-w / 2, 0, -d / 2),
+          L(w / 2, 0, -d / 2),
+          L(-w / 2, 0, d / 2),
+          L(w / 2, 0, d / 2),
+        ];
+        const air = !!e.air;
+        const lo = air ? at.y - 0.5 : at.y - 0.2;
+        const hi = air ? at.y + (e.size?.[1] ?? 4) : at.y + 1.6;
+        launchPads.push({
+          min: round3(
+            v3(Math.min(...corners.map((c) => c.x)), lo, Math.min(...corners.map((c) => c.z))),
+          ),
+          max: round3(
+            v3(Math.max(...corners.map((c) => c.x)), hi, Math.max(...corners.map((c) => c.z))),
+          ),
+          vel: round3(vel),
+        });
+        if (air) ringFrame(g, L(0, 0, 0), e.heading, w, e.size?.[1] ?? 4, pal.pad);
+        else {
+          platform(g, pal, at, w + 2, d + 2, e.heading, { seed: i });
+          for (let k = 0; k < 3; k++)
+            chevron(g, L(0, 0.03, d / 2 - 1 - k * 1.6), e.heading, pal.pad, 1.1);
+        }
+        return { nodes: [node(at, air ? { strafe: true, air: true } : {})], exit: at };
+      }
+      case 'portal': {
+        const at = p3(e.at);
+        const [w, h] = e.size ?? [7, 8];
+        const f = headingDir(e.heading);
+        const L = frame(at, e.heading);
+        const color = e.color ?? pal.portal;
+        if (!e.air) platform(g, pal, L(0, 0, 1.5), w + 5, 7, e.heading, { seed: i });
+        archFrame(g, pal, at, e.heading, w, h, color, true);
+        const exit = p3(e.exit);
+        const pd: PortalDef = {
+          name: `portal-${portals.length + 1}`,
+          ...portalTrigger(e),
+          exit: round3(add(exit, v3(0, 0.95, 0))),
+          color,
+          dir: round3(f),
+        };
+        if (e.turn) pd.turn = e.turn;
+        if (e.offset) pd.offset = true;
+        if (e.vertical === 'zero') pd.vertical = 'zero';
+        if (e.glyph) pd.glyph = e.glyph;
+        portals.push(pd);
+        if (!e.air) chevron(g, L(0, 0, 2.6), e.heading, color, 1.2);
+        if (e.air) {
+          const mid = L(0, h / 2 - 0.9, 0);
+          return {
+            nodes: [node(mid, { portal: true, air: true, strafe: true }), node(exit)],
+            exit,
+          };
+        }
+        const before = node(L(0, 0, 4));
+        const through = node(at, { portal: true });
+        return { nodes: [before, through, node(exit)], exit };
+      }
+      case 'window': {
+        const at = p3(e.at);
+        const [hw, hh] = e.hole;
+        const [ww, wh] = e.wall ?? [hw + 8, hh + 10];
+        const L = frame(at, e.heading);
+        const below = (wh - hh) / 2;
+        const side = (ww - hw) / 2;
+        const t = 1;
+        const s = { mat: 'rock' as Material, color: pal.stage };
+        g.box(L(0, -below / 2, 0), v3(ww, below, t), e.heading, s);
+        g.box(L(0, hh + below / 2, 0), v3(ww, below, t), e.heading, s);
+        for (const k of [-1, 1])
+          g.box(L(k * (hw / 2 + side / 2), hh / 2, 0), v3(side, hh, t), e.heading, s);
+        // glowing rim round the hole (on the wall's faces)
+        for (const z of [-1, 1]) {
+          const zz = z * (t / 2 + 0.06);
+          const glow = { mat: 'sand' as Material, color: pal.stageGlow, noCollide: true };
+          g.box(L(0, hh + 0.2, zz), v3(hw + 0.8, 0.4, 0.12), e.heading, glow);
+          g.box(L(0, -0.2, zz), v3(hw + 0.8, 0.4, 0.12), e.heading, glow);
+          for (const k of [-1, 1])
+            g.box(L(k * (hw / 2 + 0.2), hh / 2, zz), v3(0.4, hh, 0.12), e.heading, glow);
+        }
+        const c = L(0, Math.min(1, hh / 3), 0);
+        return { nodes: [node(c, { air: true })], exit: c };
+      }
+      case 'pillars': {
+        const a = p3(e.from);
+        const b = p3(e.to);
+        const d = sub(b, a);
+        const r = normalize(cross(normalize(v3(d.x, 0, d.z)), UP));
+        const rad = e.radius ?? 1.2;
+        const ph = e.height ?? 14;
+        const h = headingOf(d);
+        const nodes: RaceLineNode[] = [];
+        for (let k = 0; k < e.count; k++) {
+          const t = (k + 0.5) / e.count;
+          const s = k % 2 ? 1 : -1;
+          const c = madd(madd(a, d, t), r, s * e.offset);
+          g.box(c, v3(rad * 2, ph, rad * 2), h + 45, { mat: 'rock', color: pal.accent });
+          for (const y of [-1, 1])
+            g.box(add(c, v3(0, y * (ph / 2 + 0.4), 0)), v3(rad * 2.6, 0.8, rad * 2.6), h + 45, {
+              mat: 'rock',
+              color: pal.rockDark,
+            });
+          nodes.push(node(madd(madd(a, d, t), r, -s * e.offset * 0.6)));
+        }
+        nodes.push(node(b));
+        return { nodes, exit: b };
+      }
+      case 'wall': {
+        const at = p3(e.at);
+        const [w, h, d] = e.size;
+        const hd = e.heading ?? 0;
+        g.box(add(at, v3(0, h / 2, 0)), v3(w, h, d), hd, { mat: 'rock', color: pal.stage });
+        g.box(add(at, v3(0, h + 0.3, 0)), v3(w + 0.8, 0.6, d + 0.8), hd, {
+          mat: 'rock',
+          color: pal.rockDark,
+        });
+        return { nodes: [], exit: pos };
+      }
+      case 'fuel': {
+        fuelCells.push(round3(add(p3(e.at), v3(0, 1.1, 0))));
+        return { nodes: [], exit: pos };
+      }
+    }
+  }
+
+  // stitch the line; every element's nodes in order
+  const line: RaceLineNode[] = [];
+  /** index in `line` of each element's first node (or where it would be) */
+  const firstNode: number[] = [];
+  elementNodes.forEach((ns) => {
+    firstNode.push(line.length);
+    for (const n of ns) {
+      const prev = line[line.length - 1];
+      if (prev && prev.pos.x === n.pos.x && prev.pos.y === n.pos.y && prev.pos.z === n.pos.z) {
+        Object.assign(prev, { ...n, cp: prev.cp });
+        continue;
+      }
+      line.push(n);
+    }
+  });
+  // a restart bay's way back joins the racing line at the node after its landing (the line node
+  // of the same section nearest to `to`, from the bay's own place on the route on)
+  for (const b of bays) {
+    const from = firstNode[b.el];
+    const sec = b.def.bayLine?.[0]?.cp ?? 0;
+    let best = -1;
+    let bestD = Infinity;
+    for (let k = from; k < line.length && line[k].cp <= sec; k++) {
+      if (line[k].cp !== sec) continue;
+      const d = len(sub(line[k].pos, b.to));
+      if (d < bestD) {
+        bestD = d;
+        best = k;
+      }
+    }
+    if (best < 0) continue;
+    b.def.join = Math.min(line.length - 1, best + 1);
+    // (the landing rides like the route there: a hop pad hops, a ramp is surfed)
+    const bl = b.def.bayLine!;
+    const { pos: _, ...flags } = line[best];
+    bl[bl.length - 1] = { ...flags, pos: bl[bl.length - 1].pos, cp: sec };
+  }
+  return {
+    line,
+    elementNodes,
+    checkpoints,
+    anchors,
+    finish,
+    start,
+    grid,
+    launchPads,
+    portals,
+    fuelCells,
+    slowZones,
+  };
+};
+
+/** Room height of checkpoint stages (floor to roof). */
+const STAGE_H = 6;
+/** Red zones' red when the palette has none (a hazard red, never a copper or a lantern). */
+const HAZARD = 0xe8242c;
+
+/**
+ * A checkpoint room on a platform: side walls with big windows, a roof and a cornice, glowing
+ * door frames and window sills, a light inside, its number over the exit.
+ */
+const stageRoom = (
+  g: Geo,
+  pal: CoursePalette,
+  at: Vec3,
+  w: number,
+  d: number,
+  heading: number,
+  glow: number,
+  label: string,
+  mat: Material,
+  lights: LightDef[],
+): void => {
+  const L = frame(at, heading);
+  const t = 0.8;
+  const H = STAGE_H;
+  const wall = { mat, color: pal.stage };
+  const shine = { mat: 'glow' as Material, color: glow, noCollide: true, lowDetail: true };
+  // the windows: from the sill to 4.4 m, between two solid posts at each end
+  const sill = 1.2;
+  const top = 4.4;
+  const post = 1.8;
+  for (const s of [-1, 1]) {
+    const x = s * (w / 2 - t / 2);
+    g.box(L(x, sill / 2, 0), v3(t, sill, d), heading, wall);
+    g.box(L(x, top + (H - top) / 2, 0), v3(t, H - top, d), heading, wall);
+    for (const z of [-1, 1])
+      g.box(
+        L(x, sill + (top - sill) / 2, z * (d / 2 - post / 2)),
+        v3(t, top - sill, post),
+        heading,
+        wall,
+      );
+    // a glowing sill, and a glowing strip along the floor by the wall
+    g.box(L(x, sill + 0.06, 0), v3(t * 0.6, 0.12, d - 2 * post), heading, shine);
+    g.box(L(s * (w / 2 - t - 0.35), 0.03, 0), v3(0.3, 0.06, d - 1), heading, shine);
+  }
+  g.box(L(0, H + 0.35, 0), v3(w, 0.7, d), heading, wall);
+  // a cornice round the roof
+  g.box(L(0, H + 0.9, 0), v3(w + 0.8, 0.4, d + 0.8), heading, { mat, color: pal.rockDark });
+  // glowing frames round both doorways (on the wall ends and the roof's edges)
+  for (const z of [-1, 1]) {
+    const zz = z * (d / 2 + 0.1);
+    for (const s of [-1, 1])
+      g.box(L(s * (w / 2 - t / 2), H / 2, zz), v3(t, H, 0.2), heading, {
+        mat: 'sand',
+        color: glow,
+        noCollide: true,
+      });
+    g.box(L(0, H + 0.35, zz), v3(w - 2 * t, 0.7, 0.2), heading, {
+      mat: 'trim',
+      color: glow,
+      noCollide: true,
+    });
+  }
+  lights.push({ pos: L(0, H - 1.2, 0), color: glow, radius: 10, intensity: 0.9 });
+  // the stage number on a board over the exit, standing on the cornice
+  const by = H + 1.1 + 1.3;
+  g.box(L(0, by, -d / 2 + 0.3), v3(4.2, 2.6, 0.6), heading, {
+    mat: 'rock',
+    color: pal.rockDark,
+    noCollide: true,
+  });
+  digits(g, L(0, by, -d / 2), heading, label === 'F' ? '' : label, glow, 1.7);
+  if (label === 'F') {
+    // a chequered strip instead of a number
+    for (let k = 0; k < 6; k++)
+      g.box(
+        L(-1.75 + k * 0.7, by + (k % 2 ? 0.35 : -0.35), -d / 2 - 0.06),
+        v3(0.7, 0.7, 0.12),
+        heading,
+        {
+          mat: 'sand',
+          color: k % 2 ? 0xffffff : 0x202020,
+          noCollide: true,
+        },
+      );
+  }
+};
+
+/** A free-standing arch (start line, portal frame): two posts and a lintel standing on `at`. */
+const archFrame = (
+  g: Geo,
+  pal: CoursePalette,
+  at: Vec3,
+  heading: number,
+  w: number,
+  h: number,
+  glow: number,
+  big = false,
+): void => {
+  const L = frame(at, heading);
+  const t = big ? 1.4 : 0.8;
+  const s = { mat: 'rock' as Material, color: pal.stage };
+  for (const k of [-1, 1]) {
+    g.box(L(k * (w / 2 + t / 2), h / 2, 0), v3(t, h, t), heading, s);
+    // glow strips on the posts' inner faces
+    g.box(L(k * (w / 2 - 0.06), h / 2, 0), v3(0.12, h - 0.4, t * 0.5), heading, {
+      mat: big ? 'trim' : 'sand',
+      color: glow,
+      noCollide: true,
+    });
+  }
+  g.box(L(0, h + t / 2, 0), v3(w + 2 * t, t, t), heading, s);
+  g.box(L(0, h - 0.06, 0), v3(w - 0.4, 0.12, t * 0.5), heading, {
+    mat: 'trim',
+    color: glow,
+    noCollide: true,
+  });
+  if (big) {
+    // a crown on the lintel
+    g.box(L(0, h + t + 0.5, 0), v3(w * 0.5, 1, t * 0.8), heading, s);
+  }
+};
+
+/** A square ring (an air booster) standing across the way; `at` = bottom middle. */
+const ringFrame = (
+  g: Geo,
+  at: Vec3,
+  heading: number,
+  w: number,
+  h: number,
+  color: number,
+): void => {
+  const L = frame(at, heading);
+  const t = 0.35;
+  const s = { mat: 'trim' as Material, color, noCollide: true };
+  g.box(L(0, -t / 2, 0), v3(w + 2 * t, t, t), heading, s);
+  g.box(L(0, h + t / 2, 0), v3(w + 2 * t, t, t), heading, s);
+  for (const k of [-1, 1]) g.box(L(k * (w / 2 + t / 2), h / 2, 0), v3(t, h, t), heading, s);
+};
+
+/** A walkway (or a bare beam) from a to b: a top slab and a body under it, face to face. */
+const walkway = (g: Geo, pal: CoursePalette, a: Vec3, b: Vec3, w: number, beam: boolean): void => {
+  const d = sub(b, a);
+  const L = len(d);
+  if (L < 1e-6) return;
+  const fwd = scale(d, 1 / L);
+  const right = normalize(cross(fwd, UP), v3(1, 0, 0));
+  const n = cross(right, fwd);
+  const flat = Math.abs(fwd.y) < 1e-6;
+  const thick = beam ? 0.5 : 0.6;
+  const top = { mat: 'sand' as Material, color: beam ? pal.accent2 : pal.ground };
+  const mid = scale(add(a, b), 0.5);
+  if (flat) {
+    const h = headingOf(fwd);
+    g.slab(mid, w, L, thick, h, top);
+    if (!beam)
+      g.slab(add(mid, v3(0, -thick, 0)), w * 0.8, L, 1.2, h, { mat: 'rock', color: pal.rock });
+    return;
+  }
+  const q = qFromBasis(fwd, n);
+  g.boxes.push({
+    c: round3(madd(mid, n, -thick / 2)),
+    h: round3(v3(w / 2, thick / 2, L / 2)),
+    q,
+    ...top,
+  });
+  if (!beam)
+    g.boxes.push({
+      c: round3(madd(mid, n, -thick - 0.6)),
+      h: round3(v3((w * 0.8) / 2, 0.6, L / 2)),
+      q,
+      mat: 'rock',
+      color: pal.rock,
+    });
+};
+
+// ------------------------------------------------------------------------------------------
+// Scenery
+
+const ISLAND_TOPS = (pal: CoursePalette): Record<IslandStyle, number> => ({
+  grass: pal.leaf,
+  snow: 0xeef3f7,
+  stone: pal.ground,
+  basalt: pal.rockDark,
+  neon: pal.rockDark,
+});
+
+/** Is (x, z) at least `r` metres (horizontally) from every point of the line? */
+export const clearOfLine = (line: readonly Vec3[], x: number, z: number, r: number): boolean => {
+  for (let i = 0; i < line.length; i++) {
+    const a = line[i];
+    const b = line[i + 1] ?? a;
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const l2 = abx * abx + abz * abz;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / l2)) : 0;
+    const dx = a.x + abx * t - x;
+    const dz = a.z + abz * t - z;
+    if (dx * dx + dz * dz < r * r) return false;
+  }
+  return true;
+};
+
+const island = (
+  g: Geo,
+  pal: CoursePalette,
+  at: Vec3,
+  w: number,
+  d: number,
+  depth: number,
+  style: IslandStyle,
+  heading: number,
+  seed: number,
+): void => {
+  const topC = ISLAND_TOPS(pal)[style];
+  const thick = Math.min(1.6, 0.4 + depth * 0.08);
+  // a lip: the top overhangs its body a little
+  g.slab(at, w, d, thick, heading, {
+    mat: style === 'grass' ? 'leaf' : 'sand',
+    color: topC,
+    noCollide: true,
+    lowDetail: true,
+  });
+  let y = at.y - thick;
+  let k = 0.9;
+  const tiers = depth > 12 ? 4 : 3;
+  for (let i = 0; i < tiers; i++) {
+    const hh = (depth * (tiers - i)) / ((tiers * (tiers + 1)) / 2);
+    const turn = heading + (hash01(seed * 13 + i) - 0.5) * 30;
+    const color =
+      style === 'neon' ? (i % 2 ? pal.rockDark : pal.rock) : i % 2 ? pal.rockDark : pal.rock;
+    g.box(v3(at.x, y - hh / 2, at.z), v3(w * k, hh, d * k), turn, {
+      mat: 'rock',
+      color,
+      noCollide: true,
+      lowDetail: true,
+    });
+    y -= hh;
+    k *= 0.66;
+  }
+  // roots / stalactites / glowing drips under it
+  const n = Math.min(6, 2 + Math.floor((w * d) / 150));
+  const L = frame(v3(at.x, y, at.z), heading);
+  for (let i = 0; i < n; i++) {
+    const hh = 1.5 + hash01(seed * 7 + i) * depth * 0.4;
+    const sw = 0.4 + hash01(seed * 11 + i) * 1.2;
+    const c = L(
+      (hash01(seed * 3 + i) - 0.5) * w * k * 0.9,
+      -hh / 2,
+      (hash01(seed * 5 + i) - 0.5) * d * k * 0.9,
+    );
+    g.box(c, v3(sw, hh, sw), heading + i * 37, {
+      mat: style === 'grass' ? 'wood' : 'rock',
+      color:
+        style === 'grass'
+          ? pal.trunk
+          : style === 'basalt'
+            ? pal.danger
+            : style === 'neon'
+              ? pal.accent
+              : pal.rockDark,
+      noCollide: true,
+      lowDetail: true,
+    });
+  }
+};
+
+const tree = (
+  g: Geo,
+  pal: CoursePalette,
+  at: Vec3,
+  h: number,
+  kind: string,
+  seed: number,
+): void => {
+  const turn = hash01(seed) * 90;
+  const leaf = { mat: 'leaf' as Material, noCollide: true };
+  if (kind === 'pine') {
+    g.box(add(at, v3(0, h * 0.125, 0)), v3(h * 0.08, h * 0.25, h * 0.08), turn, {
+      mat: 'wood',
+      color: pal.trunk,
+      noCollide: true,
+    });
+    for (let i = 0; i < 3; i++) {
+      const w = h * (0.5 - i * 0.13);
+      g.box(add(at, v3(0, h * (0.25 + i * 0.25 + 0.125), 0)), v3(w, h * 0.25, w), turn + i * 45, {
+        ...leaf,
+        color: i === 1 ? pal.leaf : pal.leafDark,
+      });
+    }
+    return;
+  }
+  if (kind === 'dead') {
+    g.box(add(at, v3(0, h * 0.4, 0)), v3(h * 0.07, h * 0.8, h * 0.07), turn, {
+      mat: 'wood',
+      color: pal.trunk,
+      noCollide: true,
+    });
+    g.box(add(at, v3(h * 0.12, h * 0.6, 0)), v3(h * 0.17, h * 0.05, h * 0.05), turn, {
+      mat: 'wood',
+      color: pal.trunk,
+      noCollide: true,
+    });
+    return;
+  }
+  const trunkH = kind === 'palm' ? 0.8 : 0.55;
+  const t = Math.max(0.3, h * 0.06);
+  g.box(add(at, v3(0, (h * trunkH) / 2, 0)), v3(t * 2, h * trunkH, t * 2), turn, {
+    mat: 'wood',
+    color: pal.trunk,
+    noCollide: true,
+  });
+  const crown = kind === 'palm' ? h * 0.3 : h * 0.34;
+  const ch = h * (1 - trunkH) * 0.55;
+  g.box(add(at, v3(0, h * trunkH + ch / 2, 0)), v3(crown * 2, ch, crown * 2), turn + 20, {
+    ...leaf,
+    color: pal.leafDark,
+  });
+  const ch2 = h * (1 - trunkH) * 0.45;
+  g.box(
+    add(at, v3(0, h * trunkH + ch + ch2 / 2, 0)),
+    v3(crown * 1.4, ch2, crown * 1.4),
+    turn + 55,
+    { ...leaf, color: pal.leaf },
+  );
+};
+
+const expandScenery = (
+  data: CourseData,
+  g: Geo,
+  line: Vec3[],
+  lights: { pos: Vec3; color: number; radius: number; intensity: number }[],
+): void => {
+  const pal = data.palette;
+  const placed: { x: number; z: number; y0: number; y1: number; r: number }[] = [];
+  const free = (x: number, z: number, y0: number, y1: number, r: number) =>
+    placed.every((q) => Math.hypot(q.x - x, q.z - z) > q.r + r || y1 < q.y0 || y0 > q.y1);
+  const one = (e: SceneryElement, seed: number): void => {
+    switch (e.t) {
+      case 'island': {
+        const [w, d] = e.size;
+        island(g, pal, p3(e.at), w, d, e.depth, e.style ?? 'grass', e.heading ?? 0, seed);
+        placed.push({
+          x: e.at[0],
+          z: e.at[2],
+          y0: e.at[1] - e.depth * 1.5,
+          y1: e.at[1] + 2,
+          r: Math.hypot(w, d) / 2,
+        });
+        return;
+      }
+      case 'tree':
+        tree(g, pal, p3(e.at), e.height, e.kind ?? 'broad', seed);
+        return;
+      case 'rock': {
+        const at = p3(e.at);
+        const s = e.size;
+        const h = e.heading ?? hash01(seed) * 90;
+        g.box(add(at, v3(0, s * 0.35, 0)), v3(s * 2, s * 0.7, s * 1.7), h, {
+          mat: 'rock',
+          color: pal.rock,
+          noCollide: true,
+        });
+        g.box(add(at, v3(0, s * 0.7 + s * 0.25, 0)), v3(s * 1.3, s * 0.5, s * 1.2), h + 35, {
+          mat: 'rock',
+          color: pal.rockDark,
+          noCollide: true,
+        });
+        return;
+      }
+      case 'crystal': {
+        const at = p3(e.at);
+        const h = e.height;
+        const c = e.color ?? pal.crystal;
+        const turn = hash01(seed) * 90;
+        g.box(add(at, v3(0, h * 0.4, 0)), v3(h * 0.22, h * 0.8, h * 0.22), turn, {
+          mat: 'sand',
+          color: c,
+          noCollide: true,
+        });
+        g.box(add(at, v3(0, h * 0.9, 0)), v3(h * 0.12, h * 0.2, h * 0.12), turn + 45, {
+          mat: 'sand',
+          color: c,
+          noCollide: true,
+        });
+        return;
+      }
+      case 'lantern': {
+        const at = p3(e.at);
+        g.box(add(at, v3(0, 1.2, 0)), v3(0.2, 2.4, 0.2), 0, {
+          mat: 'wood',
+          color: pal.trunk,
+          noCollide: true,
+        });
+        g.box(add(at, v3(0, 2.7, 0)), v3(0.6, 0.6, 0.6), 45, {
+          mat: 'trim',
+          color: pal.accent2,
+          noCollide: true,
+        });
+        g.box(add(at, v3(0, 3.1, 0)), v3(0.9, 0.2, 0.9), 45, {
+          mat: 'wood',
+          color: pal.trunk,
+          noCollide: true,
+        });
+        lights.push({ pos: add(at, v3(0, 2.7, 0)), color: pal.accent2, radius: 7, intensity: 0.8 });
+        return;
+      }
+      case 'banner': {
+        const at = p3(e.at);
+        const h = e.height;
+        const L = frame(at, e.heading);
+        g.box(add(at, v3(0, h / 2, 0)), v3(0.25, h, 0.25), e.heading, {
+          mat: 'wood',
+          color: pal.trunk,
+          noCollide: true,
+        });
+        g.box(L(0.125 + 0.9, h - 1.8, 0), v3(1.8, 3, 0.1), e.heading, {
+          mat: 'sand',
+          color: e.color ?? pal.accent,
+          noCollide: true,
+        });
+        return;
+      }
+      case 'waterfall': {
+        // a stream over the lip (lying on the top), then the fall a little out from the edge
+        const at = p3(e.at);
+        const L = frame(at, e.heading);
+        const water = { mat: 'sand' as Material, noCollide: true, lowDetail: true };
+        g.box(L(0, 0.05, 0), v3(e.width, 0.1, 3), e.heading, { ...water, color: 0xe6f6fb });
+        const top = Math.min(3, e.drop * 0.2);
+        g.box(L(0, 0.1 - top / 2, -1.85), v3(e.width, top, 0.7), e.heading, {
+          ...water,
+          color: 0xd2eef8,
+        });
+        g.box(
+          L(0, 0.1 - top - (e.drop - top) / 2, -1.85),
+          v3(e.width * 0.92, e.drop - top, 0.7),
+          e.heading,
+          {
+            ...water,
+            color: pal.water,
+          },
+        );
+        return;
+      }
+      case 'ruin': {
+        const at = p3(e.at);
+        const [w, d] = e.size;
+        const L = frame(at, e.heading);
+        const h = e.height;
+        const cols: [number, number, number][] = [
+          [-w / 2, -d / 2, h],
+          [w / 2, -d / 2, h],
+          [-w / 2, d / 2, h * 0.55],
+          [w / 2, d / 2, h],
+        ];
+        for (const [x, z, hh] of cols) {
+          g.box(L(x, hh / 2, z), v3(1, hh, 1), e.heading, {
+            mat: 'rock',
+            color: pal.ground2,
+            noCollide: true,
+          });
+          g.box(L(x, hh + 0.2, z), v3(1.4, 0.4, 1.4), e.heading, {
+            mat: 'rock',
+            color: pal.ground,
+            noCollide: true,
+          });
+        }
+        g.box(L(0, h + 0.4 + 0.35, -d / 2), v3(w + 1.4, 0.7, 1.4), e.heading, {
+          mat: 'rock',
+          color: pal.ground2,
+          noCollide: true,
+        });
+        return;
+      }
+      case 'spire': {
+        const at = p3(e.at);
+        let y = at.y;
+        let w = e.width;
+        const parts = 5;
+        for (let i = 0; i < parts; i++) {
+          const hh = e.height / parts;
+          g.box(v3(at.x, y + hh / 2, at.z), v3(w, hh, w), hash01(seed + i) * 20 + i * 11, {
+            mat: 'rock',
+            color: i % 2 ? pal.rockDark : (e.color ?? pal.rock),
+            noCollide: true,
+            lowDetail: true,
+          });
+          y += hh;
+          w *= 0.78;
+        }
+        g.box(v3(at.x, y + w * 0.6, at.z), v3(w * 0.6, w * 1.2, w * 0.6), 45, {
+          mat: 'trim',
+          color: pal.accent2,
+          noCollide: true,
+        });
+        lights.push({
+          pos: v3(at.x, y + w * 0.6, at.z),
+          color: pal.accent2,
+          radius: 10,
+          intensity: 0.9,
+        });
+        return;
+      }
+      case 'cloud': {
+        // a drifting cloud: a low wide puff with rounder ones heaped on it (octagons)
+        const at = p3(e.at);
+        const [w, d] = e.size;
+        const cl = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
+        const turn = hash01(seed) * 45;
+        let y = at.y - Math.min(w, d) * 0.3;
+        for (const [k, hk] of [
+          [1, 0.12],
+          [0.65, 0.12],
+          [0.35, 0.1],
+        ]) {
+          const h = Math.min(w, d) * hk;
+          for (const t of [0, 45])
+            g.box(v3(at.x, y + h / 2, at.z), v3(w * k, h, d * k), turn + t, cl);
+          y += h;
+        }
+        return;
+      }
+      case 'arch': {
+        const at = p3(e.at);
+        const L = frame(at, e.heading);
+        const c = Math.max(1.5, e.width * 0.12);
+        const col = { mat: 'rock' as Material, color: e.color ?? pal.stage, noCollide: true };
+        for (const k of [-1, 1]) {
+          g.box(
+            L(k * (e.width / 2 + c / 2), 0.8 + (e.height - 0.8) / 2, 0),
+            v3(c, e.height - 0.8, c),
+            e.heading,
+            col,
+          );
+          g.box(L(k * (e.width / 2 + c / 2), 0.4, 0), v3(c * 1.4, 0.8, c * 1.4), e.heading, {
+            ...col,
+            color: pal.rockDark,
+          });
+        }
+        g.box(
+          L(0, e.height + c * 0.4, 0),
+          v3(e.width + 2 * c + 1, c * 0.8, c * 1.1),
+          e.heading,
+          col,
+        );
+        // a glowing strip under the lintel
+        g.box(L(0, e.height - 0.15, 0), v3(e.width, 0.3, c * 0.5), e.heading, {
+          mat: 'glow',
+          color: pal.stageGlow,
+          noCollide: true,
+          lowDetail: true,
+        });
+        return;
+      }
+      case 'block': {
+        const at = p3(e.at);
+        const [w, h, d] = e.size;
+        const glass = e.color ?? pal.crystal;
+        const s: Style =
+          e.mat === 'glass'
+            ? // a see-through pane (edges drawn): never collides, never a floor or a wall
+              { mat: 'skyglass', color: glass, trim: glass, noCollide: true }
+            : { mat: e.mat ?? 'rock', color: e.color ?? pal.rock };
+        if (!e.solid) s.noCollide = true;
+        if (e.lowDetail) s.lowDetail = true;
+        if (e.round) {
+          // an eight-sided column: two squares a quarter turn apart (one solid)
+          for (const t of [0, 45])
+            g.box(add(at, v3(0, h / 2, 0)), v3(w * 0.83, h, w * 0.83), (e.heading ?? 0) + t, s);
+        } else g.box(add(at, v3(0, h / 2, 0)), v3(w, h, d), e.heading ?? 0, s);
+        return;
+      }
+      case 'water': {
+        // one flat sheet (a quad per face): it never collides, the kill height lies under it —
+        // or (shallow) a canal floor `depth` under it you land on (its slow zone: expandCourse)
+        const at = p3(e.at);
+        g.box(add(at, v3(0, -0.25, 0)), v3(e.size[0], 0.5, e.size[1]), 0, {
+          mat: 'water',
+          color: e.color ?? pal.water,
+          noCollide: true,
+          lowDetail: true,
+        });
+        // (the floor under the water is never seen up close: one flat quad per face)
+        if (e.shallow)
+          g.box(add(at, v3(0, -(e.depth ?? 1) - 0.5, 0)), v3(e.size[0], 1, e.size[1]), 0, {
+            mat: 'sand',
+            color: pal.rockDark,
+            lowDetail: true,
+          });
+        return;
+      }
+      case 'lighthouse': {
+        // a tapering limestone tower in drums, a gallery, the lens room glowing, a cap; the
+        // beam is a long pale shaft pointing along `heading`
+        const at = p3(e.at);
+        const H = e.height;
+        const drums = 6;
+        let y = at.y;
+        let r = Math.max(4, H * 0.1);
+        for (let k = 0; k < drums; k++) {
+          const hh = (H * 0.78) / drums;
+          const s: Style = {
+            mat: 'rock',
+            color: k % 2 ? pal.stage : pal.ground,
+            noCollide: true,
+            lowDetail: true,
+          };
+          for (const t of [0, 45])
+            g.box(v3(at.x, y + hh / 2, at.z), v3(r * 2 * 0.83, hh, r * 2 * 0.83), t + 22.5, s);
+          y += hh;
+          r *= 0.93;
+        }
+        for (const t of [0, 45])
+          g.box(v3(at.x, y + 0.4, at.z), v3(r * 2.6 * 0.83, 0.8, r * 2.6 * 0.83), t + 22.5, {
+            mat: 'rock',
+            color: pal.accent,
+            noCollide: true,
+            lowDetail: true,
+          });
+        y += 0.8;
+        const lens = H * 0.1;
+        for (const t of [0, 45])
+          g.box(v3(at.x, y + lens / 2, at.z), v3(r * 1.5 * 0.83, lens, r * 1.5 * 0.83), t + 22.5, {
+            mat: 'glow',
+            color: 0xfff1c2,
+            noCollide: true,
+            lowDetail: true,
+          });
+        lights.push({
+          pos: v3(at.x, y + lens / 2, at.z),
+          color: 0xffe7a8,
+          radius: 30,
+          intensity: 1.4,
+        });
+        y += lens;
+        for (const t of [0, 45])
+          g.box(
+            v3(at.x, y + lens * 0.3, at.z),
+            v3(r * 1.9 * 0.83, lens * 0.6, r * 1.9 * 0.83),
+            t + 22.5,
+            {
+              mat: 'rock',
+              color: pal.accent,
+              noCollide: true,
+              lowDetail: true,
+            },
+          );
+        const beam = H * 0.4;
+        const f = headingDir(e.heading ?? 0);
+        g.box(
+          madd(v3(at.x, y - lens / 2, at.z), f, beam / 2 + r),
+          v3(r * 0.9, r * 0.9, beam),
+          e.heading ?? 0,
+          { mat: 'glow', color: 0x6f6a52, noCollide: true, lowDetail: true },
+        );
+        return;
+      }
+      case 'lamp': {
+        const at = p3(e.at);
+        const hgt = e.height ?? 3.2;
+        const color = e.color ?? 0xffc46b;
+        g.box(add(at, v3(0, hgt / 2, 0)), v3(0.22, hgt, 0.22), 0, {
+          mat: 'rock',
+          color: pal.rockDark,
+          noCollide: true,
+        });
+        g.box(add(at, v3(0, hgt + 0.3, 0)), v3(0.55, 0.6, 0.55), 45, {
+          mat: 'glow',
+          color,
+          noCollide: true,
+          lowDetail: true,
+        });
+        lights.push({ pos: add(at, v3(0, hgt + 0.3, 0)), color, radius: 9, intensity: 1 });
+        return;
+      }
+      case 'arrow': {
+        const at = p3(e.at);
+        const c = e.color ?? pal.arrow;
+        for (const s of [-1, 1]) {
+          const d = headingDir(e.heading + s * 40);
+          const p = madd(madd(at, cross(headingDir(e.heading), UP), s * 0.9), d, -0.6);
+          g.box(p, v3(0.5, 0.5, 3), e.heading + s * 40, { mat: 'sand', color: c, noCollide: true });
+        }
+        return;
+      }
+      case 'scatter': {
+        let made = 0;
+        for (let k = 0; made < e.count && k < e.count * 30; k++) {
+          const s = e.seed * 1000 + k;
+          const x = e.min[0] + hash01(s * 3 + 1) * (e.max[0] - e.min[0]);
+          const y = e.min[1] + hash01(s * 3 + 2) * (e.max[1] - e.min[1]);
+          const z = e.min[2] + hash01(s * 3 + 3) * (e.max[2] - e.min[2]);
+          const size = e.size[0] + hash01(s * 7 + 5) * (e.size[1] - e.size[0]);
+          // (towers and crystals stand on an island of their own, never float bare)
+          const r =
+            e.kind === 'crystal' ? size * 0.6 : e.kind === 'spire' ? size * 0.4 : size * 0.75;
+          if (e.clear && !clearOfLine(line, x, z, e.clear + r)) continue;
+          const y0 =
+            e.kind === 'island'
+              ? y - size * 1.2
+              : e.kind === 'cloud'
+                ? y - size * 0.4
+                : y - (e.kind === 'crystal' ? size * 0.9 : size * 0.45) * 1.3;
+          const y1 = e.kind === 'spire' || e.kind === 'crystal' ? y + size * 1.3 : y + 3;
+          if (!free(x, z, y0, y1, r)) continue;
+          placed.push({ x, z, y0, y1, r });
+          if (e.kind === 'island')
+            one(
+              {
+                t: 'island',
+                at: [x, y, z],
+                size: [size, size * (0.6 + hash01(s) * 0.5)],
+                depth: size * 0.55,
+                style: e.style,
+                heading: hash01(s * 11) * 90,
+              },
+              s,
+            );
+          else if (e.kind === 'cloud')
+            one({ t: 'cloud', at: [x, y, z], size: [size, size * 0.6] }, s);
+          else {
+            const base = e.kind === 'crystal' ? size * 0.9 : size * 0.45;
+            island(
+              g,
+              pal,
+              v3(x, y, z),
+              base,
+              base * 0.85,
+              base * 0.7,
+              e.style ?? 'stone',
+              hash01(s) * 90,
+              s,
+            );
+            if (e.kind === 'crystal') {
+              one({ t: 'crystal', at: [x, y, z], height: size }, s);
+              one(
+                { t: 'crystal', at: [x + size * 0.3, y, z + size * 0.15], height: size * 0.55 },
+                s + 1,
+              );
+            } else one({ t: 'spire', at: [x, y, z], height: size, width: size * 0.18 }, s);
+          }
+          made++;
+        }
+        return;
+      }
+    }
+  };
+  (data.scenery ?? []).forEach((e, i) => one(e, i + 1));
+};
+
+/** A box's world bounds (min x, y, z, max x, y, z). */
+const aabbOf = (b: BoxDef): number[] => {
+  const q = b.q;
+  const ax = q ? qRotate(q, v3(1, 0, 0)) : v3(1, 0, 0);
+  const ay = q ? qRotate(q, v3(0, 1, 0)) : v3(0, 1, 0);
+  const az = q ? qRotate(q, v3(0, 0, 1)) : v3(0, 0, 1);
+  const ex = Math.abs(ax.x) * b.h.x + Math.abs(ay.x) * b.h.y + Math.abs(az.x) * b.h.z;
+  const ey = Math.abs(ax.y) * b.h.x + Math.abs(ay.y) * b.h.y + Math.abs(az.y) * b.h.z;
+  const ez = Math.abs(ax.z) * b.h.x + Math.abs(ay.z) * b.h.y + Math.abs(az.z) * b.h.z;
+  return [b.c.x - ex, b.c.y - ey, b.c.z - ez, b.c.x + ex, b.c.y + ey, b.c.z + ez];
+};
+/** Does min..max stay clear of every bounds in the list? */
+const clearBox = (
+  list: number[][],
+  x0: number,
+  y0: number,
+  z0: number,
+  x1: number,
+  y1: number,
+  z1: number,
+) => list.every((a) => a[3] < x0 || a[0] > x1 || a[4] < y0 || a[1] > y1 || a[5] < z0 || a[2] > z1);
+
+/** The deadly cloud seas: kill volumes, a cloud layer on top and a dark floor under it. */
+const expandFloors = (data: CourseData, g: Geo, line: RaceLineNode[], solid: number[][]) => {
+  const pal = data.palette;
+  const killVolumes: { min: Vec3; max: Vec3 }[] = [];
+  const floors = [...data.floors];
+  if (data.autoFloors) {
+    // a floor under every stretch of the line: a new stretch at every checkpoint, past every
+    // portal, and wherever the way has climbed or dropped too far for one floor to be close
+    const { below, pad } = data.autoFloors;
+    const chunks: RaceLineNode[][] = [[]];
+    let lo = Infinity;
+    let hi = -Infinity;
+    line.forEach((n, i) => {
+      const prev = line[i - 1];
+      const y = n.pos.y;
+      if (prev && (prev.cp !== n.cp || prev.portal || Math.max(hi, y) - Math.min(lo, y) > 16)) {
+        chunks.push([]);
+        lo = Infinity;
+        hi = -Infinity;
+      }
+      chunks[chunks.length - 1].push(n);
+      lo = Math.min(lo, y);
+      hi = Math.max(hi, y);
+    });
+    for (const ns of chunks) {
+      if (!ns.length) continue;
+      const base = Math.round(Math.min(...ns.map((n) => n.pos.y)) - below);
+      const xs = ns.map((n) => n.pos.x);
+      const zs = ns.map((n) => n.pos.z);
+      // as wide as it can be without reaching under another stretch of the way: nothing you can
+      // stand on (a node of the line, the foot of a lower surf ramp, a landing) may be inside it
+      // or less than 3 m above it, so it sinks under whatever is there (up to 20 m), else shrinks
+      for (const r of [pad, pad / 2, 6]) {
+        const x0 = Math.round(Math.min(...xs) - r);
+        const z0 = Math.round(Math.min(...zs) - r);
+        const x1 = Math.round(Math.max(...xs) + r);
+        const z1 = Math.round(Math.max(...zs) + r);
+        /** The lowest thing in reach of a floor at `y` (Infinity: none). */
+        const clash = (y: number): number => {
+          let low = Infinity;
+          for (const n of line)
+            if (n.pos.x > x0 && n.pos.x < x1 && n.pos.z > z0 && n.pos.z < z1)
+              if (n.pos.y + 0.9 > y - 25 - 3 && n.pos.y < y + 3) low = Math.min(low, n.pos.y);
+          for (const a of solid)
+            if (a[0] <= x1 && a[3] >= x0 && a[2] <= z1 && a[5] >= z0)
+              if (a[4] > y - 25 - 3 && a[1] < y + 3) low = Math.min(low, a[1]);
+          return low;
+        };
+        let y = base;
+        for (let low = clash(y); low < Infinity && y >= base - 20; low = clash(y))
+          y = Math.floor(low - 3);
+        if (y >= base - 20) {
+          floors.push({ y, min: [x0, z0], max: [x1, z1] });
+          break;
+        }
+      }
+    }
+  }
+  const cloud = { mat: 'cloud' as Material, color: pal.cloud, noCollide: true, lowDetail: true };
+  /**
+   * The cloud colour warmed `k` of the way to the danger colour (a hint of heat through the
+   * cloud, never a bright surface). Fading into the cloud, not to black, keeps the patches from
+   * reading as dark holes, above all from under them.
+   */
+  const dim = (k: number): Style => {
+    const ch = (sh: number) =>
+      Math.round(((pal.cloud >> sh) & 255) * (1 - k) + ((pal.danger >> sh) & 255) * k);
+    return {
+      mat: 'glow',
+      color: (ch(16) << 16) | (ch(8) << 8) | ch(0),
+      noCollide: true,
+      lowDetail: true,
+    };
+  };
+  /**
+   * A soft patch of danger glow: three stacked octagons, a wide dark rim, a dimmer ring, a small
+   * brighter heart (the nearest thing to a gradient flat colours give).
+   */
+  const ember = (x: number, y: number, z: number, R: number, turn: number): void => {
+    const layers: [number, number][] = [
+      [2 * R, 0.14],
+      [1.3 * R, 0.24],
+      [0.6 * R, 0.36],
+    ];
+    const bb = [x - R * 1.45, y, z - R * 1.45, x + R * 1.45, y + 0.9, z + R * 1.45];
+    if (!clearBox(built, bb[0], bb[1], bb[2], bb[3], bb[4], bb[5])) return;
+    let yy = y;
+    for (const [w, k] of layers) {
+      for (const t of [0, 45]) g.box(v3(x, yy + 0.15, z), v3(w, 0.3, w), turn + t, dim(k));
+      yy += 0.3;
+    }
+    built.push(bb);
+  };
+  const built = g.boxes.map(aabbOf);
+  floors.forEach((f, fi) => {
+    killVolumes.push({ min: v3(f.min[0], f.y - 25, f.min[1]), max: v3(f.max[0], f.y, f.max[1]) });
+    // lumpy cloud clusters: a wide low puff with rounder ones heaped on it and a smaller puff
+    // beside it, their tops about the floor's height; gaps between them show the glow below
+    const cell = 46;
+    const nx = Math.max(1, Math.round((f.max[0] - f.min[0]) / cell));
+    const nz = Math.max(1, Math.round((f.max[1] - f.min[1]) / cell));
+    const cx = (f.max[0] - f.min[0]) / nx;
+    const cz = (f.max[1] - f.min[1]) / nz;
+    for (let i = 0; i < nx; i++)
+      for (let j = 0; j < nz; j++) {
+        // (a big heap if it fits, else smaller ones: never through anything)
+        let ok = false;
+        let R = 0;
+        let x = 0;
+        let z = 0;
+        let y0 = 0;
+        let turn = 0;
+        let s = 0;
+        for (let k = 0; k < 4 && !ok; k++) {
+          s = fi * 10007 + i * 131 + j + k * 7919;
+          R = Math.min(cx, cz) * (0.22 + hash01(s) * 0.14) * [1, 0.7, 0.5, 0.35][k];
+          x = f.min[0] + (i + 0.5) * cx + (hash01(s + 2) - 0.5) * (cx - 3 * R) * 0.8;
+          z = f.min[1] + (j + 0.5) * cz + (hash01(s + 3) - 0.5) * (cz - 3 * R) * 0.8;
+          turn = hash01(s + 4) * 45;
+          // (its top a little over the floor's height: touch the clouds and you're gone)
+          y0 = f.y + 1 - R * 0.96 - hash01(s + 5) * 2;
+          ok = clearBox(
+            built,
+            x - R * 2.2,
+            y0,
+            z - R * 2.2,
+            x + R * 2.2,
+            y0 + R * 0.96,
+            z + R * 2.2,
+          );
+        }
+        if (!ok) continue;
+        const bb = [x - R * 2.2, y0, z - R * 2.2, x + R * 2.2, y0 + R * 0.96, z + R * 2.2];
+        const layers: [number, number][] = [
+          [2 * R, R * 0.32],
+          [1.45 * R, R * 0.34],
+          [0.8 * R, R * 0.3],
+        ];
+        let y = y0;
+        for (const [w, h] of layers) {
+          g.box(v3(x, y + h / 2, z), v3(w, h, w), turn, cloud);
+          g.box(v3(x, y + h / 2, z), v3(w, h, w), turn + 45, cloud);
+          y += h;
+        }
+        // a smaller puff leaning on its side
+        const a = hash01(s + 6) * Math.PI * 2;
+        const w2 = R * (0.9 + hash01(s + 7) * 0.4);
+        const px = x + Math.cos(a) * R * 1.05;
+        const pz = z + Math.sin(a) * R * 1.05;
+        g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 20, cloud);
+        g.box(v3(px, y0 + R * 0.25, pz), v3(w2, R * 0.5, w2), turn + 65, cloud);
+        built.push(bb);
+        // a soft danger glow deep under about half of them
+        if (hash01(s + 8) < 0.55) ember(x, y0 - 26, z, R * 0.9, turn + 10);
+      }
+  });
+  // the danger glow far under every cloud sea (seen through the gaps): the global floor (not
+  // under a sea: the water is the floor there)
+  if (!data.scenery?.some((s) => s.t === 'water'))
+    g.box(v3(0, data.killY, 0), v3(1000, 1, 1000), 0, dim(0.2));
+  return killVolumes;
+};
+
+/** A course fork → the race's fork (its section: that of the racing line where it leaves). */
+const forkDef = (f: CourseFork, line: RaceLineNode[]): RaceForkDef => {
+  const a = p3(f.line[0].at);
+  let cp = 0;
+  let best = Infinity;
+  for (const n of line) {
+    const d = len(sub(n.pos, a));
+    if (d < best) {
+      best = d;
+      cp = n.cp;
+    }
+  }
+  return {
+    name: f.name,
+    cp,
+    safe: f.safe,
+    risky: f.risky,
+    riskyLine: f.line.map((q) => {
+      const n: RaceLineNode = { pos: round3(p3(q.at)), cp, strafe: true };
+      if (q.surf) n.surf = true;
+      if (q.air) n.air = true;
+      if (q.jump) n.jump = true;
+      if (q.hop) n.hop = true;
+      if (q.portal) {
+        n.portal = true;
+        n.air = true;
+      }
+      return n;
+    }),
+  };
+};
+
+/** A course portal's trigger volume (thin across the way through; flown-through ones thicker). */
+const portalTrigger = (e: PortalEl): { min: Vec3; max: Vec3 } => {
+  const at = p3(e.at);
+  const [w, h] = e.size ?? [7, 8];
+  const thinX = Math.abs(headingDir(e.heading).x) > 0.5;
+  // (flown through at surf speed: a thick trigger, so no tick can step over it)
+  const half = e.air ? 1.5 : 0.6;
+  return {
+    min: round3(v3(at.x - (thinX ? half : w / 2), at.y, at.z - (thinX ? w / 2 : half))),
+    max: round3(v3(at.x + (thinX ? half : w / 2), at.y + h, at.z + (thinX ? w / 2 : half))),
+  };
+};
+
+/** Expand a course into a level (the racing line, gates, devices, scenery). */
+export const expandCourse = (data: CourseData): ExpandedCourse => {
+  const g = new Geo();
+  const lights: LightDef[] = [];
+  const r = expandRoute(data, g, lights);
+  if (!r.start || !r.finish) throw new Error(`${data.name}: a course needs a start and a finish`);
+  // everything of the course you can stand on (the deadly floors keep clear of it)
+  const solid: number[][] = [];
+  for (const b of g.boxes) {
+    if (b.noCollide) continue;
+    if (b.hull) {
+      // a curve's piece: its base corners (its bounding box reaches past its slope)
+      const top = Math.max(...b.hull.map((p) => p.y));
+      for (const p of b.hull) solid.push([p.x, p.y, p.z, p.x, top, p.z]);
+      continue;
+    }
+    const a = aabbOf(b);
+    if (b.prism === undefined) {
+      solid.push(a);
+      continue;
+    }
+    // a surf ramp: its underside, point by point (its bounding box reaches far past its slope)
+    const nx = Math.ceil(b.h.x);
+    const nz = Math.ceil(b.h.z);
+    for (let i = -nx; i <= nx; i++)
+      for (let j = -nz; j <= nz; j++) {
+        const l = v3((b.h.x * i) / nx, -b.h.y, (b.h.z * j) / nz);
+        const w = add(b.c, b.q ? qRotate(b.q, l) : l);
+        solid.push([w.x, w.y, w.z, w.x, a[4], w.z]);
+      }
+  }
+  expandScenery(
+    data,
+    g,
+    r.line.map((n) => n.pos),
+    lights,
+  );
+  const killVolumes = expandFloors(data, g, r.line, solid);
+  // shallow water (a canal floor): you wade in it, up to where a jump takes you out of it
+  const slowZones = [...r.slowZones];
+  for (const e of data.scenery ?? [])
+    if (e.t === 'water' && e.shallow) {
+      const [w, d] = e.size;
+      const floor = e.at[1] - (e.depth ?? 1);
+      slowZones.push({
+        min: round3(v3(e.at[0] - w / 2, floor - 1, e.at[2] - d / 2)),
+        max: round3(v3(e.at[0] + w / 2, Math.max(e.at[1], floor + 1.2), e.at[2] + d / 2)),
+        speedMul: e.speedMul ?? 0.6,
+      });
+    }
+  const surf = data.kind === 'surf';
+  const sky = data.sky;
+  const def: LevelDef = {
+    name: data.name,
+    boundsMin: v3(-500, -10, -500),
+    boundsMax: v3(500, 480, 500),
+    defaultGravity: v3(0, -1, 0),
+    boxes: g.boxes,
+    zones: [],
+    rails: [],
+    pads: [],
+    spawns: r.grid,
+    towers: [],
+    launchPads: r.launchPads,
+    portals: r.portals,
+    lights,
+    slowZones: slowZones.length ? slowZones : undefined,
+    fog: { color: sky.horizon, near: sky.fog.near, far: sky.fog.far },
+    ambient: sky.ambient ?? 1,
+    outdoor: {
+      top: sky.top,
+      horizon: sky.horizon,
+      ground: sky.ground,
+      sun: sky.sun
+        ? { dir: normalize(p3(sky.sun.dir)), color: sky.sun.color, sizeDeg: sky.sun.sizeDeg }
+        : undefined,
+      sunLight: sky.sunLight,
+      stars: sky.stars,
+    },
+    race: {
+      parSec: data.parSec,
+      start: r.start,
+      grid: r.grid,
+      checkpoints: r.checkpoints,
+      finish: r.finish,
+      killY: data.killY,
+      killVolumes,
+      fuelCells: r.fuelCells,
+      line: r.line,
+      forks: (data.forks ?? []).map((f) => forkDef(f, r.line)),
+      ...(r.anchors.length ? { anchors: r.anchors } : {}),
+      surf: surf || undefined,
+      holdToBhop: data.holdToBhop || undefined,
+      noJetpack: surf || data.jetpack === false || undefined,
+      noSurge: surf || data.surge === false || undefined,
+    },
+  };
+  return { def, elementNodes: r.elementNodes };
+};
+
+/** Problems with a course's data (empty = fine). */
+export const validateCourse = (data: CourseData): string[] => {
+  const out: string[] = [];
+  const route = data.route;
+  if (route[0]?.t !== 'start') out.push('the route must begin with a start');
+  const last = route[route.length - 1];
+  if (last?.t !== 'finish' && !(last?.t === 'gate' && last.finish))
+    out.push('the route must end with a finish');
+  route.forEach((e, i) => {
+    const at = `route[${i}] (${e.t})`;
+    if (e.t === 'surf') {
+      if (e.angle < 50) out.push(`${at}: surf faces must be at least 50° (${e.angle}°)`);
+      if (e.angle > 85) out.push(`${at}: surf faces must be at most 85° (${e.angle}°)`);
+      const f = surfFrame(e);
+      if (Math.abs(f.L.y) > 0.5) out.push(`${at}: the ridge is too steep`);
+    }
+    if (e.t === 'curve') {
+      if (e.angle < 50) out.push(`${at}: surf faces must be at least 50° (${e.angle}°)`);
+      if (e.angle > 85) out.push(`${at}: surf faces must be at most 85° (${e.angle}°)`);
+      if (!e.legs.length) out.push(`${at}: a curve needs legs`);
+      const path = curvePath(e);
+      for (let s = 0; s <= path.length; s += 1)
+        if (Math.abs(path.at(s).grade) > 0.58) {
+          out.push(`${at}: the ridge is too steep at ${s.toFixed(0)} m`);
+          break;
+        }
+      for (const r of [e.red, ...e.legs.map((l) => l.red)])
+        if (typeof r === 'number' && (r <= (e.depth ?? 0.35) || r >= 1))
+          out.push(`${at}: a red strip must start below the racing line and above the foot`);
+    }
+    if ((e.t === 'gate' && !e.finish) || e.t === 'anchor')
+      if (!e.bay || !e.to || !(e.flightSec! > 0)) out.push(`${at}: needs a restart bay`);
+    if (e.t === 'portal' && Math.abs(e.heading % 90) > 1e-9)
+      out.push(`${at}: portals face a cardinal heading`);
+    if (e.t === 'portal') {
+      // (its exit — and, keeping the offset, the whole opening round it — must not lie in a
+      // portal: you would be sent on at once)
+      const [w, h] = e.size ?? [7, 8];
+      const r = e.offset ? Math.max(w, h) / 2 + 0.5 : 0.5;
+      const x = e.exit;
+      for (const q of route)
+        if (q.t === 'portal') {
+          const b = portalTrigger(q);
+          if (
+            x[0] + r > b.min.x &&
+            x[0] - r < b.max.x &&
+            x[1] + 0.95 + r > b.min.y &&
+            x[1] + 0.95 - r < b.max.y &&
+            x[2] + r > b.min.z &&
+            x[2] - r < b.max.z
+          )
+            out.push(`${at}: its exit lies in a portal`);
+        }
+    }
+    const isEnd = e.t === 'finish' || (e.t === 'gate' && e.finish);
+    if (
+      (e.t === 'stage' || e.t === 'start' || e.t === 'gate' || isEnd) &&
+      route.slice(0, i).some((x) => x.t === 'finish' || (x.t === 'gate' && x.finish))
+    )
+      out.push(`${at}: after the finish`);
+  });
+  // the route stays above every floor it crosses
+  const { def } = expandCourse(data);
+  for (const n of def.race!.line)
+    for (const f of data.floors)
+      if (
+        n.pos.x > f.min[0] &&
+        n.pos.x < f.max[0] &&
+        n.pos.z > f.min[1] &&
+        n.pos.z < f.max[1] &&
+        n.pos.y < f.y + 4
+      )
+        out.push(
+          `the line at ${n.pos.x.toFixed(1)}, ${n.pos.y.toFixed(1)}, ${n.pos.z.toFixed(1)} is in a floor`,
+        );
+  // a shallow canal floor is a second chance, not a kill: it stands clear above the kill height
+  for (const e of data.scenery ?? [])
+    if (e.t === 'water' && e.shallow && e.at[1] - (e.depth ?? 1) < data.killY + 2)
+      out.push(`shallow water at ${e.at.join(', ')}: its floor must be 2 m above the kill height`);
+  return out;
+};

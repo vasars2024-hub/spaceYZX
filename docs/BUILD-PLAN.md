@@ -1,6 +1,6 @@
-# Space YZ — Build Plan (handoff for a Claude Code session)
+# Lethal Recoil — Build Plan (handoff for a Claude Code session)
 
-You are building **Space YZ**: a free-to-play, fast-paced, competitive **first-person** arena shooter set **inside spaceships**, where **gravity changes how you move and shoot**. It is played in Google Chrome. Read this whole document before writing code. Work milestone by milestone; at the end of each milestone, show the owner something playable and ask before moving on.
+You are building **Lethal Recoil**: a free-to-play, fast-paced, competitive **first-person** arena shooter set **inside spaceships**, where **gravity changes how you move and shoot**. It is played in Google Chrome. Read this whole document before writing code. Work milestone by milestone; at the end of each milestone, show the owner something playable and ask before moving on.
 
 ## About the owner and their machine
 
@@ -22,7 +22,7 @@ You are building **Space YZ**: a free-to-play, fast-paced, competitive **first-p
 | Price | Completely free to play |
 | Platform | Runs in Google Chrome on *any* computer, including old/weak laptops |
 | Modes | 1v1, 2v2, 5v5 (5v5 is the largest) |
-| Round length | 1v1: 40 s per round, max 8 rounds. 2v2: 1:00 per round. 5v5: 1:30 per round |
+| Round length | 1v1: 60 s per round, max 8 rounds. 2v2: 1:20 per round. 5v5: 1:50 per round (each +20 s after the first playtest) |
 | Match length | A full match should take **at most ~10–15 minutes** (see Match structure) |
 | Ranked | A rank per mode (1v1, 2v2, 5v5) that combine into one overall global rank |
 | Skill | Very high skill ceiling |
@@ -66,7 +66,7 @@ Simple rules, deep strategy:
   2. **eliminating every player on the enemy team.**
 - **Controller drop:** if the carrier dies, the Controller drops where they died. Any **teammate** can pick it up (0.5 s pickup). Enemies can't pick it up, but they can camp it. If it's untouched for 8 s, it returns to the team's spawn.
 - **Carrier reveal:** the carrier's position is shown to enemies through walls for 1 s every 5 s, so they can't hide all round. The carrier keeps all weapons (no speed penalty at first; tune in playtests).
-- **Anti-camping, last 10 seconds:** every player is revealed through walls, so hiding to run out the clock doesn't work.
+- **Anti-camping, last 20 seconds:** every player is revealed through walls, so hiding to run out the clock doesn't work.
 - **Timer runs out:** team with more players alive wins; if equal, higher total health wins; if still equal, the round is a draw (nobody scores).
 - **Strategy this creates:** protect the carrier vs. hunt the carrier, fake pushes, splitting routes, sneaky solo Controller runs, and deciding when to go for the Tower vs. just win the fight.
 - **Controller indicators (owner decision — always clear who has it):**
@@ -81,12 +81,12 @@ Between rounds: ~5 s results + 5 s spawn lock = ~10 s. A round ends early on a T
 
 | Mode | Round timer | Win the match | Max rounds | Worst-case length | Expected typical length |
 |---|---|---|---|---|---|
-| 1v1 | 40 s | First to 5 round wins | 8 | ~6.7 min | ~4 min |
-| 2v2 | 1:00 | First to 6 round wins | 11 | ~13 min | ~7–9 min |
-| 5v5 | 1:30 | First to 5 round wins | 9 | ~15 min | ~8–10 min |
+| 1v1 | 60 s | First to 5 round wins | 8 | ~9.3 min | ~5 min |
+| 2v2 | 1:20 | First to 6 round wins | 11 | ~16.5 min | ~8–11 min |
+| 5v5 | 1:50 | First to 5 round wins | 9 | ~18 min | ~9–12 min |
 
 - **Tied after max rounds** (possible because rounds can be draws): one **sudden-death round** — half the normal timer, both Towers' touch zones are twice as big, everyone is revealed from the start. If that is also a draw, the team with more total kills across the match wins.
-- **Hard cap:** a match never runs past 15 minutes; if it somehow would, it ends by total round wins, then total kills.
+- **Hard cap:** a match never runs past 20 minutes (raised from 15 when rounds got 20 s longer); if it somehow would, it ends by total round wins, then total kills.
 - **Side swap** at the halfway point (even though maps are mirrored) so any small map unfairness evens out.
 - The 1v1 cap is shorter than the others because of its 8-round max; the owner confirmed that's fine (10–15 min is a maximum, not a target).
 
@@ -118,7 +118,7 @@ Skill ceiling comes from: Apex-style momentum tech (slide-hops, air strafing, wa
 Because players move very fast, maps need **wider corridors and more vertical space** than a slow shooter, and the netcode must handle fast-moving targets well (see Netcode).
 
 ### Combat: "Boomerang Fu, but first person"
-The owner's reference is the party game **Boomerang Fu** (top-down; everyone has one boomerang; throw it, it comes back; slash up close; deflect incoming boomerangs; dash). Space YZ takes that core and adapts it to **first person + fast Apex-style movement + competitive ranked play**. **No recoil and no random spread** anywhere — every miss is the shooter's mistake or the target's outplay.
+The owner's reference is the party game **Boomerang Fu** (top-down; everyone has one boomerang; throw it, it comes back; slash up close; deflect incoming boomerangs; dash). Lethal Recoil takes that core and adapts it to **first person + fast Apex-style movement + competitive ranked play**. **No recoil and no random spread** anywhere — every miss is the shooter's mistake or the target's outplay.
 
 Everyone has **the same kit** every round — no loadouts, no economy:
 
@@ -243,8 +243,8 @@ Everyone has **the same kit** every round — no loadouts, no economy:
   - Automatic detection: e.g. 2 team kills in one match, or damaging your own Controller carrier repeatedly → warning; more → kicked from the match (counts as a loss) and a temporary ranked ban that grows with repeat offenses.
   - Report button on the scoreboard (reports saved for the owner to review).
 
-#### No power-ups (owner decision)
-Unlike Boomerang Fu, there are **no power-ups** in any mode. Every player always has exactly the same kit; the only differences are skill and teamwork.
+#### Power-ups (changed after the first playtest)
+Originally there were no power-ups. After the first playtest the owner added two, spawning in the middle of the map 1–2 times per round (never in CS mode): **Freeze ×3** and **Double boomerang ×3** — see docs/PLAYING.md and `packages/shared/src/rules/powerups.ts`.
 
 #### First-person awareness (the main FPS adaptations)
 Top-down games show you everything; first person doesn't. To keep deaths fair:
@@ -278,7 +278,7 @@ Top-down games show you everything; first person doesn't. To keep deaths fair:
 
 **The goal:** *movement is your defense, prediction/steering is your offense, and both players get to play during a fight.*
 
-| | CoD-style | Space YZ |
+| | CoD-style | Lethal Recoil |
 |---|---|---|
 | Main damage | Instant hitscan | **Boomerang projectile** — predict, curve and steer |
 | Instant weapon | Unlimited, strong | **Laser: weak, 3 charges, 0.2 s visible warning** |
@@ -382,10 +382,10 @@ Target: fair-feeling up to ~120 ms ping; playable up to ~200 ms.
 
 ## Hosting: close to 1-click (owner requirement)
 
-Anyone — not just the owner — should be able to host a Space YZ server on their own PC **without installing Node, typing commands or touching router settings.** Players never install anything: they just open a link in Chrome.
+Anyone — not just the owner — should be able to host a Lethal Recoil server on their own PC **without installing Node, typing commands or touching router settings.** Players never install anything: they just open a link in Chrome.
 
 **The host experience (target):**
-1. Download **`SpaceYZ-Host.exe`** (one file) and double-click it.
+1. Download **`LethalRecoil-Host.exe`** (one file) and double-click it.
 2. First run only: Windows asks to allow it through the firewall → click **Allow**. (Unsigned app: Windows SmartScreen may show "More info → Run anyway"; code signing costs money, so skip it for now and explain this in the guide.)
 3. The host app opens a **Host Dashboard** in the browser automatically, showing:
    - **"Play"** button (opens the game locally).
@@ -405,7 +405,7 @@ Anyone — not just the owner — should be able to host a Space YZ server on th
 - The client files are embedded in the executable and served by the same server (one port for game + website + WebSocket).
 - `data/` folder (database, logs, settings) is created next to the exe. Auto-backup the database daily.
 - **Host Dashboard** is a local web page, only reachable from the host PC (bound to `127.0.0.1`) and protected by a random token in its URL — never exposed to the internet.
-- A GitHub Actions workflow builds `SpaceYZ-Host.exe` automatically for each release and attaches it to a GitHub Release (free). Windows first; Mac/Linux builds later.
+- A GitHub Actions workflow builds `LethalRecoil-Host.exe` automatically for each release and attaches it to a GitHub Release (free). Windows first; Mac/Linux builds later.
 - For development, `npm start` still works as before.
 
 **Tell the host (in the dashboard and a 1-page guide):** the PC must stay on during games, and upload speed limits how many players it can serve. Measure real bandwidth per 1v1/2v2/5v5 match with the bot load test and put the numbers in the dashboard's estimate.
@@ -431,7 +431,7 @@ Each milestone ends with something the owner can play. Commit to git after each.
 7. **First real map** — one large, spacious spaceship map for all modes: all gravity zone types, two Towers, **3 main paths to each Tower**, mirrored random spawn points, cover on every long sightline, art pass in the low-poly style with the visibility rules. Test it in 1v1, 2v2 and 5v5.
 8. **Accounts, ranked & matchmaking** — nickname + token, SQLite, Glicko-2 per mode, tiers, global rank, leaderboards, ranked queue.
 9. **Low-end performance pass** — test on the weakest available PC, dynamic resolution, potato mode, bundle size check.
-10. **1-click hosting** — single-file `SpaceYZ-Host.exe`, Host Dashboard (invite link, copy button, QR, status, controls), automatic LAN → UPnP → Cloudflare quick tunnel, GitHub Actions build, and a one-page "how to host" guide. **Test it on a clean Windows PC with nothing installed** and have the owner host a real session with friends.
+10. **1-click hosting** — single-file `LethalRecoil-Host.exe`, Host Dashboard (invite link, copy button, QR, status, controls), automatic LAN → UPnP → Cloudflare quick tunnel, GitHub Actions build, and a one-page "how to host" guide. **Test it on a clean Windows PC with nothing installed** and have the owner host a real session with friends.
 11. **Polish** — sounds, hit effects, kill feed, settings screen, practice range, bots for practice.
 
 ## Testing

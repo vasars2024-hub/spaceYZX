@@ -1,0 +1,62 @@
+/* ---------- one-click Play on the title screen (app.ts showTitle) ---------- */
+.play-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px 22px;
+  width: var(--flow-w, min(960px, 94vw));
+}
+.btn.play-btn {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 16px 52px 16px 44px;
+  border-radius: 14px;
+  box-shadow: 0 0 28px rgba(25, 227, 255, 0.35);
+}
+.btn.play-btn .icon {
+  width: 28px;
+  height: 28px;
+}
+.play-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.play-desc {
+  font-size: 13px;
+  opacity: 0.75;
+}
+.quickplay-wait {
+  gap: 18px;
+}
+.quickplay-wait .menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+/* ---------- Brawl results (game/brawl-feature.ts) ---------- */
+.brawl-results .brawl-back {
+  pointer-events: auto;
+  margin-top: 4px;
+}
+.brawl-results .mr-hint {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 8px;
+}
+
+@media (max-width: 820px) {
+  .btn.play-btn {
+    font-size: 24px;
+    padding: 12px 36px;
+  }
+  .play-side {
+    align-items: center;
+  }
+}

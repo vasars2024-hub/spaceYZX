@@ -1,0 +1,394 @@
+/* ---------- accounts, profiles and friends (ui/account-screen.ts, profile-screen.ts,
+   friends.ts, avatars.ts) ---------- */
+
+.avatar {
+  --av: var(--team-a);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 22%;
+  color: var(--av);
+  background: color-mix(in srgb, var(--av) 18%, #070c18);
+  border: 1px solid color-mix(in srgb, var(--av) 55%, transparent);
+  line-height: 0;
+}
+.avatar.big {
+  box-shadow: 0 0 22px color-mix(in srgb, var(--av) 35%, transparent);
+}
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.muted.small,
+.small {
+  font-size: 12px;
+}
+.name-link {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 700;
+  text-align: left;
+}
+.name-link:hover,
+.name-link:focus-visible {
+  color: var(--team-a);
+  text-decoration: underline;
+}
+.chip.ok {
+  color: #7dffb0;
+}
+
+/* title screen: who you are */
+.profile-chip {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  font: inherit;
+  color: var(--text);
+  background: var(--card-bg, rgba(9, 14, 27, 0.8));
+  border: 1px solid var(--card-border, rgba(120, 200, 255, 0.16));
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: left;
+}
+.profile-chip:hover {
+  border-color: var(--team-a);
+}
+.profile-chip .pc-name {
+  font-weight: 700;
+}
+.profile-chip .pc-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.profile-chip .pc-badge {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #03121c;
+  background: var(--team-b);
+}
+
+/* forms */
+.account-panel {
+  width: min(560px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-form p {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.account-panel input[type='text'],
+.account-panel input[type='password'],
+.edit-profile input[type='text'],
+.friend-search input {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  padding: 9px 11px;
+  user-select: text;
+}
+.recovery-code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: clamp(18px, 3.4vw, 26px);
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 14px;
+  border: 1px dashed var(--team-a);
+  border-radius: 8px;
+  user-select: all;
+}
+.login-code-box summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* profile */
+.profile-banner {
+  --av: var(--team-a);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--av) 30%, transparent),
+    rgba(255, 255, 255, 0.02) 70%
+  );
+  border: 1px solid color-mix(in srgb, var(--av) 40%, transparent);
+}
+.profile-id {
+  flex: 1;
+  min-width: 160px;
+}
+.profile-title {
+  font-style: italic;
+  color: #cfe3ff;
+  margin-bottom: 2px;
+}
+.profile-actions,
+.relation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.stat-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+.profile-body .label,
+.edit-profile .label,
+.friends-lists .label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 10px 0 4px;
+}
+table.recent.clickable tr {
+  cursor: pointer;
+}
+table.recent.clickable tr:hover td,
+table.recent.clickable tr:focus-visible td {
+  background: rgba(25, 227, 255, 0.08);
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 5, 10, 0.72);
+  padding: 16px;
+}
+.match-detail {
+  width: min(760px, 96vw);
+  max-height: 86vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mp-team-title {
+  font-weight: 800;
+}
+.mp-team-title.team-0 {
+  color: var(--team-a);
+}
+.mp-team-title.team-1 {
+  color: var(--team-b);
+}
+.mp-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+tr.left td {
+  opacity: 0.6;
+}
+
+/* edit profile */
+.edit-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+}
+.avatar-pick,
+.banner-pick {
+  padding: 4px;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  line-height: 0;
+}
+.avatar-pick.selected,
+.banner-pick.selected {
+  border-color: #fff;
+}
+.banner-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.banner-pick {
+  width: 34px;
+  height: 34px;
+}
+
+/* friends */
+.friend-search input {
+  width: 100%;
+}
+.friend-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+.friends-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.friend-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.friend-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.friend-presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #56627a;
+}
+.presence-menu .pdot,
+.presence-room .pdot {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+.presence-match .pdot {
+  background: var(--team-a);
+}
+.presence-ranked .pdot {
+  background: var(--team-b);
+}
+.presence-offline {
+  opacity: 0.7;
+}
+.friend-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.room-people {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(720px, 94vw);
+}
+
+/* toasts with buttons (friend requests, invites) */
+.social-toasts {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.social-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, 92vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(4, 8, 16, 0.94);
+  border: 1px solid rgba(25, 227, 255, 0.45);
+  transition: opacity 0.4s;
+}
+.social-toast.fade {
+  opacity: 0;
+}
+
+html.mobile .profile-chip {
+  top: 8px;
+  right: 8px;
+}

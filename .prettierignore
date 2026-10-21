@@ -3,3 +3,7 @@ dist
 data
 package-lock.json
 docs/BUILD-PLAN.md
+.claude/worktrees
+build
+docs/movement-map-design/AI-Builder-Prompt.md
+docs/movement-map-design/Complete-Map-Design-Brief.md

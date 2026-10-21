@@ -11,5 +11,19 @@
       "Bash(npm run check)",
       "mcp__Claude_Code_Remote__read_documentation"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.mjs\"",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
   }
 }

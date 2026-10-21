@@ -1,0 +1,12 @@
+/* The title screen's Map Maker tile (a fifth tile: app.ts titleTiles). Loaded with the app;
+   the rest of the Map Maker's CSS (editor.css) loads with the editor. */
+.card-grid.tiles:has(> .tile.mapmaker) {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.tile.mapmaker {
+  --accent: #3dff9a;
+  --accent-soft: rgba(61, 255, 154, 0.14);
+}
+html.mobile .card-grid.tiles:has(> .tile.mapmaker) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

@@ -105,7 +105,7 @@ export const COMBAT_DEFAULTS = {
   teleportHoldSec: 2, // fully charged and still held this long: the charge fades (no cooldown)
   teleportTapSec: 0.15, // shorter holds are a plain slash: no slow-down, no charge glow/sound
   teleportChargeMoveScale: 0.6, // while charging you move at 60 % of sprint speed
-  teleportDistance: 4,
+  teleportDistance: 4.8, // +20 % (owner)
   teleportKillRadius: 0.8,
   teleportDamage: 200, // kills from full health
   teleportCooldownSec: 3, // from the moment it fires

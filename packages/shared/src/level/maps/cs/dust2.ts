@@ -23,6 +23,7 @@ export const DUST2_LAYOUT: GrayboxLayout = {
   theme: 'desert',
   cover: false,
   waypointEvery: 2,
+  wallH: 5,
   props: [
     { x: 13.023, y: 82.023, w: 4.326, d: 4.194, h: 2.2, kind: 'crate' },
     { x: 73.023, y: 48.541, w: 6.211, d: 3.112, h: 2.2, kind: 'crate' },

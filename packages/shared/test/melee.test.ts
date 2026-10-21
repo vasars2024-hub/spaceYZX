@@ -121,18 +121,19 @@ describe('teleport slash (hold E 1 s, let go)', () => {
     );
   });
 
-  it('dashes 4 m along the floor (also when looking down) and kills enemies on the line', () => {
+  it('dashes teleportDistance (4.8 m) along the floor (also when looking down) and kills enemies on the line', () => {
     const sim = sim0();
     const onLine = addOther(sim, 2, 1, v3(0.4, 0, -3.5));
-    const end = addOther(sim, 3, 1, v3(-0.3, 0, -4.6)); // just past the end, within reach
+    const D = COMBAT_DEFAULTS.teleportDistance;
+    const end = addOther(sim, 3, 1, v3(-0.3, 0, -(D + 0.6))); // just past the end, within reach
     const beside = addOther(sim, 4, 1, v3(1.4, 0, -2.5));
     const behind = addOther(sim, 5, 1, v3(0, 0, 3));
-    const far = addOther(sim, 6, 1, v3(0, 0, -6));
+    const far = addOther(sim, 6, 1, v3(0, 0, -(D + 2)));
     settle(sim);
     const ev = holdE(sim, FULL, view(0, -35));
     const dash = ev.find((e) => e.type === 'teleportSlash');
     if (dash?.type !== 'teleportSlash') throw new Error('no teleport slash');
-    expect(dash.from.z - dash.to.z).toBeCloseTo(4, 2);
+    expect(dash.from.z - dash.to.z).toBeCloseTo(COMBAT_DEFAULTS.teleportDistance, 2);
     expect(dash.to).toEqual(sim.p.pos);
     expect(Math.abs(sim.p.pos.x)).toBeLessThan(1e-6);
     expect(Math.abs(dash.to.y - dash.from.y)).toBeLessThan(0.1); // along the floor, not into it

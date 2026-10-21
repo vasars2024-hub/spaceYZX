@@ -873,6 +873,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   const bottom = low - 4;
   const wallTop = top + WALL_ABOVE;
 
+  /** areas drawn as shallow water (themes with a water colour) */
+  const WATER_AREA = /\b(water|canal|sea)\b/i;
   // ---- looks (level/graybox-theme.ts; unthemed: the plain graybox colours) ------------------
   const colorOf = (c: string, h: number): number => {
     const k = area(c).k;
@@ -892,6 +894,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         color: own.color ?? (k === 'site' ? pal.site.color : pick(pal.floor.colors, c)),
       };
     if (k === 'site') return { mat: pal.site.mat, color: pal.site.color };
+    if (pal.water && WATER_AREA.test(area(c).n))
+      return { mat: pal.water.mat, color: pal.water.color };
     const base = shade(
       pick(h <= -2 ? pal.floor.alt : pal.floor.colors, c),
       1 + Math.max(-8, Math.min(12, h)) * 0.006,
@@ -1141,8 +1145,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     const lower = own?.wall?.lower ?? pick(pal.wall.lower, key);
     if (!ref) return [{ ...g, mat: wm, color: lower }];
     const band = refY + DOOR_H;
-    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3)
-      return [{ ...g, mat: wm, color: lower }];
+    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3) return [{ ...g, mat: wm, color: lower }];
     return [
       { y0: g.y0, y1: band, mat: wm, color: lower },
       {

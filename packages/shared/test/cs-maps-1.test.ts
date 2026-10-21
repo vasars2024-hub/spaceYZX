@@ -129,6 +129,17 @@ describe.each(MAPS_1)('%s layout', (id, lay, callouts) => {
     expect(lay.cover).toBe(false);
     expect(lay.props!.length).toBeGreaterThan(10);
     const margin = 0.5 / lay.cellM; // half a metre from every line between cell centres
+    // (maps traced from the radar — per-cell heights — keep the radar's props where they are:
+    // they only have to stand on floor, never cut into a wall; the builder keeps bots clear)
+    if (lay.layers.some((L) => L.heights)) {
+      for (const p of lay.props!) {
+        const l = p.l ?? 0;
+        for (let y = Math.floor(p.y); y < p.y + p.d - 1e-6; y++)
+          for (let x = Math.floor(p.x); x < p.x + p.w - 1e-6; x++)
+            expect(isFloor(at(l, x, y)), `prop at ${p.x},${p.y} over ${x},${y}`).toBe(true);
+      }
+      return;
+    }
     for (const p of lay.props!) {
       const l = p.l ?? 0;
       const cxr = p.x + p.w / 2;

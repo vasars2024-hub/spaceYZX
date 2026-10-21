@@ -113,7 +113,31 @@ export interface GrayboxLayer {
   overlay?: boolean;
   /** default orientation of its areas ('down': a ceiling deck walked upside down) */
   o?: GrayboxOrientation;
+  /**
+   * per-cell floor heights (m), [row][column] like `rows`; null / absent = the area's height.
+   * Upright plain floors only (not ramp or gravity areas). Built smooth: neighbouring cells at
+   * most SMOOTH_GAP apart become one tilted surface (each grid corner at the mean of the cells
+   * around it), bigger differences stay ledges. Traced CS maps (level/maps/cs/) use it, packed
+   * with `unpackHeights`.
+   */
+  heights?: (number | null)[][];
 }
+
+const PACK = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_';
+/**
+ * Per-cell heights packed two characters a cell (`..` = none): the height in centimetres over
+ * `base` (m), base-64 (PACK). The CS map tracer writes them this way to keep the files small.
+ */
+export const unpackHeights = (base: number, rows: string[]): (number | null)[][] =>
+  rows.map((r) => {
+    const out: (number | null)[] = [];
+    for (let i = 0; i + 1 < r.length; i += 2) {
+      const a = PACK.indexOf(r[i]);
+      const b = PACK.indexOf(r[i + 1]);
+      out.push(a < 0 || b < 0 ? null : Math.round((base + (a * 64 + b) / 100) * 100) / 100);
+    }
+    return out;
+  });
 
 export interface GrayboxLayout {
   name: string;
@@ -223,6 +247,8 @@ const SIGN_MID = 1.8; // a sign's middle stands this high over the floor (eye he
 const DOOR_H = 3; // door frames and the wall's lower part reach this high over the floor
 const MAX_AUTO_SIGNS = 150;
 const TURN_GAP = 3.5; // a ceiling deck at most this far over a floor: bots turn over between them
+/** per-cell heights: neighbours at most this much apart share one smooth surface (more: a ledge) */
+export const SMOOTH_GAP = 1;
 
 const warned = new Set<string>();
 const defaultWarn = (m: string) => {
@@ -445,6 +471,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     ),
   );
   const regionOf = (c: string) => regions.get(c) ?? [];
+  /** cells whose height comes from their layer's `heights` (looks: by their area, not per cell) */
+  const perCell = new Set<Cell>();
   const nbrs = (p: Cell) => {
     const out: Cell[] = [];
     for (const [dx, dy] of DIRS)
@@ -705,6 +733,74 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       p.axis = undefined;
     }
   }
+
+  // ---- per-cell heights (traced maps): one smooth surface over the radar's heights ----------
+  // A layer's `heights` sets the floor height of each cell. Every grid corner takes the mean of
+  // the cells around it that stand within SMOOTH_GAP of each other (sorted lowest first; a new
+  // group starts where a cell stands more than SMOOTH_GAP over the group's lowest), so gentle
+  // differences become tilted tops meeting edge to edge (no stairs you feel) and only real
+  // ledges stay steps. Flat stretches stay plain flat cells.
+  lay.layers.forEach((layer, l) => {
+    const hs = layer.heights;
+    if (!hs || sky) return;
+    const own = (x: number, y: number) => {
+      const p = cellAt(l, x, y);
+      return p && p.o === 'up' && !p.corners && !p.rise && plain(p) ? p : undefined;
+    };
+    const mine: Cell[] = [];
+    for (const p of cells) {
+      if (p.l !== l) continue;
+      const v = hs[p.y]?.[p.x];
+      if (typeof v !== 'number' || !own(p.x, p.y)) continue;
+      p.h = v;
+      perCell.add(p);
+      mine.push(p);
+    }
+    const cornerOf = new Map<string, number>(); // `${vertex}|${cell}` → height
+    const done = new Set<number>();
+    for (const p of mine)
+      for (const v of cornerKeys(p)) {
+        if (done.has(v)) continue;
+        done.add(v);
+        const X = v % VW;
+        const Y = (v - X) / VW;
+        const around = [own(X - 1, Y - 1), own(X, Y - 1), own(X - 1, Y), own(X, Y)].filter(
+          (q): q is Cell => !!q,
+        );
+        around.sort((a, b) => a.h - b.h);
+        let g0 = 0;
+        for (let i = 1; i <= around.length; i++) {
+          if (i < around.length && around[i].h - around[g0].h <= SMOOTH_GAP) continue;
+          const grp = around.slice(g0, i);
+          const mean = Math.round((grp.reduce((t, q) => t + q.h, 0) / grp.length) * 1000) / 1000;
+          for (const q of grp) cornerOf.set(`${v}|${q.y * W + q.x}`, mean);
+          g0 = i;
+        }
+      }
+    let steep = 0;
+    let worst = 0;
+    for (const p of mine) {
+      const k = cornerKeys(p).map((v) => cornerOf.get(`${v}|${p.y * W + p.x}`) ?? p.h) as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      if (k.every((u) => Math.abs(u - p.h) < 1e-6)) continue;
+      const sa = cellSlope(k, 'a');
+      const sb = cellSlope(k, 'b');
+      const d = sb < sa - 1e-9 ? 'b' : 'a';
+      if (Math.min(sa, sb) > RAMP_MAX_DEG + 0.5) steep++;
+      worst = Math.max(worst, Math.min(sa, sb));
+      p.corners = k;
+      p.diag = d;
+      p.h = d === 'a' ? (k[0] + k[3]) / 2 : (k[1] + k[2]) / 2;
+    }
+    if (steep)
+      say(
+        `layer '${layer.name}' heights: ${steep} cells; the steepest is ${worst.toFixed(1)}° steep (more than ${RAMP_MAX_DEG}°: smooth the heights there)`,
+      );
+  });
   const isRamp = (p: Cell) => !!p.corners || !!p.rise;
   const lowY = (p: Cell) => (p.corners ? Math.min(...p.corners) : p.h - Math.abs(p.rise ?? 0) / 2);
   const highY = (p: Cell) => (p.corners ? Math.max(...p.corners) : p.h + Math.abs(p.rise ?? 0) / 2);
@@ -800,6 +896,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     return lk;
   };
   const wallMat: Material = pal ? pal.wall.mat : 'hull';
+  /** a per-cell-height floor looks like its area (one colour however it tilts) */
+  const cellLook = (p: Cell) => floorLook(p.c, area(p.c).h ?? lay.layers[p.l].y);
 
   const cellsAt: Cell[][] = Array.from({ length: W * H }, () => []);
   for (const p of cells) cellsAt[p.y * W + p.x].push(p);
@@ -1037,7 +1135,11 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         here.forEach((p, i) => {
           const below = here[i - 1];
           const above = here[i + 1];
-          const look = isRamp(p) && pal ? rampLook(p.c) : floorLook(p.c, p.h);
+          const look = perCell.has(p)
+            ? cellLook(p)
+            : isRamp(p) && pal
+              ? rampLook(p.c)
+              : floorLook(p.c, p.h);
           if (p.zg) {
             air.push([p.zg.lo, p.zg.top]);
             if (!below) floors.push({ y0: bottom, y1: p.zg.lo, ...look });
@@ -1081,7 +1183,8 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
               rampCeilings.push(p);
             p.airTop = Math.min(nextY, p.h + 4);
             smooth.push(p);
-            if (!below) floors.push({ y0: bottom, y1: base, ...rampLook(p.c) });
+            if (!below)
+              floors.push({ y0: bottom, y1: base, ...(perCell.has(p) ? look : rampLook(p.c)) });
             return;
           }
           const rise = Math.abs(p.rise ?? 0);
@@ -1174,7 +1277,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     });
   };
   for (const p of smooth) {
-    const look = rampLook(p.c);
+    const look = perCell.has(p) ? cellLook(p) : rampLook(p.c);
     const ax = axisOf(p);
     const k = p.corners!;
     if (ax === 'flat') {
@@ -1548,7 +1651,15 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       continue;
     }
     propAreas.add(floor.c);
-    const y0 = floor.corners ? lowY(floor) : standY(floor);
+    let y0 = floor.corners ? lowY(floor) : standY(floor);
+    // (on per-cell heights: on the highest floor under it, so it never sinks into a tilted one)
+    if (perCell.has(floor))
+      for (let yy = Math.floor(pr.y); yy < pr.y + pr.d; yy++)
+        for (let xx = Math.floor(pr.x); xx < pr.x + pr.w; xx++) {
+          const q = cellAt(l, xx, yy);
+          if (q && perCell.has(q) && Math.abs(standY(q) - standY(floor)) < SMOOTH_GAP)
+            y0 = Math.max(y0, highY(q));
+        }
     const x0 = pr.x * s;
     const z0 = pr.y * s;
     const x1 = (pr.x + pr.w) * s;

@@ -42,25 +42,33 @@ const MAPS_1: [string, GrayboxLayout, string[]][] = [
       'T Spawn',
       'T Ramp',
       'Palace',
+      'Tetris',
       'A Ramp',
       'A Site',
+      'Triple',
+      'Firebox',
+      'Default',
       'Ninja',
       'Stairs',
+      'Sandwich',
       'Jungle',
       'Connector',
       'CT',
       'Ticket Booth',
-      'Mid',
+      'CT Spawn',
       'Top Mid',
+      'T Apps',
+      'Mid',
       'Window',
       'Short',
       'Catwalk',
       'Underpass',
       'Apartments',
-      'B Site',
-      'Market',
-      'Market Window',
       'Kitchen',
+      'Market',
+      'B Site',
+      'Van',
+      'Bench',
       'B Short',
     ],
   ],
@@ -91,7 +99,11 @@ describe.each(MAPS_1)('%s layout', (id, lay, callouts) => {
 
   it('callouts: the real ones, each once; one T, one CT spawn, sites A and B, no gravity', () => {
     const areas = Object.values(lay.legend);
-    const names = areas.map((a) => a.n);
+    // (a ladder's tube ends are small areas of their own that keep the callout's name)
+    const linkEnds = new Set((lay.links ?? []).flatMap(([a, b]) => [a, b]));
+    const names = Object.entries(lay.legend)
+      .filter(([c]) => !linkEnds.has(c))
+      .map(([, a]) => a.n);
     expect(new Set(names).size).toBe(names.length);
     for (const c of callouts) expect(names).toContain(c);
     expect(areas.filter((a) => a.k === 'orange').map((a) => a.n)).toEqual(['T Spawn']);

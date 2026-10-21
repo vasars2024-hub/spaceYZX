@@ -1,5 +1,5 @@
-// Inferno and Nuke (level/maps/cs/): the CS2 classics rebuilt as grayboxes at about 3× their real
-// size. Checks what the shared graybox tests don't: the grid size, smooth straight ramps no
+// Inferno and Nuke (level/maps/cs/): the CS2 classics rebuilt as grayboxes (traced ones: 1.25× real,
+// others about 3×). Checks what the shared graybox tests don't: the grid size, smooth straight ramps no
 // steeper than 30°, no gravity areas, the real callouts, props standing on flat floor, signs on
 // walls facing a floor, and Nuke's stacked sites with the Vents drop.
 import { describe, expect, it } from 'vitest';
@@ -19,6 +19,7 @@ const CALLOUTS: Record<string, string[]> = {
     'Second Mid',
     'Mid',
     'Top Mid',
+    'Alt Mid',
     'Apartments',
     'Balcony',
     'Boiler',
@@ -27,12 +28,12 @@ const CALLOUTS: Record<string, string[]> = {
     'A Site',
     'Library',
     'Truck',
-    'Arch Side',
     'Arch',
     'CT',
     'Banana',
     'Car',
     'Logs',
+    'Sandbags',
     'Coffins',
     'B Site',
     'Fountain',
@@ -88,7 +89,11 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
     const m = MAPS.find((x) => x.id === id)!;
     expect(m).toBeDefined();
     expect(m.competitive && m.graybox).toBe(true);
-    expect(lay.cellM).toBeCloseTo(64 * 0.0254 * 3, 6);
+    // (maps traced from the radar — per-cell heights — are 1.25× real size: 32..48 CS units a cell)
+    if (lay.layers.some((L) => L.heights)) {
+      expect(lay.cellM).toBeGreaterThanOrEqual(32 * 0.0254 * 1.25 - 1e-6);
+      expect(lay.cellM).toBeLessThanOrEqual(48 * 0.0254 * 1.25 + 1e-6);
+    } else expect(lay.cellM).toBeCloseTo(64 * 0.0254 * 3, 6);
     expect(W).toBeLessThanOrEqual(140);
     expect(H).toBeLessThanOrEqual(140);
     for (const layer of lay.layers) {
@@ -136,6 +141,18 @@ describe.each(LAYOUTS)('%s layout', (id, lay) => {
   });
 
   it('props stand on flat floor of one area inside their layer', () => {
+    // (maps traced from the radar — per-cell heights — keep the radar's props where they are:
+    // they only have to stand on floor, never cut into a wall; the tracer flattens the floor
+    // under each and the builder keeps bots clear)
+    if (lay.layers.some((L) => L.heights)) {
+      for (const p of lay.props ?? []) {
+        const l = p.l ?? 0;
+        for (let y = Math.floor(p.y); y < p.y + p.d - 1e-6; y++)
+          for (let x = Math.floor(p.x); x < p.x + p.w - 1e-6; x++)
+            expect(floorArea(at(l, x, y)), `prop at ${p.x},${p.y} over ${x},${y}`).toBeDefined();
+      }
+      return;
+    }
     for (const p of lay.props ?? []) {
       const l = p.l ?? 0;
       const seen = new Set<string>();

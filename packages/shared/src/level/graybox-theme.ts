@@ -22,7 +22,7 @@ export interface GrayboxPalette {
   ramp: { mat: Material; colors: number[] };
   /** bomb site floors */
   site: { mat: Material; color: number };
-  /** shallow water (areas named Water / Canal / Sea): a walkable floor that looks like water */
+  /** shallow water (areas named Water / Canal / Sea / Boat): a walkable floor that looks like water */
   water?: { mat: Material; color: number };
   /** door frames: strips on both sides of every doorway between two areas */
   door: { mat: Material; colors: number[] };

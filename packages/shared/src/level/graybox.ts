@@ -857,7 +857,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   const wallTop = top + WALL_ABOVE;
 
   /** areas drawn as shallow water (themes with a water colour) */
-  const WATER_AREA = /\b(water|canal|sea)\b/i;
+  const WATER_AREA = /\b(water|canal|sea|boat)\b/i;
   // ---- looks (level/graybox-theme.ts; unthemed: the plain graybox colours) ------------------
   const colorOf = (c: string, h: number): number => {
     const k = area(c).k;

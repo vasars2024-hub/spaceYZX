@@ -1,241 +1,371 @@
-// Ancient (CS2's de_ancient), rebuilt as a graybox at about 3× its horizontal size (our players
-// sprint 9 m/s and have a dash and a jetpack, so a CS-sized map would be over in seconds).
-//
-// SCALE: the layout is drawn on a grid of 64 × 64 CS units per cell (1 unit = 1 inch = 0.0254 m),
-// laid out as on the CS radar, with corridors and sites about as many cells wide as in CS. SCALE
-// (one number) turns a cell into metres: at SCALE 3 a cell is 4.88 m, so the 62 × 56 cell grid is
-// 302 × 273 m. Change SCALE and the whole map grows or shrinks (the grid stays the same). Heights
-// are in metres (CS height differences × about 1.5); every slope is a smooth ramp (straight run,
-// gentle: the steepest is 9°).
-//
-// Orientation as on the CS radar: north (row 0) = CT side, south = T side, A in the west, B east.
-// Callouts (legend names):
-//   T Spawn (orange, attackers) — south middle
-//   Red Room → T Ramp (down) → Water (shallow, the low middle) → Mid (up) → Top Mid → CT Mid → CT
-//   Top Mid → Donut Entrance → Donut (round room, pillar in the middle) → Donut Ramp → A Site
-//   T Spawn → A Main (west, then north) → A Main Ramp → Elbow → A Site (Triple boxes on it)
-//   CT Spawn → Temple → A Site
-//   T Spawn → Lane (east) → B Ramp → B Main → B Long → B Site
-//   Water → Cave → B Short (up) → B Site
-//   CT Spawn → Ruins → B Pillar (steps by the big pillar) → B Site
-//   CT Spawn (cyan, defenders) — north middle, raised like the real one
-// No gravity areas, no pads or tubes needed: everything is walked.
+// Ancient (CS2), TRACED from Valve's radar overview by the CS map tracer (trace.mjs, outside
+// the repo: C:\Users\rolli\wt\cs-refs; spec: specs/ancient.json). Regenerate it rather than editing:
+//   node C:\Users\rolli\wt\cs-refs\trace.mjs ancient --repo <checkout>
+// Scale: 1.25× the real map across (1 radar px = 5 units; one cell = 33 units =
+// 1.048 m), heights 1.0× (1 unit = 0.0254 m), per cell from the radar's height colours, built
+// smooth (graybox.ts: layer heights). 115 × 133 cells ≈ 120 × 139 m, 5616 floor cells.
+// North (row 0) is up on the radar. Orange = T (attackers), Cyan = CT (defenders).
+// Callouts: T Spawn, T Ramp, Outside, Elbow, Mid, Top Mid, Red Room, CT, CT Spawn, Lane, Temple, 
+// A Site, Triple, Long, Boost, A Main, Donut, Heaven, Lamp Room, Cave, B Site, Pillar, Back Halls, 
+// Alley, B Ramp, B Main, Doors, Ruins, Water, Tunnel.
 import type { LevelDef } from '../../types';
-import {
-  buildGraybox,
-  type GrayboxLayout,
-  type GrayboxProp,
-  type GrayboxSign,
-} from '../../graybox';
+import { buildGraybox, unpackHeights, type GrayboxLayout } from '../../graybox';
 
-/** our map = SCALE × the CS map's horizontal size */
-const SCALE = 3;
-/** CS units per grid cell (the layout below is drawn in these cells) */
-const CELL_UNITS = 64;
-/** metres per grid cell: 64 CS units (inches) × SCALE */
-const CELL_M = CELL_UNITS * 0.0254 * SCALE;
-/** the grid: 62 × 56 cells (west → east, north → south) */
-const GRID_W = 62;
-const GRID_H = 56;
-
-// ---- a small painter: rectangles of cells → the tile grid ------------------------------------
-/** an area's rectangle: cells x0 ≤ x < x1, z0 ≤ z < z1 (z: rows, north → south) */
-type Rect = [c: string, x0: number, z0: number, x1: number, z1: number];
-/** paints the rectangles in order (later ones over earlier ones) onto solid wall ('.') */
-const paint = (rects: Rect[]): string[] => {
-  const g = Array.from({ length: GRID_H }, () => Array<string>(GRID_W).fill('.'));
-  for (const [c, x0, z0, x1, z1] of rects)
-    for (let y = z0; y < z1; y++) for (let x = x0; x < x1; x++) g[y][x] = c;
-  return g.map((r) => r.join(''));
-};
-type Face = 'n' | 'e' | 's' | 'w';
-const COMPASS: Face[] = ['n', 'e', 's', 'w'];
-const STEP: Record<Face, [number, number]> = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] };
-/** a prop by its corners in cells (fractions allowed), h metres tall */
-const prop = (
-  x0: number,
-  z0: number,
-  x1: number,
-  z1: number,
-  h: number,
-  kind: GrayboxProp['kind'],
-): GrayboxProp => ({ x: x0, y: z0, w: x1 - x0, d: z1 - z0, h, kind });
-/**
- * A painted sign: standing at cell (x, z) and looking `wall`-ward, on the first wall there.
- * `toward`: the compass way the sign points; the arrow is worked out from the way you look.
- */
-const signOn =
-  (rows: string[]) =>
-  (x: number, z: number, wall: Face, label: string, toward?: Face): GrayboxSign => {
-    let cx = Math.floor(x);
-    let cy = Math.floor(z);
-    const [dx, dy] = STEP[wall];
-    for (;;) {
-      const c = rows[cy + dy]?.[cx + dx];
-      if (c === undefined) throw new Error(`Ancient: no wall for sign "${label}"`);
-      if (c === '.') break;
-      cx += dx;
-      cy += dy;
-    }
-    const turn = toward ? (COMPASS.indexOf(toward) - COMPASS.indexOf(wall) + 4) % 4 : -1;
-    const text =
-      turn === 0
-        ? `${label} ↑`
-        : turn === 1
-          ? `${label} →`
-          : turn === 2
-            ? `${label} ↓`
-            : turn === 3
-              ? `← ${label}`
-              : label;
-    return { x: cx + dx, y: cy + dy, face: COMPASS[(COMPASS.indexOf(wall) + 2) % 4], text };
-  };
-
-// ---- the layout (cells of 64 CS units) ---------------------------------------------------------
-const GROUND: Rect[] = [
-  // CT side
-  ['C', 36, 4, 46, 10], // CT Spawn
-  ['p', 25, 5, 34, 10], // Temple
-  ['p', 34, 6, 36, 8], // (Temple ↔ CT door)
-  ['p', 21, 8, 25, 10], // (Temple ↔ A door)
-  ['k', 37, 10, 41, 15], // CT Mid
-  ['u', 48, 4, 57, 9], // Ruins
-  ['u', 46, 5, 48, 7], // (Ruins ↔ CT door)
-  // A
-  ['A', 8, 8, 21, 20], // A Site
-  ['e', 9, 21, 19, 25], // Elbow
-  ['e', 14, 20, 19, 21], // (Elbow ↔ A Site opening)
-  ['R', 9, 25, 13, 30], // A Main Ramp
-  ['a', 9, 30, 13, 48], // A Main
-  ['a', 9, 48, 23, 52], // A Main (leg from T)
-  ['a', 23, 49, 25, 51], // (A Main ↔ T door)
-  // Donut
-  ['E', 21, 15, 23, 18], // Donut Ramp (A side)
-  ['d', 23, 13, 27, 19], // Donut
-  ['D', 27, 15, 31, 18], // Donut Entrance (mid side)
-  // Mid
-  ['o', 31, 15, 41, 22], // Top Mid
-  ['m', 32, 22, 40, 26], // Mid
-  ['w', 31, 26, 40, 34], // Water
-  ['t', 33, 34, 37, 40], // T Ramp
-  ['r', 31, 40, 37, 45], // Red Room
-  ['r', 33, 45, 35, 47], // (Red Room ↔ T door)
-  // T
-  ['T', 25, 47, 38, 54], // T Spawn
-  // B
-  ['l', 40, 48, 57, 52], // Lane
-  ['l', 38, 49, 40, 51], // (Lane ↔ T door)
-  ['g', 53, 37, 57, 48], // B Ramp
-  ['b', 53, 27, 57, 37], // B Main
-  ['L', 53, 22, 57, 27], // B Long
-  ['v', 40, 28, 51, 32], // Cave
-  ['S', 48, 22, 51, 28], // B Short
-  ['B', 47, 11, 60, 22], // B Site
-  ['P', 51, 9, 55, 11], // B Pillar
-];
-
-const rows = paint(GROUND);
-const sign = signOn(rows);
+/** metres per grid cell */
+export const ANCIENT_CELL_M = 1.0478;
 
 export const ANCIENT_LAYOUT: GrayboxLayout = {
   name: 'Ancient',
-  cellM: CELL_M,
+  cellM: ANCIENT_CELL_M,
   theme: 'jungle',
-  layers: [{ name: 'Ground', y: 0, rows }],
-  legend: {
-    C: { n: 'CT Spawn', k: 'cyan', h: 3, s: 'CT' },
-    T: { n: 'T Spawn', k: 'orange', h: 0, s: 'T' },
-    A: { n: 'A Site', k: 'site', h: 3 },
-    B: { n: 'B Site', k: 'site', h: 1.5 },
-    p: { n: 'Temple', k: 'room', h: 3 },
-    k: { n: 'CT Mid', k: 'ramp', r: [0, 3], dir: 'n' },
-    u: { n: 'Ruins', k: 'room', h: 3 },
-    P: { n: 'B Pillar', k: 'ramp', r: [1.5, 3], dir: 'n', s: 'Pillar' },
-    e: { n: 'Elbow', k: 'room', h: 3 },
-    R: { n: 'A Main Ramp', k: 'ramp', r: [0, 3], dir: 'n' },
-    a: { n: 'A Main', k: 'room', h: 0 },
-    E: { n: 'Donut Ramp', k: 'ramp', r: [1.5, 3], dir: 'w' },
-    d: { n: 'Donut', k: 'room', h: 1.5 },
-    D: { n: 'Donut Entrance', k: 'ramp', r: [0, 1.5], dir: 'w' },
-    o: { n: 'Top Mid', k: 'room', h: 0 },
-    m: { n: 'Mid', k: 'ramp', r: [-2, 0], dir: 'n' },
-    w: { n: 'Water', k: 'room', h: -2 },
-    t: { n: 'T Ramp', k: 'ramp', r: [-2, 0], dir: 's' },
-    r: { n: 'Red Room', k: 'room', h: 0 },
-    l: { n: 'Lane', k: 'room', h: 0 },
-    g: { n: 'B Ramp', k: 'ramp', r: [0, 1.5], dir: 'n' },
-    b: { n: 'B Main', k: 'room', h: 1.5 },
-    L: { n: 'B Long', k: 'room', h: 1.5, s: 'Long' },
-    v: { n: 'Cave', k: 'room', h: -2 },
-    S: { n: 'B Short', k: 'ramp', r: [-2, 1.5], dir: 'n', s: 'Short' },
-  },
-  // the hand-placed cover below is the map's cover (no automatic crates)
   cover: false,
+  waypointEvery: 2,
   props: [
-    // A Site: Triple (three boxes in a row), the default box, a broken wall, a statue
-    prop(11, 13, 12.5, 14.5, 1.4, 'crate'),
-    prop(12.5, 13, 14, 14.5, 2.4, 'crate'),
-    prop(14, 13, 15.5, 14.5, 1.4, 'crate'),
-    prop(17, 10, 18.8, 11.8, 2.4, 'crate'),
-    prop(18, 15, 18.8, 17.5, 1.6, 'wall'),
-    prop(9, 9, 10, 10, 6, 'pillar'),
-    // Elbow: a statue at the turn
-    prop(9.2, 21.2, 10.2, 22.2, 4, 'pillar'),
-    // Temple: two rows of columns
-    prop(27, 5.4, 27.8, 6.2, 6, 'pillar'),
-    prop(31, 5.4, 31.8, 6.2, 6, 'pillar'),
-    prop(27, 8.6, 27.8, 9.4, 6, 'pillar'),
-    prop(31, 8.6, 31.8, 9.4, 6, 'pillar'),
-    // Donut: the pillar in the middle of the round room
-    prop(24.2, 15.2, 25.8, 16.8, 6, 'pillar'),
-    // Top Mid: the low wall and a box
-    prop(33, 18, 36, 18.6, 1.4, 'wall'),
-    prop(38.5, 19.5, 39.8, 20.8, 1.6, 'crate'),
-    // Water: rocks in the shallow water
-    prop(32, 27.5, 33.3, 28.7, 1.2, 'crate'),
-    prop(37, 31, 38.3, 32.2, 1.6, 'crate'),
-    // Cave: a fallen block
-    prop(44, 28.2, 45.3, 29.2, 1.4, 'crate'),
-    // B Site: the big pillar, boxes
-    prop(54, 14, 56, 16, 6, 'pillar'),
-    prop(48.3, 17.5, 49.8, 19, 1.6, 'crate'),
-    prop(57, 12, 58.5, 13.5, 2.4, 'crate'),
-    prop(57.5, 19, 59, 20.3, 1.4, 'crate'),
-    // B Main: a box half way up
-    prop(55.7, 30, 56.9, 31.2, 1.6, 'crate'),
-    // Lane: a low wall
-    prop(45, 48.2, 46.5, 49, 1.4, 'wall'),
-    // CT Spawn: statues; Ruins: broken columns
-    prop(37, 4.4, 38, 5.4, 5, 'pillar'),
-    prop(44, 4.4, 45, 5.4, 5, 'pillar'),
-    prop(50, 5, 51.2, 6.2, 2.4, 'pillar'),
-    prop(55.5, 5, 56.6, 6.4, 1.4, 'wall'),
-    // T Spawn: the statue, a few boxes
-    prop(30.5, 51, 31.7, 52.2, 5, 'pillar'),
-    prop(26, 52.2, 27.5, 53.6, 1.6, 'crate'),
-    prop(35, 51.5, 36.5, 52.8, 1.6, 'crate'),
+    { x: 33.029, y: 30.029, w: 1.759, d: 0.943, h: 2.2, kind: 'crate' },
+    { x: 59.029, y: 77.029, w: 2.943, d: 2.456, h: 2.2, kind: 'crate' },
+    { x: 15.126, y: 26.604, w: 2.79, d: 2.79, h: 2.2, kind: 'crate' },
+    { x: 104.292, y: 95.118, w: 2.357, d: 2.357, h: 1.3, kind: 'crate' },
+    { x: 83.576, y: 29.182, w: 2.121, d: 1.79, h: 1.3, kind: 'crate' },
+    { x: 8.778, y: 23.029, w: 1.194, d: 0.943, h: 1.3, kind: 'crate' },
+    { x: 104.636, y: 73.424, w: 1.97, d: 1.97, h: 1.3, kind: 'crate' },
+    { x: 83.029, y: 46.029, w: 1.608, d: 1.335, h: 1.3, kind: 'crate' },
+    { x: 48.424, y: 29.029, w: 0.909, d: 1.971, h: 1.3, kind: 'crate' },
+    { x: 8.273, y: 54.03, w: 1.515, d: 0.941, h: 1.3, kind: 'crate' },
+    { x: 10.653, y: 53.038, w: 1.987, d: 0.933, h: 1.3, kind: 'crate' },
+    { x: 25.091, y: 38.121, w: 1.061, d: 1.667, h: 1.3, kind: 'crate' },
+    { x: 33.273, y: 38.121, w: 0.699, d: 1.667, h: 1.3, kind: 'crate' },
+    { x: 36.455, y: 10.029, w: 2.273, d: 0.668, h: 1.3, kind: 'crate' },
+    { x: 36.455, y: 15.394, w: 2.273, d: 0.577, h: 1.3, kind: 'crate' },
+    { x: 35.029, y: 10.029, w: 1.274, d: 0.668, h: 1.3, kind: 'crate' },
+    { x: 43.576, y: 10.029, w: 1.364, d: 0.668, h: 1.3, kind: 'crate' },
+    { x: 46, y: 10.029, w: 1.364, d: 0.668, h: 1.3, kind: 'crate' },
+    { x: 48.576, y: 31.029, w: 0.758, d: 0.943, h: 1.3, kind: 'crate' },
+    { x: 35.029, y: 15.394, w: 1.123, d: 0.577, h: 1.3, kind: 'crate' },
+    { x: 43.576, y: 15.394, w: 1.212, d: 0.577, h: 1.3, kind: 'crate' },
+    { x: 1.152, y: 49.788, w: 0.606, d: 1.364, h: 1.3, kind: 'crate' },
+    { x: 46.152, y: 15.394, w: 1.061, d: 0.577, h: 1.3, kind: 'crate' },
+    { x: 45.091, y: 10.029, w: 0.758, d: 0.517, h: 1.3, kind: 'crate' },
+    { x: 45.091, y: 15.394, w: 0.758, d: 0.577, h: 1.3, kind: 'crate' },
+    { x: 26, y: 48.727, w: 0.758, d: 0.758, h: 1.1, kind: 'barrel' },
+    { x: 32.364, y: 49.029, w: 0.608, d: 0.608, h: 1.1, kind: 'barrel' },
+    { x: 19.333, y: 50.091, w: 0.638, d: 0.758, h: 1.3, kind: 'crate' },
+    { x: 19.333, y: 51.152, w: 0.638, d: 0.758, h: 1.3, kind: 'crate' },
+    { x: 1, y: 51.455, w: 0.758, d: 0.758, h: 1.1, kind: 'barrel' },
+    { x: 32.364, y: 47.667, w: 0.608, d: 0.606, h: 1.1, kind: 'barrel' },
+    { x: 1.152, y: 52.667, w: 0.606, d: 0.606, h: 1.1, kind: 'barrel' },
+    { x: 32.378, y: 46.55, w: 0.587, d: 0.587, h: 1.3, kind: 'crate' },
+    { x: 26.152, y: 47.667, w: 0.455, d: 0.606, h: 1.3, kind: 'crate' },
   ],
   signs: [
-    sign(26, 52, 'w', 'A', 'w'),
-    sign(31, 47.5, 'n', 'MID', 'e'),
-    sign(37, 52, 'e', 'B', 'e'),
-    sign(12, 50, 'w', 'A', 'n'),
-    sign(10, 38, 'w', 'A', 'n'),
-    sign(16, 23, 's', 'A SITE', 'n'),
-    sign(32, 42, 'n', 'MID', 'e'),
-    sign(38, 33, 'e', 'CAVE', 'n'),
-    sign(33, 15.5, 'n', 'DONUT', 'w'),
-    sign(36, 15.5, 'n', 'CT', 'e'),
-    sign(24, 13.5, 'n', 'A', 'w'),
-    sign(46, 30, 's', 'B', 'e'),
-    sign(50, 50, 's', 'B', 'e'),
-    sign(55, 24, 'e', 'B SITE', 'n'),
-    sign(38, 4.5, 'n', 'A', 'w'),
-    sign(43, 4.5, 'n', 'B', 'e'),
-    sign(41, 9.5, 's', 'MID', 'w'),
-    sign(29, 5.5, 'n', 'TEMPLE'),
-    sign(52, 4.5, 'n', 'RUINS'),
   ],
+  layers: [
+    {
+      name: 'Main',
+      y: -0.3,
+      rows: [
+        '...................................................................................................................',
+        '...................................................JJJJJJJJJJJJJJJJJJ..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...................................................JIIIIIIIIIIIIIIIII..............................................',
+        '...........................KKKKK...................JIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKK...JJJJ....JJJJJ...JIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKKKKKJJJJJJJJJJJJJJJJJIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKKKKKJJJJJJJJJJJJJJJJJIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKKKKKJJJJJJJJJJJJJJJJJIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKKKKKKJJJJJJJJJJJJJJJJIIIIIIIIIIIIIIIII..............................................',
+        '..........................KKKKKK..KKJJJ....JJJJJ..JJIIIIIIIIIIIIIIIII..............................................',
+        '......NNNNNNNN............KKKKKK...................JIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNN...........KKKKKK...................JIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNKK...KKKKKKKK..................JIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNKKKKKKKKKKKK..................JIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNKKKKKKKKKKKK..MMMMMMMMMMMMMMJJJIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNKK..KKKKKKKK..MMMMMMMMMMMMMMJJJIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNNN...KKKKKK...MMMMMMMMMMMMMMMJJIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNNN............MMMMMMMMMMMMMMMMJIIIIIIIIIIIIIIIII..............................................',
+        '.....NNNNNNNNNNNNNNNNNN............MMMM.....MMMM.....IIII.....HHHH.................................................',
+        '.....NNNNNNNNNNNNNNNNNN............MMMM.....MMMM..............HHHH...................................WWWWWWWWWW....',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMM.......................HHHH....XXXXXXXXXXXXXXXXXXXWWWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMMM.........GGGGGGGGG..HHHHHHHH..XXXXXXXXXXXXXXXXXXXWWWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMMM.........GGGGGGGGGGGHHHHHHHH..HXXXXXXXXXXXXXXXXXXXWWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMMM........GGGGGGGGGGGGHHHHHHHH..HXXXXXXXXXXXXXXXXXXXWWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMMM........GGGGGGGGGGGGHHHHHHHHHHHXXXXXXXXXXXXXXXXXXXXWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNNNLLLLLLLLLLLMMMMM.........GGGGGGGGGGGGHHHHHHHHHHHXXXX.............XXXWWWWWWWWWWWWWWWWWWWWWWW.',
+        '.....NNNNNNNNNNNNNNNNOOLLLLLLLLLLLMMMMM..........GGGGGGGGGGGHHHHHHHHHHHXXXX..............XXWWW............WWWWWWWW.',
+        '.....NNNNNNNNNNNNOOOOOOLLLLLLLLLLLMMMMM.............GGGGGG..HHHHHHHHHHHXXXX..............XWWWW............WWWWWWWW.',
+        '.....NNNNNNNNNNOOOOOOOOOOOOMMMMMMMMMMMM.............GGGGGG..HHHHHHHHHHHHXXX..............XWWWW............WWWWWWWW.',
+        '.....NNNNNNNNOOOOOOOOOOOOOOQQMMMMMM.................GGGGGG..HHHHHHHH..HHXXX..............WWWWW............WWWWWWWW.',
+        '.....NNNNNNNOOOOOOOOOOOOOOQQQQMMMMM.................GGGFFF............HHXXX..............WWWWW............WWWWWWWW.',
+        '.....NNNNNNNNOOOOOOOOOOOOOQQQQQQMMM..................FFFFF..............................WWWWWW............WWWWWWWW.',
+        '.....NNNNNNNNOOOOOOOO....QQQQQQQQQM..................FFFF................................TTWWW............WWWWWWWW.',
+        '.....NNNNNNNNNOOOOOOO....QQQQQQQQQ..................FFFFFF...............................TTTTT............WWWWWWWW.',
+        '.....NNNNNNNNNOOOOOOO.....QQQQQQQ...................FFFFFFF..............................TTTTT............WWWWW....',
+        '.....NNNNNNNNNOOOOOOO......QQQQQ...................FFFFFFFFF.............................TTTTT............WWWWW....',
+        '.....NNNNNNNNNOOOO.........QQQQQ...................FFFFFFFFF.............................TTTTT............WWWWW....',
+        '.....NNNNNNNNNNOO..........QQQQQ...................FFFFFFFFF..............................TTTTTTTTVVVVWWWWWWWWW....',
+        '......NNNNNN...............QQQQQQ..................FFFFFFFFF..............................TTTTTTTTVVVVVVWWWWWWW....',
+        '......NNNNN................QQQQQQ...................FFFFFF................................TTTTTTTTVVVVVVVVVWWWW....',
+        '......NNNNN...............QQQQQQQ....................FFFFF.......................TTTTTTT..TTTTTTTTVVVVVVVVVVWWW....',
+        '......NNNNN...............QQQQQQQ....................FFFFF.......................TTTTTTTTTTTTTTTTTVVVVVVVVVVVWW....',
+        '.....NNNNNNN..............QQQQQQQ....................FFFFF.......................TTTTTTTTTTTTTTTTTVVVVVVVV.........',
+        '.NNNNNNNNNNNNNNNNNN.......QQQQQQQ..................FFFFFFFF......................TTTTTTTTTTUUUUUUUUUUUUVVV.........',
+        '.NNNNNNNNNNNNNNNNNNN.......QQQQQQ..................FFFFFFFF......................TTTTTTTT.TUUUUUUUUUUUUUVVV........',
+        '.PPPPPPPPNNNNNNNNNNN.......QQQQQQ..................FFFFFFFF......................TTTTTTT..TUUU...UUUUUUUVVV........',
+        '.PPPPPPPPPPNNNNNNNNN.......QQQQQ...................FFFFFFFF......................TTTTTTT...UUU...UUUUUUUUVV........',
+        '.PPPPPPPPPPPPPNNNNNN.....QQQQQQQQ..................FFFFFFFE......................TTTTTTT...UUU...UUUUUUUUVVV.......',
+        '..PPPPPPPP....NNNNN....QQQQQQQQQQQQ................FFFFFEEE......................TTTTTTT...UUUUUUUUUUUUUVVVVV......',
+        '....PPPPP.....NNNN....QQQQQQQQQQQQQQ...............FEEEEEEE......................TTTTTTT...UUUUUUUUUUUUUVVVVV......',
+        '....PPPPP.....PPPPP...QQQQQQQQQQQQQQ....QQ.........EEEEEEEE......................TTTTTTTT..UUUUUUUUUUUUVVVVVV......',
+        '....PPPPP.....PPPPP...QQQQQ.....QQQQQQ..QQQ........EEEEEEEE......................TTTTTTTTT.VVVVVVVVVVVVVVVVVV......',
+        '....PPPPP.....PPPPP...QQQQ......QQQQQQQQQQQQQQQQQQEEEEEEEEEEEEEEEEEE.............TTTTTTTTT.VVVVVVVVVVVVVVVVVVV.....',
+        '....PPPPPP....PPPPP...QQQQ......QQQQQQQQQQQQQQQQQQEEEEEEEEEEEEEEEEEE.............TTTTTTT..VVVVVVVVVVVVVVVVVVVVV....',
+        '....PPPPPP....PPPPP...QQQQ......QQQQQQQQQQQQQQQQQEEEEEEEEEEEEEEEEEEE.............TTTTTTT..VVVVVVVVVVVVVVVVVVVVV....',
+        '....PPPPPP....PPPPP...QQQQ......QQQQQQQQQQQQQQQQEEEEEEEEEEEEEEEEEEEE...............TTT....YYYYYYYYYYYYYYYYYYYYY....',
+        '....PPPPPP....PPPPP...QQQQ......QQQQQ..........EEEEEEEEEEEEEEEEEEEEE...............TTT....YYYYYYYYYYYYYYYYYYYYY....',
+        '....PPPPPP....PPPPP...QQQQQQQQQQQQQQQ...........EEEEEEEEEEEEEEEEEEEE..............TTTT...YYYYY............YYYYY....',
+        '....PPPPPP....PPPPP...QQQQQQQQQQQQQQ.............EEEEEEEEEEEEEE...................TTTT...YYYYY............YYYYY....',
+        '....PPPPPPPPPPPPPPP....QQQQQQQQQQQQ...............EEEEEEEEEEEEE.....................SS....YYYY............YYYYY....',
+        '....PPPPPPPPPPPPPPP...............................EEEEEEEEEEEEE.....................SS....................YYYYY....',
+        '....PPPPPPPPPPPPPPP...............................EEEEEEEEEEEEE.........SSSSSSSSSSSSSSS...................YYYYYYY..',
+        '....PPPPPP....PPPPP...............................EEEEEEEEEEEEE........SSSSSSSSSSSSSSSS...................YYYYYYY..',
+        '....PPPPP.....PPPPP...............................EEEEEEEEEEEEE........SSSSSSSSSSSSSSSS...................YYYYYYY..',
+        '..............PPPPP...............................EEEEEEEEEEEEE........SSSSSSSSSSSSSSSS..ZZZZZ............YYYYYYY..',
+        '..............PPPPP...............................EEEEEEEEEEEEE........SSSSSSSSSSSSSSSS..ZZZZZ............YYYYYYY..',
+        '..............PPPPP..............................EEEEEEEEEEEEEE........SSSSSSSSSSSSSSSS..ZZZZZ............ZZZYYYY..',
+        '.............PPPPPP.............................EEEEEEEEEEEEEEE...........RRRRRRR........ZZZZZZZZZZZZZZZZZZZZZZYY..',
+        '............PPPPPPPPP...................DDDDEEEEEEEEEEEEEEEEEEE...........RRRRRRR........ZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '............PPPPPPPPP...................DDDDDEEEEEEEEEEEEEEEEEEEEEERRRRRR..RRRR..........ZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '............PPPPPPPPP...................DDDDDEEEEEEEEEEEEEEEEEEEEEERRRRRR..RRRR..........ZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '.......CCCCCPPPPPPPPP...................DDDDDDEEEEEEEEEEEEEEEEEEEERRRRRRR..RRRR..RRRRRRRRZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '......CCCCCCCCCCCCCCC...................DDDDDDEEEEEEEEEEEEEEEEEEEERRRRRRRR.RRRRRRRRRRRRRRZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '......CCCCCCCCCCCCCCCC............DDDDDDDDDDDDEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRZZZZZZZZZZZZZZZZZZZZZZZZ..',
+        '......CCCCCCCCCCCCCCCC............DDDDDDDDDDDDDEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRZZZZZZZZZZaaaaaaaaaaaaaa..',
+        '......CCCCCCCCCCCCCCCCC...........DDD...........EEEEEEEEEEEEEEEEE.......RRRRRRRRRRRRRR............aaaaaaaaaaaaaaa..',
+        '......CCCCCCCCCCCCCCCCCC..........DDD...................................RRRRRRRRRRRRRR...............aaaaaa........',
+        '......CCCCCCCCCCCCCCCCCC..........DDD................................................................aaaaa.........',
+        '......CCCCCCCCCCCCCCCCCC..........DDD................................................................aaaa..........',
+        '......CCCCCCCCCCCCCCCCCC..........DDD................................................................aaaa..........',
+        '............CCCCCCCCCCCCC.........DDD..............................................................aaaaaaaaa.......',
+        '.............CCCCCCCCCCCCCCDDDDDDDDDD..............................................................aaaaaaaaaa......',
+        '..............CCCCCCCCCCCCCDDDDDDDDDD..............................................................bbbaaaaaaa......',
+        '...............CCCCCCCCCCCCCDDDDDDDDD..............................................................bbbbbbbbbb......',
+        '................CCCCCCCCCC......DDDDD..............................................................bbbbbbbbbb......',
+        '.................CCCCCCCC.......CDDDD..............................................................bbbbbbbbbb......',
+        '..................CCCCCCC.......CCCDD..............................................................bbbbbbbbbb......',
+        '..................CCCCCCC.......CCCCC............................................................bbbbbbbbbbbb......',
+        '...................CCCCCC.......CCCCC...........................................................bbbbbbbbbbbbb......',
+        '....................CCCCC.......CCCCC..........................................................bbbbbbbbbbbbbb......',
+        '....................CCCCCCCCCCCCCCCCC.........................................................bbbbbbbbbbbbbbb......',
+        '.....................CCCCCCCCCCCCCCCC........................................................bbbbbbbbbbbbbbbb......',
+        '.....................CCCCCCCCCCCCCCCC.......................................................bbbbbbbbbbbbbbbbb......',
+        '......................CCCCCCCCCCCCCCCCCCCCC...........................................cccccbbbbbbbbbbbbbbbbbb......',
+        '.......................CCCCCCCCCCCCCCCCCCCCB..........................................ccccccbbbbbbbbbbbbbbbbb......',
+        '........................CCCCCCCCCCCCCCCCCCBBBBBB......................................cccccccbb....................',
+        '..........................CCCCCCCCCCCCCCCCBBBBBBBBB...................................ccccccccc....................',
+        '..............................CCCCCCCCCCCBBBBBBBBBBB..................................ccccccccc....................',
+        '.................................CCCCCCCCBBBBBBBBBBB.........B........................cccccccc.....................',
+        '....................................CCCCBBBBBBBBBBBBBBBBBBBBBBBBB.....................cccccccc.....................',
+        '..........................................BBBBBBBBBBBBBBBBBBBBBBB.....................cccccccc.....................',
+        '............................................BBBBBBBBBBBBBBBBBBBBB.....................cccccccc.....................',
+        '.............................................BBBBBBBBBBBBBBBBBBBB.....................cccccccc.....................',
+        '...............................................BBBBBBBBBBBBBBBBBdddddddddddddddddccccccccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBdddddddddddddddddccccccccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBddddddddddddddddcccccccccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBd.....................cccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBd.....................cccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBd.....................cccccccc.....................',
+        '................................................BBBBBBBBBBBBBBBBB.....................cccccccc.....................',
+        '................................................BAAA.......AAAAAB.....................cccccccc.....................',
+        '................................................BAAA.......AAAAAB.....................cccccccc.....................',
+        '................................................BAAA.......AAAAAB.....................cccccccc.....................',
+        '................................................BAAA.......AAAAAB.....................ccccccc......................',
+        '................................................BAAAAAAAAAAAAAAAB..................................................',
+        '................................................BAAAAAAAAAAAAAAAB..................................................',
+        '................................................BAAAAAAAAAAAAAAAB..................................................',
+        '................................................BAAAAAAAAAAAAAAAB..................................................',
+        '.................................................AAAAAAAAAAAAAAAB..................................................',
+        '.................................................AAAAAAAAAAAAAAAB..................................................',
+        '.................................................AAAAAAAAAAAAAAAB..................................................',
+        '.................................................AAAAAAAAAAAAAAAB..................................................',
+        '..................................................AAAAAAAAAAAAAAB..................................................',
+        '...................................................AAAAAAAAAAAAAB..................................................',
+        '...........................................................AAAAA...................................................',
+        '...................................................................................................................',
+        '...................................................................................................................',
+      ],
+      heights: unpackHeights(-0.3, [
+        '......................................................................................................................................................................................................................................',
+        '......................................................................................................3f3f3f3f3f3f3f3f3f3f3f3f3f3f3V3V3V3V............................................................................................',
+        '......................................................................................................3f3f3V3V3V3V3V3V3V3V3V3V3V3V3V3V3V3V............................................................................................',
+        '......................................................................................................3f3V3V3L3L3L3L3L3L3L3L3L3L3L3L3V3V3V............................................................................................',
+        '......................................................................................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3V............................................................................................',
+        '......................................................................................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '......................................................................................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '......................................................................................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '......................................................................................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '......................................................5Z5Z5Z5Z5Z......................................3V3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z......4S4S4S4S........4S4S4S4S4S......3V3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z5Z5P4S4S4S4S4S4S4c4c4S4S4S4S4S4S4S4S3f3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z5Z4w4c4c4c4c4c4c4c4c4c4c4c4c4c4c4S4I3p3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z5Z4w4c4c4c4c4c4c4c4c4c4c4c4c4c4c4S4I3p3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z5Z4w4S4S4S4S4S4S4c4c4S4S4S4S4S4S4S4I3p3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '....................................................5Z5Z5Z5Z5Z5Z....4S4S4S4S4S........4S4S4S4S4S....3f3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '............4m4m4c4c4S4I3L3L........................5Z5Z5Z5Z5Z5Z......................................3V3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '..........4m4m4m4c4c4S4I3L3L3L......................5P5Z5Z5Z5Z5Z......................................3f3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f............................................................................................',
+        '..........4m4m4m4c4c4S3L3L3L3L3L3L3L3L3L3L3V......555P5Z5Z5Z5Z5Z5Z....................................4I3f3L3L3L3L3L3L3L3L3L3L3L3L3L3L3f4I............................................................................................',
+        '..........4m4m4m4c4c4S3L3L3L3L3L3L3L3L3L3L3V3-4I4c555P5Z5Z5Z5Z5Z5Z....................................4c4I3f3f3f3f3f3f3f3f3f3f3f3f3f3f4I4m............................................................................................',
+        '..........4m4m4m4c4S3L3L3L3L3L3L3L3L3L3L3L3V3-4I4c555P5Z5Z5Z5Z5Z5Z....3L3L3L4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4I4I4I4I4I4I4I4I4I4I4I4I4I4I4c4m............................................................................................',
+        '..........4m4m4m4c4S3L3L3L3L3L3L3L3L3L3L3L3V3-....555P5Z5Z5Z5Z5Z5Z....3L3L3L4S4c4c4c4c4c4c4c4c4c4c4c4c4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m............................................................................................',
+        '..........4m4m4848483L3L3L3L3L3L3L3L3L3L3L3L3L......5Z5Z5Z5Z5Z5Z......3L3L3L4S4c4c4c4c4c4c4c4c4c4c4c4c4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m............................................................................................',
+        '..........4m4m4848483L3L3L3L3L3L3L3L3L3L3L3L3L........................3L3L3L4S4c4c4c4c4c4c4c4c4c4c4c4c4m4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4m4m............................................................................................',
+        '..........4m4m48483L3L3L3L3L3L3L3L3L3L3L3L3L3L........................3L3L3L4S..........4c4c4c4c..........4m4m4c4c..........4c4c4c4c..................................................................................................',
+        '..........4m4m4m3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V........................3L3L3L4S..........4c4c4c4c............................4c4c4c4c......................................................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '..........4m4m3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3p3p3p3p3p3p3p3p3p3p3f3V3L3L4S..............................................4c4c4c4c........4c4c4c4c4m4m4w4w5555555F5F5P5P5P5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........4m4m3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3p3V3V3V3V3V3V3V3f3f3V3L3L3L4S4c..................5Z5Z5Z5Z5Z5Z5Z5Z5Z....4m4c4c4c4c4c4c4c....4c4c4c4c4m4m4w4w5555555F5F5F5P5P5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........4m3p3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3V3L3L3L3L3L3L3L3L3L3L3L3L3L4c4c..................5Z5Z5Z5Z5Z5Z5Z5Z5Z5P554m4c4c4c4c4c4c4c....4c4c4c4c4m4m4w4w5555555F5F5F5F5F5F5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3p3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3L3L3L3L3L3L3L3L3L3L3L3L3L3L4c4c................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5P554m4c4c4c4c4c4c4c....4c4c4c4c4m4m4w4w5555555F5F5F5F5F5F5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3L3L3L3L3L3L3L3L3L24243L3L3L4c4c................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5P554m4c4c4c4c4c4c4c4c4c4c4c4c4c4m4m4w4w5555555F5F5F5F5F5F5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3f3L3L3L3L3L3L3L3L3L3L3L3L3L4S..................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5P554m4c4c4c4c4c4c4c4c4c4c4c4c4c4m..........................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3p3f3f3f3f3f3f3V3L3L3V3L3L3L4S....................5Z5Z5Z5Z5Z5Z5Z5Z5Z5P554m4c4c4c4c4c4c4c4c4c4c4c4c4c4c............................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3p3p3p3p3p3p3p3p3p3p3p3f3V3V3L3L4S..........................5Z5Z5Z5Z5Z5Z....4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c............................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3L3V3f3f3p3p3p3p3p3p3p3p3p3p3p3f3V3L3L4S..........................5Z5Z5Z5Z5Z5Z....4m4c4c4c4c4c4c4c4c4c4c4c4c4c4m............................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3L3f3f3f3p3p3p3p3p3p3p3p3p3p3p3p3f..................................5t5t5t5t5t5t....4c4c4c4c4c4c4c4c....4c4m4m4m4w............................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3f3f4I4I4I4I4I4I4I4I4I4I4I4I4I4I4I..................................5t626g6g6262........................5555555555............................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3L3f4I4c4c4c4I4I4I4I4I4c4c4c4S4S4S4S....................................797979796W............................................................5Z5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3L3L3f3f4c4c........4I4I4I4c4c4c4c4S4S4S....................................7T7T7T7T................................................................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3L3L3L3L3L3L3L3L3L3L3f3f3f3-4c4c........4I4I4I4c4c4c4c4S4S....................................7T7T7T7T7T7T..............................................................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z5Z5Z5Z..',
+        '..........3V3V3V3V3V3V3V7T7T7T7T7T7T7T7T7T..........4I4I4c4c4c4c4S......................................7T7T7T7T7T7T7T............................................................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z........',
+        '..........4S4S4S4S4S4S4S7T7T7T7T7T7d7T7T7T............4c4c4c4c4c......................................7T7T7T7T7T7T7T7T7T..........................................................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z........',
+        '..........4c4c4c4c4c4c4c7T7T7T7T7T7d..................4c4c4c4c4c......................................7T7T7T7T7T7T7T7T7T..........................................................5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z........',
+        '..........4c4c4c4c4c4c4c7T7T7T7T7T....................4m4m4m4m4m......................................7T7T7T7T7T7T7T7T7T............................................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '............4c4c4c4c4c4c..............................4m4m4m4m4m4m....................................7T7T7T7T7T7T7T7T7T............................................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '............4c4c4c4c4c................................4m4m4m4m4w4w......................................7T7T7T7T7T7T................................................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '............4c4c4c4c4c..............................4w4w4m4m4m4w4w........................................7T7T7T7T7T..............................................5Z5Z5Z5Z5Z5Z5Z....5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '............4c4c4c4c4c..............................4w4w4w4w4w4w4w........................................7T7T7T7T7T..............................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '..........4c4c4c4c4c4c4c............................4w4w4w62624w4w........................................7T7T7T7T7T..............................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5j5j5j5j5j5j5j5j5j5j5j5j5Z5Z5Z..................',
+        '..4S4S4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............4w626C6C6C6262....................................7T7T7T7T7T7T7T7T............................................5Z5Z5Z5Z5Z5Z5Z5Z5Z5j5j5j5j5j5j5j5j5j5j5j5j5j5j5j5Z..................',
+        '..4S4S4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............6C6C6C6C6262....................................7J7J7J7J7J7J7J7J............................................5Z5Z5Z5Z5Z5Z5Z5Z..5j5j5j5j5j5j5j5Z5Z5Z5Z5Z5j5j5j5Z5Z................',
+        '..4S4S4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............6C6C6C6C6C6C....................................6_6_6_6_6_6_6_6_............................................5Z5Z5Z5Z5Z5Z5Z....5j5j5Z5Z......5Z5Z5Z5Z5Z5Z5j5j5Z5Z................',
+        '..4S4S4c4c4c4c4c4c4S4S4S4S4S4c4c4c4c4c4c..............6C6C6C6C6C......................................6W6W6W6W6W6W6W6W............................................5Z5Z5Z5Z5Z5Z5Z......5j5Z5Z......5Z5Z5Z5Z5Z5Z5j5j5Z5Z................',
+        '..4S4S4c4c4c4c4S4S4S4S4S4S4S4c4c4c4c4c4c..........6C6C6C6C6C6C6C6C....................................6C6C6C6C6C6C6C6C............................................5Z5Z5Z5Z5Z5Z5Z......5j5Z5Z......5Z5Z5Z5Z5Z5Z5j5j5Z5Z5Z..............',
+        '....4S4c4c4c4c4S4S4S........4c4c4c4c4c........6C6C6C6C6C6C6C6C6C6C6C6C................................5t5t5t5t5t5t5t5t............................................5Z5Z5Z5Z5Z5Z5Z......5j5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5j5j5Z5Z5Z5Z............',
+        '........4c4c4c4S4S..........4c4c4c4c........6C6C6C6C6C6C6C6C6C6C6C6C6C6C..............................5Z5Z5Z5Z5Z5Z5Z5Z............................................5Z5Z5Z5Z5Z5Z5Z......5j5j5Z5Z5Z5Z5Z5Z5Z5Z5Z5j5j5j5Z5Z5Z5Z............',
+        '........4c4c4c4c4c..........4c4c4c4c4c......6C6C6C6C6C6C6C6C6C6C6C6C6C6C........6C6C..................5555555555555555............................................5Z5Z5Z5Z5Z5Z5Z5Z....5j5j5j5j5j5j5j5j5j5j5j5j5j5j5Z5Z5Z5Z............',
+        '........4c4c4c4c4c..........4c4c4c4c4c......6C6C6C6C6C..........6C6C6C6C6C6C....5P554m................4m4m4m4m4m4m4m4m............................................5Z5Z5Z5Z5Z5Z5Z5Z5Z..5j5j5j5j5j5j5j5j5j5j5j5j5j5Z5Z5Z5Z5Z............',
+        '........4c4c4c4c4c..........4c4c4c4c4c......6C6C6C6C............6C6C6C6C6C6C625j5P554m4m4m4m4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..........................5Z5Z5Z5Z5Z5Z5Z5Z5Z..5j5j5j5j5j5j5j5j5j5j5Z5Z5Z5Z5Z5Z5Z5Z5Z..........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C............6C6C6C6C6C6C625j5P554m4m4m4m4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..........................5Z5Z5Z5Z5Z5Z5Z....5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C............6C6C6C6C6C6C625j5P554m4m4m4m4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..........................5Z5j5j5j5j5j5Z....5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C............6C6C6C6C6C6C625j5P554m4m4m4m4m4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............................626262........5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C............6C6C6C6C6C....................4m4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............................6C6C6C........5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z5Z........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C6C6C6C6C6C6C6C6C6C6C6C......................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c............................6W6W6W6W......5Z5Z5Z5Z5Z........................5Z5Z5Z5Z5Z........',
+        '........4c4c4c4c4c4c........4c4c4c4c4c......6C6C6C6C6C6C6C6C6C6C6C6C6C6C..........................4c4c4c4c4c4c4c4c4c4c4c4c4c4c......................................6q6q6q6q......5P5P5P5P5P........................5P5P5P5P5P........',
+        '........4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c........6C6C6C6C6C6C6C6C6C6C6C6C..............................4c4c4c4c4c4c4c4c4c4c4c4c4c..........................................6_6_........5P5P5P5P........................5F5F5F5F5F........',
+        '........4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c..........................................7J7J........................................5555555555........',
+        '........4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c..................797J7J7J7J7J7J7J7J7J7J7T7T7T7T......................................4m4m4m4m4m4m4m....',
+        '........4c4c4c4c4c4c........4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c................7J797J7J7J7J7J7J7J7J7J7J7T7T7T7T......................................48484848484848....',
+        '........4c4c4c4c4c..........4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c................7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T......................................3-3-3-3-3-3-3-....',
+        '............................4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c................7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T....7J7J6q6W6W........................3p3p3p3p3p3p3p....',
+        '............................4c4c4c4c4c..............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c................7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T....6q6W6C5j5P........................3V3V3V3V3V3V3V....',
+        '............................4c4c4c4c4c............................................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c................7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T....6q6W6C5j5P........................3L3L3L3L3L3L3L....',
+        '..........................4S4S4S4S4S4S..........................................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c......................7J7J7J7J7J7J6_................6q6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '........................4I4I4I4I4I4I4I4c62......................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c79......................7T7T7T7T7T7T7T................6q6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '........................484848484848484c4c......................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F5Z626W6q7J7T7T7T7T7T7T7T7T7T....7T7T7T7T....................6q6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '........................3-3-3-3-3-3-3-4c4c......................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F6262626q7J7T7T7T7T7T7T7T7T7T....7T7T7T7T....................7T6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '..............2Y2Y3B3V3V3p3p3p3p3p3p3p3p4S......................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F6262626q7J7T7T7T7T7T7T7T7T7T....7T7T7T7T....7T7T7T7T7T7T7T7T7T6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '............242O2Y2Y3B3V3f3f3f3f3f3f3f3f3f......................................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F6262626q7J7T7T7T7T7T7T7T7T7T7T..7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '............24242424242Y3V3V3V3V3V3V3V3f3f3f........................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F6262626q7J7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '............2424242424242Y2s2s31313V3f3f3f3p........................4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4m5F6262626q7J7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7T7J6q6W6C5j5P554c4I3-3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '............242424242424242s2s2s2s313V3f3p3-48......................4c4c4c......................4c4c4c4c4c4c4c4c4c4m5F5Z626W6q7J7T..............7T7T7T7T7T7T7T7T7T7T7T7T7T7T........................3V3L3L3L3L3L3L3L3L3L3L3L3L3L3L....',
+        '............24242424242424242s2s2s2s313f3p3-4848....................4c4c4c......................................................................7T7T7T7T7T7T7T7T7T7T7T7T7T7T..............................3L3L3L3L3L3L................',
+        '............24242424242424242O2i2i2s2s3V3f3p3-48....................4c4c4c................................................................................................................................3L3L3L3L3L..................',
+        '............2O2O2E2424242424242O2Y2i2s313V3f3p3-....................4c4c4c................................................................................................................................3L3L3L3L....................',
+        '............2O2O2O2E2424242424242O2O2i2s313V3f3f....................3p3p3p................................................................................................................................3L3L3L3L....................',
+        '........................24242424242O2O2i2s2s313131..................3V3f3f............................................................................................................................3L3L3L3L3L3L3L3L3L..............',
+        '..........................242424242O2O2O2i2i2s2s2s2i2i2O2O2O2O2O2O2Y2i2s2s............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '............................242424242O2O2O2i2i2i2i2i2O2O2O2O2O2O2O2O2O2O2Y............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '..............................2424242E2O2O2O2i2i2i2i2O2O2O2O2O2O2O2O2O2O2O............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '................................2424242O2O2O2O2O2i2i............2O2O2O2O2O............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '..................................24242E2O2O2O2O2O..............2O2O2O2O2O............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '....................................24242O2O2O2O2O..............2O2O2O2O2O............................................................................................................................3L3L3L3L3L3L3L3L3L3L............',
+        '....................................2424242O2O2O2O..............2O2O2O2O2O........................................................................................................................3L3L3L3L3L3L3L3L3L3L3L3L............',
+        '......................................24242E2O2O2O..............2O2O2O2O2O......................................................................................................................3L3L3L3L3L3L3L3L3L3L3L3L3L............',
+        '........................................24242O2O2O..............2O2O2O2O2O....................................................................................................................3B3B3B3B3L3L3L3L3L3L3L3L3L3L............',
+        '........................................24242E2O2O2O2O2O2O2O2O2O2O2O2O2O2O..................................................................................................................2s2s2s2s2s3L3L3L3L3L3L3L3L3L3L............',
+        '..........................................24242O2O2O2O2O2O2O2O2O2O2O2O2O2O................................................................................................................2Y2Y2Y2Y2Y2Y3L3L3L3L3L3L3L3L3L3L............',
+        '..........................................2424242O2O2O2O2O2O2O2O2O2O2O2O2O..............................................................................................................2E2E2E2E2E2E2E3L3L3L3L3L3L3L3L3L3L............',
+        '............................................2424242O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2O......................................................................................1v1v1v1v1v1v1v1v1v1v1v1v1v3L3L3L3L3L3L3L3L3L3L............',
+        '..............................................2424242O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2O2E....................................................................................1R1R1R1R1R1R1R1R1R1R1R1R1R3L3L3L3L3L3L3L3L3L3L............',
+        '................................................2424242424242O2O2O2O2O2O2O2O2O2O2O2O2E2E1b1H1H17............................................................................171717171717171717........................................',
+        '....................................................2424242424242E2O2O2O2O2O2O2O2O2O2E1l1b1H17170o0e0e......................................................................0o0o0o0o0o0o0o0o0o........................................',
+        '............................................................2424242424242O2O2O2O2O2O2E1b1R1H17170o0e0e0U....................................................................0U0U0U0U0U0U0U0U0U........................................',
+        '..................................................................24242424242O2O2O2E1l1b1H17170y0o0e0U0U..................0U................................................0A0A0A0A0A0A0A0A..........................................',
+        '........................................................................24242E2O2O2E1l1b1H17170o0e0e0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '....................................................................................1b1R1H170y0o0e0e0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '........................................................................................1H170y0o0e0U0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '..........................................................................................0y0y0e0e0U0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '..............................................................................................0e0U0U0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U170y0o0e0U0K0A0000000000000000..........................................',
+        '................................................................................................0U0U0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U170y0o0e0U0K0A0000000000000000..........................................',
+        '................................................................................................0U0U0U0U0U0K0K0K0K0K0K0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U170y0o0e0U0K0A0000000000000000..........................................',
+        '................................................................................................1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H1H..........................................0000000000000000..........................................',
+        '................................................................................................1717171717171717171717171717171717..........................................0000000000000000..........................................',
+        '................................................................................................0y0y0y0y0y0y0y0y0y0y0y0y0y0y0y0y0y..........................................0000000000000000..........................................',
+        '................................................................................................0o0o0o0o0o0o0o0o0o0o0o0o0o0o0o0o0o..........................................0000000000000000..........................................',
+        '................................................................................................0e0e0e0e..............0e0e0e0e0e0e..........................................0000000000000000..........................................',
+        '................................................................................................0U0U0U0U..............0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '................................................................................................0U0U0U0U..............0U0U0U0U0U0U..........................................0000000000000000..........................................',
+        '................................................................................................0U0U0U0U..............0U0U0U0U0U0U..........................................00000000000000............................................',
+        '................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '..................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '..................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '..................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '..................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '....................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '......................................................................................................0U0U0U0U0U0U0U0U0U0U0U0U0U0U....................................................................................................',
+        '......................................................................................................................0U0U0U0U0U......................................................................................................',
+        '......................................................................................................................................................................................................................................',
+        '......................................................................................................................................................................................................................................',
+      ]),
+    },
+  ],
+  legend: {
+    'A': { n: 'T Spawn', k: 'orange', h: 0 },
+    'B': { n: 'T Ramp', k: 'room', h: 0 },
+    'C': { n: 'Outside', k: 'room', h: 1.22 },
+    'D': { n: 'Elbow', k: 'room', h: 2.64 },
+    'E': { n: 'Mid', k: 'room', h: 2.64 },
+    'F': { n: 'Top Mid', k: 'room', h: 4.47 },
+    'G': { n: 'Red Room', k: 'room', h: 3.25, s: 'Red' },
+    'H': { n: 'CT', k: 'room', h: 2.64 },
+    'I': { n: 'CT Spawn', k: 'cyan', h: 1.83, s: 'CT' },
+    'J': { n: 'Lane', k: 'room', h: 2.54 },
+    'K': { n: 'Temple', k: 'room', h: 3.25 },
+    'L': { n: 'A Site', k: 'site', h: 1.93, s: 'A' },
+    'M': { n: 'Triple', k: 'room', h: 2.54 },
+    'N': { n: 'Long', k: 'room', h: 1.83 },
+    'O': { n: 'Boost', k: 'room', h: 2.13 },
+    'P': { n: 'A Main', k: 'room', h: 2.64 },
+    'Q': { n: 'Donut', k: 'room', h: 3.66 },
+    'R': { n: 'Heaven', k: 'room', h: 4.47 },
+    'S': { n: 'Lamp Room', k: 'room', h: 4.47 },
+    'T': { n: 'Cave', k: 'room', h: 3.25 },
+    'U': { n: 'B Site', k: 'site', h: 3.25, s: 'B' },
+    'V': { n: 'Pillar', k: 'room', h: 3.25 },
+    'W': { n: 'Back Halls', k: 'room', h: 3.25 },
+    'X': { n: 'Alley', k: 'room', h: 2.95 },
+    'Y': { n: 'B Ramp', k: 'room', h: 3.15, s: 'Ramp' },
+    'Z': { n: 'B Main', k: 'room', h: 1.83 },
+    'a': { n: 'Doors', k: 'room', h: 1.83 },
+    'b': { n: 'Ruins', k: 'room', h: 1.83 },
+    'c': { n: 'Water', k: 'room', h: -0.3 },
+    'd': { n: 'Tunnel', k: 'room', h: 0 },
+  },
 };
 
 export const buildAncient = (): LevelDef => buildGraybox(ANCIENT_LAYOUT);

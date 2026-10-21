@@ -5,8 +5,8 @@
 // 1.206 m), heights 1.0× (1 unit = 0.0254 m), per cell from the radar's height colours, built
 // smooth (graybox.ts: layer heights). 103 × 134 cells ≈ 124 × 162 m, 5437 floor cells.
 // North (row 0) is up on the radar. Orange = T (attackers), Cyan = CT (defenders).
-// Callouts: T Spawn, Alley, A Main, Walkway, A Site, Heaven, Camera, Arches, Canal / Water, 
-// Bridge, Mid, Top Mid, Connector, B Connector, Palace, B Site, Pillars, B Main, Ruins, Street, 
+// Callouts: T Spawn, Alley, A Main, Walkway, A Site, Heaven, Camera, Arches, Canal / Water,
+// Bridge, Mid, Top Mid, Connector, B Connector, Palace, B Site, Pillars, B Main, Ruins, Street,
 // CT Spawn, Beach, Sea.
 import type { LevelDef } from '../../types';
 import { buildGraybox, unpackHeights, type GrayboxLayout } from '../../graybox';
@@ -57,8 +57,7 @@ export const ANUBIS_LAYOUT: GrayboxLayout = {
     { x: 92.625, y: 79.575, w: 0.35, d: 0.549, h: 2.2, kind: 'crate' },
     { x: 92.075, y: 93.998, w: 0.549, d: 0.412, h: 2.2, kind: 'crate' },
   ],
-  signs: [
-  ],
+  signs: [],
   layers: [
     {
       name: 'Main',
@@ -615,29 +614,29 @@ export const ANUBIS_LAYOUT: GrayboxLayout = {
     },
   ],
   legend: {
-    'A': { n: 'T Spawn', k: 'orange', h: 2.44 },
-    'B': { n: 'Alley', k: 'room', h: 2.34 },
-    'C': { n: 'A Main', k: 'room', h: 1.42 },
-    'D': { n: 'Walkway', k: 'room', h: 1.52 },
-    'E': { n: 'A Site', k: 'site', h: 1.42, s: 'A' },
-    'F': { n: 'Heaven', k: 'room', h: 1.63 },
-    'G': { n: 'Camera', k: 'room', h: 1.83 },
-    'H': { n: 'Arches', k: 'room', h: 1.02 },
-    'I': { n: 'Canal / Water', k: 'room', h: 1.12, s: 'Water' },
-    'J': { n: 'Bridge', k: 'room', h: 2.64 },
-    'K': { n: 'Mid', k: 'room', h: 2.44 },
-    'L': { n: 'Top Mid', k: 'room', h: 2.64 },
-    'M': { n: 'Connector', k: 'room', h: 1.83, s: 'Conn' },
-    'N': { n: 'B Connector', k: 'room', h: 1.63, s: 'B Conn' },
-    'O': { n: 'Palace', k: 'room', h: 1.73 },
-    'P': { n: 'B Site', k: 'site', h: 2.64, s: 'B' },
-    'Q': { n: 'Pillars', k: 'room', h: 2.64 },
-    'R': { n: 'B Main', k: 'room', h: 2.84 },
-    'S': { n: 'Ruins', k: 'room', h: 3.86 },
-    'T': { n: 'Street', k: 'room', h: 2.74 },
-    'U': { n: 'CT Spawn', k: 'cyan', h: 3.25, s: 'CT' },
-    'V': { n: 'Beach', k: 'room', h: 1.63 },
-    'W': { n: 'Sea', k: 'room', h: 0.61 },
+    A: { n: 'T Spawn', k: 'orange', h: 2.44 },
+    B: { n: 'Alley', k: 'room', h: 2.34 },
+    C: { n: 'A Main', k: 'room', h: 1.42 },
+    D: { n: 'Walkway', k: 'room', h: 1.52 },
+    E: { n: 'A Site', k: 'site', h: 1.42, s: 'A' },
+    F: { n: 'Heaven', k: 'room', h: 1.63 },
+    G: { n: 'Camera', k: 'room', h: 1.83 },
+    H: { n: 'Arches', k: 'room', h: 1.02 },
+    I: { n: 'Canal / Water', k: 'room', h: 1.12, s: 'Water' },
+    J: { n: 'Bridge', k: 'room', h: 2.64 },
+    K: { n: 'Mid', k: 'room', h: 2.44 },
+    L: { n: 'Top Mid', k: 'room', h: 2.64 },
+    M: { n: 'Connector', k: 'room', h: 1.83, s: 'Conn' },
+    N: { n: 'B Connector', k: 'room', h: 1.63, s: 'B Conn' },
+    O: { n: 'Palace', k: 'room', h: 1.73 },
+    P: { n: 'B Site', k: 'site', h: 2.64, s: 'B' },
+    Q: { n: 'Pillars', k: 'room', h: 2.64 },
+    R: { n: 'B Main', k: 'room', h: 2.84 },
+    S: { n: 'Ruins', k: 'room', h: 3.86 },
+    T: { n: 'Street', k: 'room', h: 2.74 },
+    U: { n: 'CT Spawn', k: 'cyan', h: 3.25, s: 'CT' },
+    V: { n: 'Beach', k: 'room', h: 1.63 },
+    W: { n: 'Sea', k: 'room', h: 0.61 },
   },
 };
 

@@ -34,7 +34,7 @@ const CS: [id: string, layout: GrayboxLayout, callouts: string[]][] = [
     ['Canal / Water', 'Bridge', 'Connector', 'Palace', 'Walkway', 'Heaven'],
   ],
   ['cache', CACHE_LAYOUT, ['Squeaky', 'Highway', 'Checkers', 'Garage', 'White Box', 'Sun Room']],
-  ['train', TRAIN_LAYOUT, ['Ivy', 'Popdog', 'Ladder Room', 'Upper B', 'Lower B', 'El Box']],
+  ['train', TRAIN_LAYOUT, ['Ivy', 'Popdog', 'Showers', 'Olof', 'Upper B', 'Catwalk', 'B Ramp']],
 ];
 
 describe.each(CS)('%s (traced CS map)', (id, layout, callouts) => {

@@ -81,8 +81,22 @@ export interface GrayboxArea {
    * room), so any heights around it join; 'stairs': a stand-in ramp between its neighbours
    */
   g?: 'zeroG' | 'stairs';
+  /**
+   * themed maps: this area's own look instead of the theme's pick (any part may be left out):
+   * its floor, the walls beside it (lower part, upper part), the trim strip between them, and the
+   * door frames of its doorways (e.g. Dust 2's blue doors)
+   */
+  look?: GrayboxAreaLook;
   /** short label for the minimap / overview (default: `n`) */
   s?: string;
+}
+
+/** An area's own look on a themed map (GrayboxArea.look); colours 0xRRGGBB. */
+export interface GrayboxAreaLook {
+  floor?: { mat?: Material; color?: number };
+  wall?: { mat?: Material; lower?: number; upper?: number };
+  trim?: { mat?: Material; color?: number };
+  door?: { mat?: Material; color?: number };
 }
 
 /**
@@ -202,6 +216,9 @@ export interface GrayboxProp {
   h: number;
   l?: number;
   kind?: 'crate' | 'wall' | 'pillar' | 'car' | 'barrel' | 'stairs';
+  /** its own material / colour (0xRRGGBB) instead of the theme's: e.g. a blue wooden door leaf */
+  mat?: Material;
+  color?: number;
 }
 
 /**
@@ -870,6 +887,12 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
   const floorLook = (c: string, h: number): Look => {
     if (!pal) return { mat: 'floor', color: colorOf(c, h) };
     const k = area(c).k;
+    const own = area(c).look?.floor;
+    if (own?.color !== undefined || own?.mat)
+      return {
+        mat: own.mat ?? (k === 'site' ? pal.site.mat : pal.floor.mat),
+        color: own.color ?? (k === 'site' ? pal.site.color : pick(pal.floor.colors, c)),
+      };
     if (k === 'site') return { mat: pal.site.mat, color: pal.site.color };
     if (pal.water && WATER_AREA.test(area(c).n))
       return { mat: pal.water.mat, color: pal.water.color };
@@ -892,8 +915,9 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     let lk = rampLooks.get(c);
     if (!lk) {
       const [lo, hi] = rampSpan.get(c) ?? [0, 0];
+      const own = area(c).look?.floor;
       lk = pal
-        ? { mat: pal.ramp.mat, color: pick(pal.ramp.colors, c) }
+        ? { mat: own?.mat ?? pal.ramp.mat, color: own?.color ?? pick(pal.ramp.colors, c) }
         : { mat: 'floor', color: colorOf(c, (lo + hi) / 2) };
       rampLooks.set(c, lk);
     }
@@ -1116,15 +1140,21 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         }
       }
     const key = ref?.c ?? '';
-    const lower = pick(pal.wall.lower, key);
-    if (!ref) return [{ ...g, mat: wallMat, color: lower }];
+    const own = ref ? area(ref.c).look : undefined;
+    const wm = own?.wall?.mat ?? wallMat;
+    const lower = own?.wall?.lower ?? pick(pal.wall.lower, key);
+    if (!ref) return [{ ...g, mat: wm, color: lower }];
     const band = refY + DOOR_H;
-    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3)
-      return [{ ...g, mat: wallMat, color: lower }];
+    if (band < g.y0 + 0.3 || band + 0.25 > g.y1 - 0.3) return [{ ...g, mat: wm, color: lower }];
     return [
-      { y0: g.y0, y1: band, mat: wallMat, color: lower },
-      { y0: band, y1: band + 0.25, mat: pal.trim.mat, color: pick(pal.trim.colors, key) },
-      { y0: band + 0.25, y1: g.y1, mat: wallMat, color: pick(pal.wall.upper, key) },
+      { y0: g.y0, y1: band, mat: wm, color: lower },
+      {
+        y0: band,
+        y1: band + 0.25,
+        mat: own?.trim?.mat ?? pal.trim.mat,
+        color: own?.trim?.color ?? pick(pal.trim.colors, key),
+      },
+      { y0: band + 0.25, y1: g.y1, mat: wm, color: own?.wall?.upper ?? pick(pal.wall.upper, key) },
     ];
   };
   if (!sky)
@@ -1669,13 +1699,19 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     const x1 = (pr.x + pr.w) * s;
     const z1 = (pr.y + pr.d) * s;
     const key = `${pr.x},${pr.y},${l}`;
+    const kind = pr.kind ?? 'crate';
+    // (a prop's own material / colour wins over the theme's; a car keeps its darker cabin)
+    const own: Partial<Look> = {
+      ...(pr.mat ? { mat: pr.mat } : {}),
+      ...(pr.color !== undefined && kind !== 'car' ? { color: pr.color } : {}),
+    };
     const blk = (a: number, b: number, c: number, d: number, f: number, t: number, look: Look) =>
       propBoxes.push({
         c: v3((a + c) / 2, (f + t) / 2, (b + d) / 2),
         h: v3((c - a) / 2, (t - f) / 2, (d - b) / 2),
         ...look,
+        ...own,
       });
-    const kind = pr.kind ?? 'crate';
     if (kind === 'crate')
       blk(x0, z0, x1, z1, y0, y0 + pr.h, {
         mat: pal?.crate.mat ?? 'crate',
@@ -1684,7 +1720,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     else if (kind === 'wall')
       blk(x0, z0, x1, z1, y0, y0 + pr.h, {
         mat: pal ? wallMat : 'pillar',
-        ...(pal ? { color: pick(pal.wall.lower, floor.c) } : {}),
+        ...(pal ? { color: area(floor.c).look?.wall?.lower ?? pick(pal.wall.lower, floor.c) } : {}),
       });
     else if (kind === 'pillar')
       blk(x0, z0, x1, z1, y0, y0 + pr.h, {
@@ -1698,7 +1734,7 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
       });
     else if (kind === 'car') {
       // a low body and a cabin set in from both ends along the car's length
-      const color = pick(pal?.car ?? [0xb0b0b0, 0x7d2f2a, 0x4f6a7a], key);
+      const color = pr.color ?? pick(pal?.car ?? [0xb0b0b0, 0x7d2f2a, 0x4f6a7a], key);
       const body = pr.h * 0.55;
       blk(x0, z0, x1, z1, y0, y0 + body, { mat: 'plate', color });
       const alongX = x1 - x0 >= z1 - z0;
@@ -2118,11 +2154,12 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
     p.o === 'down' ? (p.corners ? lowY(p) : p.h) : p.corners ? highY(p) : standY(p);
   // door frames (themes): a strip on the wall face at both sides of every doorway between areas
   if (pal && !sky) {
+    let doorMat: Material = pal.door.mat;
     const jamb = (xm: number, zm: number, nx: number, nz: number, f: number, color: number) =>
       decor.push({
         c: v3(xm + nx * 0.0065, f + DOOR_H / 2, zm + nz * 0.0065),
         h: v3(nx ? 0.0035 : 0.2, DOOR_H / 2, nz ? 0.0035 : 0.2),
-        mat: pal.door.mat,
+        mat: doorMat,
         color,
         noCollide: true,
       });
@@ -2136,7 +2173,9 @@ export const buildGraybox = (lay: GrayboxLayout, opts: GrayboxBuildOptions = {})
         if (!q || q.c === p.c || q.zg || q.o !== 'up') continue;
         if (Math.abs(floorY(p) - floorY(q)) > 0.6) continue;
         const f = Math.max(floorY(p), floorY(q));
-        const color = pick(pal.door.colors, [p.c, q.c].sort().join(''));
+        const own = area(p.c).look?.door ?? area(q.c).look?.door;
+        doorMat = own?.mat ?? pal.door.mat;
+        const color = own?.color ?? pick(pal.door.colors, [p.c, q.c].sort().join(''));
         // the line between p and q, and the wall cells at either end of it (on both sides)
         for (const side of [-1, 1]) {
           const [ox, oy] = dx ? [0, side] : [side, 0];

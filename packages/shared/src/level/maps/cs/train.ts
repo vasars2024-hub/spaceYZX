@@ -21,6 +21,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
   theme: 'industrial',
   cover: false,
   waypointEvery: 2,
+  wallH: 6,
   props: [
     { x: 48.658, y: 76.416, w: 13.063, d: 3.674, h: 3.8, kind: 'car', color: 0xc9a02a },
     { x: 64.782, y: 70.599, w: 11.532, d: 3.164, h: 3.4, kind: 'car', color: 0xb25a4f },
@@ -505,6 +506,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x7a4f3a },
       },
+      wall: 5,
     },
     B: {
       n: 'Alley',
@@ -516,6 +518,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x7a4f3a },
       },
+      wall: 9,
     },
     C: {
       n: 'Dumpster',
@@ -527,6 +530,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x7a4f3a },
       },
+      wall: 9,
     },
     D: {
       n: 'Pigeon',
@@ -538,6 +542,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x7a4f3a },
       },
+      wall: 9,
     },
     E: {
       n: 'Ivy',
@@ -549,6 +554,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 8,
     },
     F: {
       n: 'A2',
@@ -560,6 +566,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 8,
     },
     G: {
       n: 'CT Tunnel',
@@ -571,6 +578,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 8,
     },
     H: {
       n: 'A1',
@@ -582,6 +590,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 8,
     },
     I: {
       n: 'A Doors',
@@ -593,6 +602,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     J: {
       n: 'CT Stairs',
@@ -604,6 +614,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 6,
     },
     K: {
       n: 'CT Spawn',
@@ -615,6 +626,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f5a },
       },
+      wall: 6,
     },
     L: {
       n: 'Back Site',
@@ -626,6 +638,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f8a },
       },
+      wall: 14,
     },
     M: {
       n: 'B Site',
@@ -638,6 +651,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f8a },
       },
+      wall: 14,
     },
     N: {
       n: 'B Site',
@@ -649,6 +663,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f8a },
       },
+      wall: 14,
     },
     O: {
       n: 'Headshot',
@@ -659,6 +674,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         wall: { mat: 'panel', lower: 0x7a4f40, upper: 0x8f5e4c },
         trim: { color: 0xd9a62a },
       },
+      wall: 10.4,
     },
     P: {
       n: 'Catwalk',
@@ -669,6 +685,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         wall: { mat: 'panel', lower: 0x7a4f40, upper: 0x8f5e4c },
         trim: { color: 0xd9a62a },
       },
+      wall: 10.4,
     },
     Q: {
       n: 'Upper B',
@@ -679,6 +696,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         wall: { mat: 'panel', lower: 0x7a4f40, upper: 0x8f5e4c },
         trim: { color: 0xd9a62a },
       },
+      wall: 4,
     },
     R: {
       n: 'B Ladder',
@@ -689,6 +707,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         wall: { mat: 'panel', lower: 0x7a4f40, upper: 0x8f5e4c },
         trim: { color: 0xd9a62a },
       },
+      wall: 10.4,
     },
     S: {
       n: 'B Ramp',
@@ -700,6 +719,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f8a },
       },
+      wall: 6,
     },
     T: {
       n: 'B Halls',
@@ -711,6 +731,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     U: {
       n: 'Long Dog',
@@ -722,6 +743,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     V: {
       n: 'Underpass',
@@ -733,6 +755,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     W: {
       n: 'T Stairs',
@@ -744,6 +767,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 4,
     },
     X: {
       n: 'T Main',
@@ -755,6 +779,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     Y: {
       n: 'A Main',
@@ -766,6 +791,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 3.5,
     },
     Z: {
       n: 'Kitchen',
@@ -777,6 +803,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     a: {
       n: 'Showers',
@@ -788,6 +815,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x6f4a3a },
       },
+      wall: 3.5,
     },
     b: {
       n: 'Popdog',
@@ -799,6 +827,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 3.5,
     },
     c: {
       n: 'Olof',
@@ -810,6 +839,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 9,
     },
     d: {
       n: 'El Box',
@@ -822,6 +852,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     e: {
       n: 'Hell',
@@ -833,6 +864,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     f: {
       n: 'A Site',
@@ -845,6 +877,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     g: {
       n: 'A Site',
@@ -856,6 +889,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     h: {
       n: 'Old Heaven',
@@ -867,6 +901,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 10,
     },
     i: {
       n: 'Connector',
@@ -878,6 +913,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 6,
     },
     j: {
       n: 'Z',
@@ -889,6 +925,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xd9a62a },
         door: { mat: 'plate', color: 0x3f7f8a },
       },
+      wall: 6,
     },
     k: {
       n: 'B Site',
@@ -900,6 +937,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         trim: { color: 0xc8c2b6 },
         door: { mat: 'plate', color: 0x3f6f8a },
       },
+      wall: 14,
     },
     l: {
       n: 'B Ladder',
@@ -910,6 +948,7 @@ export const TRAIN_LAYOUT: GrayboxLayout = {
         wall: { mat: 'panel', lower: 0x7a4f40, upper: 0x8f5e4c },
         trim: { color: 0xd9a62a },
       },
+      wall: 10.4,
     },
   },
   links: [['k', 'l', 'tube']],

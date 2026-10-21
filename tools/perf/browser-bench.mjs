@@ -1,6 +1,7 @@
 // Frame-time benchmark in a real browser, simulating a weak laptop: Chrome's CPU throttling
 // plus software rendering (SwiftShader), running a scripted 5v5 bot match on the default match
-// map (or --map kestrel / --map split-deck).
+// map (or --map kestrel / --map split-deck). --mode tdm runs the offline Team Brawl instead
+// (4v4 vs bots, what the title screen's Play starts without a server).
 //
 //   npm start                      (in another window)
 //   node tools/perf/browser-bench.mjs --url http://localhost:7777 --cpu 4 --quality potato
@@ -15,6 +16,7 @@ const cpu = Number(arg('cpu', '4'));
 const quality = arg('quality', 'medium');
 const seconds = Number(arg('seconds', '20'));
 const map = arg('map', '');
+const mode = arg('mode', '');
 
 let playwright;
 try {
@@ -40,7 +42,9 @@ await page.addInitScript((q) => {
 }, quality);
 const cdp = await page.context().newCDPSession(page);
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu });
-await page.goto(`${url}/?autotest&bench=${seconds}${map ? `&map=${encodeURIComponent(map)}` : ''}`);
+await page.goto(
+  `${url}/?autotest&bench=${seconds}${map ? `&map=${encodeURIComponent(map)}` : ''}${mode ? `&mode=${mode}` : ''}`,
+);
 await page.waitForFunction(() => window.__spaceyz?.bench, null, { timeout: (seconds + 60) * 1000 });
 const r = await page.evaluate(() => window.__spaceyz.bench);
 console.log(
